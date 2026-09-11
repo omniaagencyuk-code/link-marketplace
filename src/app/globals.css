@@ -1,0 +1,131 @@
+@import 'tailwindcss';
+
+/* --------------------------------------------------------------------------
+   Design tokens
+   The palette mirrors `src/lib/config/brand.ts`. Update both together.
+   -------------------------------------------------------------------------- */
+@theme {
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+
+  --color-navy-950: #06111c;
+  --color-navy-900: #0b1b2b;
+  --color-navy-800: #10263a;
+  --color-navy-700: #17334b;
+  --color-navy-600: #224562;
+  --color-navy-500: #2e5878;
+
+  --color-accent-50: #ecfdf5;
+  --color-accent-100: #d1fae5;
+  --color-accent-200: #a7f3d0;
+  --color-accent-300: #6ee7b7;
+  --color-accent-400: #34d399;
+  --color-accent-500: #10b981;
+  --color-accent-600: #059669;
+  --color-accent-700: #047857;
+
+  --color-surface: #f7f9fb;
+  --color-surface-raised: #ffffff;
+  --color-surface-sunken: #eef2f6;
+
+  --color-line: #e4e9ef;
+  --color-line-strong: #d3dae3;
+
+  --color-ink: #0b1b2b;
+  --color-ink-soft: #3d4f61;
+  --color-muted: #64748b;
+  --color-muted-soft: #8595a6;
+
+  --color-positive: #059669;
+  --color-negative: #dc2626;
+  --color-warning: #d97706;
+  --color-info: #2563eb;
+
+  --shadow-card: 0 1px 2px 0 rgb(11 27 43 / 0.04), 0 1px 3px 0 rgb(11 27 43 / 0.06);
+  --shadow-raised: 0 4px 12px -2px rgb(11 27 43 / 0.08), 0 2px 6px -2px rgb(11 27 43 / 0.05);
+  --shadow-pop: 0 12px 32px -8px rgb(11 27 43 / 0.18), 0 4px 12px -4px rgb(11 27 43 / 0.1);
+
+  --radius-card: 0.625rem;
+}
+
+@layer base {
+  * {
+    border-color: var(--color-line);
+  }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+    scroll-behavior: smooth;
+  }
+
+  body {
+    background-color: var(--color-surface);
+    color: var(--color-ink);
+    font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4 {
+    letter-spacing: -0.021em;
+    text-wrap: balance;
+  }
+
+  p {
+    text-wrap: pretty;
+  }
+
+  /* Consistent, always-visible keyboard focus across the app. */
+  :focus-visible {
+    outline: 2px solid var(--color-accent-600);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+
+  ::selection {
+    background-color: var(--color-accent-200);
+    color: var(--color-navy-900);
+  }
+
+  input[type='search']::-webkit-search-cancel-button {
+    appearance: none;
+  }
+}
+
+@layer components {
+  /* Numeric table cells line up when digits are tabular. */
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+
+  .hide-scrollbar {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+
+  .hide-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* Subtle dotted grid used behind dark sections. */
+  .dot-grid {
+    background-image: radial-gradient(circle at 1px 1px, rgb(255 255 255 / 0.07) 1px, transparent 0);
+    background-size: 22px 22px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

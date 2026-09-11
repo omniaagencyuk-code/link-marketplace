@@ -1,0 +1,98 @@
+import type { UserProfile } from '@/lib/types';
+
+export const users: UserProfile[] = [
+  {
+    id: 'usr_001',
+    email: 'hannah.reeve@northboundmedia.co.uk',
+    fullName: 'Hannah Reeve',
+    company: 'Northbound Media',
+    role: 'customer',
+    avatarInitials: 'HR',
+    plan: 'growth',
+    createdAt: '2025-11-04T10:12:00.000Z',
+    updatedAt: '2026-08-27T08:41:00.000Z',
+  },
+  {
+    id: 'usr_002',
+    email: 'daniel.okafor@linkmarket.io',
+    fullName: 'Daniel Okafor',
+    company: 'LinkMarket',
+    role: 'admin',
+    avatarInitials: 'DO',
+    plan: 'agency',
+    createdAt: '2025-06-18T09:00:00.000Z',
+    updatedAt: '2026-09-02T14:22:00.000Z',
+  },
+  {
+    id: 'usr_003',
+    email: 'marta.silva@velocitysearch.com',
+    fullName: 'Marta Silva',
+    company: 'Velocity Search',
+    role: 'customer',
+    avatarInitials: 'MS',
+    plan: 'agency',
+    createdAt: '2025-09-22T13:30:00.000Z',
+    updatedAt: '2026-08-19T16:05:00.000Z',
+  },
+  {
+    id: 'usr_004',
+    email: 'tom.bradley@casteldigital.co.uk',
+    fullName: 'Tom Bradley',
+    company: 'Castel Digital',
+    role: 'customer',
+    avatarInitials: 'TB',
+    plan: 'starter',
+    createdAt: '2026-01-15T11:45:00.000Z',
+    updatedAt: '2026-09-01T10:10:00.000Z',
+  },
+  {
+    id: 'usr_005',
+    email: 'aisha.khan@meridianbrands.com',
+    fullName: 'Aisha Khan',
+    company: 'Meridian Brands',
+    role: 'customer',
+    avatarInitials: 'AK',
+    plan: 'growth',
+    createdAt: '2025-12-03T08:20:00.000Z',
+    updatedAt: '2026-08-30T12:00:00.000Z',
+  },
+  {
+    id: 'usr_006',
+    email: 'liam.chen@parallaxseo.ca',
+    fullName: 'Liam Chen',
+    company: 'Parallax SEO',
+    role: 'customer',
+    avatarInitials: 'LC',
+    plan: 'growth',
+    createdAt: '2026-02-27T15:05:00.000Z',
+    updatedAt: '2026-08-12T09:35:00.000Z',
+  },
+  {
+    id: 'usr_007',
+    email: 'sofia.moretti@altitudegrowth.com',
+    fullName: 'Sofia Moretti',
+    company: 'Altitude Growth',
+    role: 'customer',
+    avatarInitials: 'SM',
+    plan: 'agency',
+    createdAt: '2025-08-09T07:55:00.000Z',
+    updatedAt: '2026-07-28T17:40:00.000Z',
+  },
+  {
+    id: 'usr_008',
+    email: 'ravi.patel@kestrelmarketing.co.uk',
+    fullName: 'Ravi Patel',
+    company: 'Kestrel Marketing',
+    role: 'customer',
+    avatarInitials: 'RP',
+    plan: 'starter',
+    createdAt: '2026-04-11T12:15:00.000Z',
+    updatedAt: '2026-09-03T11:20:00.000Z',
+  },
+];
+
+/** The account used while mock auth is enabled. */
+export const mockCustomer = users[0] as UserProfile;
+
+/** The account used for the development admin guard. */
+export const mockAdmin = users[1] as UserProfile;
