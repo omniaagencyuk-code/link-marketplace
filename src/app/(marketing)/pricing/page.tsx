@@ -125,7 +125,7 @@ export default function PricingPage() {
               >
                 <div className="flex items-center justify-between gap-2">
                   <h2 className="text-[15px] font-semibold text-ink">{plan.name}</h2>
-                  {plan.featured ? <Badge tone="accent">Most popular</Badge> : null}
+                  {plan.featured ? <Badge tone="coral">Most popular</Badge> : null}
                 </div>
                 <p className="tabular mt-4 text-3xl font-semibold text-ink">{plan.price}</p>
                 <p className="mt-1 text-[13px] text-muted">{plan.cadence}</p>

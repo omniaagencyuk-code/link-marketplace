@@ -3,6 +3,7 @@
 import { ShieldAlert } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/lib/providers/auth-provider';
+import { brand } from '@/lib/config/brand';
 
 /**
  * Development-only admin guard.
@@ -30,8 +31,8 @@ export function AdminGuard({ children }: { children: React.ReactNode }) {
           </span>
           <h1 className="mt-4 text-lg font-semibold text-ink">Admin area</h1>
           <p className="mt-2 text-[14px] leading-relaxed text-muted">
-            This area is restricted to LinkMarket staff. Authentication is mocked in this build, so
-            you can unlock it locally for development.
+            This area is restricted to {brand.name} staff. Authentication is mocked in this build,
+            so you can unlock it locally for development.
           </p>
           <Button className="mt-5 w-full" onClick={() => signInAsAdmin()}>
             Continue as admin (development)

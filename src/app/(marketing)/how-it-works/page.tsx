@@ -9,11 +9,12 @@ import { HowItWorksSection } from '@/components/home/how-it-works-section';
 import { Faq } from '@/components/shared/faq';
 import { CtaSection } from '@/components/home/cta-section';
 import { linkTypeDescriptions, linkTypeLabels } from '@/lib/utils/labels';
+import { brand } from '@/lib/config/brand';
 
 export const metadata: Metadata = {
   title: 'How it works',
   description:
-    'How the LinkMarket link building marketplace works: search vetted websites, review metrics, order guest posts or niche edits and get the live URL.',
+    'How the Press Parrot link building marketplace works: search vetted websites, review metrics, order guest posts or niche edits and get the live URL.',
   alternates: { canonical: '/how-it-works' },
 };
 
@@ -66,7 +67,7 @@ export default function HowItWorksPage() {
       <PageHero
         eyebrow="How it works"
         title="From shortlist to live link, without the back-and-forth"
-        description="LinkMarket replaces outreach spreadsheets, email chains and invoice chasing with a single marketplace. You see the site, the metrics and the price before you commit."
+        description={`${brand.name} replaces outreach spreadsheets, email chains and invoice chasing with a single marketplace. You see the site, the metrics and the price before you commit.`}
       >
         <div className="flex flex-wrap gap-3">
           <Button asChild size="lg" variant="primary">

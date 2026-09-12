@@ -2,8 +2,9 @@
 
 import { createContext, useCallback, useContext, useMemo, type ReactNode } from 'react';
 import { useLocalStorage } from '@/lib/hooks/use-local-storage';
+import { storageKey } from '@/lib/config/brand';
 
-const STORAGE_KEY = 'linkmarket.favourites.v1';
+const STORAGE_KEY = storageKey('favourites.v1');
 
 interface FavouritesContextValue {
   favourites: string[];

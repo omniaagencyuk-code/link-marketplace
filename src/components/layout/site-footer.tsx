@@ -25,7 +25,7 @@ export function SiteFooter() {
                   {brand.supportEmail}
                 </a>
               </p>
-              <p>{brand.phone}</p>
+              {brand.phone ? <p>{brand.phone}</p> : null}
             </div>
           </div>
 
@@ -52,11 +52,14 @@ export function SiteFooter() {
 
         <div className="flex flex-col gap-4 border-t border-line py-6 text-[12px] text-muted md:flex-row md:items-center md:justify-between">
           <p>
-            &copy; {year} {brand.company.legalName}. Company no. {brand.company.registrationNumber}.
-            VAT {brand.company.vatNumber}.
+            &copy; {year} {brand.company.legalName}.
+            {brand.company.registrationNumber ? ` Company no. ${brand.company.registrationNumber}.` : ''}
+            {brand.company.vatNumber ? ` VAT ${brand.company.vatNumber}.` : ''}
           </p>
           <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
-            <span>{brand.company.addressLines.join(', ')}</span>
+            {brand.company.addressLines.length ? (
+              <span>{brand.company.addressLines.join(', ')}</span>
+            ) : null}
             {brand.social.x ? (
               <a href={brand.social.x} className="hover:text-ink" rel="noreferrer noopener">
                 X

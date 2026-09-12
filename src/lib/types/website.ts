@@ -79,7 +79,7 @@ export interface Website {
   metrics: WebsiteMetrics;
   services: Service[];
   rules: PublishingRules;
-  /** Manually vetted by the LinkMarket editorial team. */
+  /** Manually vetted by the in-house editorial team. */
   verified: boolean;
   status: WebsiteStatus;
   /** Average buyer rating 0-5. */

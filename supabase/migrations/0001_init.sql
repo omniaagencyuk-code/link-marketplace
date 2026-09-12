@@ -1,5 +1,5 @@
 -- ---------------------------------------------------------------------------
--- LinkMarket initial schema
+-- Press Parrot initial schema
 --
 -- Apply with the Supabase CLI (`supabase db push`) or by pasting into the SQL
 -- editor in the Supabase dashboard. See supabase/README.md.
@@ -232,9 +232,9 @@ create index favourites_user_idx on public.favourites (user_id);
 -- Single-row table holding editable marketplace settings.
 create table public.settings (
   id uuid primary key default gen_random_uuid(),
-  brand_name text not null default 'LinkMarket',
-  support_email text not null default 'support@linkmarket.io',
-  sales_email text not null default 'sales@linkmarket.io',
+  brand_name text not null default 'Press Parrot',
+  support_email text not null default 'support@pressparrot.com',
+  sales_email text not null default 'sales@pressparrot.com',
   primary_colour text not null default '#0B1B2B',
   accent_colour text not null default '#10B981',
   currency char(3) not null default 'GBP',

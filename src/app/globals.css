@@ -23,6 +23,14 @@
   --color-accent-600: #059669;
   --color-accent-700: #047857;
 
+  /* Secondary accent - the parrot's beak. Used sparingly. */
+  --color-coral-50: #fff4f0;
+  --color-coral-100: #ffe3d9;
+  --color-coral-200: #ffc7b4;
+  --color-coral-500: #f4633a;
+  --color-coral-600: #dd4a20;
+  --color-coral-700: #b83a18;
+
   --color-surface: #f7f9fb;
   --color-surface-raised: #ffffff;
   --color-surface-sunken: #eef2f6;

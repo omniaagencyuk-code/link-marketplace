@@ -9,6 +9,7 @@ export type BadgeTone =
   | 'warning'
   | 'negative'
   | 'info'
+  | 'coral'
   | 'outline';
 
 const tones: Record<BadgeTone, string> = {
@@ -19,6 +20,7 @@ const tones: Record<BadgeTone, string> = {
   warning: 'bg-amber-50 text-amber-700',
   negative: 'bg-red-50 text-red-700',
   info: 'bg-blue-50 text-blue-700',
+  coral: 'bg-coral-50 text-coral-700',
   outline: 'border border-line-strong text-ink-soft bg-white',
 };
 

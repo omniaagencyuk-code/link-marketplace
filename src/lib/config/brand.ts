@@ -1,27 +1,32 @@
 /**
  * Central brand configuration.
  *
- * Everything that is specific to the *company* running this marketplace lives
- * here. Changing the brand name, colours, logo, support email or social links
- * should never require touching a component.
+ * Everything specific to the *company* running this marketplace lives here.
+ * Changing the brand name, domain, logo, favicon, colours, support email or
+ * social links should never require touching a component.
  *
- * Colours are exposed to CSS through `src/app/globals.css` (see the
- * `--brand-*` custom properties) so keep the two in sync if you change them.
+ * Colours are also declared in `src/app/globals.css` under `@theme` so
+ * Tailwind can generate utilities from them. Keep the two in sync.
  */
 
 export interface BrandColours {
-  /** Primary brand colour - dark navy. Used for headers, dark sections, CTAs. */
+  /** Primary brand colour - dark navy. Headers, dark sections, primary CTAs. */
   primary: string;
-  /** Accent colour - emerald/turquoise. Used for highlights and key actions. */
+  /** Accent colour - parrot green. Highlights and key actions. */
   accent: string;
+  /** Secondary accent - coral. Used sparingly: the logo beak, badges. */
+  secondary: string;
   /** Soft off-white page background. */
   surface: string;
 }
 
 export interface CompanyDetails {
   legalName: string;
+  /** TODO: add once the company is registered. Hidden while empty. */
   registrationNumber: string;
+  /** TODO: add once VAT registered. Hidden while empty. */
   vatNumber: string;
+  /** TODO: trading address for the footer. Hidden while empty. */
   addressLines: string[];
   country: string;
 }
@@ -38,11 +43,13 @@ export interface BrandConfig {
   name: string;
   /** Used in <title> suffixes and structured data. */
   legalNameShort: string;
+  /** Bare domain, no protocol. Used in copy and email addresses. */
+  domain: string;
   /** One-line positioning statement. */
   tagline: string;
   /** Default meta description for the site. */
   description: string;
-  /** Path to the logo mark. The built-in logo is drawn in SVG - see Logo component. */
+  /** The built-in mark is drawn in SVG - see the Logo component. */
   logo: { light: string; dark: string; useInlineMark: boolean };
   favicon: string;
   colours: BrandColours;
@@ -54,11 +61,14 @@ export interface BrandConfig {
   /** ISO 4217 currency code used across the marketplace. */
   currency: 'GBP' | 'USD' | 'EUR';
   locale: string;
+  /** Prefix for browser storage keys, so a rename cannot collide. */
+  storageNamespace: string;
 }
 
 export const brand: BrandConfig = {
-  name: 'LinkMarket',
-  legalNameShort: 'LinkMarket',
+  name: 'Press Parrot',
+  legalNameShort: 'Press Parrot',
+  domain: 'pressparrot.com',
   tagline: 'The link building marketplace for serious SEOs',
   description:
     'Buy high quality guest posts, niche edits and digital PR placements on 5,000+ manually vetted websites. Transparent metrics, fixed pricing and fast turnaround.',
@@ -67,27 +77,36 @@ export const brand: BrandConfig = {
   colours: {
     primary: '#0B1B2B',
     accent: '#10B981',
+    secondary: '#F4633A',
     surface: '#F7F9FB',
   },
-  supportEmail: 'support@linkmarket.io',
-  salesEmail: 'sales@linkmarket.io',
-  phone: '+44 20 3695 0000',
+  supportEmail: 'support@pressparrot.com',
+  salesEmail: 'sales@pressparrot.com',
+  phone: '',
   company: {
-    legalName: 'LinkMarket Technologies Ltd',
-    registrationNumber: '14829301',
-    vatNumber: 'GB 421 8832 07',
-    addressLines: ['Floor 3, 86-90 Paul Street', 'London', 'EC2A 4NE'],
+    legalName: 'Press Parrot Ltd',
+    registrationNumber: '',
+    vatNumber: '',
+    addressLines: [],
     country: 'United Kingdom',
   },
   social: {
-    x: 'https://x.com/linkmarket',
-    linkedin: 'https://www.linkedin.com/company/linkmarket',
-    youtube: 'https://www.youtube.com/@linkmarket',
+    x: 'https://x.com/pressparrot',
+    linkedin: 'https://www.linkedin.com/company/pressparrot',
   },
   currency: 'GBP',
   locale: 'en-GB',
+  storageNamespace: 'pressparrot',
 };
 
 /** Canonical site URL, used for metadata, sitemap and robots. */
 export const siteUrl =
   process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, '') ?? 'http://localhost:3000';
+
+/** Email domain, derived so admin checks follow a rename automatically. */
+export const brandEmailDomain = brand.supportEmail.split('@')[1] ?? brand.domain;
+
+/** Build a namespaced browser storage key. */
+export function storageKey(name: string) {
+  return `${brand.storageNamespace}.${name}`;
+}

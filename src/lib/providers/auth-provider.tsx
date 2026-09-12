@@ -3,9 +3,10 @@
 import { createContext, useCallback, useContext, useMemo, type ReactNode } from 'react';
 import { useLocalStorage } from '@/lib/hooks/use-local-storage';
 import { mockAdmin, mockCustomer } from '@/lib/data/users';
+import { brandEmailDomain, storageKey } from '@/lib/config/brand';
 import type { AuthSession, UserProfile } from '@/lib/types';
 
-const STORAGE_KEY = 'linkmarket.auth.v1';
+const STORAGE_KEY = storageKey('auth.v1');
 
 /** Mock auth is on by default in development so the app is explorable. */
 const mockAuthEnabled = process.env.NEXT_PUBLIC_ENABLE_MOCK_AUTH !== 'false';
@@ -42,7 +43,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signIn = useCallback(
     async (email?: string) => {
-      const profile = email && email.endsWith('@linkmarket.io') ? mockAdmin : mockCustomer;
+      const profile = email?.endsWith(`@${brandEmailDomain}`) ? mockAdmin : mockCustomer;
       setValue({ userId: profile.id });
       return profile;
     },

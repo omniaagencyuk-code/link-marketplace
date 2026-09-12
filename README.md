@@ -1,8 +1,10 @@
-# LinkMarket
+# Press Parrot
 
 A modern SaaS-style link building marketplace where SEO agencies, brands and
 marketers browse vetted websites and buy guest posts, niche edits and digital
 PR placements.
+
+Live domain: **pressparrot.com** (not yet connected - see Next steps).
 
 Built with Next.js (App Router), TypeScript and Tailwind CSS. The whole
 application runs locally on mock data with no external accounts required.
@@ -85,17 +87,31 @@ supabase/
   README.md             How to create the project and apply the schema
 ```
 
-## Changing the brand
+## Brand
 
-Everything brand-specific lives in `src/lib/config/brand.ts`: name, tagline,
-logo paths, favicon, primary and accent colours, support and sales email,
-company registration details, social links, currency and locale.
+Everything brand-specific lives in `src/lib/config/brand.ts`: name, domain,
+tagline, logo paths, favicon, colours, support and sales email, company
+registration details, social links, currency, locale and the browser-storage
+namespace. No component hardcodes the brand name, so a rename is a one-file
+change.
+
+**Identity.** Dark navy and off-white carry the interface; parrot green is the
+accent; coral is the secondary, used sparingly (the beak in the mark, the
+"Most popular" pricing badge). The personality lives in the brand layer - the
+mark, the odd line of copy - while product surfaces stay literal and calm.
+Saved websites are "Saved websites", not "the perch".
 
 Colour tokens are also declared in `src/app/globals.css` under `@theme` so
 Tailwind can generate utilities from them. If you change a brand colour, update
-both places. The logo mark is drawn inline in
-`src/components/layout/logo.tsx`; swap it for an `<Image>` when you have a real
-asset. The favicon is `src/app/icon.svg`.
+both places. The parrot mark is drawn inline in
+`src/components/layout/logo.tsx` (exported as `ParrotMark`) and duplicated as
+`src/app/icon.svg` for the favicon; swap both for an `<Image>` when a bespoke
+asset exists.
+
+**Placeholders to fill in before launch:** company registration number, VAT
+number, trading address and phone are empty in the config and are hidden from
+the footer while blank. The X and LinkedIn URLs assume the `pressparrot`
+handle on each.
 
 ## Data layer
 
@@ -140,7 +156,7 @@ filtering, so results are guaranteed to match.
 ```bash
 git init                     # already initialised in this project
 git add .
-git commit -m "LinkMarket marketplace MVP"
+git commit -m "Press Parrot marketplace MVP"
 git remote add origin git@github.com:<your-org>/<your-repo>.git
 git branch -M main
 git push -u origin main
@@ -162,15 +178,21 @@ Supabase implementation and replace the mock auth calls.
 
    | Variable                        | Example                                  | Required |
    | ------------------------------- | ---------------------------------------- | -------- |
-   | `NEXT_PUBLIC_SITE_URL`          | `https://linkmarket.vercel.app`          | yes      |
+   | `NEXT_PUBLIC_SITE_URL`          | `https://www.pressparrot.com`            | yes      |
    | `NEXT_PUBLIC_DATA_SOURCE`       | `mock` or `supabase`                     | yes      |
    | `NEXT_PUBLIC_ENABLE_MOCK_AUTH`  | `false` in production                    | yes      |
    | `NEXT_PUBLIC_SUPABASE_URL`      | `https://<ref>.supabase.co`              | with Supabase |
    | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | `eyJhb...`                               | with Supabase |
    | `SUPABASE_SERVICE_ROLE_KEY`     | `eyJhb...` (server only, never exposed)  | with Supabase |
 
-4. Deploy, then set the custom domain and update `NEXT_PUBLIC_SITE_URL` so
-   canonical URLs, `robots.txt` and `sitemap.xml` point at the live domain.
+4. Deploy, then add `pressparrot.com` under **Project → Settings → Domains**.
+   Vercel gives you the records to add at the registrar: an `A` record for the
+   apex (`76.76.21.21`) and a `CNAME` for `www` pointing at
+   `cname.vercel-dns.com`. Pick one as canonical - `www.pressparrot.com` is the
+   usual choice - and let Vercel redirect the other.
+5. Set `NEXT_PUBLIC_SITE_URL` to the canonical domain and redeploy, so
+   canonical tags, `robots.txt` and `sitemap.xml` point at the live host rather
+   than the preview URL.
 
 ## Accessibility and performance notes
 

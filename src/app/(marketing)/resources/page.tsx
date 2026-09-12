@@ -11,7 +11,7 @@ import { formatDate } from '@/lib/utils/format';
 export const metadata: Metadata = {
   title: 'Resources',
   description:
-    'Guides, benchmarks and playbooks on link building, guest posting, niche edits and digital PR from the LinkMarket team.',
+    'Guides, benchmarks and playbooks on link building, guest posting, niche edits and digital PR from the Press Parrot team.',
   alternates: { canonical: '/resources' },
 };
 

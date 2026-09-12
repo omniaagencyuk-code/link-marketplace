@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useAuth } from '@/lib/providers/auth-provider';
+import { brand, brandEmailDomain } from '@/lib/config/brand';
 
 /**
  * Login and signup UI.
@@ -121,7 +122,7 @@ export function AuthForm({ mode }: { mode: 'login' | 'signup' }) {
       </form>
 
       <p className="mt-5 text-center text-[13px] text-muted">
-        {isSignup ? 'Already have an account? ' : 'New to LinkMarket? '}
+        {isSignup ? 'Already have an account? ' : `New to ${brand.name}? `}
         <Link
           href={isSignup ? '/login' : '/signup'}
           className="font-medium text-accent-700 hover:underline"
@@ -134,8 +135,9 @@ export function AuthForm({ mode }: { mode: 'login' | 'signup' }) {
         <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
         <span>
           Development build: authentication is mocked. Any credentials sign you in as a demo
-          customer. Use an <span className="font-medium text-ink-soft">@linkmarket.io</span> email
-          to sign in with admin access.
+          customer. Use an{' '}
+          <span className="font-medium text-ink-soft">@{brandEmailDomain}</span> email to sign in
+          with admin access.
         </span>
       </div>
     </div>

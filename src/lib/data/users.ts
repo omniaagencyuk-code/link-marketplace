@@ -14,9 +14,9 @@ export const users: UserProfile[] = [
   },
   {
     id: 'usr_002',
-    email: 'daniel.okafor@linkmarket.io',
+    email: 'daniel.okafor@pressparrot.com',
     fullName: 'Daniel Okafor',
-    company: 'LinkMarket',
+    company: 'Press Parrot',
     role: 'admin',
     avatarInitials: 'DO',
     plan: 'agency',

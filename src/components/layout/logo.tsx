@@ -3,9 +3,40 @@ import { brand } from '@/lib/config/brand';
 import { cn } from '@/lib/utils/cn';
 
 /**
- * Brand mark. Drawn inline so there is no image request on first paint.
- * Swap for an <Image> when a real logo file is supplied - see brand.logo.
+ * Brand mark: a parrot head in a rounded navy tile.
+ *
+ * Drawn inline so there is no image request on first paint and so it inherits
+ * the theme colours. Swap for an <Image> when a bespoke logo file exists -
+ * see `brand.logo`.
  */
+export function ParrotMark({ className }: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 32 32"
+      className={cn('h-7 w-7', className)}
+      role="presentation"
+      aria-hidden="true"
+    >
+      <rect width="32" height="32" rx="8" fill="var(--color-navy-900)" />
+      {/* crest, attached to the head so it reads as plumage */}
+      <path
+        d="M15 11.2c1-3.6 3.9-5.9 7.1-5.8-.1 3.4-2.2 6.2-5.2 7.3z"
+        fill="var(--color-accent-300)"
+      />
+      {/* head */}
+      <circle cx="18.2" cy="16.4" r="6.8" fill="var(--color-accent-400)" />
+      {/* hooked beak */}
+      <path
+        d="M12.6 13.2 6.9 15.8c-.9.4-.9 1.7 0 2.1l4.3 2c.7.3 1.4-.3 1.2-1l-.5-2a1.4 1.4 0 0 1 .1-.9l.8-1.8c.3-.6-.4-1.2-1-.9Z"
+        fill="var(--color-coral-500)"
+      />
+      {/* eye */}
+      <circle cx="19.8" cy="14.9" r="1.8" fill="var(--color-navy-900)" />
+      <circle cx="20.4" cy="14.3" r=".55" fill="#ffffff" />
+    </svg>
+  );
+}
+
 export function Logo({
   className,
   tone = 'dark',
@@ -17,26 +48,7 @@ export function Logo({
 }) {
   const content = (
     <span className={cn('inline-flex items-center gap-2', className)}>
-      <span
-        aria-hidden="true"
-        className="flex h-7 w-7 items-center justify-center rounded-[7px] bg-navy-900"
-      >
-        <svg viewBox="0 0 20 20" className="h-4 w-4" fill="none" aria-hidden="true">
-          <path
-            d="M4.5 11.5 8 8l3.5 3.5"
-            stroke="var(--color-accent-400)"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-          <path
-            d="M8.5 15.5h5a3 3 0 0 0 0-6h-1"
-            stroke="white"
-            strokeWidth="1.75"
-            strokeLinecap="round"
-          />
-        </svg>
-      </span>
+      <ParrotMark />
       <span
         className={cn(
           'text-[17px] font-semibold tracking-tight',

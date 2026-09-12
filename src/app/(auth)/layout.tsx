@@ -49,7 +49,7 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
             ))}
           </ul>
           <blockquote className="mt-10 border-l-2 border-accent-500/60 pl-4 text-[14px] leading-relaxed text-white/70">
-            &ldquo;We replaced three outreach contractors with LinkMarket. Same budget, roughly
+            &ldquo;We replaced three outreach contractors with {brand.name}. Same budget, roughly
             double the placements, and every site is one we would have approved anyway.&rdquo;
             <footer className="mt-2 text-[13px] text-white/50">
               Marta Silva, Head of SEO at Velocity Search

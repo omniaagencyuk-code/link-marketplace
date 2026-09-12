@@ -2,9 +2,10 @@
 
 import { createContext, useCallback, useContext, useMemo, type ReactNode } from 'react';
 import { useLocalStorage } from '@/lib/hooks/use-local-storage';
+import { storageKey } from '@/lib/config/brand';
 import type { DraftOrderItem } from '@/lib/types';
 
-const STORAGE_KEY = 'linkmarket.order-draft.v1';
+const STORAGE_KEY = storageKey('order-draft.v1');
 
 interface OrderDraftContextValue {
   items: DraftOrderItem[];

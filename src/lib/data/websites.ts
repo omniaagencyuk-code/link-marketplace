@@ -1,6 +1,7 @@
 import { nicheName } from './categories';
 import { countryName } from './countries';
 import { rawWebsites, type RawWebsite } from './websites.raw';
+import { brand } from '@/lib/config/brand';
 import { slugifyDomain } from '@/lib/utils/format';
 import { languageLabels } from '@/lib/utils/labels';
 import type {
@@ -178,7 +179,7 @@ function buildOverview(raw: RawWebsite) {
   const language = languageLabels[raw.l] ?? 'English';
   return [
     `${raw.t} is an independent publication in the ${niche} category, based in ${country} and publishing in ${language}. ${raw.desc}`,
-    `The site has been part of the LinkMarket network since 2024 and is reviewed every quarter by our editorial team. Placements are made inside the main editorial feed rather than a sponsored subfolder, so links sit alongside the publication's organic content and are indexed with the rest of the site.`,
+    `The site has been part of the ${brand.name} network since 2024 and is reviewed every quarter by our editorial team. Placements are made inside the main editorial feed rather than a sponsored subfolder, so links sit alongside the publication's organic content and are indexed with the rest of the site.`,
     `Articles are typically ${raw.tmin} to ${raw.tmax} working days from approval to publication. The publisher accepts pre-written content as well as briefs, and all placements are permanent with no yearly renewal fee.`,
   ].join('\n\n');
 }

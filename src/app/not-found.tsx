@@ -10,7 +10,7 @@ export default function NotFound() {
         404
       </p>
       <h1 className="mt-3 text-2xl font-semibold tracking-tight text-ink sm:text-3xl">
-        We could not find that page
+        This page has flown the nest
       </h1>
       <p className="mt-3 max-w-md text-[15px] leading-relaxed text-muted">
         The link may be out of date, or the website listing you were looking for is no longer

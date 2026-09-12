@@ -1,9 +1,10 @@
 import type { Metadata } from 'next';
 import { AdminGuard } from '@/components/admin/admin-guard';
 import { DashboardShell } from '@/components/dashboard/dashboard-shell';
+import { brand } from '@/lib/config/brand';
 
 export const metadata: Metadata = {
-  title: { default: 'Admin', template: '%s | Admin | LinkMarket' },
+  title: { default: 'Admin', template: `%s | Admin | ${brand.name}` },
   robots: { index: false, follow: false },
 };
 
