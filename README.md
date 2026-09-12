@@ -178,21 +178,23 @@ Supabase implementation and replace the mock auth calls.
 
    | Variable                        | Example                                  | Required |
    | ------------------------------- | ---------------------------------------- | -------- |
-   | `NEXT_PUBLIC_SITE_URL`          | `https://www.pressparrot.com`            | yes      |
+   | `NEXT_PUBLIC_SITE_URL`          | `https://pressparrot.com`                | yes      |
    | `NEXT_PUBLIC_DATA_SOURCE`       | `mock` or `supabase`                     | yes      |
    | `NEXT_PUBLIC_ENABLE_MOCK_AUTH`  | `false` in production                    | yes      |
    | `NEXT_PUBLIC_SUPABASE_URL`      | `https://<ref>.supabase.co`              | with Supabase |
    | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | `eyJhb...`                               | with Supabase |
    | `SUPABASE_SERVICE_ROLE_KEY`     | `eyJhb...` (server only, never exposed)  | with Supabase |
 
-4. Deploy, then add `pressparrot.com` under **Project → Settings → Domains**,
-   leaving "Redirect apex domains to www" ticked. Vercel then shows the exact
-   DNS records to add at the registrar - typically a `CNAME` for `www` and an
-   `A` record for the apex. Copy the values Vercel displays rather than any
-   written down here; its recommended targets change over time.
-5. Set `NEXT_PUBLIC_SITE_URL` to the canonical domain and redeploy, so
-   canonical tags, `robots.txt` and `sitemap.xml` point at the live host rather
-   than the preview URL.
+4. Deploy, then add `pressparrot.com` under **Project → Settings → Domains**
+   with "Redirect apex domains to www" **unticked**: the bare domain is
+   canonical for this brand. Add `www.pressparrot.com` as well and set it to
+   redirect to the apex, so the two hosts never both serve the same pages.
+   Vercel shows the exact DNS records to add at the registrar. Copy the values
+   it displays rather than any written down here; its recommended targets
+   change over time.
+5. `NEXT_PUBLIC_SITE_URL` must match the canonical host exactly
+   (`https://pressparrot.com`, no `www`, no trailing slash), otherwise the
+   canonical tags and `sitemap.xml` point at a host that redirects.
 
 ## Accessibility and performance notes
 
