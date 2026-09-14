@@ -1,19 +1,14 @@
 import type { Metadata } from 'next';
-import { AdminGuard } from '@/components/admin/admin-guard';
-import { DashboardShell } from '@/components/dashboard/dashboard-shell';
-import { brand } from '@/lib/config/brand';
 
+/**
+ * Applies to every /admin route, including the sign-in page. The authenticated
+ * shell lives in the (protected) route group instead, so the sign-in page
+ * renders without the admin sidebar.
+ */
 export const metadata: Metadata = {
-  title: { default: 'Admin', template: `%s | Admin | ${brand.name}` },
   robots: { index: false, follow: false },
 };
 
-export default function AdminLayout({ children }: { children: React.ReactNode }) {
-  return (
-    <AdminGuard>
-      <DashboardShell variant="admin" label="Admin">
-        {children}
-      </DashboardShell>
-    </AdminGuard>
-  );
+export default function AdminRootLayout({ children }: { children: React.ReactNode }) {
+  return <>{children}</>;
 }

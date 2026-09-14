@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { orderService, settingsService, websiteService } from '@/lib/services';
+import { requireAdminSession } from '@/lib/auth/admin-access';
 import { slugifyDomain } from '@/lib/utils/format';
 import type {
   LinkTypeSlug,
@@ -115,6 +116,8 @@ function buildPatch(formData: FormData, websiteId: string, existing?: Website): 
 }
 
 export async function saveWebsiteAction(formData: FormData) {
+  await requireAdminSession();
+
   const id = readString(formData, 'id');
   let saved: Website | null = null;
 
@@ -147,22 +150,30 @@ function revalidateMarketplace(slug?: string) {
 }
 
 export async function setWebsiteStatusAction(id: string, status: WebsiteStatus) {
+  await requireAdminSession();
+
   const updated = await websiteService.setStatus(id, status);
   revalidateMarketplace(updated?.slug);
 }
 
 export async function duplicateWebsiteAction(id: string) {
+  await requireAdminSession();
+
   await websiteService.duplicate(id);
   revalidatePath('/admin/websites');
 }
 
 export async function setOrderStatusAction(id: string, status: OrderStatus) {
+  await requireAdminSession();
+
   await orderService.updateStatus(id, status);
   revalidatePath('/admin/orders');
   revalidatePath('/dashboard/orders');
 }
 
 export async function saveSettingsAction(formData: FormData) {
+  await requireAdminSession();
+
   await settingsService.update({
     brandName: readString(formData, 'brandName'),
     supportEmail: readString(formData, 'supportEmail'),

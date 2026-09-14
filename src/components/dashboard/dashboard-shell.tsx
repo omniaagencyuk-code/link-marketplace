@@ -15,10 +15,13 @@ export function DashboardShell({
   variant,
   label,
   children,
+  footer,
 }: {
   variant: 'dashboard' | 'admin';
   label: string;
   children: React.ReactNode;
+  /** Replaces the default account block, e.g. the server-verified admin. */
+  footer?: React.ReactNode;
 }) {
   const pathname = usePathname();
   const { user, signOut } = useAuth();
@@ -61,7 +64,7 @@ export function DashboardShell({
         </nav>
 
         <div className="mt-auto hidden border-t border-line p-3 lg:block">
-          {user ? (
+          {footer ?? (user ? (
             <div className="flex items-center gap-2.5 rounded-md px-2 py-2">
               <Avatar initials={user.avatarInitials} />
               <div className="min-w-0 flex-1">
@@ -81,7 +84,7 @@ export function DashboardShell({
             <Button asChild variant="outline" size="sm" className="w-full">
               <Link href="/login">Log in</Link>
             </Button>
-          )}
+          ))}
         </div>
       </aside>
 

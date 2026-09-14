@@ -45,7 +45,8 @@ Open <http://localhost:3000>.
 | `/dashboard/orders`         | Orders and current draft                        |
 | `/dashboard/billing`        | Invoices and plan                               |
 | `/dashboard/account`        | Profile and session controls                    |
-| `/admin`                    | Admin dashboard (dev guard)                     |
+| `/admin/login`              | Admin sign-in                                   |
+| `/admin`                    | Admin dashboard (sign-in required)              |
 | `/admin/websites`           | Website database with row actions               |
 | `/admin/websites/new`       | Website editor (create)                         |
 | `/admin/websites/[id]`      | Website editor (edit)                           |
@@ -63,8 +64,9 @@ src/
     (marketing)/        Public site: home, marketplace, listings, content pages
     (auth)/             Login and signup, split-screen layout
     dashboard/          Customer area
-    admin/              Internal admin area + server actions
+    admin/              Internal admin area: login/ plus the (protected) group
     robots.ts, sitemap.ts, icon.svg
+  proxy.ts              Gates every /admin route (Next 16's middleware)
   components/
     ui/                 Primitives: button, input, select, table, sheet, ...
     layout/             Header, footer, logo, container, page hero
@@ -79,6 +81,7 @@ src/
     types/              Website, Category, Country, User, Order, Settings, ...
     data/               Mock seed data (72 websites, orders, users, categories)
     services/           Repository layer - the only place data is fetched
+    auth/               Admin session signing and access checks
     hooks/              Marketplace filter state, localStorage
     providers/          Auth, favourites and order draft contexts
     utils/              Formatting, labels, class merging
@@ -113,6 +116,42 @@ number, trading address and phone are empty in the config and are hidden from
 the footer while blank. The X and LinkedIn URLs assume the `pressparrot`
 handle on each.
 
+## Admin access
+
+`/admin` is gated server-side, not in the browser:
+
+1. `src/proxy.ts` runs before any admin route renders and redirects anyone
+   without a valid session cookie to `/admin/login`. (Next.js 16 renamed the
+   `middleware` convention to `proxy`; behaviour is unchanged.)
+2. Every admin server action calls `requireAdminSession()`, because server
+   actions have their own endpoints and are reachable without rendering a page.
+
+Sign-in checks the address against an allowlist and the password against a
+shared secret, then sets an HMAC-signed, `httpOnly` cookie scoped to `/admin`
+that lasts 12 hours. Both checks failing produce the same message, so the form
+cannot be used to discover who the admins are.
+
+Three server-only environment variables are required:
+
+| Variable               | Purpose                                            |
+| ---------------------- | -------------------------------------------------- |
+| `ADMIN_EMAILS`         | Comma separated addresses allowed to sign in        |
+| `ADMIN_PASSWORD`       | Shared password for the sign-in form                |
+| `ADMIN_SESSION_SECRET` | Signs the session cookie (`openssl rand -base64 32`)|
+
+Never prefix these with `NEXT_PUBLIC_`, which would ship them to the browser.
+If any is missing the admin area locks itself rather than opening up, so a
+misconfigured deployment fails closed.
+
+Removing an address from `ADMIN_EMAILS` revokes access on that person's next
+request, without waiting for their session to expire. Changing
+`ADMIN_SESSION_SECRET` signs everyone out immediately.
+
+**This is a stopgap.** A shared password is not per-person identity: it cannot
+be rotated for one individual, and it leaves no audit trail of who changed
+what. When Supabase Auth is connected, give each admin their own credentials
+and keep `ADMIN_EMAILS` as the `profiles.role` check.
+
 ## Data layer
 
 Components never import mock data directly. They call the service layer:
@@ -138,11 +177,12 @@ filtering, so results are guaranteed to match.
 
 ## What is still mocked
 
-- **Authentication** - `src/lib/providers/auth-provider.tsx` stores a fixture
-  user in localStorage. Any credentials sign you in; an `@pressparrot.com` email
-  signs you in as an admin.
-- **Admin guard** - `/admin` is protected by a client-side development check,
-  not by real authorisation.
+- **Customer authentication** - `src/lib/providers/auth-provider.tsx` stores a
+  fixture user in localStorage, and any credentials sign you in. The customer
+  dashboard therefore shows the same demo orders to anyone who visits it.
+- **Admin identity** - the admin area is genuinely protected (see below), but
+  by a shared password rather than per-person credentials. Supabase Auth
+  replaces that.
 - **Saved websites and order drafts** - persisted in localStorage per browser.
 - **Payments and checkout** - the submit button on an order draft is disabled.
 - **Admin writes** - server actions mutate an in-memory store that resets when
@@ -181,6 +221,9 @@ Supabase implementation and replace the mock auth calls.
    | `NEXT_PUBLIC_SITE_URL`          | `https://pressparrot.com`                | yes      |
    | `NEXT_PUBLIC_DATA_SOURCE`       | `mock` or `supabase`                     | yes      |
    | `NEXT_PUBLIC_ENABLE_MOCK_AUTH`  | `false` in production                    | yes      |
+   | `ADMIN_EMAILS`                  | `you@yourcompany.com,them@...`           | yes      |
+   | `ADMIN_PASSWORD`                | a long random password                   | yes      |
+   | `ADMIN_SESSION_SECRET`          | `openssl rand -base64 32`                | yes      |
    | `NEXT_PUBLIC_SUPABASE_URL`      | `https://<ref>.supabase.co`              | with Supabase |
    | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | `eyJhb...`                               | with Supabase |
    | `SUPABASE_SERVICE_ROLE_KEY`     | `eyJhb...` (server only, never exposed)  | with Supabase |

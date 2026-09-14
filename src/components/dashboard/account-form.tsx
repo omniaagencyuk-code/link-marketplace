@@ -18,7 +18,7 @@ const notificationOptions = [
 ];
 
 export function AccountForm({ user }: { user: UserProfile }) {
-  const { signOut, signInAsAdmin, isAdmin } = useAuth();
+  const { signOut } = useAuth();
   const [saved, setSaved] = useState(false);
   const [profile, setProfile] = useState({
     fullName: user.fullName,
@@ -107,18 +107,13 @@ export function AccountForm({ user }: { user: UserProfile }) {
           </CardHeader>
           <CardContent className="space-y-3">
             <p className="text-[13px] text-muted">
-              Authentication is mocked in this build. Use the controls below to switch between the
-              customer and admin fixtures.
+              Customer authentication is mocked in this build. The admin area has its own
+              server-side sign-in and is not reachable from here.
             </p>
             <div className="flex flex-wrap gap-2">
               <Button variant="outline" size="sm" onClick={() => signOut()}>
                 Sign out
               </Button>
-              {!isAdmin ? (
-                <Button variant="outline" size="sm" onClick={() => signInAsAdmin()}>
-                  Switch to admin user
-                </Button>
-              ) : null}
             </div>
           </CardContent>
         </Card>
