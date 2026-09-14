@@ -63,11 +63,11 @@ export function Logo({
     <Image
       src={brandLogo}
       alt={brand.name}
-      width={160}
-      height={40}
+      width={2098}
+      height={749}
       priority
       // Height is fixed and width follows the artwork's own aspect ratio.
-      className={cn('h-8 w-auto', className)}
+      className={cn('h-11 w-auto', className)}
     />
   ) : (
     <span className={cn('inline-flex items-center gap-2', className)}>

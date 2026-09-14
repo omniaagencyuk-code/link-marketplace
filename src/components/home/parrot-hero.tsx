@@ -58,8 +58,8 @@ export function ParrotHero() {
           <Image
             src={mascot}
             alt="Press Parrot, a blue and gold macaw wearing sunglasses, perched on a branch"
-            width={620}
-            height={720}
+            width={1263}
+            height={1246}
             priority
             sizes="(max-width: 640px) 80vw, (max-width: 1024px) 50vw, 36vw"
             className="h-auto w-full drop-shadow-[0_18px_30px_rgba(11,27,43,0.16)]"
