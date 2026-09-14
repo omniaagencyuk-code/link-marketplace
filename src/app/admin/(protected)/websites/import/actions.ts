@@ -69,7 +69,7 @@ export async function finishImportAction(summary: {
   });
 
   revalidatePath('/admin/websites');
-  revalidatePath('/websites');
+  revalidatePath('/marketplace');
   revalidatePath('/');
   revalidatePath('/sitemap.xml');
 }

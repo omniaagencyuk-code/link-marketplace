@@ -71,7 +71,7 @@ export default function HowItWorksPage() {
       >
         <div className="flex flex-wrap gap-3">
           <Button asChild size="lg" variant="primary">
-            <Link href="/websites">Browse the marketplace</Link>
+            <Link href="/marketplace">Browse the marketplace</Link>
           </Button>
           <Button asChild size="lg" variant="outline">
             <Link href="/signup">Create an account</Link>
@@ -106,7 +106,7 @@ export default function HowItWorksPage() {
                   </p>
                   <p className="mt-3 text-[13px] font-medium text-accent-700">{product.best}</p>
                   <Button asChild variant="link" size="sm" className="mt-4">
-                    <Link href={`/websites?service=${product.type}`}>
+                    <Link href={`/marketplace?service=${product.type}`}>
                       Browse {linkTypeLabels[product.type].toLowerCase()} inventory
                     </Link>
                   </Button>

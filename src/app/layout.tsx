@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from 'next';
 import { Caveat, Inter } from 'next/font/google';
 import { AppProviders } from '@/lib/providers/app-providers';
+import { getCurrentUser } from '@/lib/auth/customer-access';
 import { SupportChat } from '@/components/support/support-chat';
 import { brand, siteUrl } from '@/lib/config/brand';
 import './globals.css';
@@ -58,7 +59,11 @@ export const viewport: Viewport = {
   initialScale: 1,
 };
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  // Resolved from the signed session cookie, so client components render the
+  // same signed-in state the server enforces.
+  const user = await getCurrentUser();
+
   return (
     <html lang="en-GB" className={`${inter.variable} ${caveat.variable}`}>
       <body className="min-h-dvh font-sans antialiased">
@@ -68,7 +73,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         >
           Skip to content
         </a>
-        <AppProviders>
+        <AppProviders user={user}>
           {children}
           <SupportChat />
         </AppProviders>

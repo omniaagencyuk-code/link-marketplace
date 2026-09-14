@@ -3,6 +3,7 @@ import { runQuery, toListItem } from './query-engine';
 import { slugifyDomain } from '@/lib/utils/format';
 import { normaliseDomain } from '@/lib/import/normalise';
 import { newWebsiteDefaults, toWebsitePatch } from '@/lib/import/to-website';
+import { toPreviewRows, type MarketplacePreview } from './marketplace-preview';
 import type { ImportPayloadRow, ImportBatchResult, DuplicateMode } from '@/lib/import/types';
 import type {
   NicheSlug,
@@ -73,7 +74,12 @@ export const websiteService = {
     return runQuery(listItems(), query);
   },
 
-  /** Highest quality active listings, used on the homepage. */
+  /**
+   * Highest quality active listings.
+   *
+   * Returns full listing data including domains, so it is only for signed-in
+   * surfaces. Public pages use `getPublicPreview()`.
+   */
   async getFeatured(limit = 6): Promise<WebsiteListItem[]> {
     return listItems()
       .filter((website) => website.verified)
@@ -126,6 +132,36 @@ export const websiteService = {
       lowestPriceMinor: active.length
         ? Math.min(...active.map((website) => website.lowestPriceMinor))
         : 0,
+    };
+  },
+
+  /**
+   * A redacted view of the marketplace for signed-out visitors.
+   *
+   * Returns banded metrics and masked domains only. Nothing identifying
+   * survives `toPreviewRows`, so the result is safe to render into a public
+   * page, its JSON payload and its structured data.
+   *
+   * The rows are spread across the inventory rather than taken from the top,
+   * so the preview represents the marketplace instead of advertising its five
+   * strongest sites.
+   */
+  async getPublicPreview(limit = 6): Promise<MarketplacePreview> {
+    const active = listItems();
+    const stride = Math.max(1, Math.floor(active.length / Math.max(limit, 1)));
+    const sample: WebsiteListItem[] = [];
+    for (let index = 0; index < active.length && sample.length < limit; index += stride) {
+      sample.push(active[index] as WebsiteListItem);
+    }
+
+    return {
+      rows: toPreviewRows(
+        sample.sort((a, b) => b.metrics.domainRating - a.metrics.domainRating),
+        limit,
+      ),
+      totalWebsites: active.length,
+      totalNiches: new Set(active.map((website) => website.niche)).size,
+      totalCountries: new Set(active.map((website) => website.country)).size,
     };
   },
 

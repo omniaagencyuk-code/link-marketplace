@@ -15,13 +15,13 @@ export function WebsiteHeader({ website }: { website: Website }) {
         <nav aria-label="Breadcrumb">
           <ol className="flex flex-wrap items-center gap-1 text-[13px] text-muted">
             <li>
-              <Link href="/websites" className="hover:text-ink">
+              <Link href="/marketplace" className="hover:text-ink">
                 Marketplace
               </Link>
             </li>
             <ChevronRight className="h-3.5 w-3.5" aria-hidden="true" />
             <li>
-              <Link href={`/websites?niche=${website.niche}`} className="hover:text-ink">
+              <Link href={`/marketplace?niche=${website.niche}`} className="hover:text-ink">
                 {nicheName(website.niche)}
               </Link>
             </li>

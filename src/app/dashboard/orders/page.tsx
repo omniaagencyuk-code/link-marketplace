@@ -5,12 +5,13 @@ import { OrdersTable } from '@/components/dashboard/orders-table';
 import { DraftOrder } from '@/components/dashboard/draft-order';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { orderService, settingsService, userService, websiteService } from '@/lib/services';
+import { orderService, settingsService, websiteService } from '@/lib/services';
+import { requireCustomerSession } from '@/lib/auth/customer-access';
 
 export const metadata: Metadata = { title: 'Orders' };
 
 export default async function OrdersPage() {
-  const user = await userService.getCurrent();
+  const user = await requireCustomerSession('/dashboard/orders');
   const [orders, settings, websites] = await Promise.all([
     orderService.getByUser(user.id),
     settingsService.get(),
@@ -24,7 +25,7 @@ export default async function OrdersPage() {
         description="Fill in the details for each placement in your current order, and track everything you have already ordered."
         action={
           <Button asChild variant="accent">
-            <Link href="/websites">New order</Link>
+            <Link href="/marketplace">New order</Link>
           </Button>
         }
       />

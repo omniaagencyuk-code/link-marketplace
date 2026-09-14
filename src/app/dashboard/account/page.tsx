@@ -1,12 +1,13 @@
 import type { Metadata } from 'next';
 import { PageTitle } from '@/components/dashboard/page-title';
 import { AccountForm } from '@/components/dashboard/account-form';
-import { userService } from '@/lib/services';
+import {  } from '@/lib/services';
+import { requireCustomerSession } from '@/lib/auth/customer-access';
 
 export const metadata: Metadata = { title: 'Account' };
 
 export default async function AccountPage() {
-  const user = await userService.getCurrent();
+  const user = await requireCustomerSession('/dashboard/account');
   return (
     <>
       <PageTitle

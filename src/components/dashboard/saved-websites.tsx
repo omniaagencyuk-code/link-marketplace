@@ -37,7 +37,7 @@ export function SavedWebsites({ websites }: { websites: WebsiteListItem[] }) {
         description="Use the bookmark button on any marketplace listing to build a shortlist you can come back to."
         action={
           <Button asChild variant="accent">
-            <Link href="/websites">Browse websites</Link>
+            <Link href="/marketplace">Browse websites</Link>
           </Button>
         }
       />

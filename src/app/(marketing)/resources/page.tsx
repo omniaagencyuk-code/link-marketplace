@@ -136,7 +136,7 @@ export default function ResourcesPage() {
                 set a budget and see exactly what is available today.
               </p>
               <Button asChild className="mt-5" variant="outline">
-                <Link href="/websites">Browse websites</Link>
+                <Link href="/marketplace">Browse websites</Link>
               </Button>
             </div>
           </div>

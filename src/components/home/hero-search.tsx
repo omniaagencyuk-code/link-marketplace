@@ -16,7 +16,7 @@ export function HeroSearch() {
   function onSubmit(event: React.FormEvent) {
     event.preventDefault();
     const query = term.trim();
-    router.push(query ? `/websites?q=${encodeURIComponent(query)}` : '/websites');
+    router.push(query ? `/marketplace?q=${encodeURIComponent(query)}` : '/marketplace');
   }
 
   return (

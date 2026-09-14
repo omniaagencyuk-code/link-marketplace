@@ -14,6 +14,19 @@ export const defaultSettings: BrandSettings = {
   defaultSort: 'relevance',
   enabledLinkTypes: ['guest-post', 'niche-edit', 'digital-pr'],
   marginPct: 22,
+  // Ships empty on purpose: no invented prices. Set these in /admin/settings
+  // and the public content page switches from "pricing on request" to a table.
+  contentPricing: {
+    mode: 'tiered',
+    perWordMinor: 0,
+    tiers: [
+      { words: 500, priceMinor: 0 },
+      { words: 1000, priceMinor: 0 },
+      { words: 1500, priceMinor: 0 },
+      { words: 2000, priceMinor: 0 },
+    ],
+    typeSurchargePct: {},
+  },
   orderStatuses: [
     { value: 'draft', label: 'Draft', description: 'Saved but not yet submitted by the customer.' },
     {

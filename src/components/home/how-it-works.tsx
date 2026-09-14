@@ -28,7 +28,7 @@ export function HowItWorks() {
             id="how-it-works-heading"
             className="mt-4 text-3xl font-semibold tracking-tight text-ink sm:text-4xl"
           >
-            From search to live link in four simple steps
+            From Search to Live Link
           </h2>
         </div>
 

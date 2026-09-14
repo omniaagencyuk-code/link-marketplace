@@ -5,13 +5,14 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableWrap, Td, Th, Tr } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
-import { orderService, userService } from '@/lib/services';
+import { orderService } from '@/lib/services';
+import { requireCustomerSession } from '@/lib/auth/customer-access';
 import { formatDate, formatPrice } from '@/lib/utils/format';
 
 export const metadata: Metadata = { title: 'Billing' };
 
 export default async function BillingPage() {
-  const user = await userService.getCurrent();
+  const user = await requireCustomerSession('/dashboard/billing');
   const orders = await orderService.getByUser(user.id);
   const invoiced = orders.filter((order) => order.status !== 'draft');
 

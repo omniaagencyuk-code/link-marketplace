@@ -1,69 +1,53 @@
 'use client';
 
-import { createContext, useCallback, useContext, useMemo, type ReactNode } from 'react';
-import { useLocalStorage } from '@/lib/hooks/use-local-storage';
-import { mockAdmin, mockCustomer } from '@/lib/data/users';
-import { brandEmailDomain, storageKey } from '@/lib/config/brand';
+import { createContext, useContext, useMemo, useTransition, type ReactNode } from 'react';
+import { useRouter } from 'next/navigation';
+import { signOutAction } from '@/app/(auth)/actions';
 import type { AuthSession, UserProfile } from '@/lib/types';
 
-const STORAGE_KEY = storageKey('auth.v1');
-
-/** Mock auth is on by default in development so the app is explorable. */
-const mockAuthEnabled = process.env.NEXT_PUBLIC_ENABLE_MOCK_AUTH !== 'false';
-
-interface StoredAuth {
-  userId: string | null;
-}
+/**
+ * Client-side view of the signed-in account.
+ *
+ * The session itself is a signed, httpOnly cookie verified on the server; this
+ * provider only mirrors the result so client components (the header, the
+ * dashboard shell) can render the right state without a round trip. It is
+ * deliberately not the source of truth: nothing here can grant access, and
+ * every protected route re-checks the cookie server-side.
+ */
 
 interface AuthContextValue extends AuthSession {
   isAdmin: boolean;
-  /**
-   * Placeholder sign-in. Replace the body with
-   * `supabase.auth.signInWithPassword({ email, password })`.
-   */
-  signIn: (email?: string) => Promise<UserProfile>;
-  signUp: (email?: string) => Promise<UserProfile>;
-  signOut: () => Promise<void>;
-  /** Development helper - switch between the customer and admin fixtures. */
-  signInAsAdmin: () => Promise<UserProfile>;
+  signOut: () => void;
+  signingOut: boolean;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
-export function AuthProvider({ children }: { children: ReactNode }) {
-  const { value, setValue, hydrated } = useLocalStorage<StoredAuth>(STORAGE_KEY, {
-    userId: mockAuthEnabled ? mockCustomer.id : null,
-  });
-
-  const user = useMemo<UserProfile | null>(() => {
-    if (!value.userId) return null;
-    if (value.userId === mockAdmin.id) return mockAdmin;
-    return mockCustomer;
-  }, [value.userId]);
-
-  const signIn = useCallback(
-    async (email?: string) => {
-      const profile = email?.endsWith(`@${brandEmailDomain}`) ? mockAdmin : mockCustomer;
-      setValue({ userId: profile.id });
-      return profile;
-    },
-    [setValue],
-  );
+export function AuthProvider({
+  children,
+  user,
+}: {
+  children: ReactNode;
+  /** Resolved from the session cookie in the root layout. */
+  user: UserProfile | null;
+}) {
+  const router = useRouter();
+  const [signingOut, startSignOut] = useTransition();
 
   const contextValue = useMemo<AuthContextValue>(
     () => ({
       user,
-      status: !hydrated ? 'loading' : user ? 'authenticated' : 'unauthenticated',
+      status: user ? 'authenticated' : 'unauthenticated',
       isAdmin: user?.role === 'admin',
-      signIn,
-      signUp: signIn,
-      signOut: async () => setValue({ userId: null }),
-      signInAsAdmin: async () => {
-        setValue({ userId: mockAdmin.id });
-        return mockAdmin;
+      signingOut,
+      signOut: () => {
+        startSignOut(async () => {
+          await signOutAction();
+          router.refresh();
+        });
       },
     }),
-    [user, hydrated, signIn, setValue],
+    [user, signingOut, router],
   );
 
   return <AuthContext.Provider value={contextValue}>{children}</AuthContext.Provider>;

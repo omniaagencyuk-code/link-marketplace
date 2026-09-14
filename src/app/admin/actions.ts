@@ -137,13 +137,14 @@ export async function saveWebsiteAction(formData: FormData) {
 }
 
 /**
- * Marketplace listings are statically generated, so every surface that renders
- * website data has to be refreshed - including the individual listing page,
- * which is revalidated by its concrete path.
+ * Refresh every surface that renders website data.
+ *
+ * The homepage and the marketplace gateway show aggregate counts and a
+ * redacted preview built from the same records, so they are refreshed too.
  */
 function revalidateMarketplace(slug?: string) {
   revalidatePath('/admin/websites');
-  revalidatePath('/websites');
+  revalidatePath('/marketplace');
   revalidatePath('/');
   revalidatePath('/sitemap.xml');
   if (slug) revalidatePath(`/websites/${slug}`);
@@ -186,4 +187,43 @@ export async function saveSettingsAction(formData: FormData) {
     marginPct: readNumber(formData, 'marginPct', 20),
   });
   revalidatePath('/admin/settings');
+}
+
+/**
+ * Content writing prices.
+ *
+ * Kept separate from the general settings form so saving brand details cannot
+ * accidentally wipe pricing. Zero is a valid stored value and means "not
+ * priced yet" - the public page shows "on request" rather than "free".
+ */
+export async function saveContentPricingAction(formData: FormData) {
+  await requireAdminSession();
+
+  const current = await settingsService.get();
+  const mode = readString(formData, 'pricingMode', 'tiered') === 'per-word' ? 'per-word' : 'tiered';
+
+  const tiers = current.contentPricing.tiers.map((tier) => {
+    const value = Number(formData.get(`tier_${tier.words}`));
+    return {
+      words: tier.words,
+      priceMinor: Number.isFinite(value) && value > 0 ? Math.round(value * 100) : 0,
+    };
+  });
+
+  const perWord = Number(formData.get('perWord'));
+
+  await settingsService.update({
+    contentPricing: {
+      ...current.contentPricing,
+      mode,
+      // Entered in whole currency units per 1,000 words, which is how writing
+      // is quoted in practice; stored as minor units per word.
+      perWordMinor: Number.isFinite(perWord) && perWord > 0 ? (perWord * 100) / 1000 : 0,
+      tiers,
+    },
+  });
+
+  revalidatePath('/admin/settings');
+  revalidatePath('/content-writing');
+  revalidatePath('/dashboard/content/new');
 }

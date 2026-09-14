@@ -10,11 +10,14 @@ export function SiteFooter() {
   return (
     <footer className="border-t border-line bg-white">
       <Container size="wide">
-        <div className="grid gap-10 py-12 md:grid-cols-[1.4fr_repeat(3,1fr)] lg:py-14">
+        <div className="grid gap-10 py-12 md:grid-cols-2 lg:grid-cols-[1.4fr_repeat(4,1fr)] lg:py-14">
           <div className="max-w-sm">
             <Logo />
             <p className="mt-4 text-[13px] leading-relaxed text-muted">
               {brand.description}
+            </p>
+            <p className="font-handwritten mt-5 text-[19px] leading-tight text-accent-700">
+              No squawk. Just quality links.
             </p>
             <div className="mt-5 space-y-1 text-[13px] text-muted">
               <p>

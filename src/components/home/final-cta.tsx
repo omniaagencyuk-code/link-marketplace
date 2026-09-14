@@ -36,7 +36,7 @@ export function FinalCta() {
             </p>
             <div className="mt-8 flex flex-wrap gap-3">
               <Button asChild size="lg" variant="accent">
-                <Link href="/websites">
+                <Link href="/marketplace">
                   Browse Websites
                   <ArrowRight className="h-4 w-4" />
                 </Link>

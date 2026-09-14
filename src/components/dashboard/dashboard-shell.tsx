@@ -24,7 +24,7 @@ export function DashboardShell({
   footer?: React.ReactNode;
 }) {
   const pathname = usePathname();
-  const { user, signOut } = useAuth();
+  const { user, signOut, signingOut } = useAuth();
   // Nav items carry icon components, so they are resolved inside this client
   // component rather than passed across the server/client boundary.
   const nav = variant === 'admin' ? adminNav : dashboardNav;
@@ -75,7 +75,8 @@ export function DashboardShell({
                 variant="ghost"
                 size="icon-sm"
                 aria-label="Sign out"
-                onClick={() => signOut()}
+                disabled={signingOut}
+                onClick={signOut}
               >
                 <LogOut className="h-3.5 w-3.5" />
               </Button>

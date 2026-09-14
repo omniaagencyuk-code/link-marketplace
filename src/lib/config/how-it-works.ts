@@ -10,31 +10,33 @@ export interface JourneyStep {
 export const journeySteps: JourneyStep[] = [
   {
     number: '01',
-    title: 'Search',
-    description:
-      'Browse thousands of vetted websites using niche, traffic, DR, country and pricing filters.',
+    title: 'Create Your Free Account',
+    description: 'Unlock the Press Parrot marketplace.',
     detail:
-      'Filter by domain rating, organic traffic, country, language, price and turnaround until the shortlist is exactly right.',
+      'Signing up takes about a minute, costs nothing and carries no subscription. The marketplace opens as soon as you are in.',
   },
   {
     number: '02',
-    title: 'Choose',
-    description: 'Review transparent SEO metrics, placement requirements and pricing.',
+    title: 'Find the Right Websites',
+    description:
+      'Filter publishers by niche, country, DR, traffic, pricing and other SEO metrics.',
     detail:
-      'Every listing shows audience geography, publishing rules, link policy and example placements before you commit.',
+      'Stack filters on domain rating, organic traffic, referring domains, country, language, turnaround and price until the shortlist is exactly right.',
   },
   {
     number: '03',
-    title: 'Order',
-    description: 'Provide your target URL, anchor text and campaign requirements.',
+    title: 'Place Your Order',
+    description:
+      'Choose your placement, provide your URL and anchor text and add content if required.',
     detail:
-      'Add your details once on the order page, attach an article if you have one, and submit the brief.',
+      'Add the details once on the order page, attach an article if you have one, or order the writing from us in the same order.',
   },
   {
     number: '04',
-    title: 'Go Live',
-    description: 'Track your order and receive your live placement.',
+    title: 'Track Your Links',
+    description:
+      'Follow your order through publication and receive the live URL when complete.',
     detail:
-      'You get the live URL as soon as the article is published, with the link checked for indexation.',
+      'Every order shows its current status, and you get the live URL as soon as the placement is published.',
   },
 ];

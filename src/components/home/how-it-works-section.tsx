@@ -61,7 +61,7 @@ export function HowItWorksSection({
             size="lg"
             className="text-white/80 hover:bg-white/10 hover:text-white"
           >
-            <Link href="/websites">Browse the marketplace</Link>
+            <Link href="/marketplace">Browse the marketplace</Link>
           </Button>
         </div>
       </Container>

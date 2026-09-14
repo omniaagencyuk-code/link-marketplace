@@ -40,7 +40,7 @@ export function DraftOrder({ websites }: { websites: WebsiteListItem[] }) {
         description="Add websites from the marketplace, then fill in the target URL and anchor text for each placement here."
         action={
           <Button asChild variant="accent">
-            <Link href="/websites">Browse websites</Link>
+            <Link href="/marketplace">Browse websites</Link>
           </Button>
         }
       />
@@ -83,7 +83,7 @@ export function DraftOrder({ websites }: { websites: WebsiteListItem[] }) {
           </p>
           <div className="flex items-center gap-2">
             <Button asChild variant="outline" size="sm">
-              <Link href="/websites">Add more websites</Link>
+              <Link href="/marketplace">Add more websites</Link>
             </Button>
             <Button
               variant="accent"

@@ -1,76 +1,62 @@
 'use client';
 
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
-import { useState } from 'react';
-import { Info } from 'lucide-react';
+import { useActionState } from 'react';
+import { useFormStatus } from 'react-dom';
+import { AlertCircle, Info } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { useAuth } from '@/lib/providers/auth-provider';
-import { brand, brandEmailDomain } from '@/lib/config/brand';
+import { signInAction, signUpAction, type AuthActionState } from '@/app/(auth)/actions';
+import { brand } from '@/lib/config/brand';
 
 /**
  * Login and signup UI.
  *
- * Authentication is mocked: submitting stores a fixture user locally. The
- * shape of this component matches Supabase Auth, so connecting it later means
- * replacing the two calls inside `handleSubmit` with
- * `supabase.auth.signInWithPassword` / `signUp`.
+ * Submits to a server action, which issues the signed session cookie. The
+ * credential check itself is still mocked, but the session is real - it is
+ * what every protected route verifies. `next` carries the page the visitor
+ * was trying to reach, so signing in returns them to it.
  */
-export function AuthForm({ mode }: { mode: 'login' | 'signup' }) {
-  const router = useRouter();
-  const { signIn, signUp } = useAuth();
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [name, setName] = useState('');
-  const [company, setCompany] = useState('');
-  const [pending, setPending] = useState(false);
+export function AuthForm({ mode, next }: { mode: 'login' | 'signup'; next?: string }) {
   const isSignup = mode === 'signup';
-
-  async function handleSubmit(event: React.FormEvent) {
-    event.preventDefault();
-    setPending(true);
-    if (isSignup) {
-      await signUp(email);
-    } else {
-      await signIn(email);
-    }
-    router.push('/dashboard');
-  }
+  const [state, formAction] = useActionState<AuthActionState, FormData>(
+    isSignup ? signUpAction : signInAction,
+    {},
+  );
 
   return (
     <div>
       <h1 className="text-2xl font-semibold tracking-tight text-ink">
-        {isSignup ? 'Create your account' : 'Log in to your account'}
+        {isSignup ? 'Create your free account' : 'Log in to your account'}
       </h1>
       <p className="mt-2 text-[14px] text-muted">
         {isSignup
-          ? 'Save websites, build shortlists and place orders in a few minutes.'
+          ? 'Unlock the marketplace, save shortlists and order links and content.'
           : 'Welcome back. Pick up where you left off.'}
       </p>
 
-      <form onSubmit={handleSubmit} className="mt-7 space-y-4">
+      {next === '/marketplace' && isSignup ? (
+        <p className="mt-4 rounded-lg border border-accent-500/30 bg-accent-50 px-3.5 py-2.5 text-[13px] text-accent-800">
+          Your account unlocks the full marketplace straight away.
+        </p>
+      ) : null}
+
+      <form action={formAction} className="mt-7 space-y-4">
+        {next ? <input type="hidden" name="next" value={next} /> : null}
+
         {isSignup ? (
           <>
             <div>
               <Label htmlFor="name">Full name</Label>
-              <Input
-                id="name"
-                autoComplete="name"
-                required
-                value={name}
-                onChange={(event) => setName(event.target.value)}
-                className="mt-1.5"
-              />
+              <Input id="name" name="name" autoComplete="name" required className="mt-1.5" />
             </div>
             <div>
               <Label htmlFor="company">Company</Label>
               <Input
                 id="company"
+                name="company"
                 autoComplete="organization"
-                value={company}
-                onChange={(event) => setCompany(event.target.value)}
                 placeholder="Optional"
                 className="mt-1.5"
               />
@@ -82,11 +68,10 @@ export function AuthForm({ mode }: { mode: 'login' | 'signup' }) {
           <Label htmlFor="email">Work email</Label>
           <Input
             id="email"
+            name="email"
             type="email"
             autoComplete="email"
             required
-            value={email}
-            onChange={(event) => setEmail(event.target.value)}
             placeholder="you@agency.com"
             className="mt-1.5"
           />
@@ -103,12 +88,11 @@ export function AuthForm({ mode }: { mode: 'login' | 'signup' }) {
           </div>
           <Input
             id="password"
+            name="password"
             type="password"
             autoComplete={isSignup ? 'new-password' : 'current-password'}
             required
             minLength={8}
-            value={password}
-            onChange={(event) => setPassword(event.target.value)}
             className="mt-1.5"
           />
           {isSignup ? (
@@ -116,30 +100,49 @@ export function AuthForm({ mode }: { mode: 'login' | 'signup' }) {
           ) : null}
         </div>
 
-        <Button type="submit" variant="primary" size="lg" className="w-full" disabled={pending}>
-          {pending ? 'Please wait...' : isSignup ? 'Create account' : 'Log in'}
-        </Button>
+        {state.error ? (
+          <p
+            role="alert"
+            className="flex gap-2 rounded-lg border border-negative/30 bg-negative/5 px-3.5 py-2.5 text-[13px] text-negative"
+          >
+            <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+            {state.error}
+          </p>
+        ) : null}
+
+        <SubmitButton label={isSignup ? 'Create free account' : 'Log in'} />
       </form>
 
       <p className="mt-5 text-center text-[13px] text-muted">
         {isSignup ? 'Already have an account? ' : `New to ${brand.name}? `}
         <Link
-          href={isSignup ? '/login' : '/signup'}
+          href={
+            isSignup
+              ? `/login${next ? `?next=${encodeURIComponent(next)}` : ''}`
+              : `/signup${next ? `?next=${encodeURIComponent(next)}` : ''}`
+          }
           className="font-medium text-accent-700 hover:underline"
         >
-          {isSignup ? 'Log in' : 'Create an account'}
+          {isSignup ? 'Log in' : 'Create a free account'}
         </Link>
       </p>
 
       <div className="mt-8 flex gap-2.5 rounded-lg border border-line bg-surface p-3.5 text-[12px] leading-relaxed text-muted">
         <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
         <span>
-          Development build: authentication is mocked. Any credentials sign you in as a demo
-          customer. Use an{' '}
-          <span className="font-medium text-ink-soft">@{brandEmailDomain}</span> email to sign in
-          with admin access.
+          Development build: credentials are not yet verified, so any email signs you in and
+          creates a demo account. The session itself is real and is what protects the marketplace.
         </span>
       </div>
     </div>
+  );
+}
+
+function SubmitButton({ label }: { label: string }) {
+  const { pending } = useFormStatus();
+  return (
+    <Button type="submit" variant="accent" size="lg" className="w-full" disabled={pending}>
+      {pending ? 'Please wait...' : label}
+    </Button>
   );
 }

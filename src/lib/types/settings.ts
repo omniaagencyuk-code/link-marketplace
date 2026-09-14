@@ -1,5 +1,6 @@
 import type { LinkTypeSlug } from './website';
 import type { OrderStatus } from './order';
+import type { ContentPricing } from './content';
 
 /** Editable marketplace settings, surfaced in /admin/settings. */
 export interface BrandSettings {
@@ -21,5 +22,7 @@ export interface BrandSettings {
   orderStatuses: { value: OrderStatus; label: string; description: string }[];
   /** Marketplace-wide markup applied to publisher prices, percentage. */
   marginPct: number;
+  /** How content writing is priced. Ships empty until real prices are set. */
+  contentPricing: ContentPricing;
   updatedAt: string;
 }

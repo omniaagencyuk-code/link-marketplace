@@ -3,10 +3,12 @@ import {
   BarChart3,
   Bookmark,
   CreditCard,
+  FileText,
   FolderTree,
   Globe,
   LayoutDashboard,
   Package,
+  PenLine,
   Settings,
   ShoppingCart,
   UserCircle,
@@ -21,20 +23,64 @@ export interface NavItem {
   exact?: boolean;
 }
 
-/** Primary marketing navigation (site header). */
-export const mainNav: NavItem[] = [
-  { label: 'Browse Sites', href: '/websites' },
+export interface NavGroup extends NavItem {
+  /** Rendered as a dropdown in the header when present. */
+  children?: NavItem[];
+}
+
+/**
+ * Primary marketing navigation.
+ *
+ * Marketplace stays in the menu deliberately: signed-out visitors clicking it
+ * reach the gateway at /marketplace, which is a conversion page rather than a
+ * dead end.
+ */
+export const mainNav: NavGroup[] = [
+  {
+    label: 'Services',
+    href: '/link-building',
+    children: [
+      {
+        label: 'Link Building',
+        href: '/link-building',
+        description: 'The full service, end to end.',
+      },
+      {
+        label: 'Guest Posts',
+        href: '/guest-posts',
+        description: 'Contextual links in new articles.',
+      },
+      {
+        label: 'Niche Edits',
+        href: '/niche-edits',
+        description: 'Links added to existing pages.',
+      },
+      {
+        label: 'Content Writing',
+        href: '/content-writing',
+        description: 'SEO content, with or without a placement.',
+      },
+      {
+        label: 'Digital PR',
+        href: '/digital-pr',
+        description: 'Editorial coverage and commentary.',
+      },
+    ],
+  },
+  { label: 'Marketplace', href: '/marketplace' },
   { label: 'How It Works', href: '/how-it-works' },
   { label: 'Pricing', href: '/pricing' },
   { label: 'Resources', href: '/resources' },
+  { label: 'For Agencies', href: '/link-building-agencies' },
 ];
 
 /** Signed-in customer area. */
 export const dashboardNav: NavItem[] = [
   { label: 'Dashboard', href: '/dashboard', icon: LayoutDashboard, exact: true },
-  { label: 'Browse Websites', href: '/websites', icon: Globe },
-  { label: 'Saved Websites', href: '/dashboard/saved', icon: Bookmark },
+  { label: 'Marketplace', href: '/marketplace', icon: Globe },
+  { label: 'Content', href: '/dashboard/content', icon: PenLine },
   { label: 'Orders', href: '/dashboard/orders', icon: Package },
+  { label: 'Saved Sites', href: '/dashboard/saved', icon: Bookmark },
   { label: 'Billing', href: '/dashboard/billing', icon: CreditCard },
   { label: 'Account', href: '/dashboard/account', icon: UserCircle },
 ];
@@ -44,6 +90,7 @@ export const adminNav: NavItem[] = [
   { label: 'Dashboard', href: '/admin', icon: BarChart3, exact: true },
   { label: 'Websites', href: '/admin/websites', icon: Globe },
   { label: 'Orders', href: '/admin/orders', icon: ShoppingCart },
+  { label: 'Content Orders', href: '/admin/content-orders', icon: FileText },
   { label: 'Users', href: '/admin/users', icon: Users },
   { label: 'Categories', href: '/admin/categories', icon: FolderTree },
   { label: 'Settings', href: '/admin/settings', icon: Settings },
@@ -51,21 +98,31 @@ export const adminNav: NavItem[] = [
 
 export const footerNav: { title: string; items: NavItem[] }[] = [
   {
-    title: 'Marketplace',
+    title: 'Services',
     items: [
-      { label: 'Browse websites', href: '/websites' },
-      { label: 'Guest posts', href: '/websites?service=guest-post' },
-      { label: 'Niche edits', href: '/websites?service=niche-edit' },
-      { label: 'Digital PR', href: '/websites?service=digital-pr' },
-      { label: 'Pricing', href: '/pricing' },
+      { label: 'Link building', href: '/link-building' },
+      { label: 'Guest posts', href: '/guest-posts' },
+      { label: 'Niche edits', href: '/niche-edits' },
+      { label: 'Content writing', href: '/content-writing' },
+      { label: 'Digital PR', href: '/digital-pr' },
     ],
   },
   {
-    title: 'Company',
+    title: 'Platform',
     items: [
       { label: 'How it works', href: '/how-it-works' },
-      { label: 'Resources', href: '/resources' },
-      { label: 'Contact sales', href: '/resources#contact' },
+      { label: 'Pricing', href: '/pricing' },
+      { label: 'Marketplace', href: '/marketplace' },
+      { label: 'For agencies', href: '/link-building-agencies' },
+    ],
+  },
+  {
+    title: 'Resources',
+    items: [
+      { label: 'Blog', href: '/resources' },
+      { label: 'Link building guides', href: '/resources#link-building' },
+      { label: 'SEO resources', href: '/resources#seo' },
+      { label: 'Contact', href: '/resources#contact' },
     ],
   },
   {
@@ -73,8 +130,6 @@ export const footerNav: { title: string; items: NavItem[] }[] = [
     items: [
       { label: 'Log in', href: '/login' },
       { label: 'Create account', href: '/signup' },
-      { label: 'Dashboard', href: '/dashboard' },
-      { label: 'Orders', href: '/dashboard/orders' },
     ],
   },
 ];

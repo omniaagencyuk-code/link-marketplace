@@ -6,11 +6,12 @@ import { SavedCountStat } from '@/components/dashboard/saved-count-stat';
 import { Button } from '@/components/ui/button';
 import { Stat } from '@/components/ui/stat';
 import { EmptyState } from '@/components/ui/empty-state';
-import { orderService, userService } from '@/lib/services';
+import { orderService } from '@/lib/services';
+import { requireCustomerSession } from '@/lib/auth/customer-access';
 import { formatPrice } from '@/lib/utils/format';
 
 export default async function DashboardPage() {
-  const user = await userService.getCurrent();
+  const user = await requireCustomerSession('/dashboard');
   const [summary, orders] = await Promise.all([
     orderService.getSummary(user.id),
     orderService.getByUser(user.id),
@@ -22,7 +23,7 @@ export default async function DashboardPage() {
         fallbackName={user.fullName}
         action={
           <Button asChild variant="accent">
-            <Link href="/websites">
+            <Link href="/marketplace">
               Browse websites
               <ArrowRight className="h-4 w-4" />
             </Link>
@@ -70,7 +71,7 @@ export default async function DashboardPage() {
             description="Find websites in the marketplace and add them to your first order."
             action={
               <Button asChild variant="accent">
-                <Link href="/websites">Browse websites</Link>
+                <Link href="/marketplace">Browse websites</Link>
               </Button>
             }
           />
