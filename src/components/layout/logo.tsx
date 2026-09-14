@@ -1,13 +1,22 @@
+import Image from 'next/image';
 import Link from 'next/link';
 import { brand } from '@/lib/config/brand';
 import { cn } from '@/lib/utils/cn';
 
 /**
- * Brand mark: a parrot head in a rounded navy tile.
+ * Path to the logo lockup, or empty when no artwork has been added.
  *
- * Drawn inline so there is no image request on first paint and so it inherits
- * the theme colours. Swap for an <Image> when a bespoke logo file exists -
- * see `brand.logo`.
+ * Resolved at build time in `next.config.ts` (see LOGO_CANDIDATES there) so a
+ * missing file can never render as a broken image, and so this component stays
+ * usable inside client components.
+ */
+const brandLogo = process.env.NEXT_PUBLIC_BRAND_LOGO ?? '';
+
+/**
+ * Fallback brand mark: a parrot head in a rounded navy tile.
+ *
+ * Drawn inline so there is no image request on first paint. Used until a real
+ * logo file exists.
  */
 export function ParrotMark({ className }: { className?: string }) {
   return (
@@ -50,7 +59,17 @@ export function Logo({
   const [firstWord, ...rest] = brand.name.split(' ');
   const restOfName = rest.join(' ');
 
-  const content = (
+  const content = brandLogo ? (
+    <Image
+      src={brandLogo}
+      alt={brand.name}
+      width={160}
+      height={40}
+      priority
+      // Height is fixed and width follows the artwork's own aspect ratio.
+      className={cn('h-8 w-auto', className)}
+    />
+  ) : (
     <span className={cn('inline-flex items-center gap-2', className)}>
       <ParrotMark />
       <span className="text-[17px] font-semibold tracking-tight">
@@ -62,7 +81,7 @@ export function Logo({
 
   if (!href) return content;
   return (
-    <Link href={href} aria-label={`${brand.name} home`} className="rounded-md">
+    <Link href={href} aria-label={`${brand.name} home`} className="inline-flex rounded-md">
       {content}
     </Link>
   );

@@ -176,13 +176,20 @@ Browsing and buying are deliberately separate:
 The article attachment records the file's name and size only. The upload
 itself needs storage, so wire it to Supabase Storage when the backend lands.
 
-## Homepage mascot
+## Brand artwork
 
-The hero looks for artwork at `public/images/press-parrot-hero.webp` (also
-`.avif` and `.png`) and falls back to a drawn SVG placeholder when none is
-present, so the page can never render a broken image. See
-`public/images/README.md` for the artwork spec. The lookup runs at build time
-in `src/components/home/parrot-hero.tsx`.
+Two drop-in slots, both resolved at build time so a missing file falls back to
+a drawn version rather than rendering broken:
+
+| File                                    | Where it appears                          |
+| --------------------------------------- | ----------------------------------------- |
+| `public/images/press-parrot-logo.svg`   | Header, footer, dashboard and admin logos |
+| `public/images/press-parrot-hero.webp`  | The homepage mascot                        |
+
+`public/images/README.md` has the full spec for both. The logo lookup lives in
+`next.config.ts` rather than the component, because the logo renders inside
+client components that cannot read the filesystem; the mascot lookup is in
+`src/components/home/parrot-hero.tsx`.
 
 ## Social proof
 
@@ -246,7 +253,8 @@ filtering, so results are guaranteed to match.
 - **Resource articles** - the cards on `/resources` do not have article pages.
 - **Live chat** - the built-in panel hands off to email rather than opening a
   real conversation. Set a provider to change that.
-- **Homepage mascot** - a drawn SVG placeholder until artwork is added.
+- **Brand artwork** - drawn SVG placeholders until the logo and mascot files
+  are added.
 - **Customer logos and testimonial** - placeholder slots until real ones are
   configured.
 - **Article uploads** - the order page records a file's name and size; the
