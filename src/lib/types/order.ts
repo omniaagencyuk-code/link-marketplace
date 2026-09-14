@@ -20,6 +20,9 @@ export interface OrderItem {
   anchorText: string;
   preferredLandingPage?: string;
   notes?: string;
+  /** Optional article supplied by the buyer. */
+  articleFileName?: string;
+  articleFileSize?: number;
   /** Populated once the placement goes live. */
   liveUrl?: string;
   status: OrderStatus;
@@ -44,7 +47,12 @@ export interface Order {
   expectedLiveAt?: string;
 }
 
-/** An item in the client-side order builder before checkout. */
+/**
+ * An item in the client-side order builder before checkout.
+ *
+ * Websites are added straight from the marketplace with the placement details
+ * blank; the buyer fills those in on the order page.
+ */
 export interface DraftOrderItem {
   id: string;
   websiteId: string;
@@ -56,5 +64,11 @@ export interface DraftOrderItem {
   anchorText: string;
   preferredLandingPage?: string;
   notes?: string;
+  /**
+   * Optional article supplied by the buyer. Only the file's name and size are
+   * kept locally; the upload itself happens when storage is connected.
+   */
+  articleFileName?: string;
+  articleFileSize?: number;
   addedAt: string;
 }

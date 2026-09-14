@@ -2,10 +2,8 @@
 
 import Link from 'next/link';
 import { useState } from 'react';
-import { Check, Clock, Info, ShoppingBag } from 'lucide-react';
+import { ArrowRight, Check, Clock, Info, ShoppingBag } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Input, Textarea } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { FavouriteButton } from '@/components/marketplace/favourite-button';
 import { useOrderDraft } from '@/lib/providers/order-draft-provider';
 import { formatPrice, formatTurnaround } from '@/lib/utils/format';
@@ -14,48 +12,32 @@ import { cn } from '@/lib/utils/cn';
 import type { Service, Website } from '@/lib/types';
 
 /**
- * Order builder for a single website.
+ * Service picker for a single website.
  *
- * No payment is taken - the item is added to a local draft order. Swap
- * `add()` for a Supabase insert plus a Stripe checkout session later.
+ * Adding is deliberately one step: pick a service, add it. Target URL, anchor
+ * text, landing page, notes and the optional article are collected once, on
+ * the order page, so browsing and buying stay separate.
  */
 export function OrderCard({ website }: { website: Website }) {
   const available = website.services.filter((service) => service.available);
   const { add } = useOrderDraft();
   const [serviceId, setServiceId] = useState(available[0]?.id ?? '');
-  const [targetUrl, setTargetUrl] = useState('');
-  const [anchorText, setAnchorText] = useState('');
-  const [landingPage, setLandingPage] = useState('');
-  const [notes, setNotes] = useState('');
   const [added, setAdded] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
   const selected = available.find((service) => service.id === serviceId) ?? available[0];
 
-  function onSubmit(event: React.FormEvent) {
-    event.preventDefault();
+  function addToOrder() {
     if (!selected) return;
-    if (!targetUrl.trim()) {
-      setError('Add the URL you want the link to point to.');
-      return;
-    }
-    setError(null);
     add({
       websiteId: website.id,
       websiteSlug: website.slug,
       websiteDomain: website.domain,
       serviceType: selected.type,
       priceMinor: selected.priceMinor,
-      targetUrl: targetUrl.trim(),
-      anchorText: anchorText.trim(),
-      preferredLandingPage: landingPage.trim() || undefined,
-      notes: notes.trim() || undefined,
+      targetUrl: '',
+      anchorText: '',
     });
     setAdded(true);
-    setTargetUrl('');
-    setAnchorText('');
-    setLandingPage('');
-    setNotes('');
   }
 
   if (!selected) {
@@ -73,10 +55,7 @@ export function OrderCard({ website }: { website: Website }) {
   }
 
   return (
-    <form
-      onSubmit={onSubmit}
-      className="rounded-[var(--radius-card)] border border-line bg-white shadow-[var(--shadow-card)]"
-    >
+    <div className="rounded-[var(--radius-card)] border border-line bg-white shadow-[var(--shadow-card)]">
       <div className="border-b border-line px-5 py-4">
         <div className="flex items-start justify-between gap-3">
           <div>
@@ -96,93 +75,50 @@ export function OrderCard({ website }: { website: Website }) {
             key={service.id}
             service={service}
             checked={service.id === selected.id}
-            onSelect={() => setServiceId(service.id)}
+            onSelect={() => {
+              setServiceId(service.id);
+              setAdded(false);
+            }}
           />
         ))}
       </fieldset>
-
-      <div className="space-y-3.5 border-t border-line px-5 py-4">
-        <div>
-          <Label htmlFor="target-url">Target URL</Label>
-          <Input
-            id="target-url"
-            type="url"
-            required
-            value={targetUrl}
-            onChange={(event) => setTargetUrl(event.target.value)}
-            placeholder="https://yourdomain.com/page"
-            className="mt-1.5"
-            aria-describedby={error ? 'target-url-error' : undefined}
-          />
-          {error ? (
-            <p id="target-url-error" role="alert" className="mt-1 text-[12px] text-negative">
-              {error}
-            </p>
-          ) : null}
-        </div>
-
-        <div>
-          <Label htmlFor="anchor-text">Anchor text</Label>
-          <Input
-            id="anchor-text"
-            value={anchorText}
-            onChange={(event) => setAnchorText(event.target.value)}
-            placeholder="e.g. best casino bonuses"
-            className="mt-1.5"
-          />
-        </div>
-
-        <div>
-          <Label htmlFor="landing-page">Preferred landing page on this site</Label>
-          <Input
-            id="landing-page"
-            value={landingPage}
-            onChange={(event) => setLandingPage(event.target.value)}
-            placeholder="Optional, for niche edits"
-            className="mt-1.5"
-          />
-        </div>
-
-        <div>
-          <Label htmlFor="order-notes">Notes for the publisher</Label>
-          <Textarea
-            id="order-notes"
-            value={notes}
-            onChange={(event) => setNotes(event.target.value)}
-            placeholder="Angle, brief, tone of voice or anything to avoid."
-            className="mt-1.5 min-h-20"
-          />
-        </div>
-      </div>
 
       <div className="space-y-3 border-t border-line bg-surface/60 px-5 py-4">
         <div className="tabular flex items-center justify-between text-sm">
           <span className="text-muted">{linkTypeLabels[selected.type]}</span>
           <span className="font-semibold text-ink">{formatPrice(selected.priceMinor)}</span>
         </div>
-        <Button type="submit" variant="accent" size="lg" className="w-full">
+
+        <Button type="button" variant="accent" size="lg" className="w-full" onClick={addToOrder}>
           <ShoppingBag className="h-4 w-4" />
           Add to order
         </Button>
+
         {added ? (
-          <p
-            role="status"
-            className="flex items-center justify-center gap-1.5 text-[12px] font-medium text-accent-700"
-          >
-            <Check className="h-3.5 w-3.5" aria-hidden="true" />
-            Added to your order.{' '}
-            <Link href="/dashboard/orders" className="underline underline-offset-2">
-              View order
-            </Link>
-          </p>
+          <div className="space-y-2">
+            <p
+              role="status"
+              className="flex items-center justify-center gap-1.5 text-[12px] font-medium text-accent-700"
+            >
+              <Check className="h-3.5 w-3.5" aria-hidden="true" />
+              Added to your order
+            </p>
+            <Button asChild variant="outline" size="sm" className="w-full">
+              <Link href="/dashboard/orders">
+                Go to your order
+                <ArrowRight className="h-3.5 w-3.5" />
+              </Link>
+            </Button>
+          </div>
         ) : (
           <p className="flex items-start gap-1.5 text-[12px] leading-relaxed text-muted">
             <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-            No payment is taken now. You can review everything before submitting the order.
+            You add your target URL, anchor text and any article on the order page. No payment is
+            taken now.
           </p>
         )}
       </div>
-    </form>
+    </div>
   );
 }
 

@@ -5,22 +5,23 @@ import { OrdersTable } from '@/components/dashboard/orders-table';
 import { DraftOrder } from '@/components/dashboard/draft-order';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { orderService, settingsService, userService } from '@/lib/services';
+import { orderService, settingsService, userService, websiteService } from '@/lib/services';
 
 export const metadata: Metadata = { title: 'Orders' };
 
 export default async function OrdersPage() {
   const user = await userService.getCurrent();
-  const [orders, settings] = await Promise.all([
+  const [orders, settings, websites] = await Promise.all([
     orderService.getByUser(user.id),
     settingsService.get(),
+    websiteService.getAll(),
   ]);
 
   return (
     <>
       <PageTitle
         title="Orders"
-        description="Every placement you have ordered, with live URLs as soon as they publish."
+        description="Fill in the details for each placement in your current order, and track everything you have already ordered."
         action={
           <Button asChild variant="accent">
             <Link href="/websites">New order</Link>
@@ -28,7 +29,7 @@ export default async function OrdersPage() {
         }
       />
 
-      <DraftOrder />
+      <DraftOrder websites={websites} />
 
       <section className="mt-8" aria-labelledby="all-orders">
         <div className="mb-4 flex flex-wrap items-center gap-2">

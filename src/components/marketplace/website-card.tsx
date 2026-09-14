@@ -4,6 +4,7 @@ import { DomainRating } from '@/components/shared/metric';
 import { LinkTypeList } from '@/components/shared/link-type-badge';
 import { VerifiedBadge } from '@/components/shared/verified-badge';
 import { FavouriteButton } from './favourite-button';
+import { AddToOrderButton } from './add-to-order-button';
 import { nicheName } from '@/lib/data/categories';
 import { countryShortName } from '@/lib/data/countries';
 import { formatCompactNumber, formatPrice, formatTurnaround } from '@/lib/utils/format';
@@ -69,9 +70,12 @@ export function WebsiteCard({ website }: { website: WebsiteListItem }) {
             <span className="ml-1.5 text-[11px] text-muted">{linkTypeLabels[lead.type]}</span>
           ) : null}
         </div>
-        <Button asChild size="sm" variant="outline">
-          <Link href={`/websites/${website.slug}`}>View details</Link>
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button asChild size="sm" variant="outline">
+            <Link href={`/websites/${website.slug}`}>View</Link>
+          </Button>
+          <AddToOrderButton website={website} />
+        </div>
       </div>
     </article>
   );

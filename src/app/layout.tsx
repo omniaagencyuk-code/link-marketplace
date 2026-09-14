@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from 'next';
 import { Inter } from 'next/font/google';
 import { AppProviders } from '@/lib/providers/app-providers';
+import { SupportChat } from '@/components/support/support-chat';
 import { brand, siteUrl } from '@/lib/config/brand';
 import './globals.css';
 
@@ -59,7 +60,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         >
           Skip to content
         </a>
-        <AppProviders>{children}</AppProviders>
+        <AppProviders>
+          {children}
+          <SupportChat />
+        </AppProviders>
       </body>
     </html>
   );

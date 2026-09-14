@@ -10,10 +10,15 @@ const STORAGE_KEY = storageKey('order-draft.v1');
 interface OrderDraftContextValue {
   items: DraftOrderItem[];
   add: (item: Omit<DraftOrderItem, 'id' | 'addedAt'>) => void;
+  update: (id: string, patch: Partial<Omit<DraftOrderItem, 'id' | 'addedAt'>>) => void;
   remove: (id: string) => void;
   clear: () => void;
+  /** Is this website already in the draft? */
+  has: (websiteId: string) => boolean;
   totalMinor: number;
   count: number;
+  /** Items still missing a target URL, which blocks submitting. */
+  incompleteCount: number;
   hydrated: boolean;
 }
 
@@ -42,17 +47,29 @@ export function OrderDraftProvider({ children }: { children: ReactNode }) {
     [setValue],
   );
 
+  const update = useCallback(
+    (id: string, patch: Partial<Omit<DraftOrderItem, 'id' | 'addedAt'>>) => {
+      setValue((current) =>
+        current.map((item) => (item.id === id ? { ...item, ...patch } : item)),
+      );
+    },
+    [setValue],
+  );
+
   const value = useMemo<OrderDraftContextValue>(
     () => ({
       items,
       add,
+      update,
       remove: (id: string) => setValue((current) => current.filter((item) => item.id !== id)),
       clear: () => setValue([]),
+      has: (websiteId: string) => items.some((item) => item.websiteId === websiteId),
       totalMinor: items.reduce((sum, item) => sum + item.priceMinor, 0),
       count: items.length,
+      incompleteCount: items.filter((item) => !item.targetUrl.trim()).length,
       hydrated,
     }),
-    [items, add, setValue, hydrated],
+    [items, add, update, setValue, hydrated],
   );
 
   return <OrderDraftContext.Provider value={value}>{children}</OrderDraftContext.Provider>;

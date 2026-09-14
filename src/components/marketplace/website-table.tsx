@@ -9,6 +9,7 @@ import { DomainRating } from '@/components/shared/metric';
 import { LinkTypeList } from '@/components/shared/link-type-badge';
 import { VerifiedBadge } from '@/components/shared/verified-badge';
 import { FavouriteButton } from './favourite-button';
+import { AddToOrderButton } from './add-to-order-button';
 import { nicheName } from '@/lib/data/categories';
 import { countryShortName } from '@/lib/data/countries';
 import { formatCompactNumber, formatPrice, formatTurnaround } from '@/lib/utils/format';
@@ -49,13 +50,28 @@ export function WebsiteTable({
 
   return (
     <TableWrap className="hidden lg:block">
-      <Table>
+      <Table className="table-fixed">
         <caption className="sr-only">
           Marketplace websites with metrics, link types, turnaround and price
         </caption>
+        {/* Fixed widths keep every column, including the row actions, inside a
+            1440px viewport without the table scrolling sideways. */}
+        <colgroup>
+          <col className="w-[34px]" />
+          <col className="w-[170px]" />
+          <col className="w-[96px]" />
+          <col className="w-[64px]" />
+          <col className="w-[56px]" />
+          <col className="w-[88px]" />
+          <col className="w-[88px]" />
+          <col className="w-[113px]" />
+          <col className="w-[96px]" />
+          <col className="w-[72px]" />
+          <col className="w-[183px]" />
+        </colgroup>
         <thead>
           <tr>
-            <Th className="w-10 pr-0">
+            <Th className="pr-0">
               <Checkbox
                 checked={allSelected}
                 indeterminate={someSelected}
@@ -63,31 +79,16 @@ export function WebsiteTable({
                 aria-label="Select all websites on this page"
               />
             </Th>
-            <Th className="min-w-[13rem]">Website</Th>
-            <Th className="w-20">Niche</Th>
-            <Th className="w-14">Country</Th>
-            <SortableTh column={sortableColumns.dr!} sort={sort} onSort={onSort} className="w-16" />
-            <SortableTh
-              column={sortableColumns.traffic!}
-              sort={sort}
-              onSort={onSort}
-              className="w-24"
-            />
-            <Th className="hidden w-24 xl:table-cell">Ref. Domains</Th>
-            <Th className="w-32">Link Type</Th>
-            <SortableTh
-              column={sortableColumns.turnaround!}
-              sort={sort}
-              onSort={onSort}
-              className="w-24"
-            />
-            <SortableTh
-              column={sortableColumns.price!}
-              sort={sort}
-              onSort={onSort}
-              className="w-20 text-right"
-            />
-            <Th className="w-24 text-right">
+            <Th>Website</Th>
+            <Th>Niche</Th>
+            <Th>Country</Th>
+            <SortableTh column={sortableColumns.dr!} sort={sort} onSort={onSort} />
+            <SortableTh column={sortableColumns.traffic!} sort={sort} onSort={onSort} />
+            <Th>Ref. Domains</Th>
+            <Th>Link Type</Th>
+            <SortableTh column={sortableColumns.turnaround!} sort={sort} onSort={onSort} />
+            <SortableTh column={sortableColumns.price!} sort={sort} onSort={onSort} align="right" />
+            <Th className="text-right">
               <span className="sr-only">Actions</span>
             </Th>
           </tr>
@@ -108,17 +109,20 @@ export function WebsiteTable({
                   <div className="flex items-center gap-1.5">
                     <Link
                       href={`/websites/${website.slug}`}
-                      className="text-[14px] font-semibold text-ink hover:text-accent-700"
+                      className="truncate text-[14px] font-semibold text-ink hover:text-accent-700"
+                      title={website.domain}
                     >
                       {website.domain}
                     </Link>
                     {website.verified ? <VerifiedBadge /> : null}
                   </div>
-                  <p className="mt-0.5 line-clamp-1 max-w-[24rem] text-[12px] text-muted">
+                  <p className="mt-0.5 truncate text-[12px] text-muted" title={website.description}>
                     {website.description}
                   </p>
                 </Td>
-                <Td className="text-[13px] text-ink-soft">{nicheName(website.niche)}</Td>
+                <Td className="truncate text-[13px] text-ink-soft" title={nicheName(website.niche)}>
+                  {nicheName(website.niche)}
+                </Td>
                 <Td className="text-[13px] text-ink-soft">{countryShortName(website.country)}</Td>
                 <Td>
                   <DomainRating value={website.metrics.domainRating} />
@@ -126,10 +130,10 @@ export function WebsiteTable({
                 <Td className="tabular text-[13px] text-ink-soft">
                   {formatCompactNumber(website.metrics.organicTraffic)}
                 </Td>
-                <Td className="tabular hidden text-[13px] text-ink-soft xl:table-cell">
+                <Td className="tabular text-[13px] text-ink-soft">
                   {formatCompactNumber(website.metrics.referringDomains)}
                 </Td>
-                <Td>
+                <Td className="overflow-hidden">
                   <LinkTypeList types={website.availableLinkTypes} max={1} nowrap />
                 </Td>
                 <Td className="tabular text-[13px] whitespace-nowrap text-ink-soft">
@@ -146,6 +150,7 @@ export function WebsiteTable({
                 <Td>
                   <div className="flex items-center justify-end gap-1">
                     <FavouriteButton websiteId={website.id} domain={website.domain} />
+                    <AddToOrderButton website={website} />
                     <Button asChild variant="outline" size="sm">
                       <Link href={`/websites/${website.slug}`}>View</Link>
                     </Button>
@@ -165,11 +170,13 @@ function SortableTh({
   sort,
   onSort,
   className,
+  align,
 }: {
   column: SortableColumn;
   sort: SortKey;
   onSort: (sort: SortKey) => void;
   className?: string;
+  align?: 'left' | 'right';
 }) {
   // Price toggles between ascending and descending; the others are descending.
   const alternate: Partial<Record<SortKey, SortKey>> = {
@@ -184,14 +191,16 @@ function SortableTh({
       ? 'ascending'
       : 'descending';
 
+  const alignment = align ?? column.align;
+
   return (
-    <Th className={className} aria-sort={ariaSort}>
+    <Th className={cn(alignment === 'right' && 'text-right', className)} aria-sort={ariaSort}>
       <button
         type="button"
         onClick={() => onSort(next)}
         className={cn(
           'inline-flex items-center gap-1 text-[11px] font-semibold tracking-wide uppercase transition-colors hover:text-ink',
-          column.align === 'right' && 'w-full justify-end',
+          alignment === 'right' && 'w-full justify-end',
           isActive ? 'text-ink' : 'text-muted',
         )}
       >

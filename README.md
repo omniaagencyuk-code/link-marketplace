@@ -73,11 +73,13 @@ src/
     marketplace/        Filters, table, cards, pagination, toolbar
     website/            Listing detail sections and the order card
     home/               Homepage sections
-    dashboard/          Dashboard shell and widgets
+    dashboard/          Dashboard shell, widgets and the order editor
+    support/            Always-on live chat launcher
     admin/              Admin tables, guard and website editor
     shared/             Badges, metrics, FAQ
   lib/
-    config/             brand.ts (single source of brand truth), navigation.ts
+    config/             brand.ts (single source of brand truth), navigation.ts,
+                        support.ts (live chat)
     types/              Website, Category, Country, User, Order, Settings, ...
     data/               Mock seed data (72 websites, orders, users, categories)
     services/           Repository layer - the only place data is fetched
@@ -152,6 +154,40 @@ be rotated for one individual, and it leaves no audit trail of who changed
 what. When Supabase Auth is connected, give each admin their own credentials
 and keep `ADMIN_EMAILS` as the `profiles.role` check.
 
+## Ordering flow
+
+Browsing and buying are deliberately separate:
+
+1. **Marketplace** - every row and card has an **Add** button next to **View**,
+   which drops the headline service into the order with the details blank.
+   The button then reads "In order" so a website cannot be added twice.
+2. **Listing page** - pick which service you want, then add. No placement
+   details are collected here.
+3. **Order page** (`/dashboard/orders`) - the only place details are entered:
+   target URL (required), anchor text, preferred landing page, notes for the
+   publisher, and an optional article attachment. Edits save to the draft as
+   you type and survive a reload. Switching service reprices that line.
+
+The article attachment records the file's name and size only. The upload
+itself needs storage, so wire it to Supabase Storage when the backend lands.
+
+## Live chat
+
+A launcher sits bottom-right on every page. `src/lib/config/support.ts`
+chooses what it does:
+
+| `NEXT_PUBLIC_CHAT_PROVIDER` | Behaviour                                       |
+| --------------------------- | ----------------------------------------------- |
+| `built-in` (default)        | In-house panel; the message opens a prefilled email, tagged with the page the visitor was on |
+| `crisp`                     | Loads Crisp, using `NEXT_PUBLIC_CRISP_WEBSITE_ID` |
+| `tawk`                      | Loads Tawk.to, using `NEXT_PUBLIC_TAWK_PROPERTY_ID` and `NEXT_PUBLIC_TAWK_WIDGET_ID` |
+| `off`                       | Hides the launcher                                |
+
+The built-in panel is a stopgap, not real live chat: it guarantees there is
+always a way to reach you, but nobody is watching a queue. Open a Crisp or
+Tawk account and flip the variable to get genuine live conversations, with no
+code change.
+
 ## Data layer
 
 Components never import mock data directly. They call the service layer:
@@ -188,6 +224,10 @@ filtering, so results are guaranteed to match.
 - **Admin writes** - server actions mutate an in-memory store that resets when
   the dev server restarts.
 - **Resource articles** - the cards on `/resources` do not have article pages.
+- **Live chat** - the built-in panel hands off to email rather than opening a
+  real conversation. Set a provider to change that.
+- **Article uploads** - the order page records a file's name and size; the
+  upload needs storage.
 
 ## Next steps
 
@@ -224,6 +264,7 @@ Supabase implementation and replace the mock auth calls.
    | `ADMIN_EMAILS`                  | `you@yourcompany.com,them@...`           | yes      |
    | `ADMIN_PASSWORD`                | a long random password                   | yes      |
    | `ADMIN_SESSION_SECRET`          | `openssl rand -base64 32`                | yes      |
+   | `NEXT_PUBLIC_CHAT_PROVIDER`     | `built-in`, `crisp`, `tawk` or `off`     | no       |
    | `NEXT_PUBLIC_SUPABASE_URL`      | `https://<ref>.supabase.co`              | with Supabase |
    | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | `eyJhb...`                               | with Supabase |
    | `SUPABASE_SERVICE_ROLE_KEY`     | `eyJhb...` (server only, never exposed)  | with Supabase |
