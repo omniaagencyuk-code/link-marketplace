@@ -1,6 +1,9 @@
 import { websites as seedWebsites } from '@/lib/data/websites';
 import { runQuery, toListItem } from './query-engine';
 import { slugifyDomain } from '@/lib/utils/format';
+import { normaliseDomain } from '@/lib/import/normalise';
+import { newWebsiteDefaults, toWebsitePatch } from '@/lib/import/to-website';
+import type { ImportPayloadRow, ImportBatchResult, DuplicateMode } from '@/lib/import/types';
 import type {
   NicheSlug,
   PaginatedResult,
@@ -19,6 +22,14 @@ import type {
  */
 
 let store: Website[] = seedWebsites.map((website) => ({ ...website }));
+
+/**
+ * Monotonic suffix for generated ids.
+ *
+ * A bulk import creates hundreds of records inside the same millisecond, so a
+ * timestamp alone is not unique.
+ */
+let idSequence = 0;
 
 function listItems(includeInactive = false) {
   return store
@@ -124,7 +135,7 @@ export const websiteService = {
     const website: Website = {
       ...base,
       ...input,
-      id: `web_${Date.now().toString(36)}`,
+      id: `web_${Date.now().toString(36)}${(idSequence++).toString(36)}`,
       slug: input.slug ?? slugifyDomain(input.domain),
       services: input.services ?? [],
       createdAt: now,
@@ -150,6 +161,79 @@ export const websiteService = {
 
   async setStatus(id: string, status: WebsiteStatus) {
     return websiteService.update(id, { status });
+  },
+
+  /**
+   * Normalised domain -> website id, for duplicate detection during import.
+   * A Supabase implementation would select id and domain rather than loading
+   * every record.
+   */
+  async getDomainIndex(): Promise<Record<string, string>> {
+    const index: Record<string, string> = {};
+    for (const website of store) {
+      const domain = normaliseDomain(website.domain);
+      if (domain) index[domain] = website.id;
+    }
+    return index;
+  },
+
+  /**
+   * Create or update many websites in one call.
+   *
+   * The single place bulk writes happen, so swapping in Supabase means
+   * replacing this body with a batched upsert rather than touching the UI.
+   * Rows are processed independently: one bad row never fails the batch.
+   */
+  async bulkUpsert(rows: ImportPayloadRow[], mode: DuplicateMode): Promise<ImportBatchResult> {
+    const result: ImportBatchResult = { created: 0, updated: 0, skipped: 0, failed: [] };
+
+    for (const row of rows) {
+      try {
+        const domain = normaliseDomain(row.domain);
+        if (!domain) {
+          result.failed.push({ rowNumber: row.rowNumber, domain: row.domain, reason: 'Invalid domain' });
+          continue;
+        }
+
+        // Re-check against the live store rather than trusting the client,
+        // which may have prepared its preview minutes ago.
+        const existing =
+          store.find((website) => normaliseDomain(website.domain) === domain) ?? null;
+
+        if (existing) {
+          if (mode === 'skip') {
+            result.skipped += 1;
+            continue;
+          }
+          const patch = toWebsitePatch(row.values, row.supplied, existing);
+          await websiteService.update(existing.id, patch);
+          result.updated += 1;
+          continue;
+        }
+
+        const created = await websiteService.create({
+          ...newWebsiteDefaults(domain),
+          domain,
+        } as Partial<Website> & { domain: string });
+        const patch = toWebsitePatch(row.values, row.supplied, created);
+        // Services are created with a placeholder website id; bind them now.
+        const services = (patch.services ?? []).map((service) => ({
+          ...service,
+          websiteId: created.id,
+          id: service.id.replace('pending', created.id),
+        }));
+        await websiteService.update(created.id, { ...patch, services });
+        result.created += 1;
+      } catch (error) {
+        result.failed.push({
+          rowNumber: row.rowNumber,
+          domain: row.domain,
+          reason: error instanceof Error ? error.message : 'Unexpected error',
+        });
+      }
+    }
+
+    return result;
   },
 
   async duplicate(id: string): Promise<Website | null> {

@@ -78,7 +78,8 @@ src/
     dashboard/          Dashboard shell, widgets and the order editor
     support/            Always-on live chat launcher
     shared/             Badges, metrics, FAQ, foliage, handwritten notes
-    admin/              Admin tables, guard and website editor
+    admin/              Admin tables and website editor
+    admin/import/       CSV import wizard components
     shared/             Badges, metrics, FAQ
   lib/
     config/             brand.ts (single source of brand truth), navigation.ts,
@@ -89,6 +90,7 @@ src/
     data/               Mock seed data (72 websites, orders, users, categories)
     services/           Repository layer - the only place data is fetched
     auth/               Admin session signing and access checks
+    import/             CSV parsing, field mapping, normalisation, validation
     hooks/              Marketplace filter state, localStorage
     providers/          Auth, favourites and order draft contexts
     utils/              Formatting, labels, class merging
@@ -215,6 +217,38 @@ always a way to reach you, but nobody is watching a queue. Open a Crisp or
 Tawk account and flip the variable to get genuine live conversations, with no
 code change.
 
+## Bulk CSV import
+
+`/admin/websites/import`, reached from the **Import CSV** button beside **Add
+website**. A five step flow: upload, map columns, review, import, results.
+
+- **Parsing** uses Papa Parse, so quoted values, commas inside descriptions,
+  mixed line endings and UTF-8 all work. Limits are 10 MB and 10,000 rows.
+- **Column mapping** is automatic where the header is recognisable (`DR`,
+  `Traffic`, `RD`, `Domain URL`, `Category`, `Location` and many more, listed
+  in `src/lib/import/fields.ts`). Anything unmapped is ignored, and a
+  destination can only be claimed once.
+- **Normalisation** reduces URLs to root domains, reads `45K` and `1.2M` as
+  numbers, strips currency symbols, accepts yes/no/true/false/1/0/y/n, and
+  splits multi-value cells on commas, semicolons or pipes.
+- **Validation** sorts rows into ready, warning, existing, duplicate and
+  error. A bad row never blocks the rest of the file, and rows can be searched,
+  filtered, deselected or edited inline.
+- **Duplicates** are detected against the marketplace and within the file
+  itself, after normalisation, so `example.com`, `www.example.com` and
+  `https://example.com/page` count as one. The default is to skip existing
+  websites; choosing update writes only the columns the CSV actually supplied,
+  so empty cells never blank a stored value.
+- **Writing** goes through `websiteService.bulkUpsert()` in batches of 200,
+  with progress shown and a confirmation above 100 rows. That method is the
+  single place to swap in a Supabase batched upsert.
+- **Afterwards** the results screen offers the imported websites, an error
+  report CSV (row number, domain, reason) and another import. Recent runs are
+  listed under the websites table.
+
+Only the `domain` column is required. Download the template from step one for
+the full set of supported columns.
+
 ## Data layer
 
 Components never import mock data directly. They call the service layer:
@@ -249,7 +283,9 @@ filtering, so results are guaranteed to match.
 - **Saved websites and order drafts** - persisted in localStorage per browser.
 - **Payments and checkout** - the submit button on an order draft is disabled.
 - **Admin writes** - server actions mutate an in-memory store that resets when
-  the dev server restarts.
+  the dev server restarts. Bulk imports go to the same store, so an imported
+  list does not survive a redeploy until Supabase is connected.
+- **Import history** - recorded in memory alongside the websites.
 - **Resource articles** - the cards on `/resources` do not have article pages.
 - **Live chat** - the built-in panel hands off to email rather than opening a
   real conversation. Set a provider to change that.

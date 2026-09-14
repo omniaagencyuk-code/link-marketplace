@@ -6,4 +6,6 @@ export { orderService } from './order-service';
 export type { OrderSummary } from './order-service';
 export { userService } from './user-service';
 export { settingsService } from './settings-service';
+export { importHistoryService } from './import-history-service';
+export type { ImportRun } from './import-history-service';
 export { dataSource, isSupabaseConfigured } from './data-source';

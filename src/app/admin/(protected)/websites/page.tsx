@@ -1,14 +1,18 @@
 import Link from 'next/link';
-import { Plus } from 'lucide-react';
+import { Plus, Upload } from 'lucide-react';
 import { PageTitle } from '@/components/dashboard/page-title';
 import { AdminWebsitesTable } from '@/components/admin/admin-websites-table';
+import { ImportHistory } from '@/components/admin/import/import-history';
 import { Button } from '@/components/ui/button';
-import { websiteService } from '@/lib/services';
+import { importHistoryService, websiteService } from '@/lib/services';
 
 export const dynamic = 'force-dynamic';
 
 export default async function AdminWebsitesPage() {
-  const websites = await websiteService.getAllForAdmin();
+  const [websites, imports] = await Promise.all([
+    websiteService.getAllForAdmin(),
+    importHistoryService.getRecent(5),
+  ]);
 
   return (
     <>
@@ -16,15 +20,24 @@ export default async function AdminWebsitesPage() {
         title="Websites"
         description="The marketplace inventory database. Edit metrics, pricing and availability."
         action={
-          <Button asChild variant="accent">
-            <Link href="/admin/websites/new">
-              <Plus className="h-4 w-4" />
-              Add website
-            </Link>
-          </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button asChild variant="outline">
+              <Link href="/admin/websites/import">
+                <Upload className="h-4 w-4" />
+                Import CSV
+              </Link>
+            </Button>
+            <Button asChild variant="accent">
+              <Link href="/admin/websites/new">
+                <Plus className="h-4 w-4" />
+                Add website
+              </Link>
+            </Button>
+          </div>
         }
       />
       <AdminWebsitesTable websites={websites} />
+      <ImportHistory runs={imports} />
     </>
   );
 }
