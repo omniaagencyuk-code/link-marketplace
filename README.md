@@ -72,14 +72,19 @@ src/
     layout/             Header, footer, logo, container, page hero
     marketplace/        Filters, table, cards, pagination, toolbar
     website/            Listing detail sections and the order card
-    home/               Homepage sections
+    home/               Homepage sections: hero, marketplace preview, trust
+                        metrics, trusted by, feature strip, how it works,
+                        niche grid, final CTA
     dashboard/          Dashboard shell, widgets and the order editor
     support/            Always-on live chat launcher
+    shared/             Badges, metrics, FAQ, foliage, handwritten notes
     admin/              Admin tables, guard and website editor
     shared/             Badges, metrics, FAQ
   lib/
     config/             brand.ts (single source of brand truth), navigation.ts,
-                        support.ts (live chat)
+                        support.ts (live chat), marketing.ts (headline stats),
+                        social-proof.ts (logos and testimonials),
+                        how-it-works.ts (the four steps)
     types/              Website, Category, Country, User, Order, Settings, ...
     data/               Mock seed data (72 websites, orders, users, categories)
     services/           Repository layer - the only place data is fetched
@@ -171,6 +176,21 @@ Browsing and buying are deliberately separate:
 The article attachment records the file's name and size only. The upload
 itself needs storage, so wire it to Supabase Storage when the backend lands.
 
+## Homepage mascot
+
+The hero looks for artwork at `public/images/press-parrot-hero.webp` (also
+`.avif` and `.png`) and falls back to a drawn SVG placeholder when none is
+present, so the page can never render a broken image. See
+`public/images/README.md` for the artwork spec. The lookup runs at build time
+in `src/components/home/parrot-hero.tsx`.
+
+## Social proof
+
+`src/lib/config/social-proof.ts` holds customer logos and testimonials, and
+ships **empty on purpose**. While the lists are empty the homepage shows
+clearly-marked placeholders rather than implying customers or quotes that do
+not exist. Add real entries only with the customer's permission.
+
 ## Live chat
 
 A launcher sits bottom-right on every page. `src/lib/config/support.ts`
@@ -226,6 +246,9 @@ filtering, so results are guaranteed to match.
 - **Resource articles** - the cards on `/resources` do not have article pages.
 - **Live chat** - the built-in panel hands off to email rather than opening a
   real conversation. Set a provider to change that.
+- **Homepage mascot** - a drawn SVG placeholder until artwork is added.
+- **Customer logos and testimonial** - placeholder slots until real ones are
+  configured.
 - **Article uploads** - the order page records a file's name and size; the
   upload needs storage.
 

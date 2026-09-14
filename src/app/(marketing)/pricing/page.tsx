@@ -6,7 +6,7 @@ import { PageHero } from '@/components/layout/page-hero';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Faq } from '@/components/shared/faq';
-import { CtaSection } from '@/components/home/cta-section';
+import { FinalCta } from '@/components/home/final-cta';
 import { Table, TableWrap, Td, Th, Tr } from '@/components/ui/table';
 import { brand } from '@/lib/config/brand';
 import { formatPrice } from '@/lib/utils/format';
@@ -211,7 +211,7 @@ export default function PricingPage() {
         </Container>
       </section>
 
-      <CtaSection />
+      <FinalCta />
     </>
   );
 }

@@ -1,22 +1,25 @@
 import type { Metadata } from 'next';
 import { Hero } from '@/components/home/hero';
-import { TrustStrip } from '@/components/home/trust-strip';
-import { FeaturedWebsites } from '@/components/home/featured-websites';
-import { HowItWorksSection } from '@/components/home/how-it-works-section';
-import { CtaSection } from '@/components/home/cta-section';
+import { FeatureStrip } from '@/components/home/feature-strip';
+import { TrustedBy } from '@/components/home/trusted-by';
+import { HowItWorks } from '@/components/home/how-it-works';
+import { NicheGrid } from '@/components/home/niche-grid';
+import { FinalCta } from '@/components/home/final-cta';
 import { websiteService } from '@/lib/services';
 import { brand, siteUrl } from '@/lib/config/brand';
 
 export const metadata: Metadata = {
-  title: `${brand.name} | ${brand.tagline}`,
+  // `absolute` skips the root template, which would otherwise append the brand
+  // name a second time.
+  title: { absolute: `${brand.name} | ${brand.tagline}` },
   description: brand.description,
   alternates: { canonical: '/' },
 };
 
 export default async function HomePage() {
-  const [featured, heroRows] = await Promise.all([
-    websiteService.getFeatured(6),
+  const [featured, nicheCounts] = await Promise.all([
     websiteService.getFeatured(5),
+    websiteService.countByNiche(),
   ]);
 
   const organisationJsonLd = {
@@ -42,11 +45,12 @@ export default async function HomePage() {
         // Structured data is static and generated from the brand config.
         dangerouslySetInnerHTML={{ __html: JSON.stringify(organisationJsonLd) }}
       />
-      <Hero websites={heroRows} />
-      <TrustStrip />
-      <FeaturedWebsites websites={featured} />
-      <HowItWorksSection />
-      <CtaSection />
+      <Hero websites={featured} />
+      <FeatureStrip />
+      <TrustedBy />
+      <HowItWorks />
+      <NicheGrid counts={nicheCounts} />
+      <FinalCta />
     </>
   );
 }

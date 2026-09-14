@@ -2,37 +2,7 @@ import Link from 'next/link';
 import { ArrowRight } from 'lucide-react';
 import { Container } from '@/components/layout/container';
 import { Button } from '@/components/ui/button';
-
-export const steps = [
-  {
-    number: '1',
-    title: 'Search',
-    description: 'Find websites using filters, niche or keywords.',
-    detail:
-      'Filter by domain rating, organic traffic, country, language, price and turnaround until the shortlist is exactly right.',
-  },
-  {
-    number: '2',
-    title: 'Review',
-    description: 'Check metrics, traffic, pricing and details.',
-    detail:
-      'Every listing shows audience geography, publishing rules, link policy and example placements before you commit.',
-  },
-  {
-    number: '3',
-    title: 'Order',
-    description: 'Place your order securely.',
-    detail:
-      'Add target URLs and anchor text, submit the brief and track the order through a single dashboard.',
-  },
-  {
-    number: '4',
-    title: 'Get live',
-    description: 'Receive confirmation when the placement is published.',
-    detail:
-      'You get the live URL as soon as the article is published, with the link checked for indexation.',
-  },
-];
+import { journeySteps } from '@/lib/config/how-it-works';
 
 export function HowItWorksSection({
   compact = false,
@@ -64,7 +34,7 @@ export function HowItWorksSection({
         </div>
 
         <ol className="mt-12 grid gap-px overflow-hidden rounded-xl bg-white/10 sm:grid-cols-2 lg:grid-cols-4">
-          {steps.map((step) => (
+          {journeySteps.map((step) => (
             <li key={step.number} className="bg-navy-900 p-6">
               <span className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-accent-500/15 text-[13px] font-semibold text-accent-400">
                 {step.number}

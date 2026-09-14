@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { HowItWorksSection } from '@/components/home/how-it-works-section';
 import { Faq } from '@/components/shared/faq';
-import { CtaSection } from '@/components/home/cta-section';
+import { FinalCta } from '@/components/home/final-cta';
 import { linkTypeDescriptions, linkTypeLabels } from '@/lib/utils/labels';
 import { brand } from '@/lib/config/brand';
 
@@ -151,7 +151,7 @@ export default function HowItWorksPage() {
         </Container>
       </section>
 
-      <CtaSection />
+      <FinalCta />
     </>
   );
 }

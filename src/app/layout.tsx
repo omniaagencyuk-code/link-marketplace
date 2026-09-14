@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from 'next';
-import { Inter } from 'next/font/google';
+import { Caveat, Inter } from 'next/font/google';
 import { AppProviders } from '@/lib/providers/app-providers';
 import { SupportChat } from '@/components/support/support-chat';
 import { brand, siteUrl } from '@/lib/config/brand';
@@ -9,6 +9,14 @@ const inter = Inter({
   subsets: ['latin'],
   display: 'swap',
   variable: '--font-inter',
+});
+
+/** Used only for the hand-drawn annotations. One weight, latin only. */
+const caveat = Caveat({
+  subsets: ['latin'],
+  weight: ['600'],
+  display: 'swap',
+  variable: '--font-caveat',
 });
 
 export const metadata: Metadata = {
@@ -52,7 +60,7 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en-GB" className={inter.variable}>
+    <html lang="en-GB" className={`${inter.variable} ${caveat.variable}`}>
       <body className="min-h-dvh font-sans antialiased">
         <a
           href="#main"

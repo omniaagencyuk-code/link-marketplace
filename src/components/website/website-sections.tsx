@@ -3,7 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { countryName } from '@/lib/data/countries';
 import { formatDate, formatNumber, formatTurnaround } from '@/lib/utils/format';
 import { languageLabels, linkTypeLabels, sponsoredTagLabels } from '@/lib/utils/labels';
-import { steps } from '@/components/home/how-it-works-section';
+import { journeySteps } from '@/lib/config/how-it-works';
 import type { Website } from '@/lib/types';
 
 export function WebsiteSections({ website }: { website: Website }) {
@@ -172,7 +172,7 @@ export function WebsiteSections({ website }: { website: Website }) {
 
       <Section id="order-process" title="Order Process">
         <ol className="grid gap-4 sm:grid-cols-2">
-          {steps.map((step) => (
+          {journeySteps.map((step) => (
             <li key={step.number} className="rounded-lg border border-line bg-surface/60 p-4">
               <span className="inline-flex h-7 w-7 items-center justify-center rounded-md bg-navy-900 text-[12px] font-semibold text-white">
                 {step.number}

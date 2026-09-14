@@ -46,16 +46,16 @@ export function Logo({
   tone?: 'dark' | 'light';
   href?: string | null;
 }) {
+  // "Press" carries the navy, "Parrot" the green.
+  const [firstWord, ...rest] = brand.name.split(' ');
+  const restOfName = rest.join(' ');
+
   const content = (
     <span className={cn('inline-flex items-center gap-2', className)}>
       <ParrotMark />
-      <span
-        className={cn(
-          'text-[17px] font-semibold tracking-tight',
-          tone === 'dark' ? 'text-ink' : 'text-white',
-        )}
-      >
-        {brand.name}
+      <span className="text-[17px] font-semibold tracking-tight">
+        <span className={tone === 'dark' ? 'text-ink' : 'text-white'}>{firstWord}</span>
+        {restOfName ? <span className="text-accent-600"> {restOfName}</span> : null}
       </span>
     </span>
   );
