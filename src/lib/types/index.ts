@@ -6,4 +6,5 @@ export type * from './order';
 export type * from './favourite';
 export type * from './settings';
 export type * from './content';
+export type * from './blog';
 export type * from './query';

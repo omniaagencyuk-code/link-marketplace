@@ -1,11 +1,13 @@
 import { seedPosts } from '@/lib/data/blog-posts';
+import { isSupabaseEnabled } from '@/lib/supabase/config';
+import { supabaseBlogRepository } from './supabase/cms-repository';
 import type { BlogPost, BlogPostInput, PostCategorySlug } from '@/lib/types/blog';
 
 /**
  * Blog repository.
  *
- * Same contract as every other service: an in-memory store today, one `posts`
- * table tomorrow.
+ * Delegates to Supabase when it is connected, and to the in-memory store
+ * otherwise. Both implementations honour the same rule below.
  *
  * The public/admin split matters here. `listPublished` is the only read the
  * public site uses, and it filters drafts *and* future-dated scheduled posts
@@ -39,6 +41,8 @@ export interface BlogListOptions {
 export const blogService = {
   /** Live posts only. The public site never calls anything else. */
   async listPublished(options: BlogListOptions = {}): Promise<BlogPost[]> {
+    if (isSupabaseEnabled()) return supabaseBlogRepository.listPublished(options);
+
     const now = Date.now();
     let posts = store.filter((post) => isLive(post, now)).sort(byNewest);
     if (options.category) posts = posts.filter((post) => post.category === options.category);
@@ -48,6 +52,8 @@ export const blogService = {
 
   /** One live post by slug, or null. Drafts return null to the public site. */
   async getPublishedBySlug(slug: string): Promise<BlogPost | null> {
+    if (isSupabaseEnabled()) return supabaseBlogRepository.getPublishedBySlug(slug);
+
     const post = store.find((entry) => entry.slug === slug);
     if (!post || !isLive(post)) return null;
     return post;
@@ -55,6 +61,8 @@ export const blogService = {
 
   /** Related posts in the same category, excluding the current one. */
   async getRelated(slug: string, limit = 3): Promise<BlogPost[]> {
+    if (isSupabaseEnabled()) return supabaseBlogRepository.getRelated(slug, limit);
+
     const current = store.find((post) => post.slug === slug);
     if (!current) return [];
     const now = Date.now();
@@ -75,19 +83,27 @@ export const blogService = {
 
   /** Every post including drafts. Admin only. */
   async listAll(): Promise<BlogPost[]> {
+    if (isSupabaseEnabled()) return supabaseBlogRepository.listAll();
+
     return [...store].sort(byNewest);
   },
 
   async getById(id: string): Promise<BlogPost | null> {
+    if (isSupabaseEnabled()) return supabaseBlogRepository.getById(id);
+
     return store.find((post) => post.id === id) ?? null;
   },
 
   /** Is a slug free? `exceptId` lets a post keep its own slug while editing. */
   async isSlugAvailable(slug: string, exceptId?: string): Promise<boolean> {
+    if (isSupabaseEnabled()) return supabaseBlogRepository.isSlugAvailable(slug, exceptId);
+
     return !store.some((post) => post.slug === slug && post.id !== exceptId);
   },
 
   async create(input: BlogPostInput): Promise<BlogPost> {
+    if (isSupabaseEnabled()) return supabaseBlogRepository.create(input);
+
     const now = new Date().toISOString();
     const post: BlogPost = {
       ...input,
@@ -100,6 +116,8 @@ export const blogService = {
   },
 
   async update(id: string, input: BlogPostInput, updatedBy?: string): Promise<BlogPost | null> {
+    if (isSupabaseEnabled()) return supabaseBlogRepository.update(id, input, updatedBy);
+
     const index = store.findIndex((post) => post.id === id);
     if (index === -1) return null;
     const updated: BlogPost = {
@@ -114,6 +132,8 @@ export const blogService = {
   },
 
   async delete(id: string): Promise<boolean> {
+    if (isSupabaseEnabled()) return supabaseBlogRepository.delete(id);
+
     const before = store.length;
     store = store.filter((post) => post.id !== id);
     return store.length < before;
@@ -121,6 +141,8 @@ export const blogService = {
 
   /** Counts per category, for the public index filters. */
   async countByCategory(): Promise<Record<string, number>> {
+    if (isSupabaseEnabled()) return supabaseBlogRepository.countByCategory();
+
     const now = Date.now();
     const counts: Record<string, number> = {};
     for (const post of store) {
@@ -132,6 +154,8 @@ export const blogService = {
 
   /** Slugs of live posts, for the sitemap. */
   async getPublishedSlugs(): Promise<{ slug: string; updatedAt: string }[]> {
+    if (isSupabaseEnabled()) return supabaseBlogRepository.getPublishedSlugs();
+
     const now = Date.now();
     return store
       .filter((post) => isLive(post, now))

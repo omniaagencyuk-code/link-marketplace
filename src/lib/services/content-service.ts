@@ -6,6 +6,8 @@ import type {
   ContentOrderItem,
   ContentOrderStatus,
 } from '@/lib/types/content';
+import { isSupabaseEnabled } from '@/lib/supabase/config';
+import { supabaseContentRepository } from './supabase/orders-repository';
 
 /**
  * Content order repository.
@@ -104,20 +106,28 @@ export interface CreateContentOrderInput {
 
 export const contentService = {
   async getAll(): Promise<ContentOrder[]> {
+    if (isSupabaseEnabled()) return supabaseContentRepository.getAll();
+
     return [...store].sort((a, b) => Date.parse(b.placedAt) - Date.parse(a.placedAt));
   },
 
   async getByUser(userId: string): Promise<ContentOrder[]> {
+    if (isSupabaseEnabled()) return supabaseContentRepository.getByUser(userId);
+
     return (await contentService.getAll()).filter((order) => order.userId === userId);
   },
 
   /** Every article across the marketplace, newest first. Admin only. */
   async getAllItems(): Promise<ContentItemRow[]> {
+    if (isSupabaseEnabled()) return supabaseContentRepository.getAllItems();
+
     return flatten(await contentService.getAll());
   },
 
   /** Every article belonging to one customer, newest first. */
   async getItemsByUser(userId: string): Promise<ContentItemRow[]> {
+    if (isSupabaseEnabled()) return supabaseContentRepository.getItemsByUser(userId);
+
     return flatten(await contentService.getByUser(userId));
   },
 
@@ -126,6 +136,8 @@ export const contentService = {
    * someone else's id gets null rather than a foreign brief.
    */
   async getItem(itemId: string, userId?: string): Promise<ContentItemRow | null> {
+    if (isSupabaseEnabled()) return supabaseContentRepository.getItem(itemId, userId);
+
     const rows = flatten(store);
     const row = rows.find((entry) => entry.item.id === itemId) ?? null;
     if (!row) return null;
@@ -134,6 +146,8 @@ export const contentService = {
   },
 
   async getSummary(userId: string): Promise<ContentSummary> {
+    if (isSupabaseEnabled()) return supabaseContentRepository.getSummary(userId);
+
     const rows = await contentService.getItemsByUser(userId);
     return {
       activeOrders: rows.filter((row) => activeStatuses.includes(row.item.status)).length,
@@ -147,6 +161,8 @@ export const contentService = {
 
   /** Place a content order. One order can hold several articles. */
   async create(input: CreateContentOrderInput): Promise<ContentOrder> {
+    if (isSupabaseEnabled()) return supabaseContentRepository.create(input);
+
     const now = new Date().toISOString();
     const orderId = newId('cord');
     const reference = `PPC-${referenceSequence++}`;
@@ -188,6 +204,8 @@ export const contentService = {
     itemId: string,
     patch: Partial<Pick<ContentOrderItem, 'status' | 'priceMinor' | 'writerName' | 'internalNotes'>>,
   ): Promise<ContentOrderItem | null> {
+    if (isSupabaseEnabled()) return supabaseContentRepository.updateItem(itemId, patch);
+
     const orderIndex = store.findIndex((order) =>
       order.items.some((item) => item.id === itemId),
     );
@@ -207,6 +225,10 @@ export const contentService = {
     userId: string,
     notes: string,
   ): Promise<ContentOrderItem | null> {
+    if (isSupabaseEnabled()) {
+      return supabaseContentRepository.requestRevision(itemId, userId, notes);
+    }
+
     const row = await contentService.getItem(itemId, userId);
     if (!row) return null;
 
@@ -234,6 +256,8 @@ export const contentService = {
     itemId: string,
     message: { authorRole: 'customer' | 'team'; authorName: string; body: string },
   ): Promise<ContentOrderItem | null> {
+    if (isSupabaseEnabled()) return supabaseContentRepository.addMessage(itemId, message);
+
     const orderIndex = store.findIndex((order) =>
       order.items.some((item) => item.id === itemId),
     );
@@ -264,6 +288,8 @@ export const contentService = {
     itemId: string,
     delivery: Omit<ContentDelivery, 'id' | 'deliveredAt'>,
   ): Promise<ContentOrderItem | null> {
+    if (isSupabaseEnabled()) return supabaseContentRepository.addDelivery(itemId, delivery);
+
     const orderIndex = store.findIndex((order) =>
       order.items.some((item) => item.id === itemId),
     );

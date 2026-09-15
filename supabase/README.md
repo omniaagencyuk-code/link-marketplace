@@ -56,6 +56,39 @@ NEXT_PUBLIC_DATA_SOURCE=supabase
 
 Both public keys are found under **Project Settings → API**.
 
+## 4. Load the seed data
+
+```bash
+cp .env.example .env.local     # fill in the three Supabase values
+npm run seed                   # 72 websites, their services, 6 blog posts
+npm run seed:reset             # same, but clears those tables first
+```
+
+The script runs with the service role key because it writes rows belonging to
+no signed-in user. It matches on slug, so running it twice updates rather than
+duplicating.
+
+## 5. Switch the app over
+
+Set `NEXT_PUBLIC_DATA_SOURCE=supabase` and redeploy. Every service checks that
+flag *and* the credentials: with the flag on but keys missing, the app falls
+back to the mock store rather than erroring on every page.
+
+## Verifying the schema
+
+```bash
+npm run verify:schema
+```
+
+Replays every migration against a local PostgreSQL, inserts the seed data
+through the real mappers, reads it back and asserts the values survived - then
+checks that `anon` sees no inventory while `authenticated` does. It catches
+the class of bug TypeScript cannot: a column name that is wrong.
+
+Needs a local Postgres on port 55432; see the script header.
+
+## Old notes
+
 ## 4. Import the website inventory
 
 The 72 seed websites live in `src/lib/data/websites.raw.ts`. Write a one-off

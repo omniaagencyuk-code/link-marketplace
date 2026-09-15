@@ -3,11 +3,12 @@
 import Link from 'next/link';
 import { useActionState } from 'react';
 import { useFormStatus } from 'react-dom';
-import { AlertCircle, Info } from 'lucide-react';
+import { AlertCircle, CheckCircle2, Info } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { signInAction, signUpAction, type AuthActionState } from '@/app/(auth)/actions';
+import { isSupabaseEnabled } from '@/lib/supabase/config';
 import { brand } from '@/lib/config/brand';
 
 /**
@@ -81,7 +82,10 @@ export function AuthForm({ mode, next }: { mode: 'login' | 'signup'; next?: stri
           <div className="flex items-center justify-between">
             <Label htmlFor="password">Password</Label>
             {!isSignup ? (
-              <Link href="/login" className="text-[12px] text-accent-700 hover:underline">
+              <Link
+                href="/forgot-password"
+                className="text-[12px] text-accent-700 hover:underline"
+              >
                 Forgot password?
               </Link>
             ) : null}
@@ -99,6 +103,16 @@ export function AuthForm({ mode, next }: { mode: 'login' | 'signup'; next?: stri
             <p className="mt-1.5 text-[12px] text-muted">At least 8 characters.</p>
           ) : null}
         </div>
+
+        {state.notice ? (
+          <p
+            role="status"
+            className="flex gap-2 rounded-lg border border-accent-500/30 bg-accent-50 px-3.5 py-2.5 text-[13px] text-accent-800"
+          >
+            <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+            {state.notice}
+          </p>
+        ) : null}
 
         {state.error ? (
           <p
@@ -127,13 +141,16 @@ export function AuthForm({ mode, next }: { mode: 'login' | 'signup'; next?: stri
         </Link>
       </p>
 
-      <div className="mt-8 flex gap-2.5 rounded-lg border border-line bg-surface p-3.5 text-[12px] leading-relaxed text-muted">
-        <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-        <span>
-          Development build: credentials are not yet verified, so any email signs you in and
-          creates a demo account. The session itself is real and is what protects the marketplace.
-        </span>
-      </div>
+      {!isSupabaseEnabled() ? (
+        <div className="mt-8 flex gap-2.5 rounded-lg border border-line bg-surface p-3.5 text-[12px] leading-relaxed text-muted">
+          <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+          <span>
+            Development build: credentials are not yet verified, so any email signs you in and
+            creates a demo account. The session itself is real and is what protects the
+            marketplace.
+          </span>
+        </div>
+      ) : null}
     </div>
   );
 }

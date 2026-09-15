@@ -1,6 +1,8 @@
 import { mockAdmin, mockCustomer, users as seedUsers } from '@/lib/data/users';
 import { isAdminEmail } from '@/lib/auth/admin-access';
 import type { UserProfile } from '@/lib/types';
+import { isSupabaseEnabled } from '@/lib/supabase/config';
+import { supabaseUserRepository } from './supabase/orders-repository';
 
 const store: UserProfile[] = seedUsers.map((user) => ({ ...user }));
 
@@ -28,14 +30,20 @@ function nameFromEmail(email: string) {
 
 export const userService = {
   async getAll(): Promise<UserProfile[]> {
+    if (isSupabaseEnabled()) return supabaseUserRepository.getAll();
+
     return [...store];
   },
 
   async getById(id: string): Promise<UserProfile | null> {
+    if (isSupabaseEnabled()) return supabaseUserRepository.getById(id);
+
     return store.find((user) => user.id === id) ?? null;
   },
 
   async getByEmail(email: string): Promise<UserProfile | null> {
+    if (isSupabaseEnabled()) return supabaseUserRepository.getByEmail(email);
+
     const needle = email.trim().toLowerCase();
     return store.find((user) => user.email.toLowerCase() === needle) ?? null;
   },

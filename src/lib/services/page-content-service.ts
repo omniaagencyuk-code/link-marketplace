@@ -1,16 +1,19 @@
 import { getRegisteredPage, listRegisteredPages } from '@/lib/cms/registry';
+import { isSupabaseEnabled } from '@/lib/supabase/config';
+import { supabasePageContentRepository } from './supabase/cms-repository';
 import { resolvePage, contentAccessors, type ContentAccessors } from '@/lib/cms/resolve';
 import type { PageContentRecord, PageValues, ResolvedContent } from '@/lib/cms/types';
 
 /**
  * Saved page content.
  *
- * Same contract as every other service: an in-memory store today, one
- * `page_content` table tomorrow (slug primary key, values jsonb). Swapping the
- * bodies is the whole migration.
+ * Persistence is either the in-memory store or the `page_content` table,
+ * chosen by `isSupabaseEnabled()`. Resolution - merging overrides onto the
+ * shipped defaults - stays here in both cases, because the defaults live in
+ * code and the database only ever holds the difference.
  *
- * Reads never fail on missing data - a page with no saved row resolves to its
- * shipped defaults - so the public site is never dependent on this store being
+ * Reads never fail on missing data: a page with no saved row resolves to its
+ * shipped defaults, so the public site is never dependent on this store being
  * populated, or even reachable.
  */
 
@@ -30,8 +33,12 @@ export interface PageSummary {
 export const pageContentService = {
   /** Every editable page, with whether it has been customised. */
   async list(): Promise<PageSummary[]> {
+    const saved = isSupabaseEnabled()
+      ? await supabasePageContentRepository.getAllOverrides()
+      : Object.fromEntries(store.entries());
+
     return listRegisteredPages().map(({ definition }) => {
-      const record = store.get(definition.slug);
+      const record = saved[definition.slug];
       return {
         slug: definition.slug,
         label: definition.label,
@@ -47,6 +54,7 @@ export const pageContentService = {
 
   /** The raw saved overrides for a page, or null. Admin editor only. */
   async getOverrides(slug: string): Promise<PageContentRecord | null> {
+    if (isSupabaseEnabled()) return supabasePageContentRepository.getOverrides(slug);
     return store.get(slug) ?? null;
   },
 
@@ -58,7 +66,7 @@ export const pageContentService = {
   async resolve(slug: string): Promise<ResolvedContent | null> {
     const page = getRegisteredPage(slug);
     if (!page) return null;
-    const record = store.get(slug);
+    const record = await pageContentService.getOverrides(slug);
     return resolvePage(page.definition, page.defaults, record?.values);
   },
 
@@ -76,6 +84,8 @@ export const pageContentService = {
 
   /** Save overrides for a page. Values are validated by the caller. */
   async save(slug: string, values: PageValues, updatedBy?: string): Promise<PageContentRecord> {
+    if (isSupabaseEnabled()) return supabasePageContentRepository.save(slug, values, updatedBy);
+
     const record: PageContentRecord = {
       slug,
       values,
@@ -88,6 +98,7 @@ export const pageContentService = {
 
   /** Drop every override for a page, restoring the shipped copy. */
   async reset(slug: string): Promise<void> {
+    if (isSupabaseEnabled()) return supabasePageContentRepository.reset(slug);
     store.delete(slug);
   },
 };

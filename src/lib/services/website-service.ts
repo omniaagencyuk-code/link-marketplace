@@ -4,6 +4,8 @@ import { slugifyDomain } from '@/lib/utils/format';
 import { normaliseDomain } from '@/lib/import/normalise';
 import { newWebsiteDefaults, toWebsitePatch } from '@/lib/import/to-website';
 import { toPreviewRows, type MarketplacePreview } from './marketplace-preview';
+import { isSupabaseEnabled } from '@/lib/supabase/config';
+import { supabaseWebsiteRepository } from './supabase/website-repository';
 import type { ImportPayloadRow, ImportBatchResult, DuplicateMode } from '@/lib/import/types';
 import type {
   NicheSlug,
@@ -17,9 +19,9 @@ import type {
 /**
  * Website repository.
  *
- * The mock implementation keeps an in-memory copy of the seed data so admin
- * create/update calls behave realistically during a session. Swap the body of
- * each method for a Supabase query and the UI keeps working unchanged.
+ * Delegates to Supabase when it is connected. The mock implementation below
+ * keeps an in-memory copy of the seed data, so the app runs from a clone with
+ * no configuration and admin create/update calls still behave realistically.
  */
 
 let store: Website[] = seedWebsites.map((website) => ({ ...website }));
@@ -49,23 +51,33 @@ export interface MarketplaceStats {
 export const websiteService = {
   /** Every active listing, as list items. */
   async getAll(): Promise<WebsiteListItem[]> {
+    if (isSupabaseEnabled()) return supabaseWebsiteRepository.getAll();
+
     return listItems();
   },
 
   /** Every listing including drafts, paused and archived. Admin only. */
   async getAllForAdmin(): Promise<WebsiteListItem[]> {
+    if (isSupabaseEnabled()) return supabaseWebsiteRepository.getAllForAdmin();
+
     return listItems(true);
   },
 
   async getById(id: string): Promise<Website | null> {
+    if (isSupabaseEnabled()) return supabaseWebsiteRepository.getById(id);
+
     return store.find((website) => website.id === id) ?? null;
   },
 
   async getBySlug(slug: string): Promise<Website | null> {
+    if (isSupabaseEnabled()) return supabaseWebsiteRepository.getBySlug(slug);
+
     return store.find((website) => website.slug === slug) ?? null;
   },
 
   async getSlugs(): Promise<string[]> {
+    if (isSupabaseEnabled()) return supabaseWebsiteRepository.getSlugs();
+
     return store.filter((website) => website.status === 'active').map((website) => website.slug);
   },
 
@@ -81,6 +93,8 @@ export const websiteService = {
    * surfaces. Public pages use `getPublicPreview()`.
    */
   async getFeatured(limit = 6): Promise<WebsiteListItem[]> {
+    if (isSupabaseEnabled()) return supabaseWebsiteRepository.getFeatured(limit);
+
     return listItems()
       .filter((website) => website.verified)
       .sort(
@@ -94,6 +108,8 @@ export const websiteService = {
 
   /** Sites in the same niche, excluding the current one. */
   async getRelated(slug: string, limit = 4): Promise<WebsiteListItem[]> {
+    if (isSupabaseEnabled()) return supabaseWebsiteRepository.getRelated(slug, limit);
+
     const current = store.find((website) => website.slug === slug);
     if (!current) return [];
     return listItems()
@@ -107,11 +123,15 @@ export const websiteService = {
   },
 
   async getByIds(ids: string[]): Promise<WebsiteListItem[]> {
+    if (isSupabaseEnabled()) return supabaseWebsiteRepository.getByIds(ids);
+
     const wanted = new Set(ids);
     return listItems(true).filter((website) => wanted.has(website.id));
   },
 
   async countByNiche(): Promise<Record<NicheSlug, number>> {
+    if (isSupabaseEnabled()) return supabaseWebsiteRepository.countByNiche();
+
     const counts = {} as Record<NicheSlug, number>;
     for (const website of store) {
       if (website.status !== 'active') continue;
@@ -121,6 +141,8 @@ export const websiteService = {
   },
 
   async getStats(): Promise<MarketplaceStats> {
+    if (isSupabaseEnabled()) return supabaseWebsiteRepository.getStats();
+
     const active = listItems();
     const ratings = active.map((website) => website.metrics.domainRating).sort((a, b) => a - b);
     const middle = Math.floor(ratings.length / 2);
@@ -147,6 +169,8 @@ export const websiteService = {
    * strongest sites.
    */
   async getPublicPreview(limit = 6): Promise<MarketplacePreview> {
+    if (isSupabaseEnabled()) return supabaseWebsiteRepository.getPublicPreview(limit);
+
     const active = listItems();
     const stride = Math.max(1, Math.floor(active.length / Math.max(limit, 1)));
     const sample: WebsiteListItem[] = [];
@@ -166,6 +190,8 @@ export const websiteService = {
   },
 
   async create(input: Partial<Website> & { domain: string }): Promise<Website> {
+    if (isSupabaseEnabled()) return supabaseWebsiteRepository.create(input);
+
     const now = new Date().toISOString();
     const base = store[0] as Website;
     const website: Website = {
@@ -183,6 +209,8 @@ export const websiteService = {
   },
 
   async update(id: string, patch: Partial<Website>): Promise<Website | null> {
+    if (isSupabaseEnabled()) return supabaseWebsiteRepository.update(id, patch);
+
     const index = store.findIndex((website) => website.id === id);
     if (index === -1) return null;
     const updated: Website = {
@@ -205,6 +233,8 @@ export const websiteService = {
    * every record.
    */
   async getDomainIndex(): Promise<Record<string, string>> {
+    if (isSupabaseEnabled()) return supabaseWebsiteRepository.getDomainIndex();
+
     const index: Record<string, string> = {};
     for (const website of store) {
       const domain = normaliseDomain(website.domain);
@@ -221,6 +251,8 @@ export const websiteService = {
    * Rows are processed independently: one bad row never fails the batch.
    */
   async bulkUpsert(rows: ImportPayloadRow[], mode: DuplicateMode): Promise<ImportBatchResult> {
+    if (isSupabaseEnabled()) return supabaseWebsiteRepository.bulkUpsert(rows, mode);
+
     const result: ImportBatchResult = { created: 0, updated: 0, skipped: 0, failed: [] };
 
     for (const row of rows) {
@@ -273,6 +305,8 @@ export const websiteService = {
   },
 
   async duplicate(id: string): Promise<Website | null> {
+    if (isSupabaseEnabled()) return supabaseWebsiteRepository.duplicate(id);
+
     const original = store.find((website) => website.id === id);
     if (!original) return null;
     return websiteService.create({
