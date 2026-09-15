@@ -4,10 +4,26 @@
  * Kept apart from the clients so that "is Supabase configured?" can be asked
  * without importing the SDK - the service layer needs that question answered
  * on every call to decide between the mock store and the database.
+ *
+ * Two generations of Supabase key naming are accepted, because a project
+ * created today gets different names from one created a year ago:
+ *
+ *   old: NEXT_PUBLIC_SUPABASE_ANON_KEY   (a JWT, "eyJ...")
+ *        SUPABASE_SERVICE_ROLE_KEY
+ *   new: NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY  ("sb_publishable_...")
+ *        SUPABASE_SECRET_KEY                   ("sb_secret_...")
+ *
+ * Both go in the same position in the client, so accepting either name means
+ * whichever the dashboard hands you is the one you can paste.
  */
 
 export const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL?.replace(/\/+$/, '') ?? '';
-export const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? '';
+
+/** The browser-safe key, under either name. */
+export const supabaseAnonKey =
+  process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ??
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ??
+  '';
 
 /** True when the public credentials are present. */
 export function hasSupabaseCredentials(): boolean {
@@ -31,14 +47,14 @@ export function isSupabaseEnabled(): boolean {
 }
 
 /**
- * The service role key. Server-only, and never referenced from a module that a
+ * The secret key. Server-only, and never referenced from a module that a
  * client component can reach.
  *
  * It bypasses row level security entirely, so it is used for exactly two
- * things: the seed/import scripts, and the handful of writes that legitimately
- * act outside any one user's permissions. Everything else goes through the
- * anon key plus the signed-in user's session, so RLS stays in force.
+ * things: the seed/import scripts, and the handful of reads that legitimately
+ * serve signed-out pages with redacted data. Everything else goes through the
+ * publishable key plus the signed-in user's session, so RLS stays in force.
  */
 export function serviceRoleKey(): string | undefined {
-  return process.env.SUPABASE_SERVICE_ROLE_KEY || undefined;
+  return process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || undefined;
 }

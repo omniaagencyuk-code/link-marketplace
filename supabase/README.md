@@ -49,12 +49,23 @@ Copy `.env.example` to `.env.local` in the project root and fill in:
 
 ```bash
 NEXT_PUBLIC_SUPABASE_URL=https://<project-ref>.supabase.co
-NEXT_PUBLIC_SUPABASE_ANON_KEY=<anon key>
-SUPABASE_SERVICE_ROLE_KEY=<service role key>   # server-side only, never commit
+
+# Whichever pair your dashboard shows - both namings are accepted.
+NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=sb_publishable_...   # newer projects
+NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJ...                      # older projects
+
+SUPABASE_SECRET_KEY=sb_secret_...                         # newer projects
+SUPABASE_SERVICE_ROLE_KEY=eyJ...                          # older projects
+
 NEXT_PUBLIC_DATA_SOURCE=supabase
 ```
 
-Both public keys are found under **Project Settings → API**.
+Keys are under **Project Settings → API Keys**, or behind the **Connect**
+button at the top of the dashboard. Supabase renamed them: newer projects get
+`sb_publishable_` / `sb_secret_`, older ones get JWTs. The app accepts either.
+
+The secret key is server-side only and bypasses row level security. It never
+belongs in a Preview environment or anywhere it could reach a browser.
 
 ## 4. Load the seed data
 
