@@ -2,7 +2,6 @@ import Link from 'next/link';
 import { ArrowRight, Check } from 'lucide-react';
 import { Container } from '@/components/layout/container';
 import { Button } from '@/components/ui/button';
-import { HandwrittenNote } from '@/components/shared/handwritten';
 import { ParrotHero } from './parrot-hero';
 import { RedactedPreview } from '@/components/marketplace/redacted-preview';
 import { TrustMetrics } from './trust-metrics';
@@ -77,19 +76,7 @@ export function Hero({ content, preview }: { content: ContentAccessors; preview:
           </div>
 
           <div className="relative z-10 min-w-0 lg:-mx-10 lg:mb-[-2.5rem]">
-            {annotation ? (
-              <HandwrittenNote
-                arrow="down-right"
-                className="absolute -top-2 -left-4 z-20 hidden rotate-[-8deg] lg:block"
-              >
-                {annotation.split('\n').map((line, index) => (
-                  <span key={line || index} className="block">
-                    {line}
-                  </span>
-                ))}
-              </HandwrittenNote>
-            ) : null}
-            <ParrotHero />
+            <ParrotHero annotation={annotation} />
           </div>
 
           <div className="relative z-20 min-w-0">

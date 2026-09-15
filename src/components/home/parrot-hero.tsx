@@ -23,7 +23,14 @@ function findMascot() {
   );
 }
 
-export function ParrotHero() {
+/**
+ * The mascot, with its handwritten annotation.
+ *
+ * The note lives here rather than in the hero because its placement is tuned
+ * against the artwork - it has to sit beside the bird's head at every width.
+ * The text itself is editable and arrives as a prop; a blank value hides it.
+ */
+export function ParrotHero({ annotation }: { annotation?: string }) {
   const mascot = findMascot();
 
   return (
@@ -44,14 +51,18 @@ export function ParrotHero() {
         className="absolute inset-x-6 bottom-4 h-24 rounded-[50%] bg-accent-500/10 blur-2xl"
       />
 
-      <HandwrittenNote
-        arrow="down-right"
-        className="absolute top-2 -left-2 z-20 hidden w-32 -rotate-6 sm:block lg:top-0 lg:-left-8"
-      >
-        Good links
-        <br />
-        get you places.
-      </HandwrittenNote>
+      {annotation ? (
+        <HandwrittenNote
+          arrow="down-right"
+          className="absolute top-2 -left-2 z-20 hidden w-32 -rotate-6 sm:block lg:top-0 lg:-left-8"
+        >
+          {annotation.split('\n').map((line, index) => (
+            <span key={line || index} className="block">
+              {line}
+            </span>
+          ))}
+        </HandwrittenNote>
+      ) : null}
 
       <div className="relative w-full max-w-[16rem] motion-safe:animate-[var(--animate-float)] sm:max-w-[19rem] lg:max-w-none">
         {mascot ? (
