@@ -1,0 +1,182 @@
+import type {
+  FieldDef,
+  FieldValue,
+  ImageValue,
+  LinkValue,
+  PageDef,
+  PageValues,
+  ResolvedContent,
+} from './types';
+
+/**
+ * Merging saved overrides onto shipped defaults.
+ *
+ * Two rules make this safe:
+ *
+ * 1. An override only wins when it has the right *shape*. A saved string never
+ *    replaces a list, so a schema change cannot break a live page.
+ * 2. An empty value falls back to the default rather than rendering a blank.
+ *    Clearing a field in the editor therefore means "restore the original",
+ *    which is what an editor expects and what stops a page losing its heading
+ *    because someone selected-all and deleted.
+ */
+
+/** The default value declared for one field. */
+function defaultFor(field: FieldDef, defaults: Record<string, FieldValue>): FieldValue {
+  const value = defaults[field.key];
+  if (value !== undefined) return value;
+
+  // A field with no declared default still has to render something.
+  switch (field.type) {
+    case 'link':
+      return { label: '', href: '/' };
+    case 'image':
+      return { src: '', alt: '' };
+    case 'list':
+      return [];
+    default:
+      return '';
+  }
+}
+
+function isLinkValue(value: unknown): value is LinkValue {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    typeof (value as LinkValue).href === 'string' &&
+    typeof (value as LinkValue).label === 'string'
+  );
+}
+
+function isImageValue(value: unknown): value is ImageValue {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    typeof (value as ImageValue).src === 'string'
+  );
+}
+
+/** Does a saved value match the shape the field expects? */
+function shapeMatches(field: FieldDef, value: unknown): boolean {
+  switch (field.type) {
+    case 'text':
+    case 'textarea':
+    case 'richtext':
+      return typeof value === 'string';
+    case 'link':
+      return isLinkValue(value);
+    case 'image':
+      return isImageValue(value);
+    case 'list':
+      return Array.isArray(value);
+    default:
+      return false;
+  }
+}
+
+/** Is a saved value empty enough that the default should win? */
+function isEmpty(field: FieldDef, value: unknown): boolean {
+  switch (field.type) {
+    case 'text':
+    case 'textarea':
+    case 'richtext':
+      return typeof value !== 'string' || value.trim() === '';
+    case 'link':
+      return !isLinkValue(value) || value.label.trim() === '';
+    case 'image':
+      return !isImageValue(value) || value.src.trim() === '';
+    case 'list':
+      return !Array.isArray(value) || value.length === 0;
+    default:
+      return true;
+  }
+}
+
+function resolveField(
+  field: FieldDef,
+  defaults: Record<string, FieldValue>,
+  overrides: Record<string, FieldValue> | undefined,
+): FieldValue {
+  const fallback = defaultFor(field, defaults);
+  const override = overrides?.[field.key];
+
+  if (override === undefined) return fallback;
+  if (!shapeMatches(field, override)) return fallback;
+  if (isEmpty(field, override)) return fallback;
+
+  // A list's entries are plain records; trust the saved rows but drop any that
+  // are not objects, so one malformed row cannot break the whole section.
+  if (field.type === 'list' && Array.isArray(override)) {
+    const rows = override.filter(
+      (row): row is Record<string, string | LinkValue | ImageValue> =>
+        typeof row === 'object' && row !== null && !Array.isArray(row),
+    );
+    return rows.length > 0 ? rows : fallback;
+  }
+
+  return override;
+}
+
+/**
+ * Resolve a page's content for rendering.
+ *
+ * `defaults` is the shipped copy, keyed the same way as the definition.
+ */
+export function resolvePage(
+  definition: PageDef,
+  defaults: PageValues,
+  overrides: PageValues | undefined,
+): ResolvedContent {
+  const values: PageValues = {};
+
+  for (const sectionDef of definition.sections) {
+    const sectionDefaults = defaults[sectionDef.key] ?? {};
+    const sectionOverrides = overrides?.[sectionDef.key];
+    const resolved: Record<string, FieldValue> = {};
+
+    for (const field of sectionDef.fields) {
+      resolved[field.key] = resolveField(field, sectionDefaults, sectionOverrides);
+    }
+
+    values[sectionDef.key] = resolved;
+  }
+
+  return {
+    slug: definition.slug,
+    values,
+    edited: Boolean(overrides && Object.keys(overrides).length > 0),
+  };
+}
+
+/**
+ * Typed accessors over resolved content.
+ *
+ * Components call `content.text('hero', 'title')` rather than indexing into a
+ * nested record, so a typo surfaces as an empty string in one place instead of
+ * a runtime crash halfway down the page.
+ */
+export function contentAccessors(resolved: ResolvedContent) {
+  const read = (sectionKey: string, fieldKey: string): FieldValue | undefined =>
+    resolved.values[sectionKey]?.[fieldKey];
+
+  return {
+    text(sectionKey: string, fieldKey: string): string {
+      const value = read(sectionKey, fieldKey);
+      return typeof value === 'string' ? value : '';
+    },
+    link(sectionKey: string, fieldKey: string): LinkValue {
+      const value = read(sectionKey, fieldKey);
+      return isLinkValue(value) ? value : { label: '', href: '/' };
+    },
+    image(sectionKey: string, fieldKey: string): ImageValue {
+      const value = read(sectionKey, fieldKey);
+      return isImageValue(value) ? value : { src: '', alt: '' };
+    },
+    list<T extends Record<string, unknown>>(sectionKey: string, fieldKey: string): T[] {
+      const value = read(sectionKey, fieldKey);
+      return Array.isArray(value) ? (value as unknown as T[]) : [];
+    },
+  };
+}
+
+export type ContentAccessors = ReturnType<typeof contentAccessors>;

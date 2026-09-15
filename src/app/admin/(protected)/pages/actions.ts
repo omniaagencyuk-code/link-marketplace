@@ -1,0 +1,158 @@
+'use server';
+
+import { revalidatePath } from 'next/cache';
+import { requireAdminSession } from '@/lib/auth/admin-access';
+import { pageContentService } from '@/lib/services/page-content-service';
+import { getRegisteredPage } from '@/lib/cms/registry';
+import { sanitiseText } from '@/lib/import/normalise';
+import type { FieldDef, FieldValue, ImageValue, LinkValue, PageValues } from '@/lib/cms/types';
+
+/**
+ * Saving page content.
+ *
+ * Values arrive from the browser, so nothing is trusted: the submitted tree is
+ * rebuilt field by field against the page's declared schema. Anything not in
+ * the schema is dropped rather than stored, which means a crafted request
+ * cannot inject extra keys into a page's content, and markup cannot be smuggled
+ * into copy.
+ *
+ * Links are constrained to internal paths and a short list of safe schemes, so
+ * an editor - or anyone who reached the form - cannot turn a call to action
+ * into a `javascript:` URL.
+ */
+
+const MAX_LIST_ITEMS = 40;
+
+/** Paths and absolute URLs on safe schemes only. Never javascript: or data:. */
+function safeHref(raw: unknown, internalOnly: boolean): string {
+  const value = typeof raw === 'string' ? raw.trim() : '';
+  if (!value) return '/';
+
+  if (value.startsWith('/') && !value.startsWith('//')) return sanitiseText(value, 300);
+  if (value.startsWith('#')) return sanitiseText(value, 120);
+  if (internalOnly) return '/';
+
+  if (/^https?:\/\//i.test(value) || /^mailto:/i.test(value) || /^tel:/i.test(value)) {
+    return sanitiseText(value, 500);
+  }
+  return '/';
+}
+
+/**
+ * Clean one value against its field.
+ *
+ * `sanitiseText` strips tags and control characters, which is belt-and-braces:
+ * copy is rendered as React text or through the restricted markdown renderer,
+ * neither of which can produce markup from a string. Stripping on the way in
+ * keeps the stored data clean regardless of where it is later displayed.
+ */
+function cleanValue(field: FieldDef, raw: unknown): FieldValue {
+  switch (field.type) {
+    case 'text':
+      return sanitiseText(typeof raw === 'string' ? raw : '', field.maxLength ?? 300);
+
+    case 'textarea':
+      return sanitiseText(typeof raw === 'string' ? raw : '', field.maxLength ?? 2000);
+
+    case 'richtext': {
+      // Markdown keeps its newlines, so it is cleaned line by line rather than
+      // through the single-line sanitiser.
+      const source = typeof raw === 'string' ? raw : '';
+      const cleaned = source
+        .replace(/\r\n/g, '\n')
+        .split('\n')
+        .map((line) => sanitiseText(line, 2000))
+        .join('\n')
+        .slice(0, field.maxLength ?? 20_000);
+      return cleaned;
+    }
+
+    case 'link': {
+      const value = (raw ?? {}) as Partial<LinkValue>;
+      return {
+        label: sanitiseText(typeof value.label === 'string' ? value.label : '', 80),
+        href: safeHref(value.href, field.internalOnly ?? true),
+      };
+    }
+
+    case 'image': {
+      const value = (raw ?? {}) as Partial<ImageValue>;
+      const src = typeof value.src === 'string' ? value.src.trim() : '';
+      const safe =
+        src.startsWith('/') || /^https?:\/\//i.test(src) ? sanitiseText(src, 500) : '';
+      return { src: safe, alt: sanitiseText(typeof value.alt === 'string' ? value.alt : '', 200) };
+    }
+
+    case 'list': {
+      if (!Array.isArray(raw)) return [];
+      return raw.slice(0, field.maxItems ?? MAX_LIST_ITEMS).map((entry) => {
+        const row: Record<string, string | LinkValue | ImageValue> = {};
+        const source = (entry ?? {}) as Record<string, unknown>;
+        // Only declared keys survive - anything else the client sent is dropped.
+        for (const itemField of field.fields) {
+          row[itemField.key] = cleanValue(itemField, source[itemField.key]) as
+            | string
+            | LinkValue
+            | ImageValue;
+        }
+        return row;
+      });
+    }
+
+    default:
+      return '';
+  }
+}
+
+export interface SavePageResult {
+  ok: boolean;
+  error?: string;
+}
+
+export async function savePageContentAction(
+  slug: string,
+  submitted: unknown,
+): Promise<SavePageResult> {
+  const session = await requireAdminSession();
+
+  const page = getRegisteredPage(slug);
+  if (!page) return { ok: false, error: 'That page does not exist.' };
+  if (!submitted || typeof submitted !== 'object') {
+    return { ok: false, error: 'Nothing to save.' };
+  }
+
+  const source = submitted as Record<string, unknown>;
+  const values: PageValues = {};
+
+  for (const section of page.definition.sections) {
+    const sectionSource = (source[section.key] ?? {}) as Record<string, unknown>;
+    const sectionValues: Record<string, FieldValue> = {};
+    for (const field of section.fields) {
+      sectionValues[field.key] = cleanValue(field, sectionSource[field.key]);
+    }
+    values[section.key] = sectionValues;
+  }
+
+  await pageContentService.save(slug, values, session.email);
+
+  // The page itself, the admin list and the sitemap all reflect this.
+  revalidatePath(page.definition.path);
+  revalidatePath('/admin/pages');
+  revalidatePath(`/admin/pages/${slug}`);
+
+  return { ok: true };
+}
+
+export async function resetPageContentAction(slug: string): Promise<SavePageResult> {
+  await requireAdminSession();
+
+  const page = getRegisteredPage(slug);
+  if (!page) return { ok: false, error: 'That page does not exist.' };
+
+  await pageContentService.reset(slug);
+  revalidatePath(page.definition.path);
+  revalidatePath('/admin/pages');
+  revalidatePath(`/admin/pages/${slug}`);
+
+  return { ok: true };
+}

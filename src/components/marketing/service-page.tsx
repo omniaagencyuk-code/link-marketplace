@@ -6,67 +6,71 @@ import { Button } from '@/components/ui/button';
 import { Faq, type FaqItem } from '@/components/shared/faq';
 import { RedactedPreview } from '@/components/marketplace/redacted-preview';
 import { MonsteraLeaf } from '@/components/shared/foliage';
+import { Markdown } from '@/lib/cms/markdown';
 import { siteUrl } from '@/lib/config/brand';
+import type { ContentAccessors } from '@/lib/cms/resolve';
 import type { PreviewRow } from '@/lib/services/marketplace-preview';
 
 /**
  * Shared layout for the public service pages.
  *
- * /link-building, /guest-posts, /niche-edits, /content-writing, /digital-pr
- * and /link-building-agencies all use this, so they stay consistent and a
- * change to the conversion path happens once. Each page supplies its own copy;
- * nothing here is generated.
+ * Every word on the page comes from the CMS content passed in, with the
+ * shipped defaults as the fallback - see `lib/cms`. The layout, spacing and
+ * icons stay in code deliberately: editors change copy, not composition, which
+ * is what keeps six pages looking like one product.
  */
 
-export interface ServiceSection {
-  heading: string;
-  /** Paragraphs. Kept short on purpose - this is a page, not an essay. */
-  paragraphs: string[];
-  /** Optional bullet list under the paragraphs. */
-  points?: string[];
-}
-
 export interface ServicePageProps {
-  eyebrow: string;
-  title: string;
-  intro: string;
-  primaryCta?: { label: string; href: string };
-  secondaryCta?: { label: string; href: string };
-  microcopy?: string;
-  /** Three or four short value props under the hero. */
-  highlights: { icon: LucideIcon; title: string; body: string }[];
-  /** The editorial body of the page. */
-  sections: ServiceSection[];
-  faqs: FaqItem[];
-  /** Related pages, for internal linking. */
-  related: { label: string; href: string; description: string }[];
+  content: ContentAccessors;
+  /** Icons for the value points, positionally matched. Not editable. */
+  highlightIcons: LucideIcon[];
   /** Redacted rows, when the page shows the marketplace. */
   preview?: PreviewRow[];
-  previewHeading?: string;
-  previewBody?: string;
   /** Canonical path, used for the breadcrumb structured data. */
   path: string;
   /** Breadcrumb label. */
   breadcrumbLabel: string;
 }
 
+interface HighlightItem extends Record<string, unknown> {
+  title: string;
+  body: string;
+}
+interface BodySection extends Record<string, unknown> {
+  heading: string;
+  content: string;
+}
+interface FaqEntry extends Record<string, unknown> {
+  question: string;
+  answer: string;
+}
+interface RelatedEntry extends Record<string, unknown> {
+  label: string;
+  href: string;
+  description: string;
+}
+
 export function ServicePage({
-  eyebrow,
-  title,
-  intro,
-  primaryCta = { label: 'Get Started Free', href: '/signup' },
-  secondaryCta = { label: 'How It Works', href: '/how-it-works' },
-  microcopy = 'Free account · No subscription · Pay only for what you order',
-  highlights,
-  sections,
-  faqs,
-  related,
+  content,
+  highlightIcons,
   preview,
-  previewHeading = 'Thousands of link building opportunities in one place',
-  previewBody,
   path,
   breadcrumbLabel,
 }: ServicePageProps) {
+  const highlights = content.list<HighlightItem>('highlights', 'items');
+  const bodySections = content.list<BodySection>('body', 'sections');
+  const faqEntries = content.list<FaqEntry>('faqs', 'items');
+  const related = content.list<RelatedEntry>('related', 'items');
+
+  const faqs: FaqItem[] = faqEntries
+    .filter((entry) => entry.question && entry.answer)
+    .map((entry) => ({ question: entry.question, answer: entry.answer }));
+
+  const primaryCta = content.link('hero', 'primaryCta');
+  const secondaryCta = content.link('hero', 'secondaryCta');
+  const ctaPrimary = content.link('cta', 'primaryCta');
+  const ctaSecondary = content.link('cta', 'secondaryCta');
+
   const breadcrumbJsonLd = {
     '@context': 'https://schema.org',
     '@type': 'BreadcrumbList',
@@ -118,12 +122,14 @@ export function ServicePage({
 
           <div className="max-w-3xl">
             <p className="text-[11px] font-semibold tracking-[0.12em] text-accent-700 uppercase">
-              {eyebrow}
+              {content.text('hero', 'eyebrow')}
             </p>
             <h1 className="mt-4 text-[2.25rem] leading-[1.08] font-semibold tracking-tight text-ink sm:text-5xl">
-              {title}
+              {content.text('hero', 'title')}
             </h1>
-            <p className="mt-5 text-[16px] leading-relaxed text-muted lg:text-[17px]">{intro}</p>
+            <p className="mt-5 text-[16px] leading-relaxed text-muted lg:text-[17px]">
+              {content.text('hero', 'intro')}
+            </p>
 
             <div className="mt-7 flex flex-wrap items-center gap-3">
               <Button asChild variant="accent" size="lg">
@@ -137,26 +143,33 @@ export function ServicePage({
               </Button>
             </div>
 
-            <p className="mt-4 text-[13px] text-muted">{microcopy}</p>
+            <p className="mt-4 text-[13px] text-muted">{content.text('hero', 'microcopy')}</p>
           </div>
         </Container>
       </section>
 
-      <section className="border-b border-line bg-white">
-        <Container size="wide" className="py-12 lg:py-16">
-          <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
-            {highlights.map((highlight) => (
-              <div key={highlight.title}>
-                <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-accent-50 text-accent-700">
-                  <highlight.icon className="h-4.5 w-4.5" aria-hidden="true" />
-                </span>
-                <h2 className="mt-4 text-[15px] font-semibold text-ink">{highlight.title}</h2>
-                <p className="mt-1.5 text-[14px] leading-relaxed text-muted">{highlight.body}</p>
-              </div>
-            ))}
-          </div>
-        </Container>
-      </section>
+      {highlights.length ? (
+        <section className="border-b border-line bg-white">
+          <Container size="wide" className="py-12 lg:py-16">
+            <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
+              {highlights.map((highlight, index) => {
+                const Icon = highlightIcons[index % highlightIcons.length];
+                return (
+                  <div key={highlight.title || index}>
+                    {Icon ? (
+                      <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-accent-50 text-accent-700">
+                        <Icon className="h-4.5 w-4.5" aria-hidden="true" />
+                      </span>
+                    ) : null}
+                    <h2 className="mt-4 text-[15px] font-semibold text-ink">{highlight.title}</h2>
+                    <p className="mt-1.5 text-[14px] leading-relaxed text-muted">{highlight.body}</p>
+                  </div>
+                );
+              })}
+            </div>
+          </Container>
+        </section>
+      ) : null}
 
       {preview ? (
         <section className="border-b border-line bg-surface">
@@ -164,11 +177,11 @@ export function ServicePage({
             <div className="grid items-center gap-10 lg:grid-cols-[minmax(0,1fr)_minmax(0,26rem)] lg:gap-14">
               <div className="min-w-0">
                 <h2 className="text-2xl font-semibold tracking-tight text-ink sm:text-[2rem] sm:leading-tight">
-                  {previewHeading}
+                  {content.text('preview', 'heading')}
                 </h2>
-                {previewBody ? (
-                  <p className="mt-4 text-[15px] leading-relaxed text-muted">{previewBody}</p>
-                ) : null}
+                <p className="mt-4 text-[15px] leading-relaxed text-muted">
+                  {content.text('preview', 'body')}
+                </p>
                 <ul className="mt-6 grid gap-2.5 sm:grid-cols-2">
                   {[
                     'Domain Rating',
@@ -209,54 +222,41 @@ export function ServicePage({
         <Container size="wide" className="py-14 lg:py-20">
           <div className="grid gap-10 lg:grid-cols-[minmax(0,1fr)_minmax(0,20rem)] lg:gap-16">
             <div className="min-w-0 max-w-2xl space-y-12">
-              {sections.map((section) => (
-                <article key={section.heading}>
+              {bodySections.map((bodySection, index) => (
+                <article key={bodySection.heading || index}>
                   <h2 className="text-[1.375rem] font-semibold tracking-tight text-ink sm:text-2xl">
-                    {section.heading}
+                    {bodySection.heading}
                   </h2>
-                  {section.paragraphs.map((paragraph) => (
-                    <p key={paragraph} className="mt-4 text-[15px] leading-relaxed text-muted">
-                      {paragraph}
-                    </p>
-                  ))}
-                  {section.points ? (
-                    <ul className="mt-5 space-y-2.5">
-                      {section.points.map((point) => (
-                        <li key={point} className="flex gap-2.5 text-[15px] leading-relaxed text-ink-soft">
-                          <Check
-                            className="mt-1 h-4 w-4 shrink-0 text-accent-600"
-                            aria-hidden="true"
-                          />
-                          {point}
-                        </li>
-                      ))}
-                    </ul>
-                  ) : null}
+                  <div className="mt-4">
+                    <Markdown source={bodySection.content} />
+                  </div>
                 </article>
               ))}
             </div>
 
-            <aside className="lg:sticky lg:top-24 lg:self-start">
-              <div className="rounded-[var(--radius-card)] border border-line bg-surface p-5">
-                <h2 className="text-[13px] font-semibold tracking-wide text-ink uppercase">
-                  Related
-                </h2>
-                <ul className="mt-4 space-y-3">
-                  {related.map((item) => (
-                    <li key={item.href}>
-                      <Link href={item.href} className="group block">
-                        <span className="block text-[14px] font-semibold text-ink group-hover:text-accent-700">
-                          {item.label}
-                        </span>
-                        <span className="mt-0.5 block text-[13px] leading-snug text-muted">
-                          {item.description}
-                        </span>
-                      </Link>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            </aside>
+            {related.length ? (
+              <aside className="lg:sticky lg:top-24 lg:self-start">
+                <div className="rounded-[var(--radius-card)] border border-line bg-surface p-5">
+                  <h2 className="text-[13px] font-semibold tracking-wide text-ink uppercase">
+                    Related
+                  </h2>
+                  <ul className="mt-4 space-y-3">
+                    {related.map((item) => (
+                      <li key={item.href || item.label}>
+                        <Link href={item.href || '/'} className="group block">
+                          <span className="block text-[14px] font-semibold text-ink group-hover:text-accent-700">
+                            {item.label}
+                          </span>
+                          <span className="mt-0.5 block text-[13px] leading-snug text-muted">
+                            {item.description}
+                          </span>
+                        </Link>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              </aside>
+            ) : null}
           </div>
         </Container>
       </section>
@@ -274,15 +274,15 @@ export function ServicePage({
       <section className="bg-navy-950 text-white">
         <Container size="wide" className="py-14 text-center lg:py-20">
           <h2 className="mx-auto max-w-2xl text-2xl font-semibold tracking-tight sm:text-3xl">
-            Start building links that hold up
+            {content.text('cta', 'heading')}
           </h2>
           <p className="mx-auto mt-3 max-w-xl text-[15px] leading-relaxed text-white/70">
-            Create a free account, open the marketplace and order your first placement today.
+            {content.text('cta', 'body')}
           </p>
           <div className="mt-7 flex flex-wrap items-center justify-center gap-3">
             <Button asChild variant="accent" size="lg">
-              <Link href="/signup">
-                Create Free Account
+              <Link href={ctaPrimary.href}>
+                {ctaPrimary.label}
                 <ArrowRight className="h-4 w-4" aria-hidden="true" />
               </Link>
             </Button>
@@ -292,7 +292,7 @@ export function ServicePage({
               size="lg"
               className="border-white/25 bg-transparent text-white hover:bg-white/10 hover:text-white"
             >
-              <Link href="/pricing">See pricing</Link>
+              <Link href={ctaSecondary.href}>{ctaSecondary.label}</Link>
             </Button>
           </div>
         </Container>
