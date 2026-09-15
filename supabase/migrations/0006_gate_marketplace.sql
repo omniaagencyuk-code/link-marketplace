@@ -47,8 +47,8 @@ security definer set search_path = public
 as $$
   select
     count(*) as total_websites,
-    count(distinct niche) as total_niches,
-    count(distinct country) as total_countries
+    count(distinct primary_category_id) as total_niches,
+    count(distinct country_code) as total_countries
   from public.websites
   where status = 'active';
 $$;
