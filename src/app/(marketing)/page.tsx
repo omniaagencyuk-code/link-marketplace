@@ -11,34 +11,41 @@ import { SeoEditorial } from '@/components/home/seo-editorial';
 import { NicheGrid } from '@/components/home/niche-grid';
 import { TrustedBy } from '@/components/home/trusted-by';
 import { FinalCta } from '@/components/home/final-cta';
-import { Faq } from '@/components/shared/faq';
+import { Faq, type FaqItem } from '@/components/shared/faq';
 import { websiteService } from '@/lib/services';
-import { homepageFaqs } from '@/lib/config/faqs';
+import { pageContentService } from '@/lib/services/page-content-service';
+import { metadataForPage } from '@/lib/cms/metadata';
 import { brand, siteUrl } from '@/lib/config/brand';
 
 /**
  * The homepage.
  *
  * The main SEO and conversion page for the business rather than a marketplace
- * catalogue. Every marketplace figure on it is an aggregate, and the preview
- * rows are redacted in the service layer, so no publisher is identifiable from
- * the HTML, the RSC payload or the structured data.
+ * catalogue. Every word is editable through /admin/pages; every marketplace
+ * figure on it is an aggregate, and the preview rows are redacted in the
+ * service layer, so no publisher is identifiable from the HTML, the RSC
+ * payload or the structured data.
  */
 
-export const metadata: Metadata = {
+const SLUG = 'home';
+
+export async function generateMetadata(): Promise<Metadata> {
+  const meta = await metadataForPage(SLUG);
   // `absolute` skips the root template, which would otherwise append the brand
   // name a second time.
-  title: { absolute: `Link Building Services | ${brand.name}` },
-  description:
-    'Link building services built around a marketplace of thousands of vetted publishers. Order guest posts, niche edits, digital PR and SEO content with real metrics and upfront pricing.',
-  alternates: { canonical: '/' },
-};
+  return { ...meta, title: { absolute: `${meta.title as string} | ${brand.name}` } };
+}
 
 export default async function HomePage() {
-  const [preview, nicheCounts] = await Promise.all([
+  const [content, preview, nicheCounts] = await Promise.all([
+    pageContentService.content(SLUG),
     websiteService.getPublicPreview(5),
     websiteService.countByNiche(),
   ]);
+
+  const faqs = content
+    .list<{ question: string; answer: string }>('faqs', 'items')
+    .filter((entry) => entry.question && entry.answer) as FaqItem[];
 
   const organisationJsonLd = {
     '@context': 'https://schema.org',
@@ -59,7 +66,7 @@ export default async function HomePage() {
   const faqJsonLd = {
     '@context': 'https://schema.org',
     '@type': 'FAQPage',
-    mainEntity: homepageFaqs.map((faq) => ({
+    mainEntity: faqs.map((faq) => ({
       '@type': 'Question',
       name: faq.question,
       acceptedAnswer: { '@type': 'Answer', text: faq.answer },
@@ -70,32 +77,35 @@ export default async function HomePage() {
     <>
       <script
         type="application/ld+json"
-        // Structured data is static and generated from the brand config. It
-        // describes the company only - never the marketplace inventory.
+        // Describes the company only - never the marketplace inventory.
         dangerouslySetInnerHTML={{ __html: JSON.stringify(organisationJsonLd) }}
       />
-      <script
-        type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(faqJsonLd) }}
-      />
+      {faqs.length ? (
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(faqJsonLd) }}
+        />
+      ) : null}
 
-      <Hero preview={preview.rows} />
-      <MarketplaceSection preview={preview} />
-      <ServicesGrid />
-      <WhyPressParrot />
-      <PlatformFeatures />
-      <HowItWorks />
-      <AgenciesSection />
+      <Hero content={content} preview={preview.rows} />
+      <MarketplaceSection content={content} preview={preview} />
+      <ServicesGrid content={content} />
+      <WhyPressParrot content={content} />
+      <PlatformFeatures content={content} />
+      <HowItWorks content={content} />
+      <AgenciesSection content={content} />
       <NicheGrid counts={nicheCounts} />
-      <SeoEditorial />
+      <SeoEditorial content={content} />
 
-      <section className="border-b border-line bg-surface">
-        <Container size="wide" className="py-14 lg:py-20">
-          <div className="mx-auto max-w-3xl">
-            <Faq items={homepageFaqs} />
-          </div>
-        </Container>
-      </section>
+      {faqs.length ? (
+        <section className="border-b border-line bg-surface">
+          <Container size="wide" className="py-14 lg:py-20">
+            <div className="mx-auto max-w-3xl">
+              <Faq items={faqs} />
+            </div>
+          </Container>
+        </section>
+      ) : null}
 
       <TrustedBy />
       <FinalCta />

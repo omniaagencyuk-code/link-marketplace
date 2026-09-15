@@ -1,3 +1,4 @@
+import * as home from './pages/home';
 import * as linkBuilding from './pages/link-building';
 import * as guestPosts from './pages/guest-posts';
 import * as nicheEdits from './pages/niche-edits';
@@ -19,6 +20,7 @@ export interface RegisteredPage {
 }
 
 export const pageRegistry: RegisteredPage[] = [
+  home,
   linkBuilding,
   guestPosts,
   nicheEdits,
@@ -33,7 +35,13 @@ export function getRegisteredPage(slug: string): RegisteredPage | null {
 }
 
 export function listRegisteredPages(): RegisteredPage[] {
-  return [...pageRegistry].sort((a, b) => a.definition.label.localeCompare(b.definition.label));
+  // The homepage first, then everything else alphabetically - it is the page
+  // an editor reaches for most often.
+  const [first, ...rest] = pageRegistry;
+  return [
+    ...(first ? [first] : []),
+    ...rest.sort((a, b) => a.definition.label.localeCompare(b.definition.label)),
+  ];
 }
 
 /** Slugs that may be written to, so a crafted request cannot invent a page. */

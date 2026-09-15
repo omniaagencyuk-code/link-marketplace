@@ -89,8 +89,9 @@ and the design around them stays as built.
   client invented are dropped, and link fields accept only internal paths or
   http/https/mailto/tel - a CTA cannot become a `javascript:` URL.
 
-To make another page editable, add a module under `src/lib/cms/pages/` and
-register it in `src/lib/cms/registry.ts`.
+Editable today: the homepage and the five service pages. To add another, write
+a module under `src/lib/cms/pages/` and register it in
+`src/lib/cms/registry.ts`.
 
 ## Blog
 
@@ -402,8 +403,8 @@ filtering, so results are guaranteed to match.
   says so until the data source is Supabase.
 - **Image uploads** - images are referenced by path or URL. Direct upload needs
   object storage.
-- **Editable pages** - the five service pages today. The homepage, pricing and
-  how-it-works are still hardcoded.
+- **Editable pages** - the homepage and the five service pages. `/pricing` and
+  `/how-it-works` are still hardcoded.
 
 ## Next steps
 

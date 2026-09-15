@@ -3,15 +3,16 @@ import { ArrowRight, Check } from 'lucide-react';
 import { Container } from '@/components/layout/container';
 import { Button } from '@/components/ui/button';
 import { RedactedPreview } from '@/components/marketplace/redacted-preview';
-import { marketingStats } from '@/lib/config/marketing';
 import { linkTypeLabels } from '@/lib/utils/labels';
+import type { ContentAccessors } from '@/lib/cms/resolve';
 import type { MarketplacePreview } from '@/lib/services/marketplace-preview';
 
 /**
  * The product demonstration.
  *
- * Shows what the marketplace does without showing what is in it. Every number
- * is an aggregate count from the data layer, and the table rows come from
+ * Shows what the marketplace does without showing what is in it. The counts
+ * are aggregates from the data layer rather than editable copy - they should
+ * be true rather than convenient - and the table rows come from
  * `getPublicPreview`, which strips domains, slugs and ids server-side.
  */
 
@@ -25,12 +26,14 @@ const filters = [
   'Turnaround',
 ];
 
-export function MarketplaceSection({ preview }: { preview: MarketplacePreview }) {
-  const stats = [
-    { value: `${marketingStats.inventory.toLocaleString('en-GB')}+`, label: 'vetted websites' },
-    { value: `${marketingStats.nicheCount}+`, label: 'niches' },
-    { value: `${preview.totalCountries}+`, label: 'countries' },
-  ];
+export function MarketplaceSection({
+  content,
+  preview,
+}: {
+  content: ContentAccessors;
+  preview: MarketplacePreview;
+}) {
+  const cta = content.link('marketplace', 'cta');
 
   return (
     <section className="border-b border-line bg-surface" aria-labelledby="marketplace-heading">
@@ -38,22 +41,24 @@ export function MarketplaceSection({ preview }: { preview: MarketplacePreview })
         <div className="grid items-center gap-10 lg:grid-cols-[minmax(0,1fr)_minmax(0,26rem)] lg:gap-14">
           <div className="min-w-0">
             <p className="text-[11px] font-semibold tracking-[0.14em] text-accent-700 uppercase">
-              The marketplace
+              {content.text('marketplace', 'eyebrow')}
             </p>
             <h2
               id="marketplace-heading"
               className="mt-4 text-2xl font-semibold tracking-tight text-ink sm:text-[2rem] sm:leading-tight"
             >
-              Thousands of Link Building Opportunities in One Place
+              {content.text('marketplace', 'heading')}
             </h2>
             <p className="mt-4 max-w-xl text-[15px] leading-relaxed text-muted">
-              Registered customers search thousands of publishers on the metrics that matter, then
-              order guest posts, niche edits and digital PR in a few clicks. No outreach, no
-              negotiation and no waiting on a quote.
+              {content.text('marketplace', 'body')}
             </p>
 
             <dl className="mt-8 grid max-w-md grid-cols-3 gap-4 border-y border-line py-5">
-              {stats.map((stat) => (
+              {[
+                { value: `${preview.totalWebsites.toLocaleString('en-GB')}+`, label: 'vetted websites' },
+                { value: `${preview.totalNiches}+`, label: 'niches' },
+                { value: `${preview.totalCountries}+`, label: 'countries' },
+              ].map((stat) => (
                 <div key={stat.label}>
                   <dt className="sr-only">{stat.label}</dt>
                   <dd>
@@ -93,13 +98,13 @@ export function MarketplaceSection({ preview }: { preview: MarketplacePreview })
 
             <div className="mt-8">
               <Button asChild variant="accent" size="lg">
-                <Link href="/marketplace">
-                  Unlock the Marketplace
+                <Link href={cta.href}>
+                  {cta.label}
                   <ArrowRight className="h-4 w-4" aria-hidden="true" />
                 </Link>
               </Button>
               <p className="mt-3 text-[13px] text-muted">
-                Create a free account to browse publishers and pricing.
+                {content.text('marketplace', 'ctaCaption')}
               </p>
             </div>
           </div>

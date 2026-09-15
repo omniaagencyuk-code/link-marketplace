@@ -1,14 +1,19 @@
 import { Container } from '@/components/layout/container';
 import { Feather } from '@/components/shared/foliage';
-import { journeySteps } from '@/lib/config/how-it-works';
+import type { ContentAccessors } from '@/lib/cms/resolve';
 
 /**
  * Four steps, joined by a dotted flight path.
  *
- * The path is one SVG behind the cards on desktop and disappears entirely on
- * smaller screens, where the steps stack.
+ * The path is one SVG sitting between the heading and the steps, and it
+ * disappears entirely on smaller screens where the steps stack.
  */
-export function HowItWorks() {
+export function HowItWorks({ content }: { content: ContentAccessors }) {
+  const steps = content.list<{ number: string; title: string; description: string }>(
+    'steps',
+    'items',
+  );
+
   return (
     <section
       className="relative overflow-hidden border-b border-line bg-white py-16 lg:py-20"
@@ -22,18 +27,16 @@ export function HowItWorks() {
       <Container size="wide">
         <div className="max-w-2xl">
           <p className="text-[11px] font-semibold tracking-[0.14em] text-accent-700 uppercase">
-            How Press Parrot works
+            {content.text('steps', 'eyebrow')}
           </p>
           <h2
             id="how-it-works-heading"
             className="mt-4 text-3xl font-semibold tracking-tight text-ink sm:text-4xl"
           >
-            From Search to Live Link
+            {content.text('steps', 'heading')}
           </h2>
         </div>
 
-        {/* flight path, sitting between the heading and the steps so it is
-            actually visible rather than hidden behind the cards */}
         <svg
           aria-hidden="true"
           viewBox="0 0 1200 90"
@@ -57,9 +60,9 @@ export function HowItWorks() {
 
         <div className="relative mt-8 lg:mt-4">
           <ol className="relative grid gap-6 sm:grid-cols-2 lg:grid-cols-4 lg:gap-5">
-            {journeySteps.map((step) => (
+            {steps.map((step, index) => (
               <li
-                key={step.number}
+                key={step.number || index}
                 className="rounded-[var(--radius-card)] border border-line bg-white p-5 shadow-[var(--shadow-card)]"
               >
                 <span className="tabular inline-flex h-9 items-center rounded-lg bg-navy-900 px-3 text-[13px] font-semibold text-accent-400">
