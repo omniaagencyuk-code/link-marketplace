@@ -21,6 +21,18 @@ order:
    and the `auth.users` -> `profiles` trigger.
 2. `migrations/0002_rls.sql` - row level security policies.
 3. `migrations/0003_seed_reference_data.sql` - categories and the settings row.
+4. `migrations/0004_content_orders.sql` - content orders, articles, revisions,
+   messages and deliveries.
+5. `migrations/0005_cms.sql` - editable page content and the blog.
+6. `migrations/0006_gate_marketplace.sql` - **important.** Replaces the public
+   read policies from 0002 with signed-in-only ones. Without this the anon key
+   would expose the whole publisher list through the REST API, undoing the
+   access control the application enforces everywhere else. Also adds the
+   `marketplace_stats()` function the public pages use for their counts, and
+   the import history table.
+
+Run all six, in order. Running 0001-0003 alone leaves the inventory publicly
+readable.
 
 **Option B - Supabase CLI**
 
