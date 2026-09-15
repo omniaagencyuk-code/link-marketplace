@@ -58,15 +58,20 @@ Both public keys are found under **Project Settings → API**.
 
 ## 4. Load the seed data
 
-```bash
-cp .env.example .env.local     # fill in the three Supabase values
-npm run seed                   # 72 websites, their services, 6 blog posts
-npm run seed:reset             # same, but clears those tables first
-```
+Paste `supabase/seed.sql` into the SQL editor and run it - the same way as the
+migrations. No local setup needed.
 
-The script runs with the service role key because it writes rows belonging to
-no signed-in user. It matches on slug, so running it twice updates rather than
-duplicating.
+72 websites, 167 services, 25 secondary niche links and 6 blog posts. Safe to
+re-run: existing rows are skipped rather than duplicated.
+
+That file is generated rather than hand-written. `npm run seed:generate`
+inserts the seed data through the application's own mappers into a local
+PostgreSQL carrying these migrations, then dumps the result - so every value in
+it has already been accepted by the column it is going into. Regenerate it
+whenever the seed data changes.
+
+There is also `npm run seed` for a local Node workflow, which needs
+`.env.local` and the service role key. The SQL file is the simpler path.
 
 ## 5. Switch the app over
 
