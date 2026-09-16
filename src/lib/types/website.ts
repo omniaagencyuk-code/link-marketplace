@@ -1,6 +1,10 @@
 import type { CountryCode } from './country';
 import type { NicheSlug } from './category';
 
+/** A slug from `lib/config/accepted-niches`. Kept loose so the list can grow
+ * without a type change and without invalidating stored values. */
+export type AcceptedNicheSlug = string;
+
 /** The three product types sold on the marketplace. */
 export type LinkTypeSlug = 'guest-post' | 'niche-edit' | 'digital-pr';
 
@@ -25,6 +29,15 @@ export interface Service {
   available: boolean;
   /** Short customer-facing note, e.g. "Includes writing and 2 revisions". */
   note?: string;
+  /**
+   * What the placement costs us, in minor units.
+   *
+   * Internal only. It is never sent to a listing page, never included in a
+   * customer-facing payload, and is stored in a table a customer cannot read.
+   * `undefined` means nobody has recorded a cost yet, which is different from
+   * a cost of zero.
+   */
+  costPriceMinor?: number;
 }
 
 /** Editorial rules a buyer needs to know before ordering. */
@@ -34,6 +47,14 @@ export interface PublishingRules {
   maxLinks: number;
   linkAttribute: LinkAttribute;
   sponsoredTag: SponsoredTagPolicy;
+  /**
+   * Topics the publisher will take, from the shared list.
+   *
+   * This is the source of truth. The five booleans below are kept in step with
+   * it on every write so that existing filters and listing copy keep working;
+   * treat them as a view of this array rather than as separate settings.
+   */
+  acceptedNiches: AcceptedNicheSlug[];
   acceptsGambling: boolean;
   acceptsFinance: boolean;
   acceptsCrypto: boolean;

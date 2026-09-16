@@ -1,3 +1,6 @@
+'use client';
+
+import { useState } from 'react';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -10,6 +13,12 @@ import { categories } from '@/lib/data/categories';
 import { countries } from '@/lib/data/countries';
 import { languageLabels } from '@/lib/utils/labels';
 import { isSupabaseEnabled } from '@/lib/supabase/config';
+import { AcceptedNichesPicker } from './accepted-niches-picker';
+import {
+  SERVICE_TYPES,
+  WebsiteServicesEditor,
+  needsWordCount,
+} from './website-services-editor';
 import type { LinkTypeSlug, Website } from '@/lib/types';
 
 const statuses = [
@@ -25,18 +34,45 @@ const sponsoredOptions = [
   { value: 'always', label: 'Always applied' },
 ];
 
-function priceOf(website: Website | undefined, type: LinkTypeSlug) {
-  const service = website?.services.find((candidate) => candidate.type === type);
-  return service ? service.priceMinor / 100 : '';
-}
-
 /**
  * Create/edit form for a marketplace website.
  *
- * Submits to a server action, so it works without client-side JavaScript.
+ * Interactive rather than a plain server-rendered form, because which fields
+ * are relevant depends on what the website sells: a publisher offering only
+ * niche edits has no article to write, so asking for a word count is asking
+ * about something that does not exist. The services picker drives that, and
+ * the fields it governs are not rendered at all rather than disabled - a
+ * disabled field still reads as a thing you are failing to fill in.
  */
-export function WebsiteEditor({ website }: { website?: Website }) {
+export function WebsiteEditor({
+  website,
+  currency = 'GBP',
+}: {
+  website?: Website;
+  currency?: string;
+}) {
   const isEdit = Boolean(website);
+
+  const [selectedTypes, setSelectedTypes] = useState<Set<LinkTypeSlug>>(() => {
+    // An existing website offers whatever it has services for. A new one
+    // starts with the guest post ticked, which is what most listings sell.
+    if (website) return new Set(website.services.map((service) => service.type));
+    return new Set<LinkTypeSlug>(['guest-post']);
+  });
+
+  function toggleType(type: LinkTypeSlug, on: boolean) {
+    setSelectedTypes((current) => {
+      const next = new Set(current);
+      if (on) next.add(type);
+      else next.delete(type);
+      return next;
+    });
+  }
+
+  const showWordCount = needsWordCount(selectedTypes);
+  const writingTypes = SERVICE_TYPES.filter(
+    (entry) => entry.writes && selectedTypes.has(entry.type),
+  );
 
   return (
     <form action={saveWebsiteAction} className="space-y-4">
@@ -151,59 +187,45 @@ export function WebsiteEditor({ website }: { website?: Website }) {
 
       <Card>
         <CardHeader>
-          <CardTitle>Pricing and turnaround</CardTitle>
+          <CardTitle>What this website sells</CardTitle>
         </CardHeader>
-        <CardContent className="grid gap-4 sm:grid-cols-3">
-          <Field label="Guest post price" htmlFor="guestPostPrice" hint="0 hides the service">
-            <Input
-              id="guestPostPrice"
-              name="guestPostPrice"
-              type="number"
-              min={0}
-              step={5}
-              defaultValue={priceOf(website, 'guest-post')}
-            />
-          </Field>
-          <Field label="Niche edit price" htmlFor="nicheEditPrice" hint="0 hides the service">
-            <Input
-              id="nicheEditPrice"
-              name="nicheEditPrice"
-              type="number"
-              min={0}
-              step={5}
-              defaultValue={priceOf(website, 'niche-edit')}
-            />
-          </Field>
-          <Field label="Digital PR price" htmlFor="digitalPrPrice" hint="0 hides the service">
-            <Input
-              id="digitalPrPrice"
-              name="digitalPrPrice"
-              type="number"
-              min={0}
-              step={5}
-              defaultValue={priceOf(website, 'digital-pr')}
-            />
-          </Field>
-          <Field label="Turnaround min (days)" htmlFor="turnaroundMin">
-            <Input
-              id="turnaroundMin"
-              name="turnaroundMin"
-              type="number"
-              min={1}
-              defaultValue={
-                website?.services[0]?.turnaroundMinDays ?? 3
-              }
-            />
-          </Field>
-          <Field label="Turnaround max (days)" htmlFor="turnaroundMax">
-            <Input
-              id="turnaroundMax"
-              name="turnaroundMax"
-              type="number"
-              min={1}
-              defaultValue={website?.services[0]?.turnaroundMaxDays ?? 5}
-            />
-          </Field>
+        <CardContent className="space-y-5">
+          <WebsiteServicesEditor
+            website={website}
+            selected={selectedTypes}
+            onToggle={toggleType}
+            currency={currency}
+          />
+
+          <div className="grid gap-4 border-t border-line pt-5 sm:grid-cols-3">
+            <Field label="Turnaround min (days)" htmlFor="turnaroundMin">
+              <Input
+                id="turnaroundMin"
+                name="turnaroundMin"
+                type="number"
+                min={1}
+                defaultValue={website?.services[0]?.turnaroundMinDays ?? 3}
+              />
+            </Field>
+            <Field label="Turnaround max (days)" htmlFor="turnaroundMax">
+              <Input
+                id="turnaroundMax"
+                name="turnaroundMax"
+                type="number"
+                min={1}
+                defaultValue={website?.services[0]?.turnaroundMaxDays ?? 5}
+              />
+            </Field>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Accepted niches</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <AcceptedNichesPicker selected={website?.rules.acceptedNiches ?? []} />
         </CardContent>
       </Card>
 
@@ -212,16 +234,32 @@ export function WebsiteEditor({ website }: { website?: Website }) {
           <CardTitle>Publishing rules</CardTitle>
         </CardHeader>
         <CardContent className="grid gap-4 sm:grid-cols-2">
-          <Field label="Minimum word count" htmlFor="minWordCount">
-            <Input
-              id="minWordCount"
-              name="minWordCount"
-              type="number"
-              min={0}
-              step={50}
-              defaultValue={website?.rules.minWordCount ?? 800}
-            />
-          </Field>
+          {showWordCount ? (
+            <Field
+              label="Minimum word count"
+              htmlFor="minWordCount"
+              hint={`Applies to the ${writingTypes
+                .map((entry) => entry.label.toLowerCase())
+                .join(' and ')} article.`}
+            >
+              <Input
+                id="minWordCount"
+                name="minWordCount"
+                type="number"
+                min={0}
+                step={50}
+                defaultValue={website?.rules.minWordCount ?? 800}
+              />
+            </Field>
+          ) : (
+            // Not rendered rather than disabled: a niche edit places a link in
+            // an article that already exists, so there is no word count to
+            // give. Leaving a greyed-out box implies one is missing.
+            <div className="rounded-lg border border-line bg-surface p-4 text-[12px] leading-relaxed text-muted">
+              No word count needed. Niche edits place a link in an article the publisher has
+              already written. Tick guest post or digital PR to set one.
+            </div>
+          )}
           <Field label="Maximum links" htmlFor="maxLinks">
             <Input
               id="maxLinks"

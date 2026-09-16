@@ -11,7 +11,8 @@
     "seed": "tsx --env-file=.env.local scripts/seed-supabase.ts",
     "seed:reset": "tsx --env-file=.env.local scripts/seed-supabase.ts --reset",
     "verify:schema": "tsx scripts/verify-mappers.mjs",
-    "seed:generate": "tsx scripts/generate-seed.mjs"
+    "seed:generate": "tsx scripts/generate-seed.mjs",
+    "verify:rls": "./scripts/verify-rls.sh"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.7",

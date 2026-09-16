@@ -12,6 +12,7 @@ import { duplicateWebsiteAction, setWebsiteStatusAction } from '@/app/admin/acti
 import { nicheName } from '@/lib/data/categories';
 import { countryShortName } from '@/lib/data/countries';
 import { formatCompactNumber, formatPrice, formatTurnaround } from '@/lib/utils/format';
+import { servicesMissingCost, websiteMargin } from '@/lib/utils/margin';
 import type { WebsiteListItem, WebsiteStatus } from '@/lib/types';
 
 const statusFilters: { value: WebsiteStatus | 'all'; label: string }[] = [
@@ -35,6 +36,39 @@ export function AdminWebsitesTable({ websites }: { websites: WebsiteListItem[] }
       return `${website.domain} ${website.title} ${website.niche}`.toLowerCase().includes(needle);
     });
   }, [websites, term, status]);
+
+  /**
+   * Our position on a listing.
+   *
+   * A dash means no cost has been recorded, which is not the same as breaking
+   * even - showing a zero there would read as "this costs us nothing" and
+   * quietly overstate the margin on every site nobody has priced yet.
+   */
+  function costOf(website: WebsiteListItem) {
+    const margin = websiteMargin(website);
+    return margin ? formatPrice(margin.costMinor) : '\u2014';
+  }
+
+  function profitOf(website: WebsiteListItem) {
+    const margin = websiteMargin(website);
+    if (!margin) return <span className="text-muted">&mdash;</span>;
+
+    const missing = servicesMissingCost(website);
+    return (
+      <span className={margin.profitMinor >= 0 ? 'text-accent-700' : 'text-coral-700'}>
+        {formatPrice(margin.profitMinor)}
+        <span className="ml-1 text-muted">({margin.marginPct}%)</span>
+        {missing > 0 ? (
+          <span
+            className="ml-1 text-muted"
+            title={`${missing} service${missing === 1 ? '' : 's'} with no cost recorded, left out of this figure`}
+          >
+            *
+          </span>
+        ) : null}
+      </span>
+    );
+  }
 
   function priceFor(website: WebsiteListItem, type: string) {
     const service = website.services.find((candidate) => candidate.type === type);
@@ -94,6 +128,8 @@ export function AdminWebsitesTable({ websites }: { websites: WebsiteListItem[] }
               <Th>Ref. domains</Th>
               <Th className="text-right">Guest post</Th>
               <Th className="text-right">Niche edit</Th>
+              <Th className="text-right">Cost</Th>
+              <Th className="text-right">Profit</Th>
               <Th>Turnaround</Th>
               <Th>Status</Th>
               <Th className="w-12 text-right">
@@ -130,6 +166,10 @@ export function AdminWebsitesTable({ websites }: { websites: WebsiteListItem[] }
                 <Td className="tabular text-right text-[13px] text-ink-soft">
                   {priceFor(website, 'niche-edit')}
                 </Td>
+                <Td className="tabular text-right text-[13px] text-muted">
+                  {costOf(website)}
+                </Td>
+                <Td className="tabular text-right text-[13px]">{profitOf(website)}</Td>
                 <Td className="tabular text-[13px] whitespace-nowrap text-ink-soft">
                   {website.headlineService
                     ? formatTurnaround(

@@ -5,6 +5,10 @@ import { redirect } from 'next/navigation';
 import { orderService, settingsService, websiteService } from '@/lib/services';
 import { requireAdminSession } from '@/lib/auth/admin-access';
 import { slugifyDomain } from '@/lib/utils/format';
+import {
+  isAcceptedNicheSlug,
+  legacyAcceptanceFlags,
+} from '@/lib/config/accepted-niches';
 import type {
   LinkTypeSlug,
   NicheSlug,
@@ -31,36 +35,59 @@ function readString(formData: FormData, key: string, fallback = '') {
   return typeof value === 'string' && value.length > 0 ? value : fallback;
 }
 
+/**
+ * The services a website offers.
+ *
+ * Driven by the type checkboxes rather than inferred from a price. The old
+ * rule - "a price above zero means the service exists" - made a free or
+ * not-yet-priced placement impossible to express, and made removing a service
+ * a matter of guessing that zero meant delete.
+ */
 function buildServices(formData: FormData, websiteId: string, existing: Service[]): Service[] {
-  const definitions: { type: LinkTypeSlug; priceKey: string }[] = [
-    { type: 'guest-post', priceKey: 'guestPostPrice' },
-    { type: 'niche-edit', priceKey: 'nicheEditPrice' },
-    { type: 'digital-pr', priceKey: 'digitalPrPrice' },
-  ];
   const min = readNumber(formData, 'turnaroundMin', 3);
   const max = readNumber(formData, 'turnaroundMax', 5);
+  const types: LinkTypeSlug[] = ['guest-post', 'niche-edit', 'digital-pr'];
 
-  return definitions
-    .map((definition): Service | null => {
-      const price = readNumber(formData, definition.priceKey);
-      if (price <= 0) return null;
-      const previous = existing.find((service) => service.type === definition.type);
+  return types
+    .filter((type) => formData.get(`service_${type}`) === 'on')
+    .map((type): Service => {
+      const previous = existing.find((service) => service.type === type);
+      const cost = formData.get(`cost_${type}`);
+      const costEntered = typeof cost === 'string' && cost.trim() !== '';
+      const costValue = Number(cost);
+
       return {
-        id: previous?.id ?? `${websiteId}_svc_${definition.type}`,
+        id: previous?.id ?? `${websiteId}_svc_${type}`,
         websiteId,
-        type: definition.type,
-        priceMinor: Math.round(price * 100),
-        turnaroundMinDays: definition.type === 'digital-pr' ? min + 4 : min,
-        turnaroundMaxDays: definition.type === 'digital-pr' ? max + 4 : max,
+        type,
+        priceMinor: Math.max(0, Math.round(readNumber(formData, `price_${type}`) * 100)),
+        // Digital PR goes through a newsroom, so it runs longer than the
+        // window entered for the other two.
+        turnaroundMinDays: type === 'digital-pr' ? min + 4 : min,
+        turnaroundMaxDays: type === 'digital-pr' ? max + 4 : max,
         available: true,
-        note: previous?.note,
+        note: readString(formData, `note_${type}`) || previous?.note,
+        // An empty box means "not recorded", which is deliberately different
+        // from a cost of zero and must not be stored as one.
+        costPriceMinor:
+          costEntered && Number.isFinite(costValue) && costValue >= 0
+            ? Math.round(costValue * 100)
+            : undefined,
       };
-    })
-    .filter((service): service is Service => service !== null);
+    });
 }
 
 function buildPatch(formData: FormData, websiteId: string, existing?: Website): Partial<Website> {
   const domain = readString(formData, 'domain');
+
+  // Checkboxes all share one name, so every ticked box arrives as a separate
+  // entry. Validated against the shared list, so a crafted request cannot
+  // store a niche the site does not know about.
+  const acceptedNiches = formData
+    .getAll('acceptedNiches')
+    .map((value) => String(value))
+    .filter((value) => isAcceptedNicheSlug(value));
+
   const secondaryNiches = String(formData.get('secondaryNiches') ?? '')
     .split(',')
     .map((value) => value.trim())
@@ -102,10 +129,16 @@ function buildPatch(formData: FormData, websiteId: string, existing?: Website): 
         guidelines: [],
         examplePlacements: [],
       }),
-      minWordCount: readNumber(formData, 'minWordCount', 800),
-      maxWordCount: readNumber(formData, 'minWordCount', 800) + 1200,
+      // The word count fields are only rendered when a service that involves
+      // writing is selected, so an absent value keeps whatever was there
+      // rather than resetting the publisher's stated minimum to a default.
+      minWordCount: readNumber(formData, 'minWordCount', existing?.rules.minWordCount ?? 800),
+      maxWordCount:
+        readNumber(formData, 'minWordCount', existing?.rules.minWordCount ?? 800) + 1200,
       maxLinks: readNumber(formData, 'maxLinks', 1),
       linkAttribute: formData.get('dofollow') === 'on' ? 'dofollow' : 'nofollow',
+      acceptedNiches,
+      ...legacyAcceptanceFlags(acceptedNiches),
       sponsoredTag: readString(formData, 'sponsoredTag', 'never') as Website['rules']['sponsoredTag'],
       restrictedNiches: String(formData.get('restrictedNiches') ?? '')
         .split(',')

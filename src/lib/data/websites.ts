@@ -1,3 +1,4 @@
+import { acceptedNichesFromFlags } from '@/lib/config/accepted-niches';
 import { nicheName } from './categories';
 import { countryName } from './countries';
 import { rawWebsites, type RawWebsite } from './websites.raw';
@@ -133,17 +134,24 @@ function buildRules(raw: RawWebsite, random: () => number): PublishingRules {
     random() < 0.62 ? 'never' : random() < 0.75 ? 'on-request' : 'always';
   const minWordCount = round(700 + random() * 700, 50);
 
+  const flags = {
+    acceptsGambling: raw.n === 'igaming' || (raw.n === 'sports' && random() < 0.7),
+    acceptsFinance: raw.n !== 'health' && random() < 0.82,
+    acceptsCrypto: raw.n === 'crypto' || (raw.n === 'finance' && random() < 0.7) || random() < 0.35,
+    acceptsCbd: raw.n === 'health' ? random() < 0.4 : random() < 0.25,
+    acceptsAdult: false,
+  };
+
   return {
     minWordCount,
     maxWordCount: minWordCount + round(600 + random() * 900, 100),
     maxLinks: 1 + Math.floor(random() * 3),
     linkAttribute: attribute,
     sponsoredTag: sponsored,
-    acceptsGambling: raw.n === 'igaming' || (raw.n === 'sports' && random() < 0.7),
-    acceptsFinance: raw.n !== 'health' && random() < 0.82,
-    acceptsCrypto: raw.n === 'crypto' || (raw.n === 'finance' && random() < 0.7) || random() < 0.35,
-    acceptsCbd: raw.n === 'health' ? random() < 0.4 : random() < 0.25,
-    acceptsAdult: false,
+    ...flags,
+    // The seed only knows about the regulated topics, so the list is derived
+    // from them plus the site's own niche.
+    acceptedNiches: [...new Set(['general', raw.n, ...acceptedNichesFromFlags(flags)])],
     restrictedNiches: restrictedByNiche[raw.n] ?? ['Adult', 'Gambling'],
     contentProvidedBy: random() < 0.55 ? 'either' : random() < 0.6 ? 'buyer' : 'publisher',
     guidelines: [

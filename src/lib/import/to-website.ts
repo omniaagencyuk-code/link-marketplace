@@ -173,6 +173,7 @@ function emptyRules(): Website['rules'] {
     acceptsCrypto: false,
     acceptsCbd: false,
     acceptsAdult: false,
+    acceptedNiches: [],
     restrictedNiches: [],
     contentProvidedBy: 'either',
     guidelines: [],

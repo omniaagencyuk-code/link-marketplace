@@ -1,21 +1,32 @@
-import { getServerClient, getAdminClient } from '@/lib/supabase/server';
-import { WEBSITE_SELECT, mapWebsite, websiteToRow, type WebsiteRow } from '@/lib/supabase/mappers';
+import { getServerClient, getAdminClient, getAdminScopedClient } from '@/lib/supabase/server';
+import {
+  WEBSITE_SELECT,
+  WEBSITE_SELECT_ADMIN,
+  mapWebsite,
+  websiteToRow,
+  type WebsiteRow,
+} from '@/lib/supabase/mappers';
 import { toListItem } from '../query-engine';
 import { toPreviewRows, type MarketplacePreview } from '../marketplace-preview';
 import { normaliseDomain } from '@/lib/import/normalise';
 import { newWebsiteDefaults, toWebsitePatch } from '@/lib/import/to-website';
 import { slugifyDomain } from '@/lib/utils/format';
 import type { ImportBatchResult, ImportPayloadRow, DuplicateMode } from '@/lib/import/types';
-import type { NicheSlug, Website, WebsiteListItem, WebsiteStatus } from '@/lib/types';
+import type { NicheSlug, Service, Website, WebsiteListItem, WebsiteStatus } from '@/lib/types';
 
 /**
  * Websites, backed by Supabase.
  *
- * Reads go through the *user's* client, so row level security decides what
- * comes back: a signed-out request sees nothing, which is the gating working
- * rather than a bug to route around. The only exceptions are the two functions
- * that legitimately serve signed-out pages - `getPublicPreview` and
- * `getStats` - and both return aggregates or redacted rows, never a domain.
+ * Public reads go through the *user's* client, so row level security decides
+ * what comes back: a signed-out request sees nothing, which is the gating
+ * working rather than a bug to route around. `getPublicPreview` and
+ * `getStats` are the exceptions that serve signed-out pages, and both return
+ * aggregates or redacted rows, never a domain.
+ *
+ * Everything the admin area calls uses `getAdminScopedClient()` instead,
+ * because the admin holds no Supabase identity - see that function's comment.
+ * Each of those methods is only ever reached from behind
+ * `requireAdminSession()`.
  */
 
 /**
@@ -28,6 +39,123 @@ import type { NicheSlug, Website, WebsiteListItem, WebsiteStatus } from '@/lib/t
  * pushes filtering into the database.
  */
 const MAX_LIST_ROWS = 2000;
+
+
+/**
+ * A website is three tables, not one.
+ *
+ * `websiteToRow` maps the columns that live on `websites`. Niches live in a
+ * join table, services in their own table and our buy price in a third, so a
+ * save that only wrote the first one lost the price and the niche silently -
+ * the record saved, the listing was wrong, and nothing said so. These
+ * functions write the other two, and are called from both create and update.
+ */
+
+type Client = ReturnType<typeof getAdminScopedClient>;
+
+/** Category ids for a set of slugs, in one query. */
+async function categoryIds(supabase: Client, slugs: string[]): Promise<Map<string, string>> {
+  const wanted = [...new Set(slugs.filter(Boolean))];
+  if (wanted.length === 0) return new Map();
+
+  const { data } = await supabase.from('categories').select('id, slug').in('slug', wanted);
+  return new Map(((data ?? []) as { id: string; slug: string }[]).map((row) => [row.slug, row.id]));
+}
+
+async function syncCategories(
+  supabase: Client,
+  websiteId: string,
+  niche: string | undefined,
+  secondary: string[] | undefined,
+) {
+  // An update that touches neither must not clear what is already there.
+  if (niche === undefined && secondary === undefined) return;
+
+  const ids = await categoryIds(supabase, [...(niche ? [niche] : []), ...(secondary ?? [])]);
+
+  if (niche !== undefined) {
+    const primaryId = ids.get(niche) ?? null;
+    await supabase.from('websites').update({ primary_category_id: primaryId }).eq('id', websiteId);
+  }
+
+  // The join table is replaced wholesale: it is small, and a diff would be
+  // more code than it is worth for a handful of rows.
+  await supabase.from('website_categories').delete().eq('website_id', websiteId);
+
+  const rows = [
+    ...(niche && ids.get(niche)
+      ? [{ website_id: websiteId, category_id: ids.get(niche)!, is_primary: true }]
+      : []),
+    ...(secondary ?? [])
+      .filter((slug) => slug !== niche && ids.has(slug))
+      .map((slug) => ({ website_id: websiteId, category_id: ids.get(slug)!, is_primary: false })),
+  ];
+
+  if (rows.length) await supabase.from('website_categories').insert(rows);
+}
+
+async function syncServices(
+  supabase: Client,
+  websiteId: string,
+  services: Service[] | undefined,
+  updatedBy?: string,
+) {
+  if (services === undefined) return;
+
+  const keep = services.map((service) => service.type);
+
+  // Remove the types that are no longer offered. Untick guest post and the
+  // guest post service goes, along with its cost row via the cascade.
+  const removal = supabase.from('services').delete().eq('website_id', websiteId);
+  await (keep.length ? removal.not('type', 'in', `(${keep.join(',')})`) : removal);
+
+  if (services.length === 0) return;
+
+  const { data, error } = await supabase
+    .from('services')
+    .upsert(
+      services.map((service) => ({
+        website_id: websiteId,
+        type: service.type,
+        price_minor: Math.max(0, Math.round(service.priceMinor)),
+        turnaround_min_days: service.turnaroundMinDays,
+        turnaround_max_days: service.turnaroundMaxDays,
+        available: service.available,
+        note: service.note ?? null,
+      })),
+      { onConflict: 'website_id,type' },
+    )
+    .select('id, type');
+
+  if (error) throw new Error(`Failed to save services: ${error.message}`);
+
+  const idByType = new Map(((data ?? []) as { id: string; type: string }[]).map((r) => [r.type, r.id]));
+
+  // Costs are ours, not the publisher's, so they live in their own table and
+  // are written separately. An undefined cost means "not recorded" and clears
+  // any previous figure rather than storing a misleading zero.
+  const withCost = services.filter((service) => typeof service.costPriceMinor === 'number');
+  const withoutCost = services.filter((service) => typeof service.costPriceMinor !== 'number');
+
+  const clearIds = withoutCost.map((s) => idByType.get(s.type)).filter(Boolean) as string[];
+  if (clearIds.length) await supabase.from('service_costs').delete().in('service_id', clearIds);
+
+  const costRows = withCost
+    .map((service) => {
+      const id = idByType.get(service.type);
+      if (!id) return null;
+      return {
+        service_id: id,
+        cost_price_minor: Math.max(0, Math.round(service.costPriceMinor!)),
+        updated_by: updatedBy ?? null,
+      };
+    })
+    .filter(Boolean) as { service_id: string; cost_price_minor: number; updated_by: string | null }[];
+
+  if (costRows.length) {
+    await supabase.from('service_costs').upsert(costRows, { onConflict: 'service_id' });
+  }
+}
 
 export const supabaseWebsiteRepository = {
   async getAll(): Promise<WebsiteListItem[]> {
@@ -44,10 +172,10 @@ export const supabaseWebsiteRepository = {
   },
 
   async getAllForAdmin(): Promise<WebsiteListItem[]> {
-    const supabase = await getServerClient();
+    const supabase = getAdminScopedClient();
     const { data, error } = await supabase
       .from('websites')
-      .select(WEBSITE_SELECT)
+      .select(WEBSITE_SELECT_ADMIN)
       .order('updated_at', { ascending: false })
       .limit(MAX_LIST_ROWS);
 
@@ -55,11 +183,12 @@ export const supabaseWebsiteRepository = {
     return (data as unknown as WebsiteRow[]).map((row) => toListItem(mapWebsite(row)));
   },
 
+  /** Admin only - the public site looks listings up by slug, not id. */
   async getById(id: string): Promise<Website | null> {
-    const supabase = await getServerClient();
+    const supabase = getAdminScopedClient();
     const { data } = await supabase
       .from('websites')
-      .select(WEBSITE_SELECT)
+      .select(WEBSITE_SELECT_ADMIN)
       .eq('id', id)
       .maybeSingle();
     return data ? mapWebsite(data as unknown as WebsiteRow) : null;
@@ -216,7 +345,7 @@ export const supabaseWebsiteRepository = {
   },
 
   async create(input: Partial<Website> & { domain: string }): Promise<Website> {
-    const supabase = await getServerClient();
+    const supabase = getAdminScopedClient();
     const row = {
       ...websiteToRow({ ...newWebsiteDefaults(input.domain), ...input }),
       slug: input.slug ?? slugifyDomain(input.domain),
@@ -232,20 +361,31 @@ export const supabaseWebsiteRepository = {
       .single();
 
     if (error) throw new Error(`Failed to create website: ${error.message}`);
-    return mapWebsite(data as unknown as WebsiteRow);
+
+    const created = mapWebsite(data as unknown as WebsiteRow);
+    await syncCategories(supabase, created.id, input.niche, input.secondaryNiches);
+    await syncServices(supabase, created.id, input.services);
+
+    return (await supabaseWebsiteRepository.getById(created.id)) ?? created;
   },
 
   async update(id: string, patch: Partial<Website>): Promise<Website | null> {
-    const supabase = await getServerClient();
-    const { data, error } = await supabase
-      .from('websites')
-      .update(websiteToRow(patch))
-      .eq('id', id)
-      .select(WEBSITE_SELECT)
-      .maybeSingle();
+    const supabase = getAdminScopedClient();
+    const columns = websiteToRow(patch);
 
-    if (error) throw new Error(`Failed to update website: ${error.message}`);
-    return data ? mapWebsite(data as unknown as WebsiteRow) : null;
+    // A patch that only changes services or niches has nothing to write here,
+    // and Supabase rejects an empty update.
+    if (Object.keys(columns).length > 0) {
+      const { error } = await supabase.from('websites').update(columns).eq('id', id);
+      if (error) throw new Error(`Failed to update website: ${error.message}`);
+    }
+
+    await syncCategories(supabase, id, patch.niche, patch.secondaryNiches);
+    await syncServices(supabase, id, patch.services);
+
+    // Re-read rather than trusting the update's return value: the services and
+    // categories were written after it, so it would be a stale picture.
+    return supabaseWebsiteRepository.getById(id);
   },
 
   async setStatus(id: string, status: WebsiteStatus) {
@@ -253,7 +393,7 @@ export const supabaseWebsiteRepository = {
   },
 
   async getDomainIndex(): Promise<Record<string, string>> {
-    const supabase = await getServerClient();
+    const supabase = getAdminScopedClient();
     // Only two columns - the importer compares millions of rows in the worst
     // case and does not need the rest.
     const { data } = await supabase.from('websites').select('id, domain').limit(50_000);

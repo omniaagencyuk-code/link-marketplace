@@ -1,3 +1,4 @@
+import { acceptedNichesFromFlags, legacyAcceptanceFlags } from '@/lib/config/accepted-niches';
 import { nicheName } from '@/lib/data/categories';
 import { countryName } from '@/lib/data/countries';
 import type {
@@ -60,6 +61,7 @@ export interface WebsiteRow {
   accepts_crypto: boolean;
   accepts_cbd: boolean;
   accepts_adult: boolean;
+  accepted_niches: string[] | null;
   restricted_niches: string[] | null;
   content_provided_by: string | null;
   guidelines: string[] | null;
@@ -81,6 +83,14 @@ export interface ServiceRow {
   turnaround_max_days: number;
   available: boolean;
   note: string | null;
+  /**
+   * Joined from `service_costs`, which only an admin can read.
+   *
+   * Absent on every customer-facing query - the table has no read policy for
+   * anyone but an admin, so the join comes back empty rather than the price
+   * leaking.
+   */
+  service_costs?: { cost_price_minor: number } | { cost_price_minor: number }[] | null;
 }
 
 /** Columns every website read needs, including the two joins. */
@@ -89,6 +99,22 @@ export const WEBSITE_SELECT = `
   primary_category:categories!websites_primary_category_id_fkey (slug),
   website_categories (categories (slug)),
   services (*)
+`;
+
+/**
+ * The same, plus our buy price for each service.
+ *
+ * Only for queries made with the admin client. A customer-facing query must
+ * use `WEBSITE_SELECT`: not because this one would leak - `service_costs` has
+ * no policy that matches a customer, so the embed returns nothing - but
+ * because asking for data the caller has no business seeing is the kind of
+ * thing that stops being harmless the moment a policy is edited.
+ */
+export const WEBSITE_SELECT_ADMIN = `
+  *,
+  primary_category:categories!websites_primary_category_id_fkey (slug),
+  website_categories (categories (slug)),
+  services (*, service_costs (cost_price_minor))
 `;
 
 function toNumber(value: number | string | null | undefined, fallback = 0): number {
@@ -107,7 +133,24 @@ export function mapService(row: ServiceRow): Service {
     turnaroundMaxDays: toNumber(row.turnaround_max_days, 7),
     available: row.available ?? true,
     note: row.note ?? undefined,
+    costPriceMinor: costFromRow(row),
   };
+}
+
+/**
+ * The joined cost, if the caller was allowed to read it.
+ *
+ * PostgREST returns an embedded one-to-one either as an object or as a
+ * single-element array depending on how it infers the relationship, so both
+ * shapes are handled. Anything else - including the empty result a
+ * non-admin gets - reads as "no cost recorded".
+ */
+function costFromRow(row: ServiceRow): number | undefined {
+  const joined = row.service_costs;
+  if (!joined) return undefined;
+  const record = Array.isArray(joined) ? joined[0] : joined;
+  if (!record || typeof record.cost_price_minor !== 'number') return undefined;
+  return record.cost_price_minor;
 }
 
 export function mapWebsite(row: WebsiteRow): Website {
@@ -152,6 +195,18 @@ export function mapWebsite(row: WebsiteRow): Website {
       acceptsCrypto: row.accepts_crypto ?? false,
       acceptsCbd: row.accepts_cbd ?? false,
       acceptsAdult: row.accepts_adult ?? false,
+      // Rows written before accepted_niches existed have an empty array, so
+      // fall back to what the legacy booleans say rather than showing nothing.
+      acceptedNiches:
+        row.accepted_niches && row.accepted_niches.length > 0
+          ? row.accepted_niches
+          : acceptedNichesFromFlags({
+              acceptsGambling: row.accepts_gambling ?? false,
+              acceptsFinance: row.accepts_finance ?? false,
+              acceptsCrypto: row.accepts_crypto ?? false,
+              acceptsCbd: row.accepts_cbd ?? false,
+              acceptsAdult: row.accepts_adult ?? false,
+            }),
       restrictedNiches: row.restricted_niches ?? [],
       contentProvidedBy: (row.content_provided_by ?? 'either') as Website['rules']['contentProvidedBy'],
       guidelines: row.guidelines ?? [],
@@ -197,16 +252,29 @@ export function websiteToRow(patch: Partial<Website>): Record<string, unknown> {
   }
 
   if (patch.rules) {
+    // The list is the source of truth; the booleans are derived from it on
+    // every write so the two cannot drift apart.
+    if (patch.rules.acceptedNiches) {
+      set('accepted_niches', patch.rules.acceptedNiches);
+      const flags = legacyAcceptanceFlags(patch.rules.acceptedNiches);
+      set('accepts_gambling', flags.acceptsGambling);
+      set('accepts_finance', flags.acceptsFinance);
+      set('accepts_crypto', flags.acceptsCrypto);
+      set('accepts_cbd', flags.acceptsCbd);
+      set('accepts_adult', flags.acceptsAdult);
+    } else {
+      set('accepts_gambling', patch.rules.acceptsGambling);
+      set('accepts_finance', patch.rules.acceptsFinance);
+      set('accepts_crypto', patch.rules.acceptsCrypto);
+      set('accepts_cbd', patch.rules.acceptsCbd);
+      set('accepts_adult', patch.rules.acceptsAdult);
+    }
+
     set('min_word_count', patch.rules.minWordCount);
     set('max_word_count', patch.rules.maxWordCount);
     set('max_links', patch.rules.maxLinks);
     set('link_attribute', patch.rules.linkAttribute);
     set('sponsored_tag', patch.rules.sponsoredTag);
-    set('accepts_gambling', patch.rules.acceptsGambling);
-    set('accepts_finance', patch.rules.acceptsFinance);
-    set('accepts_crypto', patch.rules.acceptsCrypto);
-    set('accepts_cbd', patch.rules.acceptsCbd);
-    set('accepts_adult', patch.rules.acceptsAdult);
     set('restricted_niches', patch.rules.restrictedNiches);
     set('content_provided_by', patch.rules.contentProvidedBy);
     set('guidelines', patch.rules.guidelines);

@@ -3,13 +3,16 @@ import { notFound } from 'next/navigation';
 import { PageTitle } from '@/components/dashboard/page-title';
 import { WebsiteEditor } from '@/components/admin/website-editor';
 import { Button } from '@/components/ui/button';
-import { websiteService } from '@/lib/services';
+import { settingsService, websiteService } from '@/lib/services';
 
 export const dynamic = 'force-dynamic';
 
 export default async function EditWebsitePage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const website = await websiteService.getById(id);
+  const [website, settings] = await Promise.all([
+    websiteService.getById(id),
+    settingsService.get(),
+  ]);
   if (!website) notFound();
 
   return (
@@ -23,7 +26,7 @@ export default async function EditWebsitePage({ params }: { params: Promise<{ id
           </Button>
         }
       />
-      <WebsiteEditor website={website} />
+      <WebsiteEditor website={website} currency={settings.currency} />
     </>
   );
 }

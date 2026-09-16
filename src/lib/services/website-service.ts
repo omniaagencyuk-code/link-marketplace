@@ -40,6 +40,27 @@ function listItems(includeInactive = false) {
     .map(toListItem);
 }
 
+/**
+ * Remove our buy price before a record can reach a customer.
+ *
+ * The Supabase reads already leave it behind - customer queries do not join
+ * `service_costs`, and the table has no policy that would let them - but a
+ * `WebsiteListItem` is serialised straight into the marketplace page, and the
+ * mock data source has no row level security at all. Stripping it on the way
+ * out of every public method means the guarantee does not depend on remembering
+ * which select was used.
+ */
+function withoutCost<T extends { services: Website['services'] }>(record: T): T {
+  return {
+    ...record,
+    services: record.services.map(({ costPriceMinor: _cost, ...service }) => service),
+  };
+}
+
+function publicItems<T extends { services: Website['services'] }>(records: T[]): T[] {
+  return records.map(withoutCost);
+}
+
 export interface MarketplaceStats {
   totalWebsites: number;
   totalNiches: number;
@@ -51,9 +72,9 @@ export interface MarketplaceStats {
 export const websiteService = {
   /** Every active listing, as list items. */
   async getAll(): Promise<WebsiteListItem[]> {
-    if (isSupabaseEnabled()) return supabaseWebsiteRepository.getAll();
+    if (isSupabaseEnabled()) return publicItems(await supabaseWebsiteRepository.getAll());
 
-    return listItems();
+    return publicItems(listItems());
   },
 
   /** Every listing including drafts, paused and archived. Admin only. */
@@ -70,9 +91,12 @@ export const websiteService = {
   },
 
   async getBySlug(slug: string): Promise<Website | null> {
-    if (isSupabaseEnabled()) return supabaseWebsiteRepository.getBySlug(slug);
+    const website = isSupabaseEnabled()
+      ? await supabaseWebsiteRepository.getBySlug(slug)
+      : (store.find((entry) => entry.slug === slug) ?? null);
 
-    return store.find((website) => website.slug === slug) ?? null;
+    // This one renders the customer-facing listing page.
+    return website ? withoutCost(website) : null;
   },
 
   async getSlugs(): Promise<string[]> {
@@ -83,7 +107,8 @@ export const websiteService = {
 
   /** Filter, sort and paginate. Used by the marketplace page. */
   async search(query: WebsiteQuery): Promise<PaginatedResult<WebsiteListItem>> {
-    return runQuery(listItems(), query);
+    const result = runQuery(listItems(), query);
+    return { ...result, items: publicItems(result.items) };
   },
 
   /**
@@ -93,9 +118,9 @@ export const websiteService = {
    * surfaces. Public pages use `getPublicPreview()`.
    */
   async getFeatured(limit = 6): Promise<WebsiteListItem[]> {
-    if (isSupabaseEnabled()) return supabaseWebsiteRepository.getFeatured(limit);
+    if (isSupabaseEnabled()) return publicItems(await supabaseWebsiteRepository.getFeatured(limit));
 
-    return listItems()
+    return publicItems(listItems()
       .filter((website) => website.verified)
       .sort(
         (a, b) =>
@@ -103,16 +128,16 @@ export const websiteService = {
           b.completedOrders -
           (a.metrics.domainRating * 1000 + a.completedOrders),
       )
-      .slice(0, limit);
+      .slice(0, limit));
   },
 
   /** Sites in the same niche, excluding the current one. */
   async getRelated(slug: string, limit = 4): Promise<WebsiteListItem[]> {
-    if (isSupabaseEnabled()) return supabaseWebsiteRepository.getRelated(slug, limit);
+    if (isSupabaseEnabled()) return publicItems(await supabaseWebsiteRepository.getRelated(slug, limit));
 
     const current = store.find((website) => website.slug === slug);
     if (!current) return [];
-    return listItems()
+    return publicItems(listItems())
       .filter((website) => website.slug !== slug && website.niche === current.niche)
       .sort(
         (a, b) =>
@@ -123,10 +148,10 @@ export const websiteService = {
   },
 
   async getByIds(ids: string[]): Promise<WebsiteListItem[]> {
-    if (isSupabaseEnabled()) return supabaseWebsiteRepository.getByIds(ids);
+    if (isSupabaseEnabled()) return publicItems(await supabaseWebsiteRepository.getByIds(ids));
 
     const wanted = new Set(ids);
-    return listItems(true).filter((website) => wanted.has(website.id));
+    return publicItems(listItems(true).filter((website) => wanted.has(website.id)));
   },
 
   async countByNiche(): Promise<Record<NicheSlug, number>> {
