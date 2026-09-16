@@ -21,6 +21,9 @@ export type ImportFieldKey =
   | 'guest_post_price'
   | 'niche_edit_price'
   | 'digital_pr_price'
+  | 'guest_post_cost'
+  | 'niche_edit_cost'
+  | 'digital_pr_cost'
   | 'currency'
   | 'turnaround_min_days'
   | 'turnaround_max_days'
@@ -112,7 +115,12 @@ export const importFields: ImportField[] = [
     key: 'guest_post_price',
     label: 'Guest post price',
     type: 'price',
-    aliases: ['guest post price', 'guestpostprice', 'guest post', 'guestpost', 'price', 'cost', 'gp price', 'gp', 'post price', 'rate'],
+    // A bare "cost" is deliberately not an alias here. It used to map to the
+    // sell price, which was harmless when there was nowhere else for it to go
+    // - but now that cost columns exist and feed the margin figures, guessing
+    // wrong would put a publisher's buy price in the customer-facing price.
+    // Left unmapped, the admin is asked which one it is.
+    aliases: ['guest post price', 'guestpostprice', 'guest post', 'guestpost', 'price', 'gp price', 'gp', 'post price', 'rate'],
   },
   {
     key: 'niche_edit_price',
@@ -125,6 +133,34 @@ export const importFields: ImportField[] = [
     label: 'Digital PR price',
     type: 'price',
     aliases: ['digital pr price', 'digitalprprice', 'digital pr', 'digitalpr', 'pr price', 'pr'],
+  },
+  {
+    key: 'guest_post_cost',
+    label: 'Guest post cost',
+    type: 'price',
+    aliases: [
+      'guest post cost', 'guestpostcost', 'gp cost', 'cost price', 'costprice',
+      'our cost', 'buy price', 'buying price', 'publisher price', 'publisher cost',
+      'wholesale', 'wholesale price', 'net price', 'net cost',
+    ],
+    hint: 'What we pay the publisher. Internal only - never shown to customers.',
+  },
+  {
+    key: 'niche_edit_cost',
+    label: 'Niche edit cost',
+    type: 'price',
+    aliases: [
+      'niche edit cost', 'nicheeditcost', 'ne cost', 'link insertion cost',
+      'niche edit buy price', 'niche edit net',
+    ],
+    hint: 'What we pay the publisher for a link insertion.',
+  },
+  {
+    key: 'digital_pr_cost',
+    label: 'Digital PR cost',
+    type: 'price',
+    aliases: ['digital pr cost', 'digitalprcost', 'pr cost', 'digital pr buy price', 'pr net'],
+    hint: 'What we pay for a digital PR placement.',
   },
   {
     key: 'currency',
@@ -173,7 +209,12 @@ export const importFields: ImportField[] = [
     key: 'accepted_niches',
     label: 'Accepted niches',
     type: 'list',
-    aliases: ['accepted niches', 'accepts', 'allowed niches', 'accepted topics', 'accepted content'],
+    aliases: [
+      'accepted niches', 'accepts', 'allowed niches', 'accepted topics',
+      'accepted content', 'niches accepted', 'topics accepted', 'allowed topics',
+      'accepted verticals', 'we accept',
+    ],
+    hint: 'Separate with | or a comma. Matched to the marketplace niche list; unrecognised entries are ignored.',
   },
   {
     key: 'restricted_niches',
@@ -218,6 +259,9 @@ export const templateExampleRow: Record<ImportFieldKey, string> = {
   guest_post_price: '180',
   niche_edit_price: '140',
   digital_pr_price: '450',
+  guest_post_cost: '95',
+  niche_edit_cost: '70',
+  digital_pr_cost: '260',
   currency: 'GBP',
   turnaround_min_days: '2',
   turnaround_max_days: '3',
@@ -225,7 +269,7 @@ export const templateExampleRow: Record<ImportFieldKey, string> = {
   sponsored_tag: 'no',
   minimum_word_count: '800',
   maximum_links: '2',
-  accepted_niches: 'Finance, Business',
+  accepted_niches: 'Finance|Business|Crypto',
   restricted_niches: 'Adult|Gambling',
   notes: 'Editor prefers data-led pitches.',
   status: 'active',

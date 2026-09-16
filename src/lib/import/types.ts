@@ -24,6 +24,9 @@ export interface RowValues {
   guest_post_price?: number;
   niche_edit_price?: number;
   digital_pr_price?: number;
+  guest_post_cost?: number;
+  niche_edit_cost?: number;
+  digital_pr_cost?: number;
   currency?: string;
   turnaround_min_days?: number;
   turnaround_max_days?: number;

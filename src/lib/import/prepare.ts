@@ -160,7 +160,19 @@ function prepareValues(
     }
   }
 
-  for (const key of ['guest_post_price', 'niche_edit_price', 'digital_pr_price'] as const) {
+  const priceColumns = [
+    'guest_post_price',
+    'niche_edit_price',
+    'digital_pr_price',
+    // Cost columns parse exactly like sell prices. They are checked against
+    // the sell price further down, because a cost above the price is usually
+    // a mis-mapped column rather than a genuinely loss-making placement.
+    'guest_post_cost',
+    'niche_edit_cost',
+    'digital_pr_cost',
+  ] as const;
+
+  for (const key of priceColumns) {
     const value = cell(key);
     if (!value) continue;
     const parsed = parsePrice(value);
@@ -176,6 +188,38 @@ function prepareValues(
     supplied.push(key);
     if (parsed.currency && parsed.currency !== options.currency && !declaredCurrency) {
       note(key, `Price appears to be in ${parsed.currency}, marketplace uses ${options.currency}`, 'warning');
+    }
+  }
+
+  // A cost above the sell price loses money on every order. It is occasionally
+  // real, so this warns rather than rejects - but it is far more often a
+  // column mapped to the wrong field, which is worth catching before import.
+  const costPairs = [
+    ['guest_post_price', 'guest_post_cost', 'Guest post'],
+    ['niche_edit_price', 'niche_edit_cost', 'Niche edit'],
+    ['digital_pr_price', 'digital_pr_cost', 'Digital PR'],
+  ] as const;
+
+  for (const [priceKey, costKey, label] of costPairs) {
+    const price = values[priceKey];
+    const cost = values[costKey];
+    if (typeof cost !== 'number') continue;
+
+    if (typeof price !== 'number') {
+      // A service only exists once it has a sell price, so a cost with no
+      // price has nothing to attach to unless the listing already offers that
+      // service. Duplicate detection has not run at this point, so the warning
+      // covers both cases rather than claiming the cost is definitely lost.
+      note(
+        costKey,
+        `${label} cost given with no ${label.toLowerCase()} price - ignored unless this site already offers it`,
+        'warning',
+      );
+      continue;
+    }
+
+    if (cost > price) {
+      note(costKey, `${label} cost (${cost}) is above its price (${price})`, 'warning');
     }
   }
 

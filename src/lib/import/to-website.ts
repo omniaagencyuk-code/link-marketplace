@@ -1,4 +1,5 @@
 import { slugifyDomain } from '@/lib/utils/format';
+import { legacyAcceptanceFlags, matchAcceptedNiches } from '@/lib/config/accepted-niches';
 import type { ImportFieldKey } from './fields';
 import type { RowValues } from './types';
 import type { LinkTypeSlug, Service, Website } from '@/lib/types';
@@ -45,6 +46,9 @@ export function toWebsitePatch(
     'guest_post_price',
     'niche_edit_price',
     'digital_pr_price',
+    'guest_post_cost',
+    'niche_edit_cost',
+    'digital_pr_cost',
     'turnaround_min_days',
     'turnaround_max_days',
   ];
@@ -83,17 +87,27 @@ export function toWebsitePatch(
   return patch;
 }
 
-/** Map free-text accepted topics onto the model's regulated-topic flags. */
+/**
+ * Map free-text accepted topics onto the shared niche list.
+ *
+ * This used to test four regexes against the whole cell joined into one
+ * string and set five booleans - so it could tell you a site accepted crypto
+ * but not that it accepted anything else, and the list the admin form edits
+ * stayed empty after every import. Matching now goes through the same table
+ * the rest of the app uses, and the booleans are derived from the result so
+ * the two representations cannot disagree.
+ */
 function acceptedTopics(entries: string[]) {
-  const joined = entries.join(' ').toLowerCase();
-  return {
-    acceptsGambling: /gambl|casino|betting|igaming/.test(joined),
-    acceptsFinance: /financ|money|invest|loan/.test(joined),
-    acceptsCrypto: /crypto|blockchain|web3|bitcoin/.test(joined),
-    acceptsCbd: /cbd|cannabis|hemp/.test(joined),
-    acceptsAdult: false,
-  };
+  const slugs = matchAcceptedNiches(entries);
+  return { acceptedNiches: slugs, ...legacyAcceptanceFlags(slugs) };
 }
+
+/** The cost column paired with each service type. */
+const costKeyByType: Record<LinkTypeSlug, ImportFieldKey> = {
+  'guest-post': 'guest_post_cost',
+  'niche-edit': 'niche_edit_cost',
+  'digital-pr': 'digital_pr_cost',
+};
 
 const serviceOrder: { key: ImportFieldKey; type: LinkTypeSlug; offset: number }[] = [
   { key: 'guest_post_price', type: 'guest-post', offset: 0 },
@@ -133,6 +147,17 @@ function buildServices(
     // An explicit zero removes the service.
     if (priceSupplied && amount <= 0) continue;
 
+    // A cost column that was not in the CSV leaves any recorded cost alone,
+    // so a price-only update does not wipe the margin data.
+    const costKey = costKeyByType[definition.type];
+    const costSupplied = has(costKey);
+    const costValue = values[costKey as 'guest_post_cost'];
+    const costPriceMinor = costSupplied
+      ? typeof costValue === 'number'
+        ? Math.round(costValue * 100)
+        : undefined
+      : previous?.costPriceMinor;
+
     services.push({
       id: previous?.id ?? `${websiteId}_svc_${definition.type}`,
       websiteId,
@@ -142,6 +167,7 @@ function buildServices(
       turnaroundMaxDays: Math.max(1, max + definition.offset),
       available: previous?.available ?? true,
       note: previous?.note,
+      costPriceMinor,
     });
   }
 

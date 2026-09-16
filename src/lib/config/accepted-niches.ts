@@ -98,3 +98,74 @@ export function acceptedNichesFromFlags(rules: {
   }
   return slugs;
 }
+
+/**
+ * Free text from a publisher's spreadsheet, matched to the shared list.
+ *
+ * Publisher lists write the same topic a dozen ways - "iGaming", "casino",
+ * "betting", "gambling/casino" - so matching is on substrings against a small
+ * alias table rather than on exact equality. Anything unrecognised is dropped
+ * rather than guessed at: a wrong regulated flag is worse than a missing one,
+ * because it puts a publisher in front of buyers they have not agreed to take.
+ */
+const importAliases: { pattern: RegExp; slug: string }[] = [
+  { pattern: /gambl|casino|betting|igaming|i-gaming|poker|slots|bingo/, slug: 'gambling' },
+  { pattern: /crypto|blockchain|web ?3|bitcoin|nft|defi/, slug: 'crypto' },
+  { pattern: /cbd|cannabis|hemp|marijuana|weed/, slug: 'cbd' },
+  { pattern: /forex|trading|binary option/, slug: 'forex' },
+  { pattern: /adult|xxx|porn|escort/, slug: 'adult' },
+  { pattern: /dating|hookup/, slug: 'dating' },
+  { pattern: /vap(e|ing)|e-?cig/, slug: 'vaping' },
+  { pattern: /pharma|medicine|supplement|nootropic/, slug: 'pharma' },
+  { pattern: /financ|money|invest|loan|insurance|banking|fintech/, slug: 'finance' },
+  { pattern: /health|wellness|fitness|medical|nutrition/, slug: 'health' },
+  { pattern: /tech|software|saas|it|gadget|ai\b/, slug: 'technology' },
+  { pattern: /market|seo|advertis|digital marketing|pr\b/, slug: 'marketing' },
+  { pattern: /business|b2b|startup|entrepreneur|corporate/, slug: 'business' },
+  { pattern: /travel|tourism|holiday|hotel/, slug: 'travel' },
+  { pattern: /lifestyle|fashion|beauty|style/, slug: 'lifestyle' },
+  { pattern: /home|garden|interior|diy|property improvement/, slug: 'home' },
+  { pattern: /real ?estate|property|mortgage/, slug: 'real-estate' },
+  { pattern: /legal|law|solicitor|attorney/, slug: 'legal' },
+  { pattern: /auto|car|motor|vehicle/, slug: 'automotive' },
+  { pattern: /food|drink|recipe|restaurant|cooking/, slug: 'food' },
+  { pattern: /sport|football|soccer|golf|fitness sport/, slug: 'sports' },
+  { pattern: /entertain|music|film|movie|celebrity|gaming(?!.*gambl)/, slug: 'entertainment' },
+  { pattern: /educat|student|university|school|e-?learning/, slug: 'education' },
+  { pattern: /general|any topic|all niches|all topics|any niche|everything/, slug: 'general' },
+];
+
+/**
+ * Accepted-niche slugs for a list of free-text entries.
+ *
+ * Each entry is matched independently, so "Gambling, CBD, Finance" yields
+ * three slugs rather than whichever pattern happened to hit the joined string
+ * first. Duplicates are collapsed and order is preserved.
+ */
+export function matchAcceptedNiches(entries: string[]): string[] {
+  const found: string[] = [];
+
+  for (const entry of entries) {
+    const text = entry.trim().toLowerCase();
+    if (!text) continue;
+
+    // An exact slug or label wins outright - a CSV exported from this system
+    // should round-trip without going near the fuzzy matching.
+    const exact = acceptedNiches.find(
+      (niche) => niche.slug === text || niche.label.toLowerCase() === text,
+    );
+    if (exact) {
+      if (!found.includes(exact.slug)) found.push(exact.slug);
+      continue;
+    }
+
+    for (const alias of importAliases) {
+      if (alias.pattern.test(text) && !found.includes(alias.slug)) {
+        found.push(alias.slug);
+        break;
+      }
+    }
+  }
+
+  return found;
+}
