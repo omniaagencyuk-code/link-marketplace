@@ -60,3 +60,6 @@ run -f "$ROOT/supabase/tests/04_rate_limits.sql" 2>&1 | grep -v '^$'
 echo
 echo "--- admin accounts (grant, revoke, and who may do either) ---"
 run -f "$ROOT/supabase/tests/05_admin_accounts.sql" 2>&1 | grep -v '^$'
+echo
+echo "--- payments, status history and webhook replay ---"
+run -f "$ROOT/supabase/tests/06_payments.sql" 2>&1 | grep -v '^$'

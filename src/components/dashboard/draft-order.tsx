@@ -1,7 +1,9 @@
 'use client';
 
+import { useState, useTransition } from 'react';
 import Link from 'next/link';
 import { AlertCircle, ShoppingBag } from 'lucide-react';
+import { startCheckoutAction } from '@/app/dashboard/orders/actions';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
 import { DraftOrderItemCard } from './draft-order-item';
@@ -14,10 +16,28 @@ import type { WebsiteListItem } from '@/lib/types';
  *
  * Websites arrive here from the marketplace with everything blank; the buyer
  * fills in target URL, anchor text, landing page, notes and an optional
- * article per line. Checkout and payment are not connected yet.
+ * article per line.
+ *
+ * The total shown here is the browser's arithmetic and is only ever
+ * indicative: checkout re-prices every line against the database before
+ * charging, so a stale or edited basket cannot change what is paid.
  */
 export function DraftOrder({ websites }: { websites: WebsiteListItem[] }) {
   const { items, totalMinor, incompleteCount, clear, hydrated } = useOrderDraft();
+  const [pending, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
+  const [rejected, setRejected] = useState<{ websiteDomain: string; reason: string }[]>([]);
+
+  function checkout() {
+    setError(null);
+    setRejected([]);
+    startTransition(async () => {
+      // On success this redirects to Stripe and never returns.
+      const result = await startCheckoutAction(items);
+      if (result?.error) setError(result.error);
+      if (result?.rejected?.length) setRejected(result.rejected);
+    });
+  }
 
   if (!hydrated) {
     return (
@@ -88,10 +108,10 @@ export function DraftOrder({ websites }: { websites: WebsiteListItem[] }) {
             <Button
               variant="accent"
               size="sm"
-              disabled
-              title="Checkout ships with payments"
+              onClick={checkout}
+              disabled={pending || incompleteCount > 0}
             >
-              Submit order
+              {pending ? 'Opening checkout...' : 'Checkout'}
             </Button>
           </div>
         </div>
@@ -104,8 +124,29 @@ export function DraftOrder({ websites }: { websites: WebsiteListItem[] }) {
           </p>
         ) : null}
 
+        {error ? (
+          <p
+            role="alert"
+            className="mt-3 flex items-start gap-1.5 border-t border-line pt-3 text-[13px] text-negative"
+          >
+            <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+            {error}
+          </p>
+        ) : null}
+
+        {rejected.length > 0 ? (
+          <ul className="mt-2 space-y-1 text-[13px] text-muted">
+            {rejected.map((entry) => (
+              <li key={entry.websiteDomain}>
+                <span className="font-medium text-ink">{entry.websiteDomain}</span> - {entry.reason}
+              </li>
+            ))}
+          </ul>
+        ) : null}
+
         <p className="mt-3 text-[12px] text-muted">
-          Your order is saved in this browser. Nothing is charged until you check out.
+          Your order is saved in this browser. Nothing is charged until you check out, and prices
+          are confirmed against the marketplace at that point.
         </p>
       </div>
     </section>
