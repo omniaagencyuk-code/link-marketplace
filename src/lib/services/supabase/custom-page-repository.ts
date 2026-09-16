@@ -1,4 +1,4 @@
-import { getServerClient } from '@/lib/supabase/server';
+import { getServerClient, getAdminScopedClient } from '@/lib/supabase/server';
 import type { CustomPageInput, CustomPageRecord } from '@/lib/cms/custom-page';
 import type { PageValues } from '@/lib/cms/types';
 
@@ -9,6 +9,11 @@ import type { PageValues } from '@/lib/cms/types';
  * admin. `listPublished` repeats the filter explicitly so that the two say the
  * same thing in the same place - if one changes, the difference is visible
  * rather than silent.
+ *
+ * `get` serves the public route and so runs as the visitor, with RLS deciding
+ * whether a draft is visible. `getForAdmin` is the editor's version and runs
+ * as the service role, because the admin has no Supabase identity for RLS to
+ * recognise - without it, opening a draft in the editor would find nothing.
  */
 
 const SELECT = 'slug, label, description, published, values, created_at, updated_at, updated_by';
@@ -39,7 +44,7 @@ function mapRow(row: CustomPageRow): CustomPageRecord {
 
 export const supabaseCustomPageRepository = {
   async listAll(): Promise<CustomPageRecord[]> {
-    const supabase = await getServerClient();
+    const supabase = getAdminScopedClient();
     const { data } = await supabase
       .from('custom_pages')
       .select(SELECT)
@@ -63,8 +68,15 @@ export const supabaseCustomPageRepository = {
     return data ? mapRow(data as unknown as CustomPageRow) : null;
   },
 
+  /** The same lookup for the admin editor, which must also find drafts. */
+  async getForAdmin(slug: string): Promise<CustomPageRecord | null> {
+    const supabase = getAdminScopedClient();
+    const { data } = await supabase.from('custom_pages').select(SELECT).eq('slug', slug).maybeSingle();
+    return data ? mapRow(data as unknown as CustomPageRow) : null;
+  },
+
   async create(record: CustomPageRecord): Promise<CustomPageRecord> {
-    const supabase = await getServerClient();
+    const supabase = getAdminScopedClient();
     const { data, error } = await supabase
       .from('custom_pages')
       .insert({
@@ -87,7 +99,7 @@ export const supabaseCustomPageRepository = {
     input: CustomPageInput,
     updatedBy?: string,
   ): Promise<CustomPageRecord | null> {
-    const supabase = await getServerClient();
+    const supabase = getAdminScopedClient();
     const { data, error } = await supabase
       .from('custom_pages')
       .update({
@@ -110,7 +122,7 @@ export const supabaseCustomPageRepository = {
     values: PageValues,
     updatedBy?: string,
   ): Promise<CustomPageRecord | null> {
-    const supabase = await getServerClient();
+    const supabase = getAdminScopedClient();
     const { data, error } = await supabase
       .from('custom_pages')
       .update({ values, updated_by: updatedBy ?? null, updated_at: new Date().toISOString() })
@@ -123,7 +135,7 @@ export const supabaseCustomPageRepository = {
   },
 
   async delete(slug: string): Promise<boolean> {
-    const supabase = await getServerClient();
+    const supabase = getAdminScopedClient();
     const { error } = await supabase.from('custom_pages').delete().eq('slug', slug);
     return !error;
   },

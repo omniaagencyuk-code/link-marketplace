@@ -123,7 +123,7 @@ async function editablePage(
   const registered = getRegisteredPage(slug);
   if (registered) return { definition: registered.definition, isCustom: false };
 
-  const custom = await customPageService.get(slug);
+  const custom = await customPageService.getForAdmin(slug);
   if (custom) return { definition: customPageDefinition(custom), isCustom: true };
 
   return null;
@@ -240,7 +240,7 @@ export async function updatePageSettingsAction(
 ): Promise<SavePageResult> {
   const session = await requireAdminSession();
 
-  const existing = await customPageService.get(slug);
+  const existing = await customPageService.getForAdmin(slug);
   if (!existing) return { ok: false, error: 'That page does not exist.' };
 
   const label = sanitiseText(String(formData.get('label') ?? ''), 80).trim();
@@ -269,7 +269,7 @@ export async function updatePageSettingsAction(
 export async function deletePageAction(slug: string): Promise<SavePageResult> {
   await requireAdminSession();
 
-  const existing = await customPageService.get(slug);
+  const existing = await customPageService.getForAdmin(slug);
   if (!existing) return { ok: false, error: 'That page does not exist.' };
 
   await customPageService.delete(slug);

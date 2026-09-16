@@ -65,15 +65,28 @@ export const customPageService = {
     return records.map(toSummary);
   },
 
+  /** Public lookup. A draft is invisible here, which is the point. */
   async get(slug: string): Promise<CustomPageRecord | null> {
     if (isSupabaseEnabled()) return supabaseCustomPageRepository.get(slug);
     return store.get(slug) ?? null;
   },
 
-  /** True when nothing - built-in route or existing custom page - holds the slug. */
+  /** The editor's lookup, which must find drafts too. Admin only. */
+  async getForAdmin(slug: string): Promise<CustomPageRecord | null> {
+    if (isSupabaseEnabled()) return supabaseCustomPageRepository.getForAdmin(slug);
+    return store.get(slug) ?? null;
+  },
+
+  /**
+   * True when nothing - built-in route or existing custom page - holds the slug.
+   *
+   * Deliberately the admin lookup: a draft occupying the slug still occupies
+   * it, and checking as the public would report it free and then fail on the
+   * primary key.
+   */
   async isSlugAvailable(slug: string): Promise<boolean> {
     if (!checkSlug(slug).ok) return false;
-    return (await customPageService.get(slug)) === null;
+    return (await customPageService.getForAdmin(slug)) === null;
   },
 
   /**

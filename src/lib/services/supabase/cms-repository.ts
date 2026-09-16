@@ -1,4 +1,4 @@
-import { getServerClient } from '@/lib/supabase/server';
+import { getServerClient, getAdminScopedClient } from '@/lib/supabase/server';
 import { mapPost, postToRow, type PostRow } from '@/lib/supabase/mappers';
 import type { PageContentRecord, PageValues } from '@/lib/cms/types';
 import type { BlogPost, BlogPostInput, PostCategorySlug } from '@/lib/types/blog';
@@ -6,11 +6,15 @@ import type { BlogPost, BlogPostInput, PostCategorySlug } from '@/lib/types/blog
 /**
  * Page content and blog posts, backed by Supabase.
  *
- * Both tables carry their own row level security, so these queries are a
- * second layer rather than the only one. The blog read policy already hides
+ * Both tables carry their own row level security, so the public reads here are
+ * a second layer rather than the only one. The blog read policy already hides
  * drafts and future-dated scheduled posts from anyone who is not an admin -
  * the explicit filters here match it, so a change to one is visible against
  * the other rather than silently diverging.
+ *
+ * Anything the admin calls uses `getAdminScopedClient()`, because the admin
+ * holds no Supabase identity and RLS would otherwise refuse the write and
+ * hide every draft. See that function's comment for why that is safe.
  */
 
 // ------------------------------------------------------------- page content
@@ -58,7 +62,7 @@ export const supabasePageContentRepository = {
   },
 
   async save(slug: string, values: PageValues, updatedBy?: string): Promise<PageContentRecord> {
-    const supabase = await getServerClient();
+    const supabase = getAdminScopedClient();
     const { data, error } = await supabase
       .from('page_content')
       .upsert(
@@ -78,7 +82,7 @@ export const supabasePageContentRepository = {
   },
 
   async reset(slug: string): Promise<void> {
-    const supabase = await getServerClient();
+    const supabase = getAdminScopedClient();
     // Deleting the row is what restores the shipped copy - the defaults live
     // in code, so absence is the reset.
     const { error } = await supabase.from('page_content').delete().eq('slug', slug);
@@ -129,9 +133,9 @@ export const supabaseBlogRepository = {
     return [...sameCategory, ...others].slice(0, limit);
   },
 
-  /** Every post including drafts. RLS restricts this to admins. */
+  /** Every post including drafts. Admin only - see the note at the top. */
   async listAll(): Promise<BlogPost[]> {
-    const supabase = await getServerClient();
+    const supabase = getAdminScopedClient();
     const { data } = await supabase
       .from('posts')
       .select(POST_SELECT)
@@ -140,13 +144,13 @@ export const supabaseBlogRepository = {
   },
 
   async getById(id: string): Promise<BlogPost | null> {
-    const supabase = await getServerClient();
+    const supabase = getAdminScopedClient();
     const { data } = await supabase.from('posts').select(POST_SELECT).eq('id', id).maybeSingle();
     return data ? mapPost(data as unknown as PostRow) : null;
   },
 
   async isSlugAvailable(slug: string, exceptId?: string): Promise<boolean> {
-    const supabase = await getServerClient();
+    const supabase = getAdminScopedClient();
     let query = supabase.from('posts').select('id').eq('slug', slug);
     if (exceptId) query = query.neq('id', exceptId);
     const { data } = await query.limit(1);
@@ -154,7 +158,7 @@ export const supabaseBlogRepository = {
   },
 
   async create(input: BlogPostInput): Promise<BlogPost> {
-    const supabase = await getServerClient();
+    const supabase = getAdminScopedClient();
     const { data, error } = await supabase
       .from('posts')
       .insert(postToRow(input))
@@ -166,7 +170,7 @@ export const supabaseBlogRepository = {
   },
 
   async update(id: string, input: BlogPostInput, updatedBy?: string): Promise<BlogPost | null> {
-    const supabase = await getServerClient();
+    const supabase = getAdminScopedClient();
     const { data, error } = await supabase
       .from('posts')
       .update({ ...postToRow({ ...input, updatedBy }), updated_at: new Date().toISOString() })
@@ -179,7 +183,7 @@ export const supabaseBlogRepository = {
   },
 
   async delete(id: string): Promise<boolean> {
-    const supabase = await getServerClient();
+    const supabase = getAdminScopedClient();
     const { error } = await supabase.from('posts').delete().eq('id', id);
     return !error;
   },

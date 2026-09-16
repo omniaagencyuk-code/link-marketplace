@@ -36,7 +36,7 @@ export default async function EditPagePage({ params }: { params: Promise<{ slug:
     );
   }
 
-  const custom = await customPageService.get(slug);
+  const custom = await customPageService.getForAdmin(slug);
   if (!custom) notFound();
 
   return (
