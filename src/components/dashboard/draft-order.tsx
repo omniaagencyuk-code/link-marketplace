@@ -105,8 +105,7 @@ export function DraftOrder({ websites }: { websites: WebsiteListItem[] }) {
         ) : null}
 
         <p className="mt-3 text-[12px] text-muted">
-          Checkout is disabled in this build. Your order is saved on this device until payments are
-          connected.
+          Your order is saved in this browser. Nothing is charged until you check out.
         </p>
       </div>
     </section>

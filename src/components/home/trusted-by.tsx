@@ -8,24 +8,39 @@ import { initialsFromName } from '@/lib/utils/format';
 /**
  * Social proof.
  *
- * Both halves are driven by `src/lib/config/social-proof.ts`, which ships
- * empty. Until real, permissioned logos and quotes are added, the section
- * renders obvious placeholders rather than implying customers or endorsements
- * that do not exist.
+ * Driven by `src/lib/config/social-proof.ts`, which ships empty because real,
+ * permissioned logos and attributable quotes are the only kind worth showing.
+ *
+ * With nothing to show, the section renders nothing at all. It used to render
+ * dashed placeholders explaining which file to edit, which is a note to a
+ * developer sitting on the homepage of a live business - worse than an absent
+ * section, because it says the product has no customers *and* looks unfinished.
+ *
+ * Each half stands alone: logos without a quote, or a quote without logos,
+ * both lay out properly. Nothing here implies an endorsement that does not
+ * exist, and there is no placeholder state to forget to remove.
  */
 export function TrustedBy() {
   const testimonial = testimonials[0];
+  const hasLogos = customerLogos.length > 0;
+
+  if (!hasLogos && !testimonial) return null;
 
   return (
     <section className="border-b border-line bg-white py-12 lg:py-14" aria-label="Social proof">
       <Container size="wide">
-        <div className="grid gap-10 lg:grid-cols-[1.35fr_1fr] lg:items-center lg:gap-14">
-          <div>
-            <h2 className="text-[11px] font-semibold tracking-[0.14em] text-muted uppercase">
-              Trusted by SEOs worldwide
-            </h2>
-
-            {customerLogos.length > 0 ? (
+        <div
+          className={
+            hasLogos && testimonial
+              ? 'grid gap-10 lg:grid-cols-[1.35fr_1fr] lg:items-center lg:gap-14'
+              : 'grid gap-10'
+          }
+        >
+          {hasLogos ? (
+            <div>
+              <h2 className="text-[11px] font-semibold tracking-[0.14em] text-muted uppercase">
+                Trusted by SEOs worldwide
+              </h2>
               <ul className="mt-6 flex flex-wrap items-center gap-x-10 gap-y-6">
                 {customerLogos.map((logo) => (
                   <li key={logo.name}>
@@ -39,13 +54,17 @@ export function TrustedBy() {
                   </li>
                 ))}
               </ul>
-            ) : (
-              <LogoPlaceholders />
-            )}
-          </div>
+            </div>
+          ) : null}
 
           {testimonial ? (
-            <figure className="rounded-xl border border-line bg-surface p-6 shadow-[var(--shadow-card)]">
+            <figure
+              className={
+                hasLogos
+                  ? 'rounded-xl border border-line bg-surface p-6 shadow-[var(--shadow-card)]'
+                  : 'mx-auto max-w-2xl rounded-xl border border-line bg-surface p-6 shadow-[var(--shadow-card)]'
+              }
+            >
               <Stars rating={testimonial.rating} />
               <blockquote className="mt-3 text-[15px] leading-relaxed text-ink-soft italic">
                 &ldquo;{testimonial.quote}&rdquo;
@@ -68,9 +87,7 @@ export function TrustedBy() {
                 </div>
               </figcaption>
             </figure>
-          ) : (
-            <TestimonialPlaceholder />
-          )}
+          ) : null}
         </div>
       </Container>
     </section>
@@ -90,52 +107,5 @@ function Stars({ rating }: { rating: number }) {
         />
       ))}
     </div>
-  );
-}
-
-/** Neutral logo slots - deliberately nameless, so nothing is implied. */
-function LogoPlaceholders() {
-  return (
-    <div>
-      <ul className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
-        {Array.from({ length: 6 }).map((_, index) => (
-          <li
-            key={index}
-            className="flex h-12 items-center justify-center rounded-lg border border-dashed border-line-strong bg-surface"
-          >
-            <span className="h-2.5 w-16 rounded-full bg-line-strong/70" aria-hidden="true" />
-          </li>
-        ))}
-      </ul>
-      <p className="mt-3 text-[12px] text-muted">
-        Customer logos coming soon. Add them in{' '}
-        <code className="font-mono text-[11px]">src/lib/config/social-proof.ts</code>.
-      </p>
-    </div>
-  );
-}
-
-function TestimonialPlaceholder() {
-  return (
-    <figure className="rounded-xl border border-dashed border-line-strong bg-surface p-6">
-      <Stars rating={0} />
-      <p className="mt-3 text-[15px] leading-relaxed text-muted italic">
-        Your first customer quote will appear here.
-      </p>
-      <figcaption className="mt-4 flex items-center gap-3">
-        <span
-          aria-hidden="true"
-          className="h-10 w-10 rounded-full border border-dashed border-line-strong bg-white"
-        />
-        <div>
-          <p className="h-2.5 w-24 rounded-full bg-line-strong/70" aria-hidden="true" />
-          <p className="mt-1.5 h-2.5 w-16 rounded-full bg-line-strong/50" aria-hidden="true" />
-        </div>
-      </figcaption>
-      <p className="mt-4 text-[12px] text-muted">
-        Placeholder. Add a real, attributable quote in{' '}
-        <code className="font-mono text-[11px]">src/lib/config/social-proof.ts</code>.
-      </p>
-    </figure>
   );
 }

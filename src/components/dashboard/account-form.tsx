@@ -1,5 +1,6 @@
 'use client';
 
+import { isSupabaseEnabled } from '@/lib/supabase/config';
 import { useState } from 'react';
 import { Check } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -106,10 +107,12 @@ export function AccountForm({ user }: { user: UserProfile }) {
             <CardTitle>Session</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
-            <p className="text-[13px] text-muted">
-              Customer authentication is mocked in this build. The admin area has its own
-              server-side sign-in and is not reachable from here.
-            </p>
+            {isSupabaseEnabled() ? null : (
+              <p className="text-[13px] text-muted">
+                Sign-in is running without a database on this environment, so any address signs in
+                and creates a demo account.
+              </p>
+            )}
             <div className="flex flex-wrap gap-2">
               <Button variant="outline" size="sm" onClick={() => signOut()}>
                 Sign out

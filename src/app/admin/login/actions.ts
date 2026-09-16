@@ -12,6 +12,7 @@ import {
   ADMIN_SESSION_TTL_SECONDS,
   createAdminSessionToken,
 } from '@/lib/auth/admin-session';
+import { RATE_LIMITS, consumeRateLimit, rateLimitMessage } from '@/lib/auth/rate-limit';
 
 export interface AdminLoginState {
   error?: string;
@@ -34,6 +35,11 @@ export async function signInAdminAction(
         'Admin sign-in is not configured on this deployment. Set ADMIN_EMAILS, ADMIN_PASSWORD and ADMIN_SESSION_SECRET.',
     };
   }
+
+  // The tightest limit on the site: one shared password guards the whole admin
+  // area, so this is the single most valuable thing on it to guess.
+  const throttle = await consumeRateLimit(RATE_LIMITS.adminSignIn);
+  if (!throttle.allowed) return { error: rateLimitMessage(throttle) };
 
   const email = String(formData.get('email') ?? '');
   const password = String(formData.get('password') ?? '');

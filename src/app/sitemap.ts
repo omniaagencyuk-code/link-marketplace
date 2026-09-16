@@ -42,6 +42,9 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     { path: '/how-it-works', priority: 0.7, changeFrequency: 'monthly' },
     { path: '/pricing', priority: 0.7, changeFrequency: 'monthly' },
     { path: '/resources', priority: 0.7, changeFrequency: 'weekly' },
+    { path: '/terms', priority: 0.3, changeFrequency: 'monthly' },
+    { path: '/privacy', priority: 0.3, changeFrequency: 'monthly' },
+    { path: '/cookies', priority: 0.3, changeFrequency: 'monthly' },
   ];
 
   const [posts, customPages] = await Promise.all([

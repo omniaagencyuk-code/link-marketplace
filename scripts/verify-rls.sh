@@ -54,3 +54,6 @@ run -f "$ROOT/supabase/tests/02_write_without_identity.sql" 2>&1 | grep -v '^$'
 echo
 echo "--- the same write as the service role (must succeed) ---"
 run -f "$ROOT/supabase/tests/03_write_as_service_role.sql" 2>&1 | grep -v '^$'
+echo
+echo "--- auth rate limiting ---"
+run -f "$ROOT/supabase/tests/04_rate_limits.sql" 2>&1 | grep -v '^$'

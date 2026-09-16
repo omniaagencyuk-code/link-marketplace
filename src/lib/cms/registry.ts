@@ -7,6 +7,9 @@ import * as agencies from './pages/link-building-agencies';
 import * as pricing from './pages/pricing';
 import * as howItWorks from './pages/how-it-works';
 import * as contentWriting from './pages/content-writing';
+import * as terms from './pages/terms';
+import * as privacy from './pages/privacy';
+import * as cookies from './pages/cookies';
 import type { PageDef, PageValues } from './types';
 
 /**
@@ -32,6 +35,9 @@ export const pageRegistry: RegisteredPage[] = [
   contentWriting,
   pricing,
   howItWorks,
+  terms,
+  privacy,
+  cookies,
 ];
 
 const bySlug = new Map(pageRegistry.map((page) => [page.definition.slug, page]));

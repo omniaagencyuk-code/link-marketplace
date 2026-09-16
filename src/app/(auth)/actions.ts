@@ -13,6 +13,7 @@ import {
   createCustomerSessionToken,
   isCustomerAuthConfigured,
 } from '@/lib/auth/customer-session';
+import { RATE_LIMITS, consumeRateLimit, rateLimitMessage } from '@/lib/auth/rate-limit';
 
 /**
  * Customer sign-in, sign-up, sign-out and password reset.
@@ -94,6 +95,11 @@ export async function signInAction(
   const password = String(formData.get('password') ?? '');
   if (!email) return { error: 'Enter the email address on your account.' };
 
+  // Counted before the credentials are checked, so a wrong password costs an
+  // attempt. Checking afterwards would leave brute force unthrottled.
+  const throttle = await consumeRateLimit(RATE_LIMITS.signIn);
+  if (!throttle.allowed) return { error: rateLimitMessage(throttle) };
+
   if (isSupabaseEnabled()) {
     const supabase = await getServerClient();
     const { error } = await supabase.auth.signInWithPassword({ email, password });
@@ -117,6 +123,9 @@ export async function signUpAction(
   const fullName = String(formData.get('name') ?? '').trim();
   const company = String(formData.get('company') ?? '').trim();
   if (!email) return { error: 'Enter your email address.' };
+
+  const throttle = await consumeRateLimit(RATE_LIMITS.signUp);
+  if (!throttle.allowed) return { error: rateLimitMessage(throttle) };
 
   if (isSupabaseEnabled()) {
     if (password.length < 8) return { error: 'Use a password of at least 8 characters.' };
@@ -178,6 +187,11 @@ export async function requestPasswordResetAction(
   const email = String(formData.get('email') ?? '').trim();
   if (!email) return { error: 'Enter your email address.' };
 
+  // Throttled for two reasons: it sends mail, and an unthrottled reset form is
+  // a way to spray a mailbox on someone else's behalf.
+  const throttle = await consumeRateLimit(RATE_LIMITS.passwordReset);
+  if (!throttle.allowed) return { error: rateLimitMessage(throttle) };
+
   if (!isSupabaseEnabled()) {
     return {
       error: 'Password reset needs the database connected. Ask the team to reset it for you.',
@@ -204,6 +218,9 @@ export async function updatePasswordAction(
 
   const password = String(formData.get('password') ?? '');
   if (password.length < 8) return { error: 'Use a password of at least 8 characters.' };
+
+  const throttle = await consumeRateLimit(RATE_LIMITS.passwordUpdate);
+  if (!throttle.allowed) return { error: rateLimitMessage(throttle) };
 
   const supabase = await getServerClient();
   const { error } = await supabase.auth.updateUser({ password });

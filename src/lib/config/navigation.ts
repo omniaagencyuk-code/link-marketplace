@@ -136,4 +136,12 @@ export const footerNav: { title: string; items: NavItem[] }[] = [
       { label: 'Create account', href: '/signup' },
     ],
   },
+  {
+    title: 'Legal',
+    items: [
+      { label: 'Terms of service', href: '/terms' },
+      { label: 'Privacy policy', href: '/privacy' },
+      { label: 'Cookie policy', href: '/cookies' },
+    ],
+  },
 ];

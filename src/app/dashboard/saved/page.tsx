@@ -15,7 +15,7 @@ export default async function SavedWebsitesPage() {
     <>
       <PageTitle
         title="Saved websites"
-        description="Your shortlist. Saved sites are stored on this device until accounts are connected to the database."
+        description="Your shortlist. Save websites while browsing and they appear here."
       />
       <SavedWebsites websites={websites} />
     </>

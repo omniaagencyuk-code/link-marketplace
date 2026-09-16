@@ -20,7 +20,7 @@ export default async function BillingPage() {
     <>
       <PageTitle
         title="Billing"
-        description="Invoices, payment method and plan. Payments are not processed in this build."
+        description="Your invoices, payment method and plan."
       />
 
       <div className="grid gap-4 lg:grid-cols-3">

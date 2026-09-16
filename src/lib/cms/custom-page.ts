@@ -30,6 +30,7 @@ export const RESERVED_SLUGS = new Set([
   'api',
   'auth',
   'content-writing',
+  'cookies',
   'dashboard',
   'digital-pr',
   'forgot-password',
