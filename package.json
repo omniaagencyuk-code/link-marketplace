@@ -13,7 +13,8 @@
     "verify:schema": "tsx scripts/verify-mappers.mjs",
     "seed:generate": "tsx scripts/generate-seed.mjs",
     "verify:rls": "./scripts/verify-rls.sh",
-    "verify:import": "tsx scripts/verify-import.mts"
+    "verify:import": "tsx scripts/verify-import.mts",
+    "verify:sessions": "tsx scripts/verify-sessions.mts"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.7",

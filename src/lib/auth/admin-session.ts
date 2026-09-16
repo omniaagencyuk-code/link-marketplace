@@ -29,13 +29,13 @@ export async function createAdminSessionToken(email: string): Promise<string | n
     email,
     exp: Date.now() + ADMIN_SESSION_TTL_SECONDS * 1000,
   };
-  return signToken(session, process.env.ADMIN_SESSION_SECRET);
+  return signToken(session, process.env.ADMIN_SESSION_SECRET, 'admin');
 }
 
 export async function verifyAdminSessionToken(
   token: string | undefined | null,
 ): Promise<AdminSession | null> {
-  const payload = await verifyToken(token, process.env.ADMIN_SESSION_SECRET);
+  const payload = await verifyToken(token, process.env.ADMIN_SESSION_SECRET, 'admin');
   if (!payload) return null;
 
   const { email, exp } = payload;

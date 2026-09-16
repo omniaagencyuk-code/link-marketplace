@@ -55,13 +55,13 @@ export async function createCustomerSessionToken(
     email,
     exp: Date.now() + CUSTOMER_SESSION_TTL_SECONDS * 1000,
   };
-  return signToken(session, customerSessionSecret());
+  return signToken(session, customerSessionSecret(), 'customer');
 }
 
 export async function verifyCustomerSessionToken(
   token: string | undefined | null,
 ): Promise<CustomerSession | null> {
-  const payload = await verifyToken(token, customerSessionSecret());
+  const payload = await verifyToken(token, customerSessionSecret(), 'customer');
   if (!payload) return null;
 
   const { sub, email, exp } = payload;
