@@ -4,6 +4,7 @@ import { Badge } from '@/components/ui/badge';
 import { Table, TableWrap, Td, Th, Tr } from '@/components/ui/table';
 import { orderService, userService } from '@/lib/services';
 import { formatDate, formatPrice } from '@/lib/utils/format';
+import { UserRoleButton } from '@/components/admin/user-role-button';
 
 export const dynamic = 'force-dynamic';
 
@@ -14,7 +15,7 @@ export default async function AdminUsersPage() {
     <>
       <PageTitle
         title="Users"
-        description="Customer accounts and internal staff. Roles will map to Supabase profiles."
+        description="Customer accounts and internal staff. Admin access is granted per account."
       />
 
       <TableWrap>
@@ -29,6 +30,7 @@ export default async function AdminUsersPage() {
               <Th className="text-right">Orders</Th>
               <Th className="text-right">Spend</Th>
               <Th className="hidden lg:table-cell">Joined</Th>
+              <Th className="text-right">Access</Th>
             </tr>
           </thead>
           <tbody>
@@ -69,6 +71,9 @@ export default async function AdminUsersPage() {
                   </Td>
                   <Td className="tabular hidden text-[13px] whitespace-nowrap text-muted lg:table-cell">
                     {formatDate(user.createdAt)}
+                  </Td>
+                  <Td className="text-right">
+                    <UserRoleButton email={user.email} isAdmin={user.role === 'admin'} />
                   </Td>
                 </Tr>
               );

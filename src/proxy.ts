@@ -32,6 +32,40 @@ import { supabaseAnonKey, supabaseUrl, isSupabaseEnabled } from '@/lib/supabase/
 /** Paths under /marketplace that render without an account. */
 const PUBLIC_MARKETPLACE_PATHS = new Set(['/marketplace']);
 
+/**
+ * Is there a Supabase session on this request at all?
+ *
+ * Deliberately not "is this an admin". Answering that needs a profiles read,
+ * and the proxy runs on every request - so it checks only that somebody is
+ * signed in, and `requireAdminSession()` inside the page does the role check.
+ * That is the same two-layer arrangement the rest of the app uses: a cheap
+ * gate here, the real decision where the work happens.
+ *
+ * The consequence is that a signed-in customer reaches /admin and is then
+ * bounced by the page. That is the correct order: the cheap check must not be
+ * the one that grants access.
+ */
+async function hasSupabaseSession(request: NextRequest): Promise<boolean> {
+  if (!isSupabaseEnabled()) return false;
+
+  const supabase = createServerClient(supabaseUrl, supabaseAnonKey, {
+    cookies: {
+      getAll() {
+        return request.cookies.getAll();
+      },
+      setAll() {
+        // Read-only probe: the response this gate returns carries no refreshed
+        // cookies, and the customer-facing branch below handles refreshing.
+      },
+    },
+  });
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  return Boolean(user);
+}
+
 async function gateAdmin(request: NextRequest, pathname: string) {
   // The sign-in page itself has to stay reachable.
   if (pathname === '/admin/login') return NextResponse.next();
@@ -40,6 +74,9 @@ async function gateAdmin(request: NextRequest, pathname: string) {
     request.cookies.get(ADMIN_SESSION_COOKIE)?.value,
   );
   if (session) return NextResponse.next();
+
+  // An admin signing in through Supabase Auth holds no admin cookie.
+  if (await hasSupabaseSession(request)) return NextResponse.next();
 
   const loginUrl = request.nextUrl.clone();
   loginUrl.pathname = '/admin/login';

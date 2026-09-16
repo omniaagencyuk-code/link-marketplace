@@ -57,3 +57,6 @@ run -f "$ROOT/supabase/tests/03_write_as_service_role.sql" 2>&1 | grep -v '^$'
 echo
 echo "--- auth rate limiting ---"
 run -f "$ROOT/supabase/tests/04_rate_limits.sql" 2>&1 | grep -v '^$'
+echo
+echo "--- admin accounts (grant, revoke, and who may do either) ---"
+run -f "$ROOT/supabase/tests/05_admin_accounts.sql" 2>&1 | grep -v '^$'

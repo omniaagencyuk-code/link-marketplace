@@ -2,7 +2,7 @@ import Link from 'next/link';
 import type { Metadata } from 'next';
 import { redirect } from 'next/navigation';
 import { Logo } from '@/components/layout/logo';
-import { getAdminSession } from '@/lib/auth/admin-access';
+import { getAdminSession, isAdminAuthConfigured } from '@/lib/auth/admin-access';
 import { brand } from '@/lib/config/brand';
 import { AdminLoginForm } from './admin-login-form';
 
@@ -37,7 +37,7 @@ export default async function AdminLoginPage({
           </p>
 
           <div className="mt-6">
-            <AdminLoginForm next={next} />
+            <AdminLoginForm next={next} sharedPasswordAvailable={isAdminAuthConfigured()} />
           </div>
         </div>
 
