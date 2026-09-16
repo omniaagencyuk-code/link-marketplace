@@ -9,6 +9,7 @@ import { saveWebsiteAction } from '@/app/admin/actions';
 import { categories } from '@/lib/data/categories';
 import { countries } from '@/lib/data/countries';
 import { languageLabels } from '@/lib/utils/labels';
+import { isSupabaseEnabled } from '@/lib/supabase/config';
 import type { LinkTypeSlug, Website } from '@/lib/types';
 
 const statuses = [
@@ -294,9 +295,11 @@ export function WebsiteEditor({ website }: { website?: Website }) {
         <Button asChild variant="outline" size="lg">
           <Link href="/admin/websites">Cancel</Link>
         </Button>
-        <p className="text-[12px] text-muted">
-          Saving writes to the in-memory mock store and resets when the server restarts.
-        </p>
+        {isSupabaseEnabled() ? null : (
+          <p className="text-[12px] text-muted">
+            Saving writes to the in-memory mock store and resets when the server restarts.
+          </p>
+        )}
       </div>
     </form>
   );

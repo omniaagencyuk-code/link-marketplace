@@ -1,6 +1,7 @@
 import { getRegisteredPage, listRegisteredPages } from '@/lib/cms/registry';
 import { isSupabaseEnabled } from '@/lib/supabase/config';
 import { supabasePageContentRepository } from './supabase/cms-repository';
+import { mockStore } from './mock-store';
 import { resolvePage, contentAccessors, type ContentAccessors } from '@/lib/cms/resolve';
 import type { PageContentRecord, PageValues, ResolvedContent } from '@/lib/cms/types';
 
@@ -17,7 +18,7 @@ import type { PageContentRecord, PageValues, ResolvedContent } from '@/lib/cms/t
  * populated, or even reachable.
  */
 
-const store = new Map<string, PageContentRecord>();
+const store = mockStore<PageContentRecord>('page-content');
 
 export interface PageSummary {
   slug: string;

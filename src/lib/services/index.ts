@@ -13,4 +13,4 @@ export type { ContentSummary, ContentItemRow, CreateContentOrderInput } from './
 export { isPricingConfigured, priceForWords, pricingTable } from './content-pricing';
 export { toPreviewRows } from './marketplace-preview';
 export type { MarketplacePreview, PreviewRow } from './marketplace-preview';
-export { dataSource, isSupabaseConfigured } from './data-source';
+export { dataSource } from './data-source';

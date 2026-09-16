@@ -4,8 +4,10 @@ import { revalidatePath } from 'next/cache';
 import { requireAdminSession } from '@/lib/auth/admin-access';
 import { pageContentService } from '@/lib/services/page-content-service';
 import { getRegisteredPage } from '@/lib/cms/registry';
+import { customPageService } from '@/lib/services/custom-page-service';
+import { checkSlug, customPageDefinition, slugify } from '@/lib/cms/custom-page';
 import { sanitiseText } from '@/lib/import/normalise';
-import type { FieldDef, FieldValue, ImageValue, LinkValue, PageValues } from '@/lib/cms/types';
+import type { FieldDef, FieldValue, ImageValue, LinkValue, PageDef, PageValues } from '@/lib/cms/types';
 
 /**
  * Saving page content.
@@ -109,13 +111,38 @@ export interface SavePageResult {
   error?: string;
 }
 
+/**
+ * The page behind a slug, whether it ships in code or was created here.
+ *
+ * Both kinds resolve to the same pair - a schema and a set of defaults - which
+ * is what lets one editor, one validator and one save path serve both.
+ */
+async function editablePage(
+  slug: string,
+): Promise<{ definition: PageDef; isCustom: boolean } | null> {
+  const registered = getRegisteredPage(slug);
+  if (registered) return { definition: registered.definition, isCustom: false };
+
+  const custom = await customPageService.get(slug);
+  if (custom) return { definition: customPageDefinition(custom), isCustom: true };
+
+  return null;
+}
+
+function revalidateFor(definition: PageDef) {
+  revalidatePath(definition.path);
+  revalidatePath('/admin/pages');
+  revalidatePath(`/admin/pages/${definition.slug}`);
+  revalidatePath('/sitemap.xml');
+}
+
 export async function savePageContentAction(
   slug: string,
   submitted: unknown,
 ): Promise<SavePageResult> {
   const session = await requireAdminSession();
 
-  const page = getRegisteredPage(slug);
+  const page = await editablePage(slug);
   if (!page) return { ok: false, error: 'That page does not exist.' };
   if (!submitted || typeof submitted !== 'object') {
     return { ok: false, error: 'Nothing to save.' };
@@ -133,26 +160,122 @@ export async function savePageContentAction(
     values[section.key] = sectionValues;
   }
 
-  await pageContentService.save(slug, values, session.email);
+  if (page.isCustom) {
+    await customPageService.saveValues(slug, values, session.email);
+  } else {
+    await pageContentService.save(slug, values, session.email);
+  }
 
   // The page itself, the admin list and the sitemap all reflect this.
-  revalidatePath(page.definition.path);
-  revalidatePath('/admin/pages');
-  revalidatePath(`/admin/pages/${slug}`);
+  revalidateFor(page.definition);
 
   return { ok: true };
 }
 
 export async function resetPageContentAction(slug: string): Promise<SavePageResult> {
-  await requireAdminSession();
+  const session = await requireAdminSession();
 
-  const page = getRegisteredPage(slug);
+  const page = await editablePage(slug);
   if (!page) return { ok: false, error: 'That page does not exist.' };
 
-  await pageContentService.reset(slug);
-  revalidatePath(page.definition.path);
-  revalidatePath('/admin/pages');
-  revalidatePath(`/admin/pages/${slug}`);
+  if (page.isCustom) {
+    await customPageService.resetValues(slug, session.email);
+  } else {
+    await pageContentService.reset(slug);
+  }
 
+  revalidateFor(page.definition);
+  return { ok: true };
+}
+
+// ------------------------------------------------------------- custom pages
+
+export interface CreatePageResult extends SavePageResult {
+  slug?: string;
+}
+
+/**
+ * Create a page.
+ *
+ * The slug is the part that matters: it becomes a live URL, and a slug that
+ * collides with a real route would produce a page nobody could reach, because
+ * Next resolves static segments ahead of the dynamic one. `checkSlug` refuses
+ * the reserved list, and the store is checked for an existing page, before
+ * anything is written.
+ */
+export async function createPageAction(formData: FormData): Promise<CreatePageResult> {
+  await requireAdminSession();
+
+  const label = sanitiseText(String(formData.get('label') ?? ''), 80).trim();
+  if (!label) return { ok: false, error: 'Give the page a name.' };
+
+  const requested = String(formData.get('slug') ?? '').trim();
+  const slug = slugify(requested || label);
+
+  const check = checkSlug(slug);
+  if (!check.ok) return { ok: false, error: check.error };
+
+  if (!(await customPageService.isSlugAvailable(slug))) {
+    return { ok: false, error: `A page already exists at /${slug}.` };
+  }
+
+  const description = sanitiseText(String(formData.get('description') ?? ''), 200).trim();
+
+  await customPageService.create(slug, {
+    label,
+    description: description || `A service page at /${slug}.`,
+    // New pages start as drafts. Publishing is a deliberate second action, so
+    // an unfinished page is never briefly live.
+    published: false,
+  });
+
+  revalidatePath('/admin/pages');
+  return { ok: true, slug };
+}
+
+/** Rename a custom page, change its description, publish or unpublish it. */
+export async function updatePageSettingsAction(
+  slug: string,
+  formData: FormData,
+): Promise<SavePageResult> {
+  const session = await requireAdminSession();
+
+  const existing = await customPageService.get(slug);
+  if (!existing) return { ok: false, error: 'That page does not exist.' };
+
+  const label = sanitiseText(String(formData.get('label') ?? ''), 80).trim();
+  if (!label) return { ok: false, error: 'Give the page a name.' };
+
+  const description = sanitiseText(String(formData.get('description') ?? ''), 200).trim();
+  const published = formData.get('published') === 'on';
+
+  await customPageService.updateSettings(
+    slug,
+    { label, description, published },
+    session.email,
+  );
+
+  revalidateFor(customPageDefinition({ slug, label, description }));
+  return { ok: true };
+}
+
+/**
+ * Delete a custom page.
+ *
+ * Only custom pages can be deleted. A page that ships in code has no delete -
+ * resetting it restores the shipped copy, which is the equivalent operation
+ * and cannot leave the site with a dead link in its own navigation.
+ */
+export async function deletePageAction(slug: string): Promise<SavePageResult> {
+  await requireAdminSession();
+
+  const existing = await customPageService.get(slug);
+  if (!existing) return { ok: false, error: 'That page does not exist.' };
+
+  await customPageService.delete(slug);
+
+  revalidatePath(`/${slug}`);
+  revalidatePath('/admin/pages');
+  revalidatePath('/sitemap.xml');
   return { ok: true };
 }

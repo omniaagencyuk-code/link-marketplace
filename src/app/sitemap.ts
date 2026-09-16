@@ -2,6 +2,7 @@ import type { MetadataRoute } from 'next';
 import { siteUrl } from '@/lib/config/brand';
 import { blogService } from '@/lib/services/blog-service';
 import { postCategories } from '@/lib/config/blog';
+import { customPageService } from '@/lib/services/custom-page-service';
 
 /**
  * Public sitemap.
@@ -14,8 +15,18 @@ import { postCategories } from '@/lib/config/blog';
  * page - the gateway - rather than the listings themselves.
  *
  * Blog posts come from the service, which filters drafts and future-dated
- * scheduled posts, so an unpublished post can never appear here.
+ * scheduled posts, so an unpublished post can never appear here. Pages created
+ * in the admin are included on the same terms - published only, never drafts.
  */
+/**
+ * Rebuilt per request, not at build time.
+ *
+ * Blog posts and pages created in the admin both live in the database, so a
+ * sitemap prerendered at build time would be frozen at whatever existed when
+ * the site was last deployed - publishing a post would never add it.
+ */
+export const dynamic = 'force-dynamic';
+
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const lastModified = new Date();
 
@@ -33,7 +44,10 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     { path: '/resources', priority: 0.7, changeFrequency: 'weekly' },
   ];
 
-  const posts = await blogService.getPublishedSlugs();
+  const [posts, customPages] = await Promise.all([
+    blogService.getPublishedSlugs(),
+    customPageService.listPublished(),
+  ]);
 
   return [
     ...staticRoutes.map((route) => ({
@@ -47,6 +61,12 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       lastModified,
       changeFrequency: 'weekly' as const,
       priority: 0.5,
+    })),
+    ...customPages.map((page) => ({
+      url: `${siteUrl}${page.path}`,
+      lastModified: new Date(page.updatedAt),
+      changeFrequency: 'monthly' as const,
+      priority: 0.7,
     })),
     ...posts.map((post) => ({
       url: `${siteUrl}/resources/${post.slug}`,

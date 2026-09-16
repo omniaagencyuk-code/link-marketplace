@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import type { Metadata } from 'next';
 import { redirect } from 'next/navigation';
 import { Logo } from '@/components/layout/logo';
@@ -42,9 +43,9 @@ export default async function AdminLoginPage({
 
         <p className="mt-6 text-center text-[12px] text-muted">
           Looking for your orders?{' '}
-          <a href="/dashboard" className="text-accent-700 hover:underline">
+          <Link href="/dashboard" className="text-accent-700 hover:underline">
             Go to your dashboard
-          </a>
+          </Link>
         </p>
       </div>
     </div>

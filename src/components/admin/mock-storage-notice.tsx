@@ -1,5 +1,5 @@
 import { AlertTriangle } from 'lucide-react';
-import { dataSource } from '@/lib/services/data-source';
+import { isSupabaseEnabled } from '@/lib/supabase/config';
 
 /**
  * The warning that matters most right now.
@@ -9,10 +9,13 @@ import { dataSource } from '@/lib/services/data-source';
  * difference between an editor writing ten blog posts and losing them, and an
  * editor knowing to wait.
  *
- * It disappears on its own once `NEXT_PUBLIC_DATA_SOURCE` is `supabase`.
+ * It disappears on its own once Supabase is genuinely connected. That means
+ * the flag *and* the credentials - checking only `NEXT_PUBLIC_DATA_SOURCE`
+ * would hide the warning on a deploy that is still writing to memory because
+ * a key is missing, which is the exact case the warning is for.
  */
 export function MockStorageNotice({ what }: { what: string }) {
-  if (dataSource !== 'mock') return null;
+  if (isSupabaseEnabled()) return null;
 
   return (
     <div
