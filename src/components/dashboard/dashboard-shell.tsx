@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { LogOut } from 'lucide-react';
+import { LogOut, ShieldCheck } from 'lucide-react';
 import { Logo } from '@/components/layout/logo';
 import { Avatar } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
@@ -24,7 +24,7 @@ export function DashboardShell({
   footer?: React.ReactNode;
 }) {
   const pathname = usePathname();
-  const { user, signOut, signingOut } = useAuth();
+  const { user, isAdmin, signOut, signingOut } = useAuth();
   // Nav items carry icon components, so they are resolved inside this client
   // component rather than passed across the server/client boundary.
   const nav = variant === 'admin' ? adminNav : dashboardNav;
@@ -61,6 +61,27 @@ export function DashboardShell({
               {item.label}
             </Link>
           ))}
+
+          {/*
+            The admin area is a separate part of the site with its own sign-in,
+            so without this there is no way to discover it from the customer
+            dashboard - an administrator signing in simply lands here and finds
+            no route onward.
+
+            Shown from the client's copy of the profile, which is a hint about
+            what to display and nothing more: /admin is gated by the proxy and
+            re-checked by requireAdminSession() on every page and action, so a
+            forged value here changes what a link says and grants nothing.
+          */}
+          {variant === 'dashboard' && isAdmin ? (
+            <Link
+              href="/admin"
+              className="mt-1 flex shrink-0 items-center gap-2.5 rounded-md px-3 py-2 text-[13px] font-medium whitespace-nowrap text-accent-700 transition-colors hover:bg-accent-50 lg:mt-3 lg:border-t lg:border-line lg:pt-3"
+            >
+              <ShieldCheck className="h-4 w-4" aria-hidden="true" />
+              Admin
+            </Link>
+          ) : null}
         </nav>
 
         <div className="mt-auto hidden border-t border-line p-3 lg:block">
