@@ -190,6 +190,86 @@ export async function setWebsiteStatusAction(id: string, status: WebsiteStatus) 
   revalidateMarketplace(updated?.slug);
 }
 
+/**
+ * Bulk operations on the websites list.
+ *
+ * Each row is applied independently and the outcome is reported per row. A
+ * batch where one listing cannot be touched should not lose the other
+ * nineteen, and "four published, one skipped because it has orders" is a far
+ * more useful answer than a single failure.
+ *
+ * Bounded, because the ids arrive from the browser: a request claiming fifty
+ * thousand of them is not a bulk edit.
+ */
+const MAX_BULK_IDS = 500;
+
+export interface BulkResult {
+  changed: number;
+  /** Rows that were not changed, with the reason, for showing to the admin. */
+  skipped: { domain: string; reason: string }[];
+  error?: string;
+}
+
+function readIds(ids: unknown): string[] {
+  if (!Array.isArray(ids)) return [];
+  return ids.filter((id): id is string => typeof id === 'string' && id.length > 0).slice(0, MAX_BULK_IDS);
+}
+
+export async function bulkSetWebsiteStatusAction(
+  ids: unknown,
+  status: WebsiteStatus,
+): Promise<BulkResult> {
+  await requireAdminSession();
+
+  const allowed: WebsiteStatus[] = ['draft', 'active', 'paused', 'archived'];
+  if (!allowed.includes(status)) return { changed: 0, skipped: [], error: 'Unknown status.' };
+
+  const wanted = readIds(ids);
+  if (wanted.length === 0) return { changed: 0, skipped: [], error: 'Nothing selected.' };
+
+  const skipped: BulkResult['skipped'] = [];
+  let changed = 0;
+
+  for (const id of wanted) {
+    try {
+      const updated = await websiteService.setStatus(id, status);
+      if (updated) changed += 1;
+      else skipped.push({ domain: id, reason: 'No longer exists.' });
+    } catch (error) {
+      skipped.push({
+        domain: id,
+        reason: error instanceof Error ? error.message : 'Could not be updated.',
+      });
+    }
+  }
+
+  revalidateMarketplace();
+  return { changed, skipped };
+}
+
+export async function bulkDeleteWebsitesAction(ids: unknown): Promise<BulkResult> {
+  await requireAdminSession();
+
+  const wanted = readIds(ids);
+  if (wanted.length === 0) return { changed: 0, skipped: [], error: 'Nothing selected.' };
+
+  const skipped: BulkResult['skipped'] = [];
+  let changed = 0;
+
+  for (const id of wanted) {
+    // Read first, so a refusal can name the domain rather than an opaque id.
+    const website = await websiteService.getById(id);
+    const label = website?.domain ?? id;
+
+    const result = await websiteService.delete(id);
+    if (result.ok) changed += 1;
+    else skipped.push({ domain: label, reason: result.reason ?? 'Could not be deleted.' });
+  }
+
+  revalidateMarketplace();
+  return { changed, skipped };
+}
+
 export async function duplicateWebsiteAction(id: string) {
   await requireAdminSession();
 

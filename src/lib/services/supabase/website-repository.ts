@@ -469,6 +469,30 @@ export const supabaseWebsiteRepository = {
     return result;
   },
 
+  /**
+   * Remove a listing entirely.
+   *
+   * Services, category links and saved-site entries cascade away with it.
+   * Order items deliberately do not: `order_items.website_id` is `on delete
+   * restrict`, so a website somebody has ordered cannot be deleted at all.
+   * That is the database refusing to erase the record of a sale, which is the
+   * right instinct - the caller turns the refusal into an explanation rather
+   * than treating it as a failure.
+   */
+  async delete(id: string): Promise<{ ok: boolean; reason?: string }> {
+    const supabase = getAdminScopedClient();
+    const { error } = await supabase.from('websites').delete().eq('id', id);
+
+    if (!error) return { ok: true };
+
+    // 23503 is foreign_key_violation: something still points at this row, and
+    // the only thing that can is an order item.
+    if (error.code === '23503') {
+      return { ok: false, reason: 'Has orders against it. Archive it instead.' };
+    }
+    return { ok: false, reason: error.message };
+  },
+
   async duplicate(id: string): Promise<Website | null> {
     const existing = await supabaseWebsiteRepository.getById(id);
     if (!existing) return null;

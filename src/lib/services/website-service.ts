@@ -154,6 +154,22 @@ export const websiteService = {
     return publicItems(listItems(true).filter((website) => wanted.has(website.id)));
   },
 
+  /**
+   * Delete a listing.
+   *
+   * Refuses rather than throws when the listing has been ordered, so a bulk
+   * delete can report "four gone, one kept because it has orders" instead of
+   * failing the whole batch on one row.
+   */
+  async delete(id: string): Promise<{ ok: boolean; reason?: string }> {
+    if (isSupabaseEnabled()) return supabaseWebsiteRepository.delete(id);
+
+    const index = store.findIndex((website) => website.id === id);
+    if (index === -1) return { ok: false, reason: 'No longer exists.' };
+    store.splice(index, 1);
+    return { ok: true };
+  },
+
   async countByNiche(): Promise<Record<NicheSlug, number>> {
     if (isSupabaseEnabled()) return supabaseWebsiteRepository.countByNiche();
 
