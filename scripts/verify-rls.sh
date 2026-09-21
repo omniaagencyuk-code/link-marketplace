@@ -63,3 +63,6 @@ run -f "$ROOT/supabase/tests/05_admin_accounts.sql" 2>&1 | grep -v '^$'
 echo
 echo "--- payments, status history and webhook replay ---"
 run -f "$ROOT/supabase/tests/06_payments.sql" 2>&1 | grep -v '^$'
+echo
+echo "--- ahrefs refresh: tiering, overdue, budget and run locking ---"
+run -f "$ROOT/supabase/tests/07_ahrefs_refresh.sql" 2>&1 | grep -v '^$'
