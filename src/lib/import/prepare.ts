@@ -128,21 +128,27 @@ function prepareValues(
   }
 
   // --------------------------------------------------------------- numbers
-  const numberFields: { key: ImportFieldKey; max: number; label: string }[] = [
+  // `min` defaults to 0. Traffic change is the one column where a negative is
+  // meaningful - a site losing traffic - so rejecting it would silently drop
+  // exactly the figure a buyer most wants to see.
+  const numberFields: { key: ImportFieldKey; max: number; min?: number; label: string }[] = [
     { key: 'domain_rating', max: limits.domainRating, label: 'domain rating' },
     { key: 'organic_traffic', max: limits.organicTraffic, label: 'organic traffic' },
     { key: 'referring_domains', max: limits.referringDomains, label: 'referring domains' },
     { key: 'minimum_word_count', max: limits.wordCount, label: 'minimum word count' },
     { key: 'maximum_links', max: limits.links, label: 'maximum links' },
+    { key: 'top_country_share', max: 100, label: 'audience share' },
+    { key: 'spam_score', max: 100, label: 'spam score' },
+    { key: 'traffic_change_pct', max: 10_000, min: -100, label: 'traffic change' },
   ];
 
-  for (const { key, max, label } of numberFields) {
+  for (const { key, max, min = 0, label } of numberFields) {
     const value = cell(key);
     if (!value) continue;
     const parsed = parseNumber(value);
     if (parsed === null) {
       note(key, `Invalid ${label} value "${sanitiseText(value, 40)}"`, 'error');
-    } else if (parsed < 0 || parsed > max) {
+    } else if (parsed < min || parsed > max) {
       note(key, `${label} out of range: ${parsed}`, 'error');
     } else {
       (values as Record<string, unknown>)[key] = parsed;

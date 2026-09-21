@@ -182,6 +182,51 @@ export function WebsiteEditor({
               defaultValue={website?.metrics.referringDomains}
             />
           </Field>
+
+          <Field
+            label="Audience in primary country (%)"
+            htmlFor="topCountryShare"
+            hint="Leave blank if unknown. Blank shows as unknown; 0 would be published as a fact."
+          >
+            <Input
+              id="topCountryShare"
+              name="topCountryShare"
+              type="number"
+              min={0}
+              max={100}
+              placeholder="Not recorded"
+              defaultValue={website?.metrics.topCountryShare ?? ''}
+            />
+          </Field>
+          <Field
+            label="6 month traffic change (%)"
+            htmlFor="trafficChangePct"
+            hint="Negative for a decline, e.g. -12. Blank if you do not have it."
+          >
+            <Input
+              id="trafficChangePct"
+              name="trafficChangePct"
+              type="number"
+              step={0.1}
+              placeholder="Not recorded"
+              defaultValue={website?.metrics.trafficChangePct ?? ''}
+            />
+          </Field>
+          <Field
+            label="Spam score (%)"
+            htmlFor="spamScore"
+            hint="Blank if unmeasured. Zero is a real score and will be shown."
+          >
+            <Input
+              id="spamScore"
+              name="spamScore"
+              type="number"
+              min={0}
+              max={100}
+              placeholder="Not recorded"
+              defaultValue={website?.metrics.spamScore ?? ''}
+            />
+          </Field>
         </CardContent>
       </Card>
 

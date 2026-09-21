@@ -31,13 +31,26 @@ export function toWebsitePatch(
   if (has('status')) patch.status = values.status;
 
   // ---------------------------------------------------------------- metrics
-  const metricKeys: ImportFieldKey[] = ['domain_rating', 'organic_traffic', 'referring_domains'];
+  const metricKeys: ImportFieldKey[] = [
+    'domain_rating',
+    'organic_traffic',
+    'referring_domains',
+    'top_country_share',
+    'traffic_change_pct',
+    'spam_score',
+  ];
   if (metricKeys.some(has)) {
     patch.metrics = {
       ...(existing?.metrics ?? emptyMetrics()),
       ...(has('domain_rating') ? { domainRating: values.domain_rating! } : {}),
       ...(has('organic_traffic') ? { organicTraffic: values.organic_traffic! } : {}),
       ...(has('referring_domains') ? { referringDomains: values.referring_domains! } : {}),
+      // A column absent from the CSV leaves the stored value alone; a column
+      // present but blank never reaches here, so re-importing a file without
+      // these does not wipe figures entered by hand.
+      ...(has('top_country_share') ? { topCountryShare: values.top_country_share! } : {}),
+      ...(has('traffic_change_pct') ? { trafficChangePct: values.traffic_change_pct! } : {}),
+      ...(has('spam_score') ? { spamScore: values.spam_score! } : {}),
     };
   }
 
@@ -180,10 +193,12 @@ function emptyMetrics(): Website['metrics'] {
     organicTraffic: 0,
     referringDomains: 0,
     trafficTrend: [],
-    trafficChangePct: 0,
-    topCountryShare: 0,
+    // Left unset rather than zeroed: an import that does not carry these must
+    // not publish three measurements nobody took.
+    trafficChangePct: undefined,
+    topCountryShare: undefined,
     audienceSplit: [],
-    spamScore: 0,
+    spamScore: undefined,
   };
 }
 

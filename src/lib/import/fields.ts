@@ -18,6 +18,9 @@ export type ImportFieldKey =
   | 'domain_rating'
   | 'organic_traffic'
   | 'referring_domains'
+  | 'top_country_share'
+  | 'traffic_change_pct'
+  | 'spam_score'
   | 'guest_post_price'
   | 'niche_edit_price'
   | 'digital_pr_price'
@@ -110,6 +113,32 @@ export const importFields: ImportField[] = [
     label: 'Referring domains',
     type: 'number',
     aliases: ['referring domains', 'referringdomains', 'ref domains', 'refdomains', 'rd', 'rds', 'ref_domains', 'linking domains', 'backlinks domains'],
+  },
+  {
+    key: 'top_country_share',
+    label: 'Audience in primary country (%)',
+    type: 'number',
+    aliases: [
+      'top country share', 'topcountryshare', 'country share', 'traffic share',
+      'top country traffic share', 'primary country share', 'audience share',
+    ],
+    hint: 'Blank leaves it unrecorded rather than publishing 0%.',
+  },
+  {
+    key: 'traffic_change_pct',
+    label: '6 month traffic change (%)',
+    type: 'number',
+    aliases: [
+      'traffic change', 'traffic change pct', 'six month trend', '6 month trend',
+      'traffic trend', 'growth', 'traffic growth',
+    ],
+    hint: 'Ahrefs Batch Analysis does not export this. Blank is fine.',
+  },
+  {
+    key: 'spam_score',
+    label: 'Spam score (%)',
+    type: 'number',
+    aliases: ['spam score', 'spamscore', 'spam', 'toxicity', 'toxic score'],
   },
   {
     key: 'guest_post_price',
@@ -256,6 +285,9 @@ export const templateExampleRow: Record<ImportFieldKey, string> = {
   domain_rating: '62',
   organic_traffic: '48K',
   referring_domains: '8.1K',
+  top_country_share: '78',
+  traffic_change_pct: '12.5',
+  spam_score: '3',
   guest_post_price: '180',
   niche_edit_price: '140',
   digital_pr_price: '450',

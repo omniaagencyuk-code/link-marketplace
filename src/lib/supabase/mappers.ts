@@ -117,6 +117,13 @@ export const WEBSITE_SELECT_ADMIN = `
   services (*, service_costs (cost_price_minor))
 `;
 
+/** Null stays undefined: "not measured" must not become a measurement of 0. */
+function toOptionalNumber(value: number | string | null | undefined): number | undefined {
+  if (value === null || value === undefined) return undefined;
+  const parsed = typeof value === 'number' ? value : Number(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
 function toNumber(value: number | string | null | undefined, fallback = 0): number {
   if (value === null || value === undefined) return fallback;
   const parsed = typeof value === 'number' ? value : Number(value);
@@ -175,13 +182,13 @@ export function mapWebsite(row: WebsiteRow): Website {
       organicTraffic: toNumber(row.organic_traffic),
       referringDomains: toNumber(row.referring_domains),
       trafficTrend: row.traffic_trend ?? [],
-      trafficChangePct: toNumber(row.traffic_change_pct),
-      topCountryShare: toNumber(row.top_country_share, 70),
+      trafficChangePct: toOptionalNumber(row.traffic_change_pct),
+      topCountryShare: toOptionalNumber(row.top_country_share),
       audienceSplit: (row.audience_split ?? []).map((entry) => ({
         country: entry.country as CountryCode,
         share: toNumber(entry.share),
       })),
-      spamScore: toNumber(row.spam_score),
+      spamScore: toOptionalNumber(row.spam_score),
     },
     services: (row.services ?? []).map(mapService),
     rules: {
@@ -245,10 +252,13 @@ export function websiteToRow(patch: Partial<Website>): Record<string, unknown> {
     set('organic_traffic', patch.metrics.organicTraffic);
     set('referring_domains', patch.metrics.referringDomains);
     set('traffic_trend', patch.metrics.trafficTrend);
-    set('traffic_change_pct', patch.metrics.trafficChangePct);
-    set('top_country_share', patch.metrics.topCountryShare);
+    // `set` skips undefined, which would make an unset metric unclearable.
+    // These three are written explicitly so blanking one in the admin stores
+    // a null rather than silently keeping the previous number.
+    row.traffic_change_pct = patch.metrics.trafficChangePct ?? null;
+    row.top_country_share = patch.metrics.topCountryShare ?? null;
     set('audience_split', patch.metrics.audienceSplit);
-    set('spam_score', patch.metrics.spamScore);
+    row.spam_score = patch.metrics.spamScore ?? null;
   }
 
   if (patch.rules) {

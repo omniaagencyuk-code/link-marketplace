@@ -30,6 +30,20 @@ function readNumber(formData: FormData, key: string, fallback = 0) {
   return Number.isFinite(value) ? value : fallback;
 }
 
+/**
+ * A number, or undefined when the box was left empty.
+ *
+ * The difference matters for metrics: an empty field means nobody measured
+ * it, and storing that as 0 is how a listing came to publish "0% of the
+ * audience is based in United Kingdom" as though it were a finding.
+ */
+function readOptionalNumber(formData: FormData, key: string): number | undefined {
+  const raw = formData.get(key);
+  if (typeof raw !== 'string' || raw.trim() === '') return undefined;
+  const value = Number(raw);
+  return Number.isFinite(value) ? value : undefined;
+}
+
 function readString(formData: FormData, key: string, fallback = '') {
   const value = formData.get(key);
   return typeof value === 'string' && value.length > 0 ? value : fallback;
@@ -108,14 +122,16 @@ function buildPatch(formData: FormData, websiteId: string, existing?: Website): 
     metrics: {
       ...(existing?.metrics ?? {
         trafficTrend: [],
-        trafficChangePct: 0,
-        topCountryShare: 70,
         audienceSplit: [],
-        spamScore: 2,
       }),
       domainRating: readNumber(formData, 'domainRating'),
       organicTraffic: readNumber(formData, 'organicTraffic'),
       referringDomains: readNumber(formData, 'referringDomains'),
+      // These three are read straight from the form rather than falling back
+      // to what was there, so clearing a field genuinely clears it.
+      topCountryShare: readOptionalNumber(formData, 'topCountryShare'),
+      trafficChangePct: readOptionalNumber(formData, 'trafficChangePct'),
+      spamScore: readOptionalNumber(formData, 'spamScore'),
     } as Website['metrics'],
     services: buildServices(formData, websiteId, existing?.services ?? []),
     rules: {

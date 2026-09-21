@@ -73,15 +73,31 @@ export interface WebsiteMetrics {
   domainRating: number;
   organicTraffic: number;
   referringDomains: number;
-  /** 12 monthly values used to draw the traffic trend sparkline. */
+  /**
+   * 12 monthly values used to draw the traffic trend sparkline.
+   *
+   * Empty means no series was supplied - Ahrefs Batch Analysis does not
+   * export one - and the sparkline is omitted rather than drawn flat.
+   */
   trafficTrend: number[];
-  /** Percentage change over the last 6 months, positive or negative. */
-  trafficChangePct: number;
-  /** Share of traffic coming from the primary country, 0-100. */
-  topCountryShare: number;
+  /**
+   * Percentage change over the last 6 months.
+   *
+   * Undefined means nobody measured it. Zero means measured as flat, which is
+   * a different statement and is why this cannot simply default to 0.
+   */
+  trafficChangePct?: number;
+  /**
+   * Share of traffic coming from the primary country, 0-100.
+   *
+   * Undefined means not measured. There is no such thing as a real 0 here:
+   * the primary country is by definition where most of the audience is.
+   */
+  topCountryShare?: number;
   /** Secondary audience countries with their traffic share. */
   audienceSplit: { country: CountryCode; share: number }[];
-  spamScore: number;
+  /** Undefined means not measured. Zero is a real - and good - reading. */
+  spamScore?: number;
 }
 
 export interface Website {

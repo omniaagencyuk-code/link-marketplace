@@ -33,8 +33,15 @@ export function WebsiteSections({ website }: { website: Website }) {
           <Row label="Domain Rating" value={String(metrics.domainRating)} />
           <Row label="Organic traffic" value={`${formatNumber(metrics.organicTraffic)} / month`} />
           <Row label="Referring domains" value={formatNumber(metrics.referringDomains)} />
-          <Row label="Spam score" value={`${metrics.spamScore}%`} />
-          <Row label="6 month trend" value={`${metrics.trafficChangePct > 0 ? '+' : ''}${metrics.trafficChangePct}%`} />
+          {typeof metrics.spamScore === 'number' ? (
+            <Row label="Spam score" value={`${metrics.spamScore}%`} />
+          ) : null}
+          {typeof metrics.trafficChangePct === 'number' ? (
+            <Row
+              label="6 month trend"
+              value={`${metrics.trafficChangePct > 0 ? '+' : ''}${metrics.trafficChangePct}%`}
+            />
+          ) : null}
           <Row label="Language" value={languageLabels[website.language] ?? website.language} />
         </dl>
         <p className="mt-4 text-[12px] text-muted">
@@ -44,9 +51,24 @@ export function WebsiteSections({ website }: { website: Website }) {
       </Section>
 
       <Section id="audience" title="Audience and Geography">
+        {/*
+          Only stated when it has been measured. It previously read "0% of the
+          audience is based in United Kingdom" on any listing where nobody had
+          entered a figure - a precise claim, and a false one. With no figure
+          the country is still worth saying; the share is not.
+        */}
         <p className="text-[14px] leading-relaxed text-ink-soft">
-          {metrics.topCountryShare}% of the audience is based in {countryName(website.country)}, with
-          the remainder spread across the publisher&rsquo;s secondary markets.
+          {typeof metrics.topCountryShare === 'number' ? (
+            <>
+              {metrics.topCountryShare}% of the audience is based in{' '}
+              {countryName(website.country)}, with the remainder spread across the
+              publisher&rsquo;s secondary markets.
+            </>
+          ) : (
+            <>
+              The publisher&rsquo;s primary market is {countryName(website.country)}.
+            </>
+          )}
         </p>
         <ul className="mt-4 space-y-2.5">
           {metrics.audienceSplit.map((entry) => (

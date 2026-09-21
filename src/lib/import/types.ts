@@ -21,6 +21,9 @@ export interface RowValues {
   domain_rating?: number;
   organic_traffic?: number;
   referring_domains?: number;
+  top_country_share?: number;
+  traffic_change_pct?: number;
+  spam_score?: number;
   guest_post_price?: number;
   niche_edit_price?: number;
   digital_pr_price?: number;
