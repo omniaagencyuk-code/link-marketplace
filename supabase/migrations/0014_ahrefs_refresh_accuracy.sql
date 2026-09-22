@@ -16,21 +16,35 @@
 --      allowance is shared with everything else on the account, so each run
 --      now reads the live figure from Ahrefs and prefers it when the two
 --      disagree.
+--
+-- Every statement here is safe to run twice, and no comment sits inside one:
+-- a SQL editor that splits a script on its own is not a thing to bet on.
 -- ---------------------------------------------------------------------------
 
 -- ------------------------------------------------------- refresh settings --
+
+-- The admin page warns when the projected monthly spend crosses this share of
+-- the budget - early enough to change the cadence before a run is refused by
+-- the guard.
 alter table public.refresh_settings
-  -- The admin page warns when the projected monthly spend crosses this share
-  -- of the budget - early enough to change the cadence before a run is
-  -- refused by the guard.
-  add column if not exists projection_warn_pct smallint not null default 85
+  add column if not exists projection_warn_pct smallint not null default 85;
+
+-- Added separately so re-running the line above cannot fail on a constraint
+-- that is already there.
+do $$
+begin
+  alter table public.refresh_settings
+    add constraint refresh_settings_projection_warn_pct_check
     check (projection_warn_pct between 1 and 100);
+exception
+  when duplicate_object then null;
+end;
+$$;
 
 -- Sized for an inventory where the top few thousand domains are worth weekly
 -- attention and the long tail is not.
-alter table public.refresh_settings
-  alter column tier1_size set default 3000,
-  alter column tier2_size set default 6000;
+alter table public.refresh_settings alter column tier1_size set default 3000;
+alter table public.refresh_settings alter column tier2_size set default 6000;
 
 -- Only moves a row still sitting on 0013's defaults. A tuned value is a
 -- decision someone made and is left alone.
@@ -38,29 +52,25 @@ update public.refresh_settings
    set tier1_size = 3000, tier2_size = 6000
  where id and tier1_size = 10000 and tier2_size = 10000;
 
-comment on column public.refresh_settings.units_per_domain is
-  'Estimate only. Used to forecast spend before a call is made; the actual '
-  'cost is read back from Ahrefs and recorded on the run.';
-comment on column public.refresh_settings.monthly_unit_budget is
-  'Fallback. When Ahrefs reports a workspace limit, the live figure wins.';
+comment on column public.refresh_settings.units_per_domain is 'Estimate only. Used to forecast spend before a call is made; the actual cost is read back from Ahrefs and recorded on the run.';
+
+comment on column public.refresh_settings.monthly_unit_budget is 'Fallback. When Ahrefs reports a workspace limit, the live figure wins.';
 
 -- ------------------------------------------------------------ run history --
-alter table public.refresh_runs
-  -- What the run expected to spend, kept beside what it did spend so the
-  -- estimate can be corrected rather than trusted.
-  add column if not exists units_estimated integer,
-  -- The live figures from Ahrefs at the start of the run. Null means Ahrefs
-  -- was not reachable or no token was configured - not that usage was zero.
-  add column if not exists ahrefs_units_used integer,
-  add column if not exists ahrefs_units_limit integer,
-  add column if not exists ahrefs_usage_reset_at timestamptz;
 
-comment on column public.refresh_runs.units_spent is
-  'Actual cost reported by Ahrefs where available, falling back to the '
-  'estimate when a response carried no cost.';
-comment on column public.refresh_runs.ahrefs_units_used is
-  'Workspace-wide usage as Ahrefs reported it, covering every consumer of the '
-  'allowance rather than this job alone.';
+-- What the run expected to spend, kept beside what it did spend so the
+-- estimate can be corrected rather than trusted.
+alter table public.refresh_runs add column if not exists units_estimated integer;
+
+-- The live figures from Ahrefs at the start of the run. Null means Ahrefs was
+-- not reachable or no token was configured - not that usage was zero.
+alter table public.refresh_runs add column if not exists ahrefs_units_used integer;
+alter table public.refresh_runs add column if not exists ahrefs_units_limit integer;
+alter table public.refresh_runs add column if not exists ahrefs_usage_reset_at timestamptz;
+
+comment on column public.refresh_runs.units_spent is 'Actual cost reported by Ahrefs where available, falling back to the estimate when a response carried no cost.';
+
+comment on column public.refresh_runs.ahrefs_units_used is 'Workspace-wide usage as Ahrefs reported it, covering every consumer of the allowance rather than this job alone.';
 
 -- ---------------------------------------------------------------------------
 -- What a domain actually costs
@@ -68,6 +78,10 @@ comment on column public.refresh_runs.ahrefs_units_used is
 -- Averaged over recent live runs rather than configured, so the forecast
 -- follows the columns the job is really asking for. Null until a live run has
 -- happened, which is the honest answer before there is any evidence.
+--
+-- A run that spent units without touching a domain says nothing about what a
+-- domain costs, and averaging its spend over the others would inflate every
+-- forecast that followed.
 -- ---------------------------------------------------------------------------
 create or replace function public.ahrefs_units_per_domain_actual()
 returns numeric
@@ -84,9 +98,6 @@ as $$
   where status = 'completed'
     and not dry_run
     and units_spent > 0
-    -- A run that spent units without touching a domain says nothing about
-    -- what a domain costs, and averaging its spend over the others would
-    -- inflate every forecast that followed.
     and domains_refreshed + domains_failed > 0
     and started_at >= timezone('utc', now()) - interval '90 days';
 $$;
