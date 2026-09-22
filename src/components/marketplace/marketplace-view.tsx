@@ -52,6 +52,14 @@ export function MarketplaceView({
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [selected, setSelected] = useState<string[]>([]);
 
+  // Which row is showing its snippet. One at a time, and deliberately not in
+  // the URL: it is a glance at a row, not a place someone should land on or
+  // share, and putting it in the query string would mean a navigation on
+  // every open and close.
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const toggleExpanded = (id: string) =>
+    setExpandedId((current) => (current === id ? null : id));
+
   const result = useMemo(
     () => runQuery(websites, toWebsiteQuery(filters, sort, page, pageSize)),
     [websites, filters, sort, page, pageSize],
@@ -146,6 +154,8 @@ export function MarketplaceView({
                   selected={selected}
                   sort={sort}
                   onSort={setSort}
+                  expandedId={expandedId}
+                  onToggleExpand={toggleExpanded}
                   onToggleSelect={(id) =>
                     setSelected((current) =>
                       current.includes(id)
@@ -173,7 +183,12 @@ export function MarketplaceView({
                 }
               >
                 {result.items.map((website) => (
-                  <WebsiteCard key={website.id} website={website} />
+                  <WebsiteCard
+                    key={website.id}
+                    website={website}
+                    expanded={expandedId === website.id}
+                    onToggleExpand={() => toggleExpanded(website.id)}
+                  />
                 ))}
               </div>
 

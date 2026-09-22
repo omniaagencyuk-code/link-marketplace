@@ -1,34 +1,75 @@
 import Link from 'next/link';
+import { ChevronDown } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { DomainRating } from '@/components/shared/metric';
 import { LinkTypeList } from '@/components/shared/link-type-badge';
 import { VerifiedBadge } from '@/components/shared/verified-badge';
 import { FavouriteButton } from './favourite-button';
 import { AddToOrderButton } from './add-to-order-button';
+import { WebsiteSnippet } from './website-snippet';
 import { nicheName } from '@/lib/data/categories';
 import { countryShortName } from '@/lib/data/countries';
 import { formatCompactNumber, formatPrice, formatTurnaround } from '@/lib/utils/format';
 import { linkTypeLabels } from '@/lib/utils/labels';
+import { cn } from '@/lib/utils/cn';
 import type { WebsiteListItem } from '@/lib/types';
 
-/** Compact stacked card used on mobile and in the grid view. */
-export function WebsiteCard({ website }: { website: WebsiteListItem }) {
+/**
+ * Compact stacked card used on mobile and in the grid view.
+ *
+ * The snippet is optional: the card is also the saved-websites card, where
+ * there is no single-open state to belong to and the name should still
+ * navigate. Passing `onToggleExpand` is what turns the name into a toggle.
+ */
+export function WebsiteCard({
+  website,
+  expanded = false,
+  onToggleExpand,
+}: {
+  website: WebsiteListItem;
+  expanded?: boolean;
+  onToggleExpand?: () => void;
+}) {
   const lead = website.headlineService;
+  const snippetId = `snippet-card-${website.id}`;
 
   return (
     <article className="rounded-[var(--radius-card)] border border-line bg-white p-4 shadow-[var(--shadow-card)] transition-shadow hover:shadow-[var(--shadow-raised)]">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="flex items-center gap-1.5">
-            <Link
-              href={`/websites/${website.slug}`}
-              className="truncate text-[15px] font-semibold text-ink hover:text-accent-700"
-            >
-              {website.domain}
-            </Link>
+            {onToggleExpand ? (
+              <button
+                type="button"
+                onClick={onToggleExpand}
+                aria-expanded={expanded}
+                aria-controls={snippetId}
+                className="flex min-w-0 items-center gap-1 text-left text-[15px] font-semibold text-ink hover:text-accent-700"
+              >
+                <ChevronDown
+                  className={cn(
+                    'h-4 w-4 shrink-0 text-muted transition-transform',
+                    expanded && 'rotate-180',
+                  )}
+                  aria-hidden="true"
+                />
+                <span className="truncate">{website.domain}</span>
+              </button>
+            ) : (
+              <Link
+                href={`/websites/${website.slug}`}
+                className="truncate text-[15px] font-semibold text-ink hover:text-accent-700"
+              >
+                {website.domain}
+              </Link>
+            )}
             {website.verified ? <VerifiedBadge /> : null}
           </div>
-          <p className="mt-1 line-clamp-2 text-[12px] text-muted">{website.description}</p>
+          {/* Clamped until the card is expanded, where the whole point is to
+              see more than the list showed. */}
+          <p className={cn('mt-1 text-[12px] text-muted', !expanded && 'line-clamp-2')}>
+            {website.description}
+          </p>
         </div>
         <FavouriteButton websiteId={website.id} domain={website.domain} />
       </div>
@@ -77,6 +118,12 @@ export function WebsiteCard({ website }: { website: WebsiteListItem }) {
           <AddToOrderButton website={website} />
         </div>
       </div>
+
+      {onToggleExpand && expanded ? (
+        <div className="mt-4 border-t border-line pt-4">
+          <WebsiteSnippet id={snippetId} website={website} variant="card" />
+        </div>
+      ) : null}
     </article>
   );
 }

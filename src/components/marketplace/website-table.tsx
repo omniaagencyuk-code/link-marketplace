@@ -1,7 +1,8 @@
 'use client';
 
+import { Fragment } from 'react';
 import Link from 'next/link';
-import { ArrowDown, ArrowUp, ChevronsUpDown } from 'lucide-react';
+import { ArrowDown, ArrowUp, ChevronDown, ChevronsUpDown } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Table, TableWrap, Td, Th, Tr } from '@/components/ui/table';
@@ -10,6 +11,7 @@ import { LinkTypeList } from '@/components/shared/link-type-badge';
 import { VerifiedBadge } from '@/components/shared/verified-badge';
 import { FavouriteButton } from './favourite-button';
 import { AddToOrderButton } from './add-to-order-button';
+import { WebsiteSnippet } from './website-snippet';
 import { nicheName } from '@/lib/data/categories';
 import { countryShortName } from '@/lib/data/countries';
 import { formatCompactNumber, formatPrice, formatTurnaround } from '@/lib/utils/format';
@@ -30,6 +32,20 @@ const sortableColumns: Record<string, SortableColumn> = {
   price: { key: 'price-asc', label: 'Price', align: 'right' },
 };
 
+/** Columns in the row, which the snippet row has to span. */
+const COLUMN_COUNT = 11;
+
+/**
+ * Clicks that belong to something else.
+ *
+ * The row toggles the snippet, but the row also contains a checkbox, two
+ * links and two buttons, and every one of them was there first. A click that
+ * started inside one of those is that control's click, not the row's.
+ */
+function isOwnClick(target: EventTarget | null): boolean {
+  return target instanceof Element && target.closest('a, button, input, label') !== null;
+}
+
 export function WebsiteTable({
   websites,
   selected,
@@ -37,6 +53,8 @@ export function WebsiteTable({
   onToggleSelectAll,
   sort,
   onSort,
+  expandedId,
+  onToggleExpand,
 }: {
   websites: WebsiteListItem[];
   selected: string[];
@@ -44,6 +62,9 @@ export function WebsiteTable({
   onToggleSelectAll: () => void;
   sort: SortKey;
   onSort: (sort: SortKey) => void;
+  /** The one row showing its snippet, or null. */
+  expandedId: string | null;
+  onToggleExpand: (id: string) => void;
 }) {
   const allSelected = websites.length > 0 && websites.every((site) => selected.includes(site.id));
   const someSelected = !allSelected && websites.some((site) => selected.includes(site.id));
@@ -96,67 +117,96 @@ export function WebsiteTable({
         <tbody>
           {websites.map((website) => {
             const isSelected = selected.includes(website.id);
+            const isExpanded = expandedId === website.id;
+            const snippetId = `snippet-${website.id}`;
             return (
-              <Tr key={website.id} className={cn(isSelected && 'bg-accent-50/40')}>
-                <Td className="pr-0">
-                  <Checkbox
-                    checked={isSelected}
-                    onChange={() => onToggleSelect(website.id)}
-                    aria-label={`Select ${website.domain}`}
-                  />
-                </Td>
-                <Td>
-                  <div className="flex items-center gap-1.5">
-                    <Link
-                      href={`/websites/${website.slug}`}
-                      className="truncate text-[14px] font-semibold text-ink hover:text-accent-700"
-                      title={website.domain}
-                    >
-                      {website.domain}
-                    </Link>
-                    {website.verified ? <VerifiedBadge /> : null}
-                  </div>
-                  <p className="mt-0.5 truncate text-[12px] text-muted" title={website.description}>
-                    {website.description}
-                  </p>
-                </Td>
-                <Td className="truncate text-[13px] text-ink-soft" title={nicheName(website.niche)}>
-                  {nicheName(website.niche)}
-                </Td>
-                <Td className="text-[13px] text-ink-soft">{countryShortName(website.country)}</Td>
-                <Td>
-                  <DomainRating value={website.metrics.domainRating} />
-                </Td>
-                <Td className="tabular text-[13px] text-ink-soft">
-                  {formatCompactNumber(website.metrics.organicTraffic)}
-                </Td>
-                <Td className="tabular text-[13px] text-ink-soft">
-                  {formatCompactNumber(website.metrics.referringDomains)}
-                </Td>
-                <Td className="overflow-hidden">
-                  <LinkTypeList types={website.availableLinkTypes} max={1} nowrap />
-                </Td>
-                <Td className="tabular text-[13px] whitespace-nowrap text-ink-soft">
-                  {website.headlineService
-                    ? formatTurnaround(
-                        website.headlineService.turnaroundMinDays,
-                        website.headlineService.turnaroundMaxDays,
-                      )
-                    : '—'}
-                </Td>
-                <Td className="tabular text-right text-[14px] font-semibold text-ink">
-                  {formatPrice(website.headlinePriceMinor)}
-                </Td>
-                <Td>
-                  <div className="flex items-center justify-end gap-1">
-                    <FavouriteButton websiteId={website.id} domain={website.domain} />
-                    <AddToOrderButton website={website} />
-                    <Button asChild variant="outline" size="sm">
-                      <Link href={`/websites/${website.slug}`}>View</Link>
-                    </Button>
-                  </div>
-                </Td>
-              </Tr>
+              <Fragment key={website.id}>
+                <Tr
+                  className={cn('cursor-pointer', isSelected && 'bg-accent-50/40')}
+                  onClick={(event) => {
+                    if (!isOwnClick(event.target)) onToggleExpand(website.id);
+                  }}
+                >
+                  <Td className="pr-0">
+                    <Checkbox
+                      checked={isSelected}
+                      onChange={() => onToggleSelect(website.id)}
+                      aria-label={`Select ${website.domain}`}
+                    />
+                  </Td>
+                  <Td>
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => onToggleExpand(website.id)}
+                        aria-expanded={isExpanded}
+                        aria-controls={snippetId}
+                        className="flex min-w-0 items-center gap-0.5 text-left text-[14px] font-semibold text-ink hover:text-accent-700"
+                        title={website.domain}
+                      >
+                        <ChevronDown
+                          className={cn(
+                            'h-3 w-3 shrink-0 text-muted transition-transform',
+                            isExpanded && 'rotate-180',
+                          )}
+                          aria-hidden="true"
+                        />
+                        <span className="truncate">{website.domain}</span>
+                      </button>
+                      {website.verified ? <VerifiedBadge /> : null}
+                    </div>
+                    <p className="mt-0.5 truncate text-[12px] text-muted" title={website.description}>
+                      {website.description}
+                    </p>
+                  </Td>
+                  <Td className="truncate text-[13px] text-ink-soft" title={nicheName(website.niche)}>
+                    {nicheName(website.niche)}
+                  </Td>
+                  <Td className="text-[13px] text-ink-soft">{countryShortName(website.country)}</Td>
+                  <Td>
+                    <DomainRating value={website.metrics.domainRating} />
+                  </Td>
+                  <Td className="tabular text-[13px] text-ink-soft">
+                    {formatCompactNumber(website.metrics.organicTraffic)}
+                  </Td>
+                  <Td className="tabular text-[13px] text-ink-soft">
+                    {formatCompactNumber(website.metrics.referringDomains)}
+                  </Td>
+                  <Td className="overflow-hidden">
+                    <LinkTypeList types={website.availableLinkTypes} max={1} nowrap />
+                  </Td>
+                  <Td className="tabular text-[13px] whitespace-nowrap text-ink-soft">
+                    {website.headlineService
+                      ? formatTurnaround(
+                          website.headlineService.turnaroundMinDays,
+                          website.headlineService.turnaroundMaxDays,
+                        )
+                      : '—'}
+                  </Td>
+                  <Td className="tabular text-right text-[14px] font-semibold text-ink">
+                    {formatPrice(website.headlinePriceMinor)}
+                  </Td>
+                  <Td>
+                    <div className="flex items-center justify-end gap-1">
+                      <FavouriteButton websiteId={website.id} domain={website.domain} />
+                      <AddToOrderButton website={website} />
+                      <Button asChild variant="outline" size="sm">
+                        <Link href={`/websites/${website.slug}`}>View</Link>
+                      </Button>
+                    </div>
+                  </Td>
+                </Tr>
+
+                {/* Its own row rather than a positioned overlay, so the table
+                    keeps doing the layout and nothing below it moves. */}
+                {isExpanded ? (
+                  <tr className="border-b border-line bg-surface/60 last:border-b-0">
+                    <td colSpan={COLUMN_COUNT} className="px-4 py-4">
+                      <WebsiteSnippet id={snippetId} website={website} />
+                    </td>
+                  </tr>
+                ) : null}
+              </Fragment>
             );
           })}
         </tbody>

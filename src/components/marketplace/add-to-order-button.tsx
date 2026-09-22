@@ -18,10 +18,13 @@ export function AddToOrderButton({
   website,
   className,
   fullWidth = false,
+  prominent = false,
 }: {
   website: WebsiteListItem;
   className?: string;
   fullWidth?: boolean;
+  /** The filled, spelled-out version for the expanded snippet. */
+  prominent?: boolean;
 }) {
   const { add, has, hydrated } = useOrderDraft();
   const service = website.headlineService;
@@ -29,7 +32,7 @@ export function AddToOrderButton({
 
   if (!service) return null;
 
-  const label = alreadyAdded ? 'In order' : 'Add';
+  const label = alreadyAdded ? 'In order' : prominent ? 'Add to order' : 'Add';
   const description = alreadyAdded
     ? `${website.domain} is already in your order`
     : `Add a ${linkTypeLabels[service.type].toLowerCase()} on ${website.domain} to your order`;
@@ -37,7 +40,7 @@ export function AddToOrderButton({
   return (
     <Button
       size="sm"
-      variant="outline"
+      variant={prominent && !alreadyAdded ? 'accent' : 'outline'}
       aria-label={description}
       title={description}
       disabled={alreadyAdded}
@@ -45,7 +48,9 @@ export function AddToOrderButton({
         'disabled:opacity-100',
         alreadyAdded
           ? 'border-line text-muted'
-          : 'border-accent-500/50 text-accent-700 hover:border-accent-500 hover:bg-accent-50',
+          : prominent
+            ? undefined
+            : 'border-accent-500/50 text-accent-700 hover:border-accent-500 hover:bg-accent-50',
         fullWidth && 'w-full',
         className,
       )}
