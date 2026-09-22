@@ -47,7 +47,14 @@ export default async function RefreshPage() {
       {!settings ? (
         <Card>
           <CardContent className="py-8 text-center text-[14px] text-muted">
-            Refresh settings are not available. Connect Supabase and run migration 0013.
+            <p>Refresh settings could not be read.</p>
+            {status.settingsError ? (
+              <p className="mt-2 text-[13px] text-coral-700">{status.settingsError}</p>
+            ) : null}
+            <p className="mt-2 text-[13px]">
+              Connect Supabase and apply every migration in supabase/migrations - this page needs
+              0013 and 0014.
+            </p>
           </CardContent>
         </Card>
       ) : (

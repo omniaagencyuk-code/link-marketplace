@@ -100,6 +100,8 @@ export interface RefreshStatus {
   unitsPerDomainActual: number | null;
   /** The last live reading from Ahrefs, or null if there has never been one. */
   ahrefsUsage: AhrefsUsageSnapshot | null;
+  /** Set when the settings row could not be read, with the reason. */
+  settingsError: string | null;
 }
 
 const SETTINGS_SELECT =
@@ -158,11 +160,30 @@ function mapRun(row: any): RefreshRun {
 }
 /* eslint-enable @typescript-eslint/no-explicit-any */
 
+/** Why the last settings read came back empty, for the admin page to show. */
+let settingsError: string | null = null;
+
 export const refreshService = {
   async getSettings(): Promise<RefreshSettings | null> {
     if (!isSupabaseEnabled()) return null;
     const supabase = getAdminScopedClient();
-    const { data } = await supabase.from('refresh_settings').select(SETTINGS_SELECT).maybeSingle();
+    const { data, error } = await supabase
+      .from('refresh_settings')
+      .select(SETTINGS_SELECT)
+      .maybeSingle();
+
+    // A column this build reads that the database has not got yet fails the
+    // whole select, and returning null for it would show the admin "settings
+    // are not available" - which reads as "not set up" rather than "a
+    // migration is missing". Said out loud instead, in the server log and on
+    // the page. Nothing here carries a secret.
+    if (error) {
+      console.warn(`[refresh] could not read settings: ${error.message}`);
+      settingsError = error.message;
+      return null;
+    }
+
+    settingsError = null;
     return data ? mapSettings(data) : null;
   },
 
@@ -245,6 +266,7 @@ export const refreshService = {
       projectedMonthlyUnits: 0,
       unitsPerDomainActual: null,
       ahrefsUsage: null,
+      settingsError: null,
     };
     if (!isSupabaseEnabled()) return base;
 
@@ -280,6 +302,7 @@ export const refreshService = {
     return {
       ...base,
       settings,
+      settingsError,
       overdue: ((overdue.data ?? []) as { tier: number; overdue: number; total: number }[]).map(
         (row) => ({ tier: row.tier, overdue: Number(row.overdue), total: Number(row.total) }),
       ),
