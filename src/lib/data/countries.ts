@@ -20,8 +20,25 @@ export const countryByCode = new Map<CountryCode, Country>(
   countries.map((country) => [country.code, country]),
 );
 
+/**
+ * Countries outside the marketplace's own list still turn up - the Ahrefs
+ * traffic breakdown reports whatever it measures. Naming them beats printing a
+ * bare code at a reader, so the runtime's own list is the fallback.
+ */
+const displayNames =
+  typeof Intl !== 'undefined' && 'DisplayNames' in Intl
+    ? new Intl.DisplayNames(['en'], { type: 'region' })
+    : null;
+
 export function countryName(code: CountryCode) {
-  return countryByCode.get(code)?.name ?? code;
+  const known = countryByCode.get(code)?.name;
+  if (known) return known;
+
+  try {
+    return displayNames?.of(code) ?? code;
+  } catch {
+    return code;
+  }
 }
 
 export function countryShortName(code: CountryCode) {

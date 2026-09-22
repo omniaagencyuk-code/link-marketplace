@@ -10,6 +10,13 @@ export function WebsiteSections({ website }: { website: Website }) {
   const { rules, metrics } = website;
   const available = website.services.filter((service) => service.available);
 
+  // The biggest measured market, when the breakdown has been collected. Taken
+  // by share rather than by position: nothing guarantees the order of a split
+  // that was typed in by hand.
+  const measured = metrics.audienceSplit.reduce<
+    { country: (typeof metrics.audienceSplit)[number]['country']; share: number } | undefined
+  >((best, entry) => (best && best.share >= entry.share ? best : entry), undefined);
+
   const acceptance = [
     { label: 'Gambling content', allowed: rules.acceptsGambling },
     { label: 'Finance content', allowed: rules.acceptsFinance },
@@ -54,11 +61,19 @@ export function WebsiteSections({ website }: { website: Website }) {
         {/*
           Only stated when it has been measured. It previously read "0% of the
           audience is based in United Kingdom" on any listing where nobody had
-          entered a figure - a precise claim, and a false one. With no figure
-          the country is still worth saying; the share is not.
+          entered a figure - a precise claim, and a false one.
+
+          The country named is the one the traffic breakdown puts first, not
+          the market the listing claims. Those are usually the same and when
+          they are not, the measurement is the one worth printing.
         */}
         <p className="text-[14px] leading-relaxed text-ink-soft">
-          {typeof metrics.topCountryShare === 'number' ? (
+          {measured ? (
+            <>
+              {measured.share}% of the audience is based in {countryName(measured.country)}, with
+              the remainder spread across the publisher&rsquo;s secondary markets.
+            </>
+          ) : typeof metrics.topCountryShare === 'number' ? (
             <>
               {metrics.topCountryShare}% of the audience is based in{' '}
               {countryName(website.country)}, with the remainder spread across the

@@ -94,8 +94,14 @@ export interface WebsiteMetrics {
    * the primary country is by definition where most of the audience is.
    */
   topCountryShare?: number;
-  /** Secondary audience countries with their traffic share. */
-  audienceSplit: { country: CountryCode; share: number }[];
+  /**
+   * Audience countries with their traffic share, biggest first.
+   *
+   * `traffic` is present when the figure came from the Ahrefs refresh, which
+   * reports visits per country rather than a percentage. Shares are derived
+   * from it, so the two cannot disagree.
+   */
+  audienceSplit: { country: CountryCode; share: number; traffic?: number }[];
   /** Undefined means not measured. Zero is a real - and good - reading. */
   spamScore?: number;
 }

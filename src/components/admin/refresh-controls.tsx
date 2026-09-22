@@ -83,12 +83,23 @@ export function RefreshControls({
           <Number name="tier1IntervalDays" label="Tier 1 interval (days)" value={settings.tier1IntervalDays} />
           <Number name="tier2IntervalDays" label="Tier 2 interval (days)" value={settings.tier2IntervalDays} />
           <Number name="tier3IntervalDays" label="Tier 3 interval (days)" value={settings.tier3IntervalDays} />
-          <Number name="unitsPerDomain" label="Units per domain" value={settings.unitsPerDomain} hint="What Ahrefs charges per target." />
+          <Number
+            name="unitsPerDomain"
+            label="Units per domain (estimate)"
+            value={settings.unitsPerDomain}
+            hint="Used to forecast a run before it happens. The real cost is read back from Ahrefs."
+          />
           <Number name="monthlyUnitBudget" label="Monthly unit budget" value={settings.monthlyUnitBudget} />
           <Number name="budgetSafetyPct" label="Budget guard (%)" value={settings.budgetSafetyPct} hint="The job stops at this share of the budget." />
           <Number name="billingCycleDay" label="Billing resets on day" value={settings.billingCycleDay} hint="1-28." />
           <Number name="batchSize" label="Batch size" value={settings.batchSize} hint="Ahrefs caps this at 100." />
           <Number name="maxBatchesPerRun" label="Max batches per run" value={settings.maxBatchesPerRun} hint="Caps one run's spend and runtime." />
+          <Number
+            name="projectionWarnPct"
+            label="Warn at (% of budget)"
+            value={settings.projectionWarnPct}
+            hint="Warns when the cadences would cost this much of the month."
+          />
         </div>
 
         <div className="mt-5 flex flex-wrap items-center gap-3">
@@ -143,15 +154,15 @@ export function RefreshControls({
               {!enabled
                 ? 'The daily job still runs on schedule, but exits before calling Ahrefs. No units are spent.'
                 : dryRun
-                  ? 'Runs select overdue domains and record what they would do, without calling Ahrefs. No units are spent.'
-                  : 'Runs call Ahrefs and spend units against the monthly budget.'}
+                  ? 'Runs select overdue domains and record what they would do. The only call to Ahrefs is the free usage check; no units are spent.'
+                  : 'Runs call Ahrefs and spend units against the monthly budget, checking the account balance before each one.'}
             </p>
 
             {!ahrefsConfigured ? (
               <p className="mt-2 flex items-start gap-1.5 text-[12px] leading-relaxed text-muted">
                 <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-                AHREFS_API_TOKEN is not set, so a live run would skip rather than spend. Dry runs
-                work without it.
+                AHREFS_API_TOKEN is not set, so a live run would skip rather than spend, and
+                there is no usage reading to check the budget against. Dry runs work without it.
               </p>
             ) : null}
           </div>

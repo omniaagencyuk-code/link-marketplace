@@ -1,7 +1,7 @@
 import { getAdminScopedClient } from '@/lib/supabase/server';
 import { isSupabaseEnabled } from '@/lib/supabase/config';
 import { AHREFS_MAX_BATCH, isAhrefsConfigured } from '@/lib/ahrefs/config';
-import { AhrefsError, batchAnalysis } from '@/lib/ahrefs/client';
+import { AhrefsError, batchAnalysis, subscriptionInfo, type AhrefsUsage } from '@/lib/ahrefs/client';
 
 /**
  * The tiered Ahrefs refresh.
@@ -20,6 +20,12 @@ import { AhrefsError, batchAnalysis } from '@/lib/ahrefs/client';
  * 3. The budget is checked before every batch, not once at the start, because
  *    the remaining allowance changes as the run spends it.
  *
+ * What a call costs is read back from Ahrefs rather than assumed: the price
+ * depends on the columns requested, so a configured `units_per_domain` is only
+ * ever a forecast. Ahrefs' own usage figure is read before each run too, and
+ * preferred to this job's arithmetic when the two disagree - the allowance is
+ * shared with everything else on the account.
+ *
  * Everything runs as the service role. The cron caller is a machine with no
  * Supabase session, and the tables are admin-only.
  */
@@ -32,12 +38,14 @@ export interface RefreshSettings {
   tier1IntervalDays: number;
   tier2IntervalDays: number;
   tier3IntervalDays: number;
+  /** Forecast only. The real cost is measured, not calculated. */
   unitsPerDomain: number;
   monthlyUnitBudget: number;
   budgetSafetyPct: number;
   billingCycleDay: number;
   batchSize: number;
   maxBatchesPerRun: number;
+  projectionWarnPct: number;
   updatedAt: string;
   updatedBy?: string;
 }
@@ -57,12 +65,23 @@ export interface RefreshRun {
   domainsFailed: number;
   batches: number;
   unitsSpent: number;
+  unitsEstimated?: number;
+  ahrefsUnitsUsed?: number;
+  ahrefsUnitsLimit?: number;
+  ahrefsUsageResetAt?: string;
   overdueTier1?: number;
   overdueTier2?: number;
   overdueTier3?: number;
   error?: string;
   startedAt: string;
   finishedAt?: string;
+}
+
+export interface AhrefsUsageSnapshot {
+  unitsUsed: number;
+  unitsLimit: number | null;
+  usageResetAt: string | null;
+  observedAt: string;
 }
 
 export interface RefreshStatus {
@@ -72,15 +91,25 @@ export interface RefreshStatus {
   cycleStart: string | null;
   recentRuns: RefreshRun[];
   ahrefsConfigured: boolean;
+  /**
+   * What the configured cadences would cost per month at today's inventory,
+   * using the measured cost per domain where one exists.
+   */
+  projectedMonthlyUnits: number;
+  /** Measured cost per domain, or null before any live run. */
+  unitsPerDomainActual: number | null;
+  /** The last live reading from Ahrefs, or null if there has never been one. */
+  ahrefsUsage: AhrefsUsageSnapshot | null;
 }
 
 const SETTINGS_SELECT =
   'enabled, dry_run, tier1_size, tier2_size, tier1_interval_days, tier2_interval_days, ' +
   'tier3_interval_days, units_per_domain, monthly_unit_budget, budget_safety_pct, ' +
-  'billing_cycle_day, batch_size, max_batches_per_run, updated_at, updated_by';
+  'billing_cycle_day, batch_size, max_batches_per_run, projection_warn_pct, updated_at, updated_by';
 
 const RUN_SELECT =
   'id, status, reason, dry_run, domains_refreshed, domains_failed, batches, units_spent, ' +
+  'units_estimated, ahrefs_units_used, ahrefs_units_limit, ahrefs_usage_reset_at, ' +
   'overdue_tier1, overdue_tier2, overdue_tier3, error, started_at, finished_at';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -99,6 +128,7 @@ function mapSettings(row: any): RefreshSettings {
     billingCycleDay: row.billing_cycle_day,
     batchSize: row.batch_size,
     maxBatchesPerRun: row.max_batches_per_run,
+    projectionWarnPct: row.projection_warn_pct,
     updatedAt: row.updated_at,
     updatedBy: row.updated_by ?? undefined,
   };
@@ -114,6 +144,10 @@ function mapRun(row: any): RefreshRun {
     domainsFailed: row.domains_failed,
     batches: row.batches,
     unitsSpent: row.units_spent,
+    unitsEstimated: row.units_estimated ?? undefined,
+    ahrefsUnitsUsed: row.ahrefs_units_used ?? undefined,
+    ahrefsUnitsLimit: row.ahrefs_units_limit ?? undefined,
+    ahrefsUsageResetAt: row.ahrefs_usage_reset_at ?? undefined,
     overdueTier1: row.overdue_tier1 ?? undefined,
     overdueTier2: row.overdue_tier2 ?? undefined,
     overdueTier3: row.overdue_tier3 ?? undefined,
@@ -150,6 +184,7 @@ export const refreshService = {
         | 'billingCycleDay'
         | 'batchSize'
         | 'maxBatchesPerRun'
+        | 'projectionWarnPct'
       >
     >,
     updatedBy?: string,
@@ -174,6 +209,7 @@ export const refreshService = {
     put('billing_cycle_day', patch.billingCycleDay);
     put('batch_size', patch.batchSize);
     put('max_batches_per_run', patch.maxBatchesPerRun);
+    put('projection_warn_pct', patch.projectionWarnPct);
 
     const supabase = getAdminScopedClient();
     const { data, error } = await supabase
@@ -206,17 +242,40 @@ export const refreshService = {
       cycleStart: null,
       recentRuns: [],
       ahrefsConfigured: isAhrefsConfigured(),
+      projectedMonthlyUnits: 0,
+      unitsPerDomainActual: null,
+      ahrefsUsage: null,
     };
     if (!isSupabaseEnabled()) return base;
 
     const supabase = getAdminScopedClient();
-    const [settings, overdue, units, cycleStart, runs] = await Promise.all([
-      refreshService.getSettings(),
-      supabase.rpc('ahrefs_overdue_counts'),
-      supabase.rpc('ahrefs_units_this_cycle'),
-      supabase.rpc('ahrefs_cycle_start'),
-      supabase.from('refresh_runs').select(RUN_SELECT).order('started_at', { ascending: false }).limit(10),
-    ]);
+    const [settings, overdue, units, cycleStart, runs, projected, perDomain, usage] =
+      await Promise.all([
+        refreshService.getSettings(),
+        supabase.rpc('ahrefs_overdue_counts'),
+        supabase.rpc('ahrefs_units_this_cycle'),
+        supabase.rpc('ahrefs_cycle_start'),
+        supabase
+          .from('refresh_runs')
+          .select(RUN_SELECT)
+          .order('started_at', { ascending: false })
+          .limit(10),
+        // Both of these count live rows and measured costs, so the figure on
+        // the page is about the inventory as it is now, not as it was assumed.
+        supabase.rpc('ahrefs_projected_monthly_units'),
+        supabase.rpc('ahrefs_units_per_domain_actual'),
+        supabase.rpc('ahrefs_latest_usage'),
+      ]);
+
+    const usageRow = (Array.isArray(usage.data) ? usage.data[0] : usage.data) as
+      | {
+          units_used: number | null;
+          units_limit: number | null;
+          usage_reset_at: string | null;
+          observed_at: string;
+        }
+      | null
+      | undefined;
 
     return {
       ...base,
@@ -227,6 +286,18 @@ export const refreshService = {
       unitsThisCycle: typeof units.data === 'number' ? units.data : 0,
       cycleStart: typeof cycleStart.data === 'string' ? cycleStart.data : null,
       recentRuns: ((runs.data ?? []) as unknown[]).map(mapRun),
+      projectedMonthlyUnits: Number(projected.data ?? 0) || 0,
+      unitsPerDomainActual:
+        perDomain.data == null ? null : Number(perDomain.data) || null,
+      ahrefsUsage:
+        usageRow && usageRow.units_used != null
+          ? {
+              unitsUsed: Number(usageRow.units_used),
+              unitsLimit: usageRow.units_limit == null ? null : Number(usageRow.units_limit),
+              usageResetAt: usageRow.usage_reset_at,
+              observedAt: usageRow.observed_at,
+            }
+          : null,
     };
   },
 };
@@ -325,11 +396,49 @@ export async function runRefresh(): Promise<RunOutcome> {
       };
     }
 
+    // ------------------------------------------------ what a domain costs
+    //
+    // Measured where there is evidence, configured where there is not. The
+    // configured figure is a forecast: Ahrefs prices a call by the columns it
+    // is asked for, so it goes stale the moment the request changes.
+    const { data: measured } = await supabase.rpc('ahrefs_units_per_domain_actual');
+    let unitCost =
+      measured == null || !Number.isFinite(Number(measured)) || Number(measured) <= 0
+        ? settings.unitsPerDomain
+        : Number(measured);
+
+    // --------------------------------------- what Ahrefs says has been spent
+    //
+    // Free to ask, and it covers every consumer of the allowance rather than
+    // this job alone. Where it disagrees with the run history, Ahrefs wins:
+    // the run history only knows about runs, and the account is shared.
+    const live = await readUsage();
+    if (live) {
+      await supabase
+        .from('refresh_runs')
+        .update({
+          ahrefs_units_used: live.unitsUsed,
+          ahrefs_units_limit: live.unitsLimit,
+          ahrefs_usage_reset_at: live.resetDate,
+        })
+        .eq('id', id);
+
+      // Ahrefs also knows when the allowance resets, and the configured day
+      // was a guess. Aligning it keeps this job's own cycle total covering the
+      // same period as the account's - the settings row defaulted to the 1st
+      // against a real reset on the 7th. Days past the 28th are left alone;
+      // there is no such day in February.
+      const resetDay = live.resetDate ? new Date(live.resetDate).getUTCDate() : null;
+      if (resetDay && resetDay <= 28 && resetDay !== settings.billingCycleDay) {
+        await refreshService.updateSettings({ billingCycleDay: resetDay }, 'ahrefs');
+      }
+    }
+
     const { data: spentSoFar } = await supabase.rpc('ahrefs_units_this_cycle');
-    const alreadySpent = typeof spentSoFar === 'number' ? spentSoFar : 0;
-    const ceiling = Math.floor(
-      (settings.monthlyUnitBudget * settings.budgetSafetyPct) / 100,
-    );
+    const ownSpend = typeof spentSoFar === 'number' ? spentSoFar : 0;
+    const alreadySpent = live?.unitsUsed ?? ownSpend;
+    const budget = live?.unitsLimit ?? settings.monthlyUnitBudget;
+    const ceiling = Math.floor((budget * settings.budgetSafetyPct) / 100);
 
     if (alreadySpent >= ceiling) {
       const reason = `Budget guard: ${alreadySpent} of ${ceiling} units already spent this cycle`;
@@ -338,15 +447,15 @@ export async function runRefresh(): Promise<RunOutcome> {
     }
 
     const batchSize = Math.min(settings.batchSize, AHREFS_MAX_BATCH);
-    const costPerBatch = batchSize * settings.unitsPerDomain;
+    const costPerBatch = Math.ceil(batchSize * unitCost);
 
     // How many batches the remaining allowance affords, capped by the
     // per-run ceiling so one run cannot drain the month.
-    const affordable = Math.floor((ceiling - alreadySpent) / costPerBatch);
+    const affordable = Math.floor((ceiling - alreadySpent) / Math.max(1, costPerBatch));
     const batchBudget = Math.min(affordable, settings.maxBatchesPerRun);
 
     if (batchBudget < 1) {
-      const reason = `Budget guard: ${ceiling - alreadySpent} units left, a batch costs ${costPerBatch}`;
+      const reason = `Budget guard: ${ceiling - alreadySpent} units left, a batch costs about ${costPerBatch}`;
       await finishRun(id, { status: 'skipped', reason });
       return { status: 'skipped', reason, dryRun: settings.dryRun, runId: id, ...idle };
     }
@@ -365,11 +474,18 @@ export async function runRefresh(): Promise<RunOutcome> {
 
     // Dry run stops here: the selection has been proved without spending.
     if (settings.dryRun) {
+      const estimate = Math.ceil(domains.length * unitCost);
       const reason =
         `Dry run: would refresh ${domains.length} domains in ` +
         `${Math.ceil(domains.length / batchSize)} batches ` +
-        `for ${domains.length * settings.unitsPerDomain} units`;
-      await finishRun(id, { status: 'completed', reason, batches: 0, units_spent: 0 });
+        `for about ${estimate} units`;
+      await finishRun(id, {
+        status: 'completed',
+        reason,
+        batches: 0,
+        units_spent: 0,
+        units_estimated: estimate,
+      });
       return { status: 'completed', reason, dryRun: true, runId: id, ...idle };
     }
 
@@ -377,20 +493,47 @@ export async function runRefresh(): Promise<RunOutcome> {
     let failed = 0;
     let batches = 0;
     let units = 0;
+    let estimated = 0;
     const now = new Date().toISOString();
 
     for (let offset = 0; offset < domains.length; offset += batchSize) {
+      const slice = domains.slice(offset, offset + batchSize);
+      const expected = Math.ceil(slice.length * unitCost);
+
       // Re-checked before every batch: the allowance shrinks as the run
       // spends it, and one check at the start would be a check of the past.
-      if (alreadySpent + units + costPerBatch > ceiling) break;
+      // `unitCost` is corrected from the previous batch's real cost, so a
+      // forecast that was wrong is only wrong once.
+      if (alreadySpent + units + expected > ceiling) break;
 
-      const slice = domains.slice(offset, offset + batchSize);
       const result = await batchAnalysis(slice.map((entry) => entry.domain));
 
-      // Ahrefs bills for every target sent, including ones it had no data
-      // for, so the cost is counted on the batch rather than on the hits.
       batches += 1;
-      units += slice.length * settings.unitsPerDomain;
+      estimated += expected;
+      // Ahrefs bills for every target sent, including ones it had no data
+      // for. Its reported cost is used where it gave one; the estimate is the
+      // fallback, so an unreported cost is never recorded as free.
+      const spent = result.unitsCost ?? expected;
+      units += spent;
+      if (result.unitsCost != null && slice.length > 0 && result.unitsCost > 0) {
+        unitCost = result.unitsCost / slice.length;
+      }
+
+      // Country codes for this batch, so an audience share is only ever
+      // written against the market the listing actually claims.
+      const { data: countryRows } = await supabase
+        .from('websites')
+        .select('id, country_code')
+        .in(
+          'id',
+          slice.map((entry) => entry.id),
+        );
+      const countryById = new Map(
+        ((countryRows ?? []) as { id: string; country_code: string }[]).map((row) => [
+          row.id,
+          row.country_code,
+        ]),
+      );
 
       for (const entry of slice) {
         const metrics = result.metrics.get(entry.domain);
@@ -407,6 +550,7 @@ export async function runRefresh(): Promise<RunOutcome> {
             domain_rating: metrics.domainRating,
             organic_traffic: metrics.organicTraffic,
             last_ahrefs_refresh_at: now,
+            ...audiencePatch(metrics, countryById.get(entry.id)),
           })
           .eq('id', entry.id);
 
@@ -415,18 +559,20 @@ export async function runRefresh(): Promise<RunOutcome> {
       }
     }
 
+    const reason = `Refreshed ${refreshed} of ${domains.length} due`;
     await finishRun(id, {
       status: 'completed',
       domains_refreshed: refreshed,
       domains_failed: failed,
       batches,
       units_spent: units,
-      reason: `Refreshed ${refreshed} of ${domains.length} due`,
+      units_estimated: estimated,
+      reason,
     });
 
     return {
       status: 'completed',
-      reason: `Refreshed ${refreshed} of ${domains.length} due`,
+      reason,
       domainsRefreshed: refreshed,
       domainsFailed: failed,
       batches,
@@ -444,4 +590,58 @@ export async function runRefresh(): Promise<RunOutcome> {
     await finishRun(id, { status: 'failed', error: message });
     return { status: 'failed', reason: message, dryRun: settings.dryRun, runId: id, ...idle };
   }
+}
+
+/**
+ * Ahrefs' own view of the allowance, or null.
+ *
+ * A cross-check, not a dependency: if Ahrefs cannot be reached the run carries
+ * on against the run history rather than refusing to work. Never throws, and
+ * never logs the token.
+ */
+async function readUsage(): Promise<AhrefsUsage | null> {
+  if (!isAhrefsConfigured()) return null;
+  try {
+    const usage = await subscriptionInfo();
+    return usage.unitsUsed == null ? null : usage;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Audience columns derived from the Ahrefs country breakdown.
+ *
+ * Shares are worked out from traffic rather than reported as percentages, so
+ * they cannot contradict the traffic figure beside them. The denominator is
+ * the larger of total organic traffic and the sum of the countries returned -
+ * the top three cannot add up to more than the whole.
+ *
+ * `top_country_share` is the share of the market the listing claims. When the
+ * breakdown came back and that market is not in it, the old figure is cleared
+ * rather than left standing: a listing that said "78% of the audience is based
+ * in the United Kingdom" with no measurable UK traffic is the exact claim this
+ * is meant to stop.
+ */
+function audiencePatch(
+  metrics: { organicTraffic: number; topCountries: { country: string; traffic: number }[] },
+  countryCode: string | undefined,
+): Record<string, unknown> {
+  if (metrics.topCountries.length === 0) return {};
+
+  const summed = metrics.topCountries.reduce((total, entry) => total + entry.traffic, 0);
+  const denominator = Math.max(metrics.organicTraffic, summed);
+  if (denominator <= 0) return {};
+
+  const split = metrics.topCountries.map((entry) => ({
+    country: entry.country,
+    share: Math.round((entry.traffic / denominator) * 100),
+    traffic: entry.traffic,
+  }));
+
+  const own = countryCode
+    ? split.find((entry) => entry.country === countryCode.toUpperCase())
+    : undefined;
+
+  return { audience_split: split, top_country_share: own?.share ?? null };
 }

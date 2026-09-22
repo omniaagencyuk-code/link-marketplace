@@ -19,15 +19,23 @@ export default async function RefreshPage() {
   const status = await refreshService.getStatus();
   const { settings } = status;
 
-  const ceiling = settings
-    ? Math.floor((settings.monthlyUnitBudget * settings.budgetSafetyPct) / 100)
-    : 0;
-  const spendPct =
-    settings && settings.monthlyUnitBudget > 0
-      ? Math.min(100, Math.round((status.unitsThisCycle / settings.monthlyUnitBudget) * 100))
-      : 0;
+  // The budget the guard will actually use. Ahrefs' own limit wins over the
+  // configured one, which is a fallback for when Ahrefs cannot be reached.
+  const budget = status.ahrefsUsage?.unitsLimit ?? settings?.monthlyUnitBudget ?? 0;
+
+  const ceiling = settings ? Math.floor((budget * settings.budgetSafetyPct) / 100) : 0;
+  // Spend is whichever figure the guard would trust: the account-wide reading
+  // when there is one, this job's own total when there is not.
+  const spend = status.ahrefsUsage?.unitsUsed ?? status.unitsThisCycle;
+  const spendPct = budget > 0 ? Math.min(100, Math.round((spend / budget) * 100)) : 0;
 
   const totalOverdue = status.overdue.reduce((sum, row) => sum + row.overdue, 0);
+  const totalDomains = status.overdue.reduce((sum, row) => sum + row.total, 0);
+
+  const projected = status.projectedMonthlyUnits;
+  const projectedPct = budget > 0 ? Math.round((projected / budget) * 100) : 0;
+  const projectionWarning =
+    settings != null && budget > 0 && projectedPct >= settings.projectionWarnPct;
 
   return (
     <>
@@ -50,6 +58,30 @@ export default async function RefreshPage() {
             ahrefsConfigured={status.ahrefsConfigured}
           />
 
+          {/* ------------------------------------------- spend projection */}
+          {projectionWarning ? (
+            <Card className="border-coral-300 bg-coral-50">
+              <CardContent className="flex gap-2.5 py-4">
+                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-coral-700" aria-hidden="true" />
+                <div className="text-[13px] leading-relaxed text-coral-900">
+                  <p className="font-semibold">
+                    These cadences would cost about {formatNumber(projected)} units a month -{' '}
+                    {projectedPct}% of the {formatNumber(budget)} available.
+                  </p>
+                  <p className="mt-1">
+                    Counted from the {formatNumber(totalDomains)} domains in the inventory today at{' '}
+                    {status.unitsPerDomainActual
+                      ? `${status.unitsPerDomainActual.toFixed(1)} units per domain, measured from live runs`
+                      : `${settings.unitsPerDomain} units per domain, estimated`}
+                    . Lengthen an interval or shrink tier 1 to bring it down; the guard will
+                    otherwise stop runs part-way through the month at{' '}
+                    {settings.budgetSafetyPct}%.
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+          ) : null}
+
           {/* ------------------------------------------------ this cycle */}
           <Card>
             <CardHeader className="flex flex-wrap items-center justify-between gap-3">
@@ -63,10 +95,10 @@ export default async function RefreshPage() {
             <CardContent>
               <div className="flex flex-wrap items-baseline gap-2">
                 <span className="tabular text-2xl font-semibold text-ink">
-                  {formatNumber(status.unitsThisCycle)}
+                  {formatNumber(spend)}
                 </span>
                 <span className="text-[13px] text-muted">
-                  of {formatNumber(settings.monthlyUnitBudget)} units ({spendPct}%)
+                  of {formatNumber(budget)} units ({spendPct}%)
                 </span>
               </div>
 
@@ -81,9 +113,31 @@ export default async function RefreshPage() {
 
               <p className="mt-2 text-[12px] text-muted">
                 The job stops at {settings.budgetSafetyPct}% of the budget, which is{' '}
-                {formatNumber(ceiling)} units. Counted from this job&rsquo;s own runs, not from the
-                whole Ahrefs account.
+                {formatNumber(ceiling)} units. This job&rsquo;s own runs account for{' '}
+                {formatNumber(status.unitsThisCycle)} of it.
               </p>
+
+              {/* The account is shared with everything else that uses the
+                  allowance, so the figure the guard trusts is Ahrefs' own. */}
+              {status.ahrefsUsage ? (
+                <p className="mt-2 text-[12px] text-muted">
+                  Ahrefs reported {formatNumber(status.ahrefsUsage.unitsUsed)} units used across the
+                  whole workspace
+                  {status.ahrefsUsage.unitsLimit
+                    ? ` of ${formatNumber(status.ahrefsUsage.unitsLimit)}`
+                    : ''}
+                  , read {formatDateTime(status.ahrefsUsage.observedAt)}
+                  {status.ahrefsUsage.usageResetAt
+                    ? `, resetting ${formatDateTime(status.ahrefsUsage.usageResetAt)}`
+                    : ''}
+                  . Runs use that figure in preference to this one.
+                </p>
+              ) : (
+                <p className="mt-2 text-[12px] text-muted">
+                  No live reading from Ahrefs yet. Runs cross-check against the account before
+                  spending, and record what they find here.
+                </p>
+              )}
             </CardContent>
           </Card>
 

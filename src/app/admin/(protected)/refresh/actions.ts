@@ -73,6 +73,7 @@ export async function saveRefreshSettingsAction(formData: FormData): Promise<Ref
         billingCycleDay: readNumber(formData, 'billingCycleDay'),
         batchSize: readNumber(formData, 'batchSize'),
         maxBatchesPerRun: readNumber(formData, 'maxBatchesPerRun'),
+        projectionWarnPct: readNumber(formData, 'projectionWarnPct'),
       },
       session.email,
     );

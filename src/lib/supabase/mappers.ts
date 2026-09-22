@@ -49,7 +49,7 @@ export interface WebsiteRow {
   traffic_trend: number[] | null;
   traffic_change_pct: number | string | null;
   top_country_share: number | null;
-  audience_split: { country: string; share: number }[] | null;
+  audience_split: { country: string; share: number; traffic?: number }[] | null;
   spam_score: number | null;
   min_word_count: number | null;
   max_word_count: number | null;
@@ -187,6 +187,7 @@ export function mapWebsite(row: WebsiteRow): Website {
       audienceSplit: (row.audience_split ?? []).map((entry) => ({
         country: entry.country as CountryCode,
         share: toNumber(entry.share),
+        ...(typeof entry.traffic === 'number' ? { traffic: entry.traffic } : {}),
       })),
       spamScore: toOptionalNumber(row.spam_score),
     },
