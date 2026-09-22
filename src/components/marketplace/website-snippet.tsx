@@ -8,6 +8,7 @@ import { AddToOrderButton } from './add-to-order-button';
 import { formatNumber, formatPrice, formatTurnaround } from '@/lib/utils/format';
 import { linkTypeLabels } from '@/lib/utils/labels';
 import { acceptedNicheLabel } from '@/lib/config/accepted-niches';
+import { groupNichePrices, pricedServices } from '@/lib/utils/pricing';
 import { cn } from '@/lib/utils/cn';
 import type { WebsiteListItem } from '@/lib/types';
 
@@ -48,17 +49,15 @@ export function WebsiteSnippet({
   // Only what is actually for sale at an actual price. A service with no price
   // set is not a free placement, it is an unanswered question, and listing it
   // at zero would read as the former.
-  const priced = website.services.filter(
-    (service) => service.available && service.priceMinor > 0,
-  );
+  const priced = pricedServices(website);
 
   // Only the niches this publisher actually prices differently. A niche with
   // no override is not cheaper, dearer or refused - it is simply the standard
-  // price, and a row saying so would be a row saying nothing.
-  // Grouped by niche rather than listed flat: a publisher who prices three
-  // placements across three regulated topics produces nine rows, and nine
-  // rows of "Crypto and web3 guest post" is a wall rather than a rate card.
-  const overrides = groupByNiche(website.nichePrices.filter((price) => price.priceMinor > 0));
+  // price, and a row saying so would be a row saying nothing. Grouped by niche
+  // rather than listed flat: three placements across three regulated topics
+  // is nine rows, and nine rows of "Crypto and web3 guest post" is a wall
+  // rather than a rate card.
+  const overrides = groupNichePrices(website.nichePrices);
   // The placement is worth naming only where there is more than one to
   // confuse it with.
   const nameThePlacement = priced.length > 1;
@@ -161,25 +160,6 @@ export function WebsiteSnippet({
       </div>
     </div>
   );
-}
-
-/** Overrides gathered per niche, biggest-priced niche first. */
-function groupByNiche(prices: WebsiteListItem['nichePrices']) {
-  const groups = new Map<string, WebsiteListItem['nichePrices']>();
-
-  for (const price of prices) {
-    const existing = groups.get(price.niche);
-    if (existing) existing.push(price);
-    else groups.set(price.niche, [price]);
-  }
-
-  return [...groups.entries()]
-    .map(([niche, group]) => ({
-      niche,
-      prices: [...group].sort((a, b) => b.priceMinor - a.priceMinor),
-      top: Math.max(...group.map((price) => price.priceMinor)),
-    }))
-    .sort((a, b) => b.top - a.top);
 }
 
 function PriceRow({ label, priceMinor }: { label: string; priceMinor: number }) {

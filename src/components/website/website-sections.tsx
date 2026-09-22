@@ -1,7 +1,9 @@
 import { Check, ExternalLink, X } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { countryName } from '@/lib/data/countries';
-import { formatDate, formatNumber, formatTurnaround } from '@/lib/utils/format';
+import { acceptedNicheLabel } from '@/lib/config/accepted-niches';
+import { rateCard } from '@/lib/utils/pricing';
+import { formatDate, formatNumber, formatPrice, formatTurnaround } from '@/lib/utils/format';
 import { languageLabels, linkTypeLabels, sponsoredTagLabels } from '@/lib/utils/labels';
 import { journeySteps } from '@/lib/config/how-it-works';
 import type { Website } from '@/lib/types';
@@ -16,6 +18,12 @@ export function WebsiteSections({ website }: { website: Website }) {
   const measured = metrics.audienceSplit.reduce<
     { country: (typeof metrics.audienceSplit)[number]['country']; share: number } | undefined
   >((best, entry) => (best && best.share >= entry.share ? best : entry), undefined);
+
+  // Only worth a section when the publisher actually prices a topic
+  // differently. Where they do not, every price on the page is the same one
+  // the order card already shows.
+  const prices = rateCard(website);
+  const hasPremiums = prices.rows.length > 1;
 
   const acceptance = [
     { label: 'Gambling content', allowed: rules.acceptsGambling },
@@ -163,6 +171,61 @@ export function WebsiteSections({ website }: { website: Website }) {
           ) : null}
         </div>
       </Section>
+
+      {hasPremiums ? (
+        <Section id="pricing" title="Pricing by Topic">
+          <p className="text-[14px] leading-relaxed text-ink-soft">
+            This publisher charges more for some topics than others. Every price below is what you
+            pay for that topic - the standard rate applies to anything not listed.
+          </p>
+
+          <div className="mt-4 overflow-x-auto">
+            <table className="w-full border-collapse text-sm">
+              <caption className="sr-only">
+                Price for each placement type by topic on {website.domain}
+              </caption>
+              <thead>
+                <tr>
+                  <th className="border-b border-line py-2 pr-4 text-left text-[11px] font-semibold tracking-wide text-muted uppercase">
+                    Topic
+                  </th>
+                  {prices.placements.map((type) => (
+                    <th
+                      key={type}
+                      className="border-b border-line px-3 py-2 text-right text-[11px] font-semibold tracking-wide text-muted uppercase"
+                    >
+                      {linkTypeLabels[type]}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {prices.rows.map((row) => (
+                  <tr key={row.niche ?? 'standard'}>
+                    <td className="border-b border-line py-2.5 pr-4 text-[13px] text-ink">
+                      {row.niche === null ? 'Standard rate' : acceptedNicheLabel(row.niche)}
+                    </td>
+                    {row.cells.map((cell) => (
+                      <td
+                        key={cell.linkType}
+                        className={
+                          // A premium is the number the reader is looking for;
+                          // an inherited standard price is context.
+                          cell.override
+                            ? 'tabular border-b border-line px-3 py-2.5 text-right text-[13px] font-semibold text-ink'
+                            : 'tabular border-b border-line px-3 py-2.5 text-right text-[13px] text-muted'
+                        }
+                      >
+                        {formatPrice(cell.priceMinor)}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Section>
+      ) : null}
 
       <Section id="examples" title="Example Placements">
         <ul className="divide-y divide-line">

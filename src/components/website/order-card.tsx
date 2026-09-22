@@ -7,6 +7,8 @@ import { Button } from '@/components/ui/button';
 import { FavouriteButton } from '@/components/marketplace/favourite-button';
 import { useOrderDraft } from '@/lib/providers/order-draft-provider';
 import { formatPrice, formatTurnaround } from '@/lib/utils/format';
+import { acceptedNicheLabel } from '@/lib/config/accepted-niches';
+import { overridesForType } from '@/lib/utils/pricing';
 import { linkTypeDescriptions, linkTypeLabels } from '@/lib/utils/labels';
 import { cn } from '@/lib/utils/cn';
 import type { Service, Website } from '@/lib/types';
@@ -25,6 +27,7 @@ export function OrderCard({ website }: { website: Website }) {
   const [added, setAdded] = useState(false);
 
   const selected = available.find((service) => service.id === serviceId) ?? available[0];
+  const premiums = selected ? overridesForType(website.nichePrices, selected.type) : [];
 
   function addToOrder() {
     if (!selected) return;
@@ -88,6 +91,32 @@ export function OrderCard({ website }: { website: Website }) {
           <span className="text-muted">{linkTypeLabels[selected.type]}</span>
           <span className="font-semibold text-ink">{formatPrice(selected.priceMinor)}</span>
         </div>
+
+        {/*
+          The premiums for the placement being bought, and only that one:
+          someone choosing a guest post is owed the guest post prices, not a
+          rate card for things they are not buying. Shown before the button
+          rather than after it, because the price of a gambling placement is
+          something to know before adding it, not after.
+        */}
+        {premiums.length > 0 ? (
+          <div className="border-t border-line pt-3">
+            <p className="text-[12px] text-muted">Priced differently for some topics</p>
+            <ul className="mt-1.5 space-y-1">
+              {premiums.map((price) => (
+                <li
+                  key={price.niche}
+                  className="tabular flex items-baseline justify-between gap-3 text-[13px]"
+                >
+                  <span className="text-ink-soft">{acceptedNicheLabel(price.niche)}</span>
+                  <span className="font-semibold whitespace-nowrap text-ink">
+                    {formatPrice(price.priceMinor)}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
 
         <Button type="button" variant="accent" size="lg" className="w-full" onClick={addToOrder}>
           <ShoppingBag className="h-4 w-4" />
