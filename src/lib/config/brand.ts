@@ -73,7 +73,7 @@ export const brand: BrandConfig = {
   description:
     'Buy high quality guest posts, niche edits and digital PR placements on 5,000+ manually vetted websites. Transparent metrics, fixed pricing and fast turnaround.',
   logo: { light: '/logo.svg', dark: '/logo-dark.svg', useInlineMark: true },
-  favicon: '/icon.svg',
+  favicon: '/icon.png',
   colours: {
     primary: '#0B1B2B',
     accent: '#10B981',
