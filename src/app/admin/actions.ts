@@ -10,6 +10,7 @@ import {
   legacyAcceptanceFlags,
 } from '@/lib/config/accepted-niches';
 import type {
+  NichePrice,
   LinkTypeSlug,
   NicheSlug,
   OrderStatus,
@@ -91,6 +92,37 @@ function buildServices(formData: FormData, websiteId: string, existing: Service[
     });
 }
 
+/**
+ * Price overrides, read back from the grid.
+ *
+ * Only for niches the publisher accepts and placements the site sells: a
+ * price for a niche that was just unticked is a price for something not on
+ * sale, and keeping it would quietly reappear the next time the niche was
+ * ticked. An empty box is absence, not zero - zero would publish the niche as
+ * free.
+ */
+function buildNichePrices(
+  formData: FormData,
+  acceptedNiches: string[],
+  services: Service[],
+): NichePrice[] {
+  const prices: NichePrice[] = [];
+
+  for (const niche of acceptedNiches) {
+    for (const service of services) {
+      const raw = formData.get(`nichePrice_${niche}_${service.type}`);
+      if (typeof raw !== 'string' || raw.trim() === '') continue;
+
+      const value = Number(raw);
+      if (!Number.isFinite(value) || value <= 0) continue;
+
+      prices.push({ niche, linkType: service.type, priceMinor: Math.round(value * 100) });
+    }
+  }
+
+  return prices;
+}
+
 function buildPatch(formData: FormData, websiteId: string, existing?: Website): Partial<Website> {
   const domain = readString(formData, 'domain');
 
@@ -106,6 +138,10 @@ function buildPatch(formData: FormData, websiteId: string, existing?: Website): 
     .split(',')
     .map((value) => value.trim())
     .filter(Boolean) as NicheSlug[];
+
+  // Built before the return so the niche prices can be keyed to what is
+  // actually on sale.
+  const services = buildServices(formData, websiteId, existing?.services ?? []);
 
   return {
     domain,
@@ -133,7 +169,8 @@ function buildPatch(formData: FormData, websiteId: string, existing?: Website): 
       trafficChangePct: readOptionalNumber(formData, 'trafficChangePct'),
       spamScore: readOptionalNumber(formData, 'spamScore'),
     } as Website['metrics'],
-    services: buildServices(formData, websiteId, existing?.services ?? []),
+    services,
+    nichePrices: buildNichePrices(formData, acceptedNiches, services),
     rules: {
       ...(existing?.rules ?? {
         acceptsGambling: false,

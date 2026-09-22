@@ -81,6 +81,6 @@ export function downloadCsv(fileName: string, contents: string) {
 export function buildTemplateCsv(): string {
   return toCsv(
     templateHeaders,
-    [templateHeaders.map((header) => templateExampleRow[header])],
+    [templateHeaders.map((header) => templateExampleRow[header] ?? '')],
   );
 }

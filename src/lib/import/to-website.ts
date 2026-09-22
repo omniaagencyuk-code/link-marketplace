@@ -1,8 +1,8 @@
 import { slugifyDomain } from '@/lib/utils/format';
 import { legacyAcceptanceFlags, matchAcceptedNiches } from '@/lib/config/accepted-niches';
-import type { ImportFieldKey } from './fields';
+import { nicheFromPriceFieldKey, type ImportFieldKey } from './fields';
 import type { RowValues } from './types';
-import type { LinkTypeSlug, Service, Website } from '@/lib/types';
+import type { LinkTypeSlug, NichePrice, Service, Website } from '@/lib/types';
 
 /**
  * Translate normalised CSV values into the existing website model.
@@ -97,7 +97,53 @@ export function toWebsitePatch(
     };
   }
 
+  // ----------------------------------------------------- prices by niche
+  const nichePriceKeys = supplied.filter((key) => nicheFromPriceFieldKey(key));
+  if (nichePriceKeys.length > 0) {
+    patch.nichePrices = buildNichePrices(values, nichePriceKeys, patch.services ?? existing?.services);
+  }
+
   return patch;
+}
+
+/**
+ * Niche price columns, attached to the placement the listing quotes.
+ *
+ * A rate card that says "gambling: 900" means 900 for the thing this site
+ * sells, which is a guest post nearly always and a niche edit on the sites
+ * that only do those. Rather than assume, this uses the same headline
+ * placement the marketplace already prices every row by. A site with nothing
+ * for sale gets no overrides - a price for a placement that does not exist
+ * would be a price nobody can buy.
+ *
+ * Replaces the whole set rather than merging: a file that lists niche prices
+ * is the rate card, and a premium left off it has been withdrawn.
+ */
+function buildNichePrices(
+  values: RowValues,
+  keys: ImportFieldKey[],
+  services: Service[] | undefined,
+): NichePrice[] {
+  const headline =
+    services?.find((service) => service.available && service.type === 'guest-post') ??
+    services?.find((service) => service.available) ??
+    services?.[0];
+
+  if (!headline) return [];
+
+  const prices: NichePrice[] = [];
+
+  for (const key of keys) {
+    const niche = nicheFromPriceFieldKey(key);
+    if (!niche) continue;
+
+    const major = values[key];
+    if (typeof major !== 'number' || !Number.isFinite(major) || major <= 0) continue;
+
+    prices.push({ niche, linkType: headline.type, priceMinor: Math.round(major * 100) });
+  }
+
+  return prices;
 }
 
 /**
@@ -236,6 +282,7 @@ export function newWebsiteDefaults(domain: string): Partial<Website> {
     language: 'en',
     metrics: emptyMetrics(),
     services: [],
+    nichePrices: [],
     rules: emptyRules(),
     verified: false,
     status: 'draft',

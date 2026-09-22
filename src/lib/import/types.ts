@@ -41,6 +41,11 @@ export interface RowValues {
   restricted_niches?: string[];
   notes?: string;
   status?: WebsiteStatus;
+  /**
+   * Price overrides, one key per niche column the file supplied. Major units,
+   * like every other price here.
+   */
+  [nichePrice: `niche_price_${string}`]: unknown;
 }
 
 export interface PreparedRow {

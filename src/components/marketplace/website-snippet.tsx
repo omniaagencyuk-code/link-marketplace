@@ -7,6 +7,7 @@ import { DomainRating } from '@/components/shared/metric';
 import { AddToOrderButton } from './add-to-order-button';
 import { formatNumber, formatPrice, formatTurnaround } from '@/lib/utils/format';
 import { linkTypeLabels } from '@/lib/utils/labels';
+import { acceptedNicheLabel } from '@/lib/config/accepted-niches';
 import { cn } from '@/lib/utils/cn';
 import type { WebsiteListItem } from '@/lib/types';
 
@@ -51,6 +52,17 @@ export function WebsiteSnippet({
     (service) => service.available && service.priceMinor > 0,
   );
 
+  // Only the niches this publisher actually prices differently. A niche with
+  // no override is not cheaper, dearer or refused - it is simply the standard
+  // price, and a row saying so would be a row saying nothing.
+  // Grouped by niche rather than listed flat: a publisher who prices three
+  // placements across three regulated topics produces nine rows, and nine
+  // rows of "Crypto and web3 guest post" is a wall rather than a rate card.
+  const overrides = groupByNiche(website.nichePrices.filter((price) => price.priceMinor > 0));
+  // The placement is worth naming only where there is more than one to
+  // confuse it with.
+  const nameThePlacement = priced.length > 1;
+
   return (
     <div
       id={id}
@@ -91,23 +103,49 @@ export function WebsiteSnippet({
       <div className={cn('space-y-4', full && 'lg:border-l lg:border-line lg:pl-5')}>
         <div>
           <h4 className="text-[11px] font-semibold tracking-[0.04em] text-muted uppercase">
-            Pricing
+            Pricing by niche
           </h4>
           {priced.length === 0 ? (
             <p className="mt-2 text-[13px] text-muted">No prices published for this site yet.</p>
           ) : (
-            <ul className="mt-2 space-y-1.5">
-              {priced.map((service) => (
-                <li key={service.id} className="flex items-baseline justify-between gap-3">
-                  <span className="text-[13px] text-ink-soft">
-                    {linkTypeLabels[service.type]}
-                  </span>
-                  <span className="tabular text-[14px] font-semibold text-ink">
-                    {formatPrice(service.priceMinor)}
-                  </span>
-                </li>
-              ))}
-            </ul>
+            <>
+              <ul className="mt-2 space-y-1.5">
+                {priced.map((service) => (
+                  <PriceRow
+                    key={service.id}
+                    label={linkTypeLabels[service.type]}
+                    priceMinor={service.priceMinor}
+                  />
+                ))}
+              </ul>
+
+              {overrides.length > 0 ? (
+                <div className="mt-2.5 space-y-2.5 border-t border-line pt-2.5">
+                  {overrides.map((group) => (
+                    <div key={group.niche}>
+                      {nameThePlacement ? (
+                        <p className="text-[11px] font-medium text-muted">
+                          {acceptedNicheLabel(group.niche)}
+                        </p>
+                      ) : null}
+                      <ul className={cn('space-y-1.5', nameThePlacement && 'mt-1')}>
+                        {group.prices.map((price) => (
+                          <PriceRow
+                            key={price.linkType}
+                            label={
+                              nameThePlacement
+                                ? linkTypeLabels[price.linkType]
+                                : acceptedNicheLabel(group.niche)
+                            }
+                            priceMinor={price.priceMinor}
+                          />
+                        ))}
+                      </ul>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+            </>
           )}
         </div>
 
@@ -122,6 +160,36 @@ export function WebsiteSnippet({
         </div>
       </div>
     </div>
+  );
+}
+
+/** Overrides gathered per niche, biggest-priced niche first. */
+function groupByNiche(prices: WebsiteListItem['nichePrices']) {
+  const groups = new Map<string, WebsiteListItem['nichePrices']>();
+
+  for (const price of prices) {
+    const existing = groups.get(price.niche);
+    if (existing) existing.push(price);
+    else groups.set(price.niche, [price]);
+  }
+
+  return [...groups.entries()]
+    .map(([niche, group]) => ({
+      niche,
+      prices: [...group].sort((a, b) => b.priceMinor - a.priceMinor),
+      top: Math.max(...group.map((price) => price.priceMinor)),
+    }))
+    .sort((a, b) => b.top - a.top);
+}
+
+function PriceRow({ label, priceMinor }: { label: string; priceMinor: number }) {
+  return (
+    <li className="flex items-baseline justify-between gap-3">
+      <span className="text-[13px] text-ink-soft">{label}</span>
+      <span className="tabular text-[14px] font-semibold whitespace-nowrap text-ink">
+        {formatPrice(priceMinor)}
+      </span>
+    </li>
   );
 }
 

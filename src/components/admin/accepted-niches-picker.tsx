@@ -15,7 +15,18 @@ import { acceptedNiches } from '@/lib/config/accepted-niches';
  * Submits one checkbox per niche, all under the same name, which the server
  * action reads with `getAll` and validates against the same list.
  */
-export function AcceptedNichesPicker({ selected }: { selected: string[] }) {
+export function AcceptedNichesPicker({
+  selected,
+  onChange,
+}: {
+  selected: string[];
+  /**
+   * Told to the form so the price grid can follow the ticks. The selection
+   * still lives here; this reports it rather than surrendering it, because
+   * nothing outside needs to set it.
+   */
+  onChange?: (niches: string[]) => void;
+}) {
   const [chosen, setChosen] = useState<Set<string>>(new Set(selected));
 
   function toggle(slug: string, on: boolean) {
@@ -23,6 +34,7 @@ export function AcceptedNichesPicker({ selected }: { selected: string[] }) {
       const next = new Set(current);
       if (on) next.add(slug);
       else next.delete(slug);
+      onChange?.([...next]);
       return next;
     });
   }

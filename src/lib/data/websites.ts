@@ -9,6 +9,7 @@ import type {
   CountryCode,
   LinkAttribute,
   LinkTypeSlug,
+  NichePrice,
   PublishingRules,
   Service,
   SponsoredTagPolicy,
@@ -192,6 +193,55 @@ function buildOverview(raw: RawWebsite) {
   ].join('\n\n');
 }
 
+/**
+ * Premiums on the regulated topics.
+ *
+ * Publishers who take gambling, CBD or adult work charge more for it, and the
+ * demo data would misrepresent the marketplace without that: a rate card
+ * where every niche costs the same is not one anybody in this trade would
+ * recognise. Seeded like everything else here, so the figures are stable
+ * between renders.
+ */
+function buildNichePrices(
+  services: Service[],
+  acceptedNiches: string[],
+  random: () => number,
+): NichePrice[] {
+  const premiums: Record<string, [number, number]> = {
+    gambling: [1.8, 2.6],
+    crypto: [1.4, 1.9],
+    cbd: [1.5, 2.1],
+    forex: [1.4, 2.0],
+    adult: [2.2, 3.0],
+    vaping: [1.6, 2.2],
+    dating: [1.3, 1.7],
+    pharma: [1.7, 2.3],
+  };
+
+  const prices: NichePrice[] = [];
+
+  for (const niche of acceptedNiches) {
+    const band = premiums[niche];
+    if (!band) continue;
+    // Not every publisher prices every regulated topic separately.
+    if (random() < 0.25) continue;
+
+    const [low, high] = band;
+    const multiplier = low + random() * (high - low);
+
+    for (const service of services) {
+      if (!service.available) continue;
+      prices.push({
+        niche,
+        linkType: service.type,
+        priceMinor: round(service.priceMinor * multiplier, 500),
+      });
+    }
+  }
+
+  return prices;
+}
+
 function buildWebsite(raw: RawWebsite, index: number): Website {
   const random = mulberry32(index * 7919 + raw.dr * 31 + raw.d.length);
   const id = `web_${String(index + 1).padStart(3, '0')}`;
@@ -220,6 +270,9 @@ function buildWebsite(raw: RawWebsite, index: number): Website {
     Date.UTC(2026, 8, 1) - Math.floor(random() * 40) * 86_400_000,
   ).toISOString();
 
+  const services = buildServices(raw, id, random);
+  const rules = buildRules(raw, random);
+
   return {
     id,
     slug: slugifyDomain(raw.d),
@@ -232,8 +285,9 @@ function buildWebsite(raw: RawWebsite, index: number): Website {
     country: raw.c,
     language: raw.l,
     metrics,
-    services: buildServices(raw, id, random),
-    rules: buildRules(raw, random),
+    services,
+    nichePrices: buildNichePrices(services, rules.acceptedNiches, random),
+    rules,
     verified: random() > 0.12,
     status,
     rating: Number((4.1 + random() * 0.9).toFixed(1)),

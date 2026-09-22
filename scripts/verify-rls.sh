@@ -66,3 +66,6 @@ run -f "$ROOT/supabase/tests/06_payments.sql" 2>&1 | grep -v '^$'
 echo
 echo "--- ahrefs refresh: tiering, overdue, budget and run locking ---"
 run -f "$ROOT/supabase/tests/07_ahrefs_refresh.sql" 2>&1 | grep -v '^$'
+echo
+echo "--- prices by niche ---"
+run -f "$ROOT/supabase/tests/08_niche_prices.sql" 2>&1 | grep -v '^$'

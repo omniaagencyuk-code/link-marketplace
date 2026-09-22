@@ -12,7 +12,14 @@ import { normaliseDomain } from '@/lib/import/normalise';
 import { newWebsiteDefaults, toWebsitePatch } from '@/lib/import/to-website';
 import { slugifyDomain } from '@/lib/utils/format';
 import type { ImportBatchResult, ImportPayloadRow, DuplicateMode } from '@/lib/import/types';
-import type { NicheSlug, Service, Website, WebsiteListItem, WebsiteStatus } from '@/lib/types';
+import type {
+  NichePrice,
+  NicheSlug,
+  Service,
+  Website,
+  WebsiteListItem,
+  WebsiteStatus,
+} from '@/lib/types';
 
 /**
  * Websites, backed by Supabase.
@@ -155,6 +162,44 @@ async function syncServices(
   if (costRows.length) {
     await supabase.from('service_costs').upsert(costRows, { onConflict: 'service_id' });
   }
+}
+
+/**
+ * Price overrides, replaced wholesale.
+ *
+ * Deleting first is what makes removal work: an upsert alone would leave a
+ * row for a niche the publisher no longer prices differently, and the listing
+ * would go on quoting a premium nobody agreed to. A handful of rows per site
+ * makes a diff more code than it is worth.
+ */
+async function syncNichePrices(
+  supabase: Client,
+  websiteId: string,
+  prices: NichePrice[] | undefined,
+  updatedBy?: string,
+) {
+  // An update that does not mention them must not clear them.
+  if (prices === undefined) return;
+
+  await supabase.from('website_niche_prices').delete().eq('website_id', websiteId);
+
+  const rows = prices
+    .filter((price) => price.priceMinor > 0)
+    .map((price) => ({
+      website_id: websiteId,
+      niche: price.niche,
+      link_type: price.linkType,
+      price_minor: Math.round(price.priceMinor),
+      updated_by: updatedBy ?? null,
+    }));
+
+  if (rows.length === 0) return;
+
+  const { error } = await supabase
+    .from('website_niche_prices')
+    .upsert(rows, { onConflict: 'website_id,niche,link_type' });
+
+  if (error) throw new Error(`Failed to save niche prices: ${error.message}`);
 }
 
 export const supabaseWebsiteRepository = {
@@ -365,6 +410,7 @@ export const supabaseWebsiteRepository = {
     const created = mapWebsite(data as unknown as WebsiteRow);
     await syncCategories(supabase, created.id, input.niche, input.secondaryNiches);
     await syncServices(supabase, created.id, input.services);
+    await syncNichePrices(supabase, created.id, input.nichePrices);
 
     return (await supabaseWebsiteRepository.getById(created.id)) ?? created;
   },
@@ -382,6 +428,7 @@ export const supabaseWebsiteRepository = {
 
     await syncCategories(supabase, id, patch.niche, patch.secondaryNiches);
     await syncServices(supabase, id, patch.services);
+    await syncNichePrices(supabase, id, patch.nichePrices);
 
     // Re-read rather than trusting the update's return value: the services and
     // categories were written after it, so it would be a stale picture.

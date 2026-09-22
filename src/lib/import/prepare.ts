@@ -1,4 +1,4 @@
-import { importFieldByKey, type ImportFieldKey } from './fields';
+import { importFieldByKey, nicheFromPriceFieldKey, type ImportFieldKey } from './fields';
 import type { ColumnMapping } from './auto-map';
 import {
   isValidDomain,
@@ -195,6 +195,30 @@ function prepareValues(
     if (parsed.currency && parsed.currency !== options.currency && !declaredCurrency) {
       note(key, `Price appears to be in ${parsed.currency}, marketplace uses ${options.currency}`, 'warning');
     }
+  }
+
+  // ----------------------------------------------------- prices by niche
+  // Parsed exactly like any other price, and only for columns the admin
+  // actually mapped - an unmapped niche is not a niche priced at zero.
+  for (const mapping of mappings) {
+    const niche = mapping.field ? nicheFromPriceFieldKey(mapping.field) : null;
+    if (!niche || !mapping.field) continue;
+
+    const value = cell(mapping.field);
+    if (!value) continue;
+
+    const parsed = parsePrice(value);
+    if (parsed === null) {
+      note(mapping.field, `Invalid ${niche} price "${sanitiseText(value, 40)}"`, 'error');
+      continue;
+    }
+    if (parsed.amount <= 0 || parsed.amount > limits.price) {
+      note(mapping.field, `${niche} price out of range: ${parsed.amount}`, 'error');
+      continue;
+    }
+
+    (values as Record<string, unknown>)[mapping.field] = parsed.amount;
+    supplied.push(mapping.field);
   }
 
   // A cost above the sell price loses money on every order. It is occasionally

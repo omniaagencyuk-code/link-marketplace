@@ -4,7 +4,12 @@ import { AlertCircle, ArrowRight, Check } from 'lucide-react';
 import { Select } from '@/components/ui/select';
 import { Table, TableWrap, Td, Th, Tr } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
-import { importFields, type ImportFieldKey } from '@/lib/import/fields';
+import {
+  importFields,
+  nicheFromPriceFieldKey,
+  type ImportField,
+  type ImportFieldKey,
+} from '@/lib/import/fields';
 import type { ColumnMapping } from '@/lib/import/auto-map';
 
 /** Step 2: confirm where each CSV column lands. */
@@ -78,16 +83,25 @@ export function ColumnMapper({
                     }
                   >
                     <option value="">Ignore this column</option>
-                    {importFields.map((field) => (
-                      <option
+                    {/* The niche prices are two dozen entries that all end in
+                        "price", so they are penned in rather than left to pad
+                        out a list someone has to read to the bottom of. */}
+                    {standardFields.map((field) => (
+                      <FieldOption
                         key={field.key}
-                        value={field.key}
-                        disabled={taken.has(field.key) && mapping.field !== field.key}
-                      >
-                        {field.label}
-                        {field.required ? ' (required)' : ''}
-                      </option>
+                        field={field}
+                        taken={taken.has(field.key) && mapping.field !== field.key}
+                      />
                     ))}
+                    <optgroup label="Prices by niche">
+                      {nichePriceFields.map((field) => (
+                        <FieldOption
+                          key={field.key}
+                          field={field}
+                          taken={taken.has(field.key) && mapping.field !== field.key}
+                        />
+                      ))}
+                    </optgroup>
                   </Select>
                 </Td>
                 <Td className="max-w-56 truncate text-[12px] text-muted">
@@ -99,5 +113,17 @@ export function ColumnMapper({
         </Table>
       </TableWrap>
     </div>
+  );
+}
+
+const standardFields = importFields.filter((field) => !nicheFromPriceFieldKey(field.key));
+const nichePriceFields = importFields.filter((field) => nicheFromPriceFieldKey(field.key));
+
+function FieldOption({ field, taken }: { field: ImportField; taken: boolean }) {
+  return (
+    <option value={field.key} disabled={taken}>
+      {field.label}
+      {field.required ? ' (required)' : ''}
+    </option>
   );
 }

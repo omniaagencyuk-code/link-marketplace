@@ -7,6 +7,7 @@ import type {
   ContentOrderItem,
   CountryCode,
   LanguageCode,
+  LinkTypeSlug,
   NicheSlug,
   Order,
   OrderItem,
@@ -50,6 +51,7 @@ export interface WebsiteRow {
   traffic_change_pct: number | string | null;
   top_country_share: number | null;
   audience_split: { country: string; share: number; traffic?: number }[] | null;
+  website_niche_prices?: { niche: string; link_type: LinkTypeSlug; price_minor: number }[] | null;
   spam_score: number | null;
   min_word_count: number | null;
   max_word_count: number | null;
@@ -98,7 +100,8 @@ export const WEBSITE_SELECT = `
   *,
   primary_category:categories!websites_primary_category_id_fkey (slug),
   website_categories (categories (slug)),
-  services (*)
+  services (*),
+  website_niche_prices (niche, link_type, price_minor)
 `;
 
 /**
@@ -114,7 +117,8 @@ export const WEBSITE_SELECT_ADMIN = `
   *,
   primary_category:categories!websites_primary_category_id_fkey (slug),
   website_categories (categories (slug)),
-  services (*, service_costs (cost_price_minor))
+  services (*, service_costs (cost_price_minor)),
+  website_niche_prices (niche, link_type, price_minor)
 `;
 
 /** Null stays undefined: "not measured" must not become a measurement of 0. */
@@ -192,6 +196,16 @@ export function mapWebsite(row: WebsiteRow): Website {
       spamScore: toOptionalNumber(row.spam_score),
     },
     services: (row.services ?? []).map(mapService),
+    // Biggest first, so the listing leads with the price a buyer in a
+    // regulated niche is actually looking for.
+    nichePrices: (row.website_niche_prices ?? [])
+      .map((entry) => ({
+        niche: entry.niche,
+        linkType: entry.link_type,
+        priceMinor: toNumber(entry.price_minor),
+      }))
+      .filter((entry) => entry.priceMinor > 0)
+      .sort((a, b) => b.priceMinor - a.priceMinor),
     rules: {
       minWordCount: toNumber(row.min_word_count, 800),
       maxWordCount: toNumber(row.max_word_count, 2000),

@@ -107,5 +107,57 @@ check('a price-only update keeps the recorded cost',
 check('a price-only update still changes the price',
   updated.services?.find((s) => s.type === 'guest-post')?.priceMinor, 35000);
 
+// ----------------------------------------------------- prices by niche
+const nicheHeaders = ['Domain', 'Guest Post Price', 'Gambling Price', 'crypto price', 'CBD Price'];
+const nicheMappings = autoMapColumns(nicheHeaders);
+check('a niche price column is auto-mapped',
+  nicheMappings.find((m) => m.header === 'Gambling Price')?.field, 'niche_price_gambling');
+check('a niche price column matches by slug too',
+  nicheMappings.find((m) => m.header === 'crypto price')?.field, 'niche_price_crypto');
+
+const nicheRow = prepareRows(
+  [{
+    Domain: 'premiums.com',
+    'Guest Post Price': '300',
+    'Gambling Price': '900',
+    'crypto price': '£450',
+    'CBD Price': '',
+  }],
+  nicheMappings,
+  { currency: 'GBP', existingDomains: new Map() },
+)[0]!;
+
+check('niche price row has no errors', nicheRow.issues.filter((i) => i.severity === 'error'), []);
+
+const nichePatch = toWebsitePatch(nicheRow.values, nicheRow.supplied);
+const byNiche = new Map((nichePatch.nichePrices ?? []).map((p) => [p.niche, p]));
+
+check('gambling override is stored in minor units', byNiche.get('gambling')?.priceMinor, 90000);
+check('a currency symbol is parsed off', byNiche.get('crypto')?.priceMinor, 45000);
+check('an empty niche column is not a price', byNiche.has('cbd'), false);
+check('the override attaches to the placement on sale',
+  byNiche.get('gambling')?.linkType, 'guest-post');
+check('the standard price is untouched',
+  nichePatch.services?.find((s) => s.type === 'guest-post')?.priceMinor, 30000);
+
+// A site that only sells niche edits: the premium belongs to what it sells.
+const editOnly = prepareRows(
+  [{ Domain: 'editsonly.com', 'Niche Edit Price': '150', 'Gambling Price': '400' }],
+  autoMapColumns(['Domain', 'Niche Edit Price', 'Gambling Price']),
+  { currency: 'GBP', existingDomains: new Map() },
+)[0]!;
+const editPatch = toWebsitePatch(editOnly.values, editOnly.supplied);
+check('a niche-edit-only site prices the niche edit',
+  editPatch.nichePrices?.[0]?.linkType, 'niche-edit');
+
+// A file with no niche columns must not clear the overrides already stored.
+const noNiches = prepareRows(
+  [{ Domain: 'premiums.com', 'Guest Post Price': '320' }],
+  autoMapColumns(['Domain', 'Guest Post Price']),
+  { currency: 'GBP', existingDomains: new Map() },
+)[0]!;
+check('a file without niche columns leaves overrides alone',
+  toWebsitePatch(noNiches.values, noNiches.supplied).nichePrices, undefined);
+
 console.log(failures ? `\n${failures} FAILED` : '\nall passed');
 process.exit(failures ? 1 : 0);

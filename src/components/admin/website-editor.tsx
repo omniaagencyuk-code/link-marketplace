@@ -14,6 +14,7 @@ import { countries } from '@/lib/data/countries';
 import { languageLabels } from '@/lib/utils/labels';
 import { isSupabaseEnabled } from '@/lib/supabase/config';
 import { AcceptedNichesPicker } from './accepted-niches-picker';
+import { WebsiteNichePricesEditor } from './website-niche-prices-editor';
 import {
   SERVICE_TYPES,
   WebsiteServicesEditor,
@@ -59,6 +60,12 @@ export function WebsiteEditor({
     if (website) return new Set(website.services.map((service) => service.type));
     return new Set<LinkTypeSlug>(['guest-post']);
   });
+
+  // Mirrored here so the price grid can show a row per ticked niche. The
+  // picker still owns the selection and still submits it.
+  const [acceptedNiches, setAcceptedNiches] = useState<string[]>(
+    () => website?.rules.acceptedNiches ?? [],
+  );
 
   function toggleType(type: LinkTypeSlug, on: boolean) {
     setSelectedTypes((current) => {
@@ -270,7 +277,24 @@ export function WebsiteEditor({
           <CardTitle>Accepted niches</CardTitle>
         </CardHeader>
         <CardContent>
-          <AcceptedNichesPicker selected={website?.rules.acceptedNiches ?? []} />
+          <AcceptedNichesPicker
+            selected={website?.rules.acceptedNiches ?? []}
+            onChange={setAcceptedNiches}
+          />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Pricing by niche</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <WebsiteNichePricesEditor
+            website={website}
+            niches={acceptedNiches}
+            types={selectedTypes}
+            currency={currency}
+          />
         </CardContent>
       </Card>
 

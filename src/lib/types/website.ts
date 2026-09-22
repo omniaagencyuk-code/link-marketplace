@@ -40,6 +40,21 @@ export interface Service {
   costPriceMinor?: number;
 }
 
+/**
+ * A price for one niche on one placement type.
+ *
+ * An override, not a complete rate card: a niche with no entry is not free
+ * and not refused, it simply costs what the service costs. Regulated topics
+ * are where this earns its keep - the same publisher takes a technology guest
+ * post at the list price and wants twice that for gambling.
+ */
+export interface NichePrice {
+  /** A slug from `lib/config/accepted-niches`. */
+  niche: AcceptedNicheSlug;
+  linkType: LinkTypeSlug;
+  priceMinor: number;
+}
+
 /** Editorial rules a buyer needs to know before ordering. */
 export interface PublishingRules {
   minWordCount: number;
@@ -121,6 +136,8 @@ export interface Website {
   language: LanguageCode;
   metrics: WebsiteMetrics;
   services: Service[];
+  /** Price overrides per niche. Empty means the service prices stand. */
+  nichePrices: NichePrice[];
   rules: PublishingRules;
   /** Manually vetted by the in-house editorial team. */
   verified: boolean;

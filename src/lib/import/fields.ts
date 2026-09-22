@@ -1,3 +1,4 @@
+import { acceptedNiches } from '@/lib/config/accepted-niches';
 import type { NicheSlug } from '@/lib/types';
 
 /**
@@ -37,7 +38,27 @@ export type ImportFieldKey =
   | 'accepted_niches'
   | 'restricted_niches'
   | 'notes'
-  | 'status';
+  | 'status'
+  | NichePriceFieldKey;
+
+/**
+ * A price override column, one per niche.
+ *
+ * Generated from the shared niche list rather than written out, so adding a
+ * niche to that list adds its column here too. The column sets the price for
+ * the site's headline placement - guest post where it sells one, otherwise
+ * whatever it does sell - because that is the number the marketplace quotes
+ * and the one a publisher's rate card means by "gambling: 900".
+ */
+export type NichePriceFieldKey = `niche_price_${string}`;
+
+export function nichePriceFieldKey(niche: string): NichePriceFieldKey {
+  return `niche_price_${niche}`;
+}
+
+export function nicheFromPriceFieldKey(key: string): string | null {
+  return key.startsWith('niche_price_') ? key.slice('niche_price_'.length) : null;
+}
 
 export type ImportFieldType = 'text' | 'number' | 'price' | 'boolean' | 'list' | 'enum';
 
@@ -50,6 +71,20 @@ export interface ImportField {
   aliases: string[];
   hint?: string;
 }
+
+const nichePriceFields: ImportField[] = acceptedNiches.map((niche) => ({
+  key: nichePriceFieldKey(niche.slug),
+  label: `${niche.label} price`,
+  type: 'price',
+  aliases: [
+    `${niche.slug} price`,
+    `${niche.label.toLowerCase()} price`,
+    `${niche.slug} guest post price`,
+    `${niche.label.toLowerCase()} guest post price`,
+    `price ${niche.slug}`,
+  ],
+  hint: `Charged instead of the standard price for ${niche.label.toLowerCase()} content.`,
+}));
 
 export const importFields: ImportField[] = [
   {
@@ -264,17 +299,35 @@ export const importFields: ImportField[] = [
     aliases: ['status', 'state', 'listing status', 'active'],
     hint: 'draft, active, paused or archived. Defaults to draft.',
   },
+  ...nichePriceFields,
 ];
 
 export const importFieldByKey = new Map<ImportFieldKey, ImportField>(
   importFields.map((field) => [field.key, field]),
 );
 
-/** Header order used by the downloadable template. */
-export const templateHeaders: ImportFieldKey[] = importFields.map((field) => field.key);
+/**
+ * Header order used by the downloadable template.
+ *
+ * Deliberately not every field: a column for each of the two dozen niches
+ * would make the template unreadable and imply that all of them need a price.
+ * The regulated three are the ones publishers routinely quote separately, and
+ * the importer recognises the rest by header whether or not the template
+ * mentions them.
+ */
+const templateNichePrices: ImportFieldKey[] = [
+  nichePriceFieldKey('gambling'),
+  nichePriceFieldKey('crypto'),
+  nichePriceFieldKey('cbd'),
+];
+
+export const templateHeaders: ImportFieldKey[] = [
+  ...importFields.filter((field) => !nicheFromPriceFieldKey(field.key)).map((field) => field.key),
+  ...templateNichePrices,
+];
 
 /** Example row shipped in the template, so the expected formats are obvious. */
-export const templateExampleRow: Record<ImportFieldKey, string> = {
+export const templateExampleRow: Partial<Record<ImportFieldKey, string>> = {
   domain: 'example-publication.co.uk',
   website_name: 'Example Publication',
   description: 'Independent UK publication covering personal finance.',
@@ -305,6 +358,9 @@ export const templateExampleRow: Record<ImportFieldKey, string> = {
   restricted_niches: 'Adult|Gambling',
   notes: 'Editor prefers data-led pitches.',
   status: 'active',
+  [nichePriceFieldKey('gambling')]: '650',
+  [nichePriceFieldKey('crypto')]: '340',
+  [nichePriceFieldKey('cbd')]: '',
 };
 
 /** Niche labels accepted in `primary_niche`, mapped to marketplace slugs. */
