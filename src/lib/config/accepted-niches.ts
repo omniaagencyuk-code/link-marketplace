@@ -18,6 +18,14 @@ export interface AcceptedNiche {
   /** Subject to advertising rules, or commonly refused. */
   regulated?: boolean;
   /**
+   * Priced as a "sensitive topic" by publishers.
+   *
+   * Narrower than `regulated`, and deliberately so: when a publisher quotes a
+   * single rate for "sensitive niches" they mean these seven, and extending
+   * that rate to Finance or Pharma would invent a price they never gave.
+   */
+  sensitive?: boolean;
+  /**
    * The legacy boolean this drives, where one exists. Listing pages and
    * filters still read these, so writes keep them in step.
    */
@@ -41,17 +49,33 @@ export const acceptedNiches: AcceptedNiche[] = [
   { slug: 'real-estate', label: 'Real estate' },
   { slug: 'legal', label: 'Legal' },
   { slug: 'finance', label: 'Finance', regulated: true, legacyKey: 'acceptsFinance' },
-  { slug: 'crypto', label: 'Crypto and web3', regulated: true, legacyKey: 'acceptsCrypto' },
-  { slug: 'gambling', label: 'Gambling and iGaming', regulated: true, legacyKey: 'acceptsGambling' },
-  { slug: 'cbd', label: 'CBD and cannabis', regulated: true, legacyKey: 'acceptsCbd' },
-  { slug: 'adult', label: 'Adult', regulated: true, legacyKey: 'acceptsAdult' },
-  { slug: 'forex', label: 'Forex and trading', regulated: true },
-  { slug: 'dating', label: 'Dating', regulated: true },
+  { slug: 'crypto', label: 'Crypto and web3', regulated: true, sensitive: true, legacyKey: 'acceptsCrypto' },
+  { slug: 'gambling', label: 'Gambling and iGaming', regulated: true, sensitive: true, legacyKey: 'acceptsGambling' },
+  { slug: 'cbd', label: 'CBD and cannabis', regulated: true, sensitive: true, legacyKey: 'acceptsCbd' },
+  { slug: 'adult', label: 'Adult', regulated: true, sensitive: true, legacyKey: 'acceptsAdult' },
+  { slug: 'forex', label: 'Forex and trading', regulated: true, sensitive: true },
+  { slug: 'dating', label: 'Dating', regulated: true, sensitive: true },
+  { slug: 'loan', label: 'Loans and credit', regulated: true, sensitive: true },
   { slug: 'vaping', label: 'Vaping', regulated: true },
   { slug: 'pharma', label: 'Pharmaceutical', regulated: true },
 ];
 
 export const acceptedNicheSlugs = acceptedNiches.map((niche) => niche.slug);
+
+/**
+ * The topics a "sensitive niche" rate covers.
+ *
+ * Publishers quote one number for "sensitive topics" far more often than they
+ * itemise. This is the list that phrase buys, and nothing outside it: a
+ * publisher who says "sensitive niches 200 EUR" has priced these seven and
+ * said nothing at all about Finance, Vaping or Pharma.
+ */
+export const sensitiveNicheSlugs = acceptedNiches
+  .filter((niche) => niche.sensitive)
+  .map((niche) => niche.slug);
+
+/** The catch-all topic. Everything not in `sensitiveNicheSlugs` prices as this. */
+export const GENERAL_NICHE = 'general';
 
 const bySlug = new Map(acceptedNiches.map((niche) => [niche.slug, niche]));
 

@@ -363,3 +363,72 @@ exception
   when duplicate_object then null;
 end;
 $$;
+
+-- ------------------------------------------------------- extraction batches --
+-- The Batch API is asynchronous: a run is submitted, an id comes back, and
+-- the results arrive later. That id has to live somewhere, or a submitted
+-- batch is money spent with nothing to collect it against.
+--
+-- Real-time runs get a row too, with no provider id. One table means the
+-- admin page shows "what did we extract, when, at what cost" the same way
+-- whichever mode produced it.
+create table if not exists public.extraction_batches (
+  id uuid primary key default gen_random_uuid(),
+  -- Null for a real-time run: there is no batch to collect.
+  provider_batch_id text unique,
+  mode text not null check (mode in ('realtime', 'batch')),
+  model text not null,
+  prompt_version text not null,
+
+  status text not null default 'submitted'
+    check (status in ('submitted', 'running', 'completed', 'failed', 'cancelled')),
+  status_reason text,
+
+  email_count smallint not null default 0,
+  succeeded_count smallint not null default 0,
+  failed_count smallint not null default 0,
+
+  -- What it actually cost, read back from the response rather than assumed.
+  input_tokens integer,
+  output_tokens integer,
+
+  submitted_by text,
+  created_at timestamptz not null default timezone('utc', now()),
+  completed_at timestamptz,
+  updated_at timestamptz not null default timezone('utc', now())
+);
+
+alter table public.extraction_batches enable row level security;
+
+do $$
+begin
+  create policy "Admins manage extraction batches"
+    on public.extraction_batches for all
+    using (public.is_admin()) with check (public.is_admin());
+exception
+  when duplicate_object then null;
+end;
+$$;
+
+do $$
+begin
+  create trigger extraction_batches_set_updated_at
+    before update on public.extraction_batches
+    for each row execute function public.set_updated_at();
+exception
+  when duplicate_object then null;
+end;
+$$;
+
+alter table public.inbound_emails
+  add column if not exists batch_id uuid references public.extraction_batches (id) on delete set null;
+
+create index if not exists inbound_emails_batch_idx on public.inbound_emails (batch_id);
+
+-- Things the reviewer needs telling that are not field values: "one price,
+-- no niches named", "offered a different site than the one we asked about".
+alter table public.listing_drafts
+  add column if not exists flags text[] not null default '{}';
+
+comment on column public.listing_drafts.flags is
+  'Reviewer prompts, e.g. single-price-confirm-niches. Not field data - things a human must decide.';
