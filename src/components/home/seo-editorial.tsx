@@ -1,5 +1,5 @@
 import { Container } from '@/components/layout/container';
-import { Markdown } from '@/lib/cms/markdown';
+import { RichText, type RichTextValue } from '@/lib/cms/rich-text-render';
 import type { ContentAccessors } from '@/lib/cms/resolve';
 
 /**
@@ -11,7 +11,7 @@ import type { ContentAccessors } from '@/lib/cms/resolve';
  * pages, so they are worth an editor's attention.
  */
 export function SeoEditorial({ content }: { content: ContentAccessors }) {
-  const articles = content.list<{ id: string; heading: string; content: string }>(
+  const articles = content.list<{ id: string; heading: string; content: RichTextValue }>(
     'editorial',
     'articles',
   );
@@ -58,7 +58,7 @@ export function SeoEditorial({ content }: { content: ContentAccessors }) {
                   {article.heading}
                 </h3>
                 <div className="mt-4">
-                  <Markdown source={article.content} />
+                  <RichText source={article.content} />
                 </div>
               </article>
             ))}

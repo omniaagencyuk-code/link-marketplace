@@ -9,6 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { FieldInput } from './field-input';
 import { savePageContentAction, resetPageContentAction } from '@/app/admin/(protected)/pages/actions';
 import { cn } from '@/lib/utils/cn';
+import { formatDateTime } from '@/lib/utils/format';
 import type { FieldValue, PageDef, PageValues } from '@/lib/cms/types';
 
 /**
@@ -23,11 +24,16 @@ export function PageEditor({
   definition,
   defaults,
   saved,
+  updatedAt,
+  updatedBy,
 }: {
   definition: PageDef;
   defaults: PageValues;
   /** Existing overrides, or an empty object for an untouched page. */
   saved: PageValues;
+  /** When this page's copy was last saved, if it ever has been. */
+  updatedAt?: string;
+  updatedBy?: string;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -44,6 +50,7 @@ export function PageEditor({
   const [activeSection, setActiveSection] = useState(definition.sections[0]?.key ?? '');
 
   const dirty = JSON.stringify(values) !== JSON.stringify(initial);
+  const edited = Object.keys(saved).length > 0;
   const differsFromDefaults = JSON.stringify(values) !== JSON.stringify(
     mergeForEditing(definition, defaults, {}),
   );
@@ -80,6 +87,73 @@ export function PageEditor({
   }
 
   return (
+    <>
+      {/* ------------------------------------------------- page summary --
+          What an editor wants to know before they start typing: what this is,
+          where it lives, whether anyone has touched it, and how to look at it.
+          Deliberately a strip rather than a toolbar - the save control stays
+          beside the sections, where the work is. */}
+      <div className="mb-5 rounded-[var(--radius-card)] border border-line bg-white px-5 py-4 shadow-[var(--shadow-card)]">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <h2 className="text-[15px] font-semibold text-ink">{definition.label}</h2>
+              <span
+                className={cn(
+                  'rounded-full px-2 py-0.5 text-[10px] font-semibold tracking-wide uppercase',
+                  edited
+                    ? 'bg-accent-50 text-accent-800'
+                    : 'bg-surface-sunken text-muted',
+                )}
+              >
+                {edited ? 'Edited' : 'Shipped copy'}
+              </span>
+            </div>
+            <p className="mt-1 font-mono text-[12px] text-muted">{definition.path}</p>
+          </div>
+
+          <dl className="flex flex-wrap items-center gap-x-6 gap-y-1 text-[12px]">
+            <div>
+              <dt className="inline text-muted">Last updated </dt>
+              <dd className="inline font-medium text-ink-soft">
+                {updatedAt ? formatDateTime(updatedAt) : 'Never'}
+              </dd>
+            </div>
+            {updatedBy ? (
+              <div>
+                <dt className="inline text-muted">By </dt>
+                <dd className="inline font-medium text-ink-soft">{updatedBy}</dd>
+              </div>
+            ) : null}
+            <div>
+              <dt className="inline text-muted">Sections </dt>
+              <dd className="inline font-medium text-ink-soft">{definition.sections.length}</dd>
+            </div>
+          </dl>
+        </div>
+
+        {definition.tokens?.length ? (
+          /* The live figures this page can resolve. Listed here because a
+             token only works where the page has the number to hand, and an
+             editor cannot be expected to guess which ones those are. */
+          <div className="mt-4 border-t border-line pt-3">
+            <p className="text-[12px] font-medium text-ink-soft">
+              Live values you can use in any text field
+            </p>
+            <ul className="mt-2 space-y-1">
+              {definition.tokens.map((token) => (
+                <li key={token.name} className="flex flex-wrap items-baseline gap-2 text-[12px]">
+                  <code className="rounded bg-surface-sunken px-1.5 py-0.5 font-mono text-[11px] text-ink">
+                    {`{{${token.name}}}`}
+                  </code>
+                  <span className="text-muted">{token.description}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+      </div>
+
     <div className="grid gap-6 lg:grid-cols-[minmax(0,14rem)_minmax(0,1fr)]">
       <nav aria-label="Page sections" className="lg:sticky lg:top-6 lg:self-start">
         <ul className="space-y-0.5">
@@ -191,6 +265,7 @@ export function PageEditor({
         ))}
       </div>
     </div>
+    </>
   );
 }
 

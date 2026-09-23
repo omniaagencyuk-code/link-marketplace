@@ -2,11 +2,32 @@
 
 import { ChevronDown, ChevronUp, Plus, RotateCcw, Trash2 } from 'lucide-react';
 import { useState } from 'react';
+import dynamic from 'next/dynamic';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { cn } from '@/lib/utils/cn';
 import type { FieldDef, FieldValue, ImageValue, LinkValue } from '@/lib/cms/types';
+import { isRichTextDoc, type RichTextDoc } from '@/lib/cms/rich-text';
+
+/**
+ * Loaded on demand.
+ *
+ * The editor is the heaviest thing in the admin bundle and only a handful of
+ * fields use it, so it stays out of the initial load for every other page in
+ * here - and out of the public site entirely.
+ */
+const RichTextEditor = dynamic(
+  () => import('./rich-text-editor').then((module) => module.RichTextEditor),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="rounded-md border border-line-strong bg-white px-3 py-6 text-center text-[13px] text-muted">
+        Loading editor...
+      </div>
+    ),
+  },
+);
 
 /**
  * One editable field.
@@ -92,7 +113,6 @@ function FieldControl({
       );
 
     case 'textarea':
-    case 'richtext':
       return (
         <>
           <textarea
@@ -101,13 +121,20 @@ function FieldControl({
             value={typeof value === 'string' ? value : ''}
             maxLength={field.maxLength}
             onChange={(event) => onChange(event.target.value)}
-            className={cn(
-              'w-full rounded-md border border-line-strong bg-white px-3 py-2 text-sm text-ink focus:border-accent-500 focus:ring-2 focus:ring-accent-500/20 focus:outline-none',
-              field.type === 'richtext' && 'font-mono text-[13px] leading-relaxed',
-            )}
+            className="w-full rounded-md border border-line-strong bg-white px-3 py-2 text-sm text-ink focus:border-accent-500 focus:ring-2 focus:ring-accent-500/20 focus:outline-none"
           />
           <CharCount value={value} max={field.maxLength} />
         </>
+      );
+
+    case 'richtext':
+      return (
+        <RichTextEditor
+          id={id}
+          rows={field.rows ?? 10}
+          value={isRichTextDoc(value) ? value : typeof value === 'string' ? value : ''}
+          onChange={(doc) => onChange(doc)}
+        />
       );
 
     case 'link': {
@@ -195,7 +222,7 @@ function CharCount({ value, max }: { value: FieldValue; max?: number }) {
   );
 }
 
-type ListRow = Record<string, string | LinkValue | ImageValue>;
+type ListRow = Record<string, string | LinkValue | ImageValue | RichTextDoc>;
 
 function ListEditor({
   field,

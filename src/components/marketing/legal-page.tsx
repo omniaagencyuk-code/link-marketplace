@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { Container } from '@/components/layout/container';
-import { Markdown } from '@/lib/cms/markdown';
+import { RichText } from '@/lib/cms/rich-text-render';
 import type { ContentAccessors } from '@/lib/cms/resolve';
 
 /**
@@ -48,7 +48,7 @@ export function LegalPage({
         ) : null}
 
         <div className="mt-10 border-t border-line pt-10">
-          <Markdown source={content.text('page', 'body')} />
+          <RichText source={content.richText('page', 'body')} />
         </div>
       </Container>
     </section>

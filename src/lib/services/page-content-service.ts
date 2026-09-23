@@ -2,7 +2,12 @@ import { getRegisteredPage, listRegisteredPages } from '@/lib/cms/registry';
 import { isSupabaseEnabled } from '@/lib/supabase/config';
 import { supabasePageContentRepository } from './supabase/cms-repository';
 import { mockStore } from './mock-store';
-import { resolvePage, contentAccessors, type ContentAccessors } from '@/lib/cms/resolve';
+import {
+  resolvePage,
+  contentAccessors,
+  type ContentAccessors,
+  type ContentTokens,
+} from '@/lib/cms/resolve';
 import type { PageContentRecord, PageValues, ResolvedContent } from '@/lib/cms/types';
 
 /**
@@ -71,16 +76,25 @@ export const pageContentService = {
     return resolvePage(page.definition, page.defaults, record?.values);
   },
 
-  /** `resolve`, wrapped in the typed accessors components use. */
-  async content(slug: string): Promise<ContentAccessors & { resolved: ResolvedContent }> {
+  /**
+   * `resolve`, wrapped in the typed accessors components use.
+   *
+   * `tokens` are the page's live figures - a marketplace count, say - which
+   * the accessors substitute into copy wherever an editor wrote {{name}}.
+   * Passing none simply means no substitution happens.
+   */
+  async content(
+    slug: string,
+    tokens: ContentTokens = {},
+  ): Promise<ContentAccessors & { resolved: ResolvedContent }> {
     const resolved = await pageContentService.resolve(slug);
     if (!resolved) {
       // An unregistered slug should never reach a rendered page, but returning
       // empty accessors keeps a mistake as blank copy rather than a crash.
       const empty: ResolvedContent = { slug, values: {}, edited: false };
-      return { ...contentAccessors(empty), resolved: empty };
+      return { ...contentAccessors(empty, tokens), resolved: empty };
     }
-    return { ...contentAccessors(resolved), resolved };
+    return { ...contentAccessors(resolved, tokens), resolved };
   },
 
   /** Save overrides for a page. Values are validated by the caller. */

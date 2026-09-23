@@ -32,7 +32,7 @@ export function legalSections(): SectionDef[] {
         richtext('body', 'Body', {
           rows: 30,
           maxLength: 60_000,
-          help: 'Markdown. ## for a section heading, - for bullets, [text](/page) for a link.',
+          help: 'Headings, lists and links. The page decides how each one looks.',
         }),
       ],
       'The whole document. Have a solicitor review the wording before relying on it.',

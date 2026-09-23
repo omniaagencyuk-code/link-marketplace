@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Faq, type FaqItem } from '@/components/shared/faq';
 import { RedactedPreview } from '@/components/marketplace/redacted-preview';
 import { MonsteraLeaf } from '@/components/shared/foliage';
-import { Markdown } from '@/lib/cms/markdown';
+import { RichText, type RichTextValue } from '@/lib/cms/rich-text-render';
 import { siteUrl } from '@/lib/config/brand';
 import type { ContentAccessors } from '@/lib/cms/resolve';
 import type { PreviewRow } from '@/lib/services/marketplace-preview';
@@ -38,7 +38,8 @@ interface HighlightItem extends Record<string, unknown> {
 }
 interface BodySection extends Record<string, unknown> {
   heading: string;
-  content: string;
+  /** Markdown as shipped, or an edited document. `RichText` takes either. */
+  content: RichTextValue;
 }
 interface FaqEntry extends Record<string, unknown> {
   question: string;
@@ -228,7 +229,7 @@ export function ServicePage({
                     {bodySection.heading}
                   </h2>
                   <div className="mt-4">
-                    <Markdown source={bodySection.content} />
+                    <RichText source={bodySection.content} />
                   </div>
                 </article>
               ))}

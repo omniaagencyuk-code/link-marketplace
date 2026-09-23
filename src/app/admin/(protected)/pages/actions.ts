@@ -7,7 +7,9 @@ import { getRegisteredPage } from '@/lib/cms/registry';
 import { customPageService } from '@/lib/services/custom-page-service';
 import { checkSlug, customPageDefinition, slugify } from '@/lib/cms/custom-page';
 import { sanitiseText } from '@/lib/import/normalise';
+import { cleanRichTextDoc, isRichTextDoc } from '@/lib/cms/rich-text';
 import type { FieldDef, FieldValue, ImageValue, LinkValue, PageDef, PageValues } from '@/lib/cms/types';
+import type { RichTextDoc } from '@/lib/cms/rich-text';
 
 /**
  * Saving page content.
@@ -57,6 +59,10 @@ function cleanValue(field: FieldDef, raw: unknown): FieldValue {
       return sanitiseText(typeof raw === 'string' ? raw : '', field.maxLength ?? 2000);
 
     case 'richtext': {
+      // An editor document is rebuilt from its own whitelist: unknown nodes,
+      // marks and attributes are dropped there rather than stored here.
+      if (isRichTextDoc(raw)) return cleanRichTextDoc(raw);
+
       // Markdown keeps its newlines, so it is cleaned line by line rather than
       // through the single-line sanitiser.
       const source = typeof raw === 'string' ? raw : '';
@@ -88,14 +94,15 @@ function cleanValue(field: FieldDef, raw: unknown): FieldValue {
     case 'list': {
       if (!Array.isArray(raw)) return [];
       return raw.slice(0, field.maxItems ?? MAX_LIST_ITEMS).map((entry) => {
-        const row: Record<string, string | LinkValue | ImageValue> = {};
+        const row: Record<string, string | LinkValue | ImageValue | RichTextDoc> = {};
         const source = (entry ?? {}) as Record<string, unknown>;
         // Only declared keys survive - anything else the client sent is dropped.
         for (const itemField of field.fields) {
           row[itemField.key] = cleanValue(itemField, source[itemField.key]) as
             | string
             | LinkValue
-            | ImageValue;
+            | ImageValue
+            | RichTextDoc;
         }
         return row;
       });

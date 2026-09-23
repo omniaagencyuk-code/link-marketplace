@@ -25,12 +25,16 @@ export async function generateMetadata(): Promise<Metadata> {
 }
 
 export default async function Page() {
-  const [content, preview] = await Promise.all([
-    pageContentService.content(SLUG),
-    // Four rows, plus the count of everything in the niche. The rows are
-    // redacted on the server before they reach this component.
-    websiteService.getPublicPreview(4, NICHE),
-  ]);
+  // Four rows, plus the count of everything in the niche. The rows are
+  // redacted on the server before they reach this component.
+  const preview = await websiteService.getPublicPreview(4, NICHE);
+
+  // The count is handed to the CMS as a token, so an editor can write
+  // "{{gambling_site_count}} publishers" into any sentence on the page and
+  // have it stay true as the inventory changes.
+  const content = await pageContentService.content(SLUG, {
+    gambling_site_count: preview.totalWebsites,
+  });
 
   return (
     <NicheLandingPage

@@ -20,6 +20,12 @@ export const definition: PageDef = {
   label: 'Gambling link building',
   path: '/gambling-link-building',
   description: 'Niche landing page targeting gambling, casino, betting and iGaming searches.',
+  tokens: [
+    {
+      name: 'gambling_site_count',
+      description: 'Live count of active iGaming listings in the marketplace.',
+    },
+  ],
   sections: [
     section(
       'hero',
@@ -115,7 +121,7 @@ export const definition: PageDef = {
             text('heading', 'Heading', { maxLength: 120 }),
             richtext('content', 'Content', {
               rows: 10,
-              help: 'Markdown. ## for a subheading, - for bullets, [text](/page) for an internal link.',
+              help: 'Headings, lists, links, images and tables. The page decides how each one looks.',
             }),
           ],
           { itemLabelKey: 'heading', minItems: 1, maxItems: 12 },

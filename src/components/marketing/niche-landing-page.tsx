@@ -7,7 +7,7 @@ import { Faq, type FaqItem } from '@/components/shared/faq';
 import { RedactedPreview } from '@/components/marketplace/redacted-preview';
 import { MonsteraLeaf } from '@/components/shared/foliage';
 import { NicheMascot } from './niche-mascot';
-import { Markdown } from '@/lib/cms/markdown';
+import { RichText, type RichTextValue } from '@/lib/cms/rich-text-render';
 import { journeySteps } from '@/lib/config/how-it-works';
 import { siteUrl } from '@/lib/config/brand';
 import { formatNumber } from '@/lib/utils/format';
@@ -44,7 +44,8 @@ interface HighlightItem extends Record<string, unknown> {
 }
 interface BodySection extends Record<string, unknown> {
   heading: string;
-  content: string;
+  /** Markdown as shipped, or an edited document. `RichText` takes either. */
+  content: RichTextValue;
 }
 interface FaqEntry extends Record<string, unknown> {
   question: string;
@@ -391,7 +392,7 @@ export function NicheLandingPage({
                     {bodySection.heading}
                   </h2>
                   <div className="mt-4">
-                    <Markdown source={bodySection.content} />
+                    <RichText source={bodySection.content} />
                   </div>
                 </article>
               ))}

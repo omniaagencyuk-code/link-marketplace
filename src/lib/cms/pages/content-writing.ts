@@ -114,7 +114,7 @@ export const definition: PageDef = {
             text('heading', 'Heading', { maxLength: 120 }),
             richtext('content', 'Content', {
               rows: 10,
-              help: 'Markdown. ## for a subheading, - for bullets, [text](/page) for an internal link.',
+              help: 'Headings, lists, links, images and tables. The page decides how each one looks.',
             }),
           ],
           { itemLabelKey: 'heading', maxItems: 8 },

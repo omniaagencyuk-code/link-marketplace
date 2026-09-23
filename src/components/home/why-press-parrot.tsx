@@ -3,7 +3,7 @@ import { ArrowRight, Check, X } from 'lucide-react';
 import { Container } from '@/components/layout/container';
 import { Button } from '@/components/ui/button';
 import { HandwrittenNote } from '@/components/shared/handwritten';
-import { Markdown } from '@/lib/cms/markdown';
+import { RichText } from '@/lib/cms/rich-text-render';
 import type { ContentAccessors } from '@/lib/cms/resolve';
 
 /**
@@ -30,7 +30,7 @@ export function WhyPressParrot({ content }: { content: ContentAccessors }) {
               {content.text('why', 'heading')}
             </h2>
             <div className="mt-4">
-              <Markdown source={content.text('why', 'body')} />
+              <RichText source={content.richText('why', 'body')} />
             </div>
 
             {annotation ? (

@@ -13,6 +13,8 @@
  * as a blank hole in the page.
  */
 
+import type { RichTextDoc } from './rich-text';
+
 export type FieldType = 'text' | 'textarea' | 'richtext' | 'link' | 'image' | 'list';
 
 interface BaseField {
@@ -35,7 +37,12 @@ export interface TextareaField extends BaseField {
   maxLength?: number;
 }
 
-/** Markdown. Rendered through a restricted renderer - see `render-markdown`. */
+/**
+ * Editorial copy.
+ *
+ * Holds either markdown (everything shipped in code) or an editor document -
+ * see `rich-text.ts` for why both. `RichText` renders either identically.
+ */
 export interface RichTextField extends BaseField {
   type: 'richtext';
   rows?: number;
@@ -86,7 +93,8 @@ export type FieldValue =
   | string
   | LinkValue
   | ImageValue
-  | Record<string, string | LinkValue | ImageValue>[];
+  | RichTextDoc
+  | Record<string, string | LinkValue | ImageValue | RichTextDoc>[];
 
 /** One group of fields in the editor, matching a visual section of the page. */
 export interface SectionDef {
@@ -94,6 +102,17 @@ export interface SectionDef {
   label: string;
   description?: string;
   fields: FieldDef[];
+}
+
+/**
+ * A live figure an editor may quote inside copy, written as {{name}}.
+ *
+ * Declared per page so the editor can list exactly what that page supports:
+ * a token is only useful if the page actually has the number to hand.
+ */
+export interface TokenDef {
+  name: string;
+  description: string;
 }
 
 export interface PageDef {
@@ -106,6 +125,8 @@ export interface PageDef {
   /** One line describing what the page is for. */
   description: string;
   sections: SectionDef[];
+  /** Live values this page can resolve inside its copy. */
+  tokens?: TokenDef[];
   /** Page metadata is editable too - it is the highest-leverage copy on site. */
   seo?: { title: string; description: string };
 }

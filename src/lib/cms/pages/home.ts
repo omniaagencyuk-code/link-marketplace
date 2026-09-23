@@ -192,7 +192,7 @@ export const definition: PageDef = {
             text('heading', 'Heading', { maxLength: 120 }),
             richtext('content', 'Content', {
               rows: 8,
-              help: 'Markdown. [text](/page) for an internal link - these are worth getting right.',
+              help: 'Internal links here are worth getting right - they are read as much as the copy.',
             }),
           ],
           { itemLabelKey: 'heading', maxItems: 12 },

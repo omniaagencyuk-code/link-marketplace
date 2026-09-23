@@ -31,6 +31,8 @@ export default async function EditPagePage({ params }: { params: Promise<{ slug:
           definition={registered.definition}
           defaults={registered.defaults}
           saved={saved?.values ?? {}}
+          updatedAt={saved?.updatedAt}
+          updatedBy={saved?.updatedBy}
         />
       </>
     );
@@ -57,6 +59,7 @@ export default async function EditPagePage({ params }: { params: Promise<{ slug:
           definition={customPageDefinition(custom)}
           defaults={customPageDefaults(custom.label)}
           saved={custom.values}
+          updatedAt={custom.updatedAt}
         />
       </div>
     </>

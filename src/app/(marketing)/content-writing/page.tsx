@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Faq } from '@/components/shared/faq';
 import { MonsteraLeaf } from '@/components/shared/foliage';
 import { HandwrittenNote } from '@/components/shared/handwritten';
-import { Markdown } from '@/lib/cms/markdown';
+import { RichText, type RichTextValue } from '@/lib/cms/rich-text-render';
 import { metadataForPage } from '@/lib/cms/metadata';
 import { pageContentService } from '@/lib/services/page-content-service';
 import { settingsService } from '@/lib/services';
@@ -45,7 +45,7 @@ interface IncludeEntry extends Record<string, unknown> {
 }
 interface BodyEntry extends Record<string, unknown> {
   heading: string;
-  content: string;
+  content: RichTextValue;
 }
 interface FaqEntry extends Record<string, unknown> {
   question: string;
@@ -335,7 +335,7 @@ export default async function ContentWritingPage() {
                     {entry.heading}
                   </h2>
                   <div className="mt-4">
-                    <Markdown source={entry.content} />
+                    <RichText source={entry.content} />
                   </div>
                 </article>
               ))}
