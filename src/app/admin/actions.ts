@@ -171,6 +171,11 @@ function buildPatch(formData: FormData, websiteId: string, existing?: Website): 
     } as Website['metrics'],
     services,
     nichePrices: buildNichePrices(formData, acceptedNiches, services),
+    contact: {
+      email: readString(formData, 'contactEmail'),
+      name: readString(formData, 'contactName'),
+      notes: readString(formData, 'contactNotes'),
+    },
     rules: {
       ...(existing?.rules ?? {
         acceptsGambling: false,

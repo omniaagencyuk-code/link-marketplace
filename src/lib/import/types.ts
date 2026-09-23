@@ -41,6 +41,10 @@ export interface RowValues {
   restricted_niches?: string[];
   notes?: string;
   status?: WebsiteStatus;
+  /** Internal publisher contact. Never reaches a customer-facing payload. */
+  contact_email?: string;
+  contact_name?: string;
+  contact_notes?: string;
   /**
    * Price overrides, one key per niche column the file supplied. Major units,
    * like every other price here.

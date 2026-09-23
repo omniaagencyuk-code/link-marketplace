@@ -53,12 +53,24 @@ export function AdminOrdersTable({ orders }: { orders: Order[] }) {
               <Th className="hidden md:table-cell">Date</Th>
               <Th className="text-right">Amount</Th>
               <Th className="w-44">Status</Th>
+              <Th className="w-20 text-right">
+                <span className="sr-only">Open</span>
+              </Th>
             </tr>
           </thead>
           <tbody>
             {rows.map((order) => (
               <Tr key={order.id}>
-                <Td className="tabular text-[13px] font-medium text-ink">{order.reference}</Td>
+                <Td className="tabular text-[13px] font-medium">
+                  {/* The row's way in: cost prices and the publisher's
+                      address live on the order rather than in this list. */}
+                  <Link
+                    href={`/admin/orders/${order.id}`}
+                    className="text-ink hover:text-accent-700"
+                  >
+                    {order.reference}
+                  </Link>
+                </Td>
                 <Td>
                   <p className="text-[13px] text-ink">{order.customerName}</p>
                   <p className="truncate text-[11px] text-muted">{order.customerEmail}</p>
@@ -109,6 +121,14 @@ export function AdminOrdersTable({ orders }: { orders: Order[] }) {
                       </option>
                     ))}
                   </Select>
+                </Td>
+                <Td className="text-right">
+                  <Link
+                    href={`/admin/orders/${order.id}`}
+                    className="text-[13px] font-medium text-accent-700 hover:underline"
+                  >
+                    Open
+                  </Link>
                 </Td>
               </Tr>
             ))}

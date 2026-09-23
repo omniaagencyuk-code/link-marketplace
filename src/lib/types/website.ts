@@ -121,6 +121,21 @@ export interface WebsiteMetrics {
   spamScore?: number;
 }
 
+/**
+ * How Press Parrot reaches the publisher.
+ *
+ * Internal only, in the same sense as a service's cost price: it is stored in
+ * a table no customer policy matches, it is stripped from every public
+ * payload, and it exists so an account manager can fulfil an order without
+ * going through somebody's inbox.
+ */
+export interface PublisherContact {
+  email?: string;
+  name?: string;
+  /** Anything worth knowing before writing to them. Never customer-facing. */
+  notes?: string;
+}
+
 export interface Website {
   id: string;
   /** URL segment, e.g. "casinoguru-co-uk". */
@@ -138,6 +153,13 @@ export interface Website {
   services: Service[];
   /** Price overrides per niche. Empty means the service prices stand. */
   nichePrices: NichePrice[];
+  /**
+   * Publisher contact details, for admin surfaces only.
+   *
+   * Undefined on anything a customer can reach - not merely empty, because
+   * the public reads never ask for it and the public methods strip it.
+   */
+  contact?: PublisherContact;
   rules: PublishingRules;
   /** Manually vetted by the in-house editorial team. */
   verified: boolean;

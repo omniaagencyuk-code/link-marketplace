@@ -207,6 +207,46 @@ async function syncNichePrices(
   if (error) throw new Error(`Failed to save niche prices: ${error.message}`);
 }
 
+/**
+ * Publisher contact details, written to their own table.
+ *
+ * Deleted rather than blanked when an admin clears every field, so "no
+ * contact recorded" is the absence of a row rather than a row of empty
+ * strings - which is what the admin list means when it says a website has no
+ * contact yet.
+ */
+async function syncContact(
+  supabase: Client,
+  websiteId: string,
+  contact: Website['contact'],
+  updatedBy?: string,
+) {
+  // An update that does not mention it must not clear it.
+  if (contact === undefined) return;
+
+  const email = contact.email?.trim() ?? '';
+  const name = contact.name?.trim() ?? '';
+  const notes = contact.notes?.trim() ?? '';
+
+  if (!email && !name && !notes) {
+    await supabase.from('website_contacts').delete().eq('website_id', websiteId);
+    return;
+  }
+
+  const { error } = await supabase.from('website_contacts').upsert(
+    {
+      website_id: websiteId,
+      email: email || null,
+      contact_name: name || null,
+      notes: notes || null,
+      updated_by: updatedBy ?? null,
+    },
+    { onConflict: 'website_id' },
+  );
+
+  if (error) throw new Error(`Failed to save the publisher contact: ${error.message}`);
+}
+
 export const supabaseWebsiteRepository = {
   async getAll(): Promise<WebsiteListItem[]> {
     const supabase = await getServerClient();
@@ -435,6 +475,7 @@ export const supabaseWebsiteRepository = {
     await syncCategories(supabase, created.id, input.niche, input.secondaryNiches);
     await syncServices(supabase, created.id, input.services);
     await syncNichePrices(supabase, created.id, input.nichePrices);
+    await syncContact(supabase, created.id, input.contact);
 
     return (await supabaseWebsiteRepository.getById(created.id)) ?? created;
   },
@@ -453,6 +494,7 @@ export const supabaseWebsiteRepository = {
     await syncCategories(supabase, id, patch.niche, patch.secondaryNiches);
     await syncServices(supabase, id, patch.services);
     await syncNichePrices(supabase, id, patch.nichePrices);
+    await syncContact(supabase, id, patch.contact);
 
     // Re-read rather than trusting the update's return value: the services and
     // categories were written after it, so it would be a stale picture.

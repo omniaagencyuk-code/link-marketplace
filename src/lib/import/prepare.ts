@@ -72,7 +72,14 @@ function prepareValues(
   }
 
   // ------------------------------------------------------------------ text
-  for (const field of ['website_name', 'description', 'notes'] as const) {
+  for (const field of [
+    'website_name',
+    'description',
+    'notes',
+    'contact_email',
+    'contact_name',
+    'contact_notes',
+  ] as const) {
     const value = cell(field);
     if (!value) continue;
     values[field] = sanitiseText(value);
@@ -154,6 +161,13 @@ function prepareValues(
       (values as Record<string, unknown>)[key] = parsed;
       supplied.push(key);
     }
+  }
+
+  // An address that cannot be one is worth flagging: a mis-mapped column is
+  // far commoner than a publisher with an unusual address, and importing it
+  // silently means somebody emails nobody later.
+  if (values.contact_email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(values.contact_email)) {
+    note('contact_email', `"${sanitiseText(values.contact_email, 40)}" is not an email address`, 'warning');
   }
 
   // ---------------------------------------------------------------- prices

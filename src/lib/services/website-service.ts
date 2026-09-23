@@ -50,14 +50,22 @@ function listItems(includeInactive = false) {
  * out of every public method means the guarantee does not depend on remembering
  * which select was used.
  */
-function withoutCost<T extends { services: Website['services'] }>(record: T): T {
+function withoutCost<T extends { services: Website['services']; contact?: Website['contact'] }>(
+  record: T,
+): T {
+  // The publisher's contact details go the same way and for the same reason:
+  // they are ours, not the marketplace's, and a record that reaches a browser
+  // must not carry them however it was fetched.
+  const { contact: _contact, ...rest } = record;
   return {
-    ...record,
+    ...(rest as T),
     services: record.services.map(({ costPriceMinor: _cost, ...service }) => service),
   };
 }
 
-function publicItems<T extends { services: Website['services'] }>(records: T[]): T[] {
+function publicItems<T extends { services: Website['services']; contact?: Website['contact'] }>(
+  records: T[],
+): T[] {
   return records.map(withoutCost);
 }
 

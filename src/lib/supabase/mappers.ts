@@ -11,6 +11,7 @@ import type {
   NicheSlug,
   Order,
   OrderItem,
+  PublisherContact,
   Service,
   UserProfile,
   Website,
@@ -52,6 +53,14 @@ export interface WebsiteRow {
   top_country_share: number | null;
   audience_split: { country: string; share: number; traffic?: number }[] | null;
   website_niche_prices?: { niche: string; link_type: LinkTypeSlug; price_minor: number }[] | null;
+  /**
+   * Only ever present on an admin read. A customer's query does not ask for
+   * it, and the table has no policy that would answer if it did.
+   */
+  website_contacts?:
+    | { email: string | null; contact_name: string | null; notes: string | null }
+    | { email: string | null; contact_name: string | null; notes: string | null }[]
+    | null;
   spam_score: number | null;
   min_word_count: number | null;
   max_word_count: number | null;
@@ -118,7 +127,8 @@ export const WEBSITE_SELECT_ADMIN = `
   primary_category:categories!websites_primary_category_id_fkey (slug),
   website_categories (categories (slug)),
   services (*, service_costs (cost_price_minor)),
-  website_niche_prices (niche, link_type, price_minor)
+  website_niche_prices (niche, link_type, price_minor),
+  website_contacts (email, contact_name, notes)
 `;
 
 /** Null stays undefined: "not measured" must not become a measurement of 0. */
@@ -132,6 +142,26 @@ function toNumber(value: number | string | null | undefined, fallback = 0): numb
   if (value === null || value === undefined) return fallback;
   const parsed = typeof value === 'number' ? value : Number(value);
   return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+/**
+ * The joined contact, if the caller was allowed to read it.
+ *
+ * PostgREST returns an embedded one-to-one either as an object or as a
+ * single-element array, so both shapes are handled. Anything else - including
+ * the empty result a non-admin gets - reads as no contact recorded.
+ */
+function contactFromRow(row: WebsiteRow): PublisherContact | undefined {
+  const joined = row.website_contacts;
+  const record = Array.isArray(joined) ? joined[0] : joined;
+  if (!record) return undefined;
+
+  const contact: PublisherContact = {
+    ...(record.email ? { email: record.email } : {}),
+    ...(record.contact_name ? { name: record.contact_name } : {}),
+    ...(record.notes ? { notes: record.notes } : {}),
+  };
+  return Object.keys(contact).length ? contact : undefined;
 }
 
 export function mapService(row: ServiceRow): Service {
@@ -196,6 +226,7 @@ export function mapWebsite(row: WebsiteRow): Website {
       spamScore: toOptionalNumber(row.spam_score),
     },
     services: (row.services ?? []).map(mapService),
+    ...(contactFromRow(row) ? { contact: contactFromRow(row) } : {}),
     // Biggest first, so the listing leads with the price a buyer in a
     // regulated niche is actually looking for.
     nichePrices: (row.website_niche_prices ?? [])

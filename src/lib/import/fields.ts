@@ -39,6 +39,9 @@ export type ImportFieldKey =
   | 'restricted_niches'
   | 'notes'
   | 'status'
+  | 'contact_email'
+  | 'contact_name'
+  | 'contact_notes'
   | NichePriceFieldKey;
 
 /**
@@ -293,6 +296,30 @@ export const importFields: ImportField[] = [
     aliases: ['notes', 'internal notes', 'comment', 'comments', 'remarks'],
   },
   {
+    key: 'contact_email',
+    label: 'Publisher contact email',
+    type: 'text',
+    aliases: [
+      'contact email', 'contactemail', 'email', 'publisher email', 'webmaster email',
+      'owner email', 'contact', 'e-mail', 'editor email', 'site owner email',
+    ],
+    hint: 'Internal only. Never shown to customers.',
+  },
+  {
+    key: 'contact_name',
+    label: 'Publisher contact name',
+    type: 'text',
+    aliases: ['contact name', 'contactname', 'publisher name', 'webmaster', 'owner', 'editor name'],
+    hint: 'Internal only.',
+  },
+  {
+    key: 'contact_notes',
+    label: 'Publisher notes',
+    type: 'text',
+    aliases: ['publisher notes', 'contact notes', 'internal notes', 'webmaster notes'],
+    hint: 'Internal only. Never shown to customers.',
+  },
+  {
     key: 'status',
     label: 'Status',
     type: 'enum',
@@ -357,6 +384,9 @@ export const templateExampleRow: Partial<Record<ImportFieldKey, string>> = {
   accepted_niches: 'Finance|Business|Crypto',
   restricted_niches: 'Adult|Gambling',
   notes: 'Editor prefers data-led pitches.',
+  contact_email: 'editor@example-publication.co.uk',
+  contact_name: 'Sam Editor',
+  contact_notes: 'Invoices monthly. Prefers a brief before the draft.',
   status: 'active',
   [nichePriceFieldKey('gambling')]: '650',
   [nichePriceFieldKey('crypto')]: '340',

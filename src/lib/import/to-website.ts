@@ -97,6 +97,17 @@ export function toWebsitePatch(
     };
   }
 
+  // --------------------------------------------------------------- contact
+  const contactKeys: ImportFieldKey[] = ['contact_email', 'contact_name', 'contact_notes'];
+  if (contactKeys.some(has)) {
+    patch.contact = {
+      ...(existing?.contact ?? {}),
+      ...(has('contact_email') ? { email: values.contact_email } : {}),
+      ...(has('contact_name') ? { name: values.contact_name } : {}),
+      ...(has('contact_notes') ? { notes: values.contact_notes } : {}),
+    };
+  }
+
   // ----------------------------------------------------- prices by niche
   const nichePriceKeys = supplied.filter((key) => nicheFromPriceFieldKey(key));
   if (nichePriceKeys.length > 0) {

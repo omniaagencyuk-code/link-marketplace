@@ -274,6 +274,52 @@ export function WebsiteEditor({
 
       <Card>
         <CardHeader>
+          <CardTitle>Publisher contact</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {/* Internal only. Stored in a table no customer policy matches and
+              stripped from every customer-facing payload, the same as the
+              cost price above. */}
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field
+              label="Contact email"
+              htmlFor="contactEmail"
+              hint="Where orders for this website are arranged. Never shown to customers."
+            >
+              <Input
+                id="contactEmail"
+                name="contactEmail"
+                type="email"
+                defaultValue={website?.contact?.email ?? ''}
+                placeholder="editor@example.com"
+              />
+            </Field>
+            <Field label="Contact name" htmlFor="contactName">
+              <Input
+                id="contactName"
+                name="contactName"
+                defaultValue={website?.contact?.name ?? ''}
+                placeholder="Who answers"
+              />
+            </Field>
+          </div>
+          <Field
+            label="Internal notes"
+            htmlFor="contactNotes"
+            hint="Anything worth knowing before writing to them. Internal only."
+          >
+            <Textarea
+              id="contactNotes"
+              name="contactNotes"
+              rows={3}
+              defaultValue={website?.contact?.notes ?? ''}
+            />
+          </Field>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
           <CardTitle>Accepted niches</CardTitle>
         </CardHeader>
         <CardContent>

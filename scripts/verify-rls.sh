@@ -69,3 +69,6 @@ run -f "$ROOT/supabase/tests/07_ahrefs_refresh.sql" 2>&1 | grep -v '^$'
 echo
 echo "--- prices by niche ---"
 run -f "$ROOT/supabase/tests/08_niche_prices.sql" 2>&1 | grep -v '^$'
+echo
+echo "--- publisher contacts ---"
+run -f "$ROOT/supabase/tests/09_publisher_contacts.sql" 2>&1 | grep -v '^$'
