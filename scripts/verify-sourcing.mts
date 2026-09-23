@@ -8,6 +8,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { readMbox, readPastedEmail, domainFromSubject, stripQuotedHistory } from '../src/lib/sourcing/mbox';
+import { extractionResultSchema, type ExtractedListing } from '../src/lib/sourcing/schema';
+import { applyGeneralPriceToNiches, countLowConfidence, flagsFor } from '../src/lib/sourcing/review';
+import { sensitiveNicheSlugs } from '../src/lib/config/accepted-niches';
 
 let failed = 0;
 const ok = (label: string) => console.log(`  PASS  ${label}`);
@@ -101,6 +104,102 @@ const again = readMbox(raw);
 is('produces the same message ids', again.messages.map((m) => m.messageId).join(), messages.map((m) => m.messageId).join());
 const doubled = readMbox(`${raw}\n${raw}`);
 is('and a doubled file still yields each message once', doubled.messages.length, messages.length);
+
+// ---------------------------------------------------------------------------
+// The review rules. These decide what a human is shown and what a bulk
+// action is allowed to touch, so they are checked without a key or a database.
+
+/** A listing with everything unstated, which is what most fields really are. */
+function blank(over: Partial<ExtractedListing> = {}): ExtractedListing {
+  return {
+    domain: 'test.example', relationship: null,
+    contact_email: null, contact_name: null, contact_notes: null,
+    language: null, currency: null,
+    guest_post_cost: null, guest_post_cost_written_by_publisher: null,
+    link_insertion_cost: null, homepage_link_cost: null, homepage_link_period: null,
+    banner_cost: null, banner_period: null,
+    niches: Object.fromEntries(
+      sensitiveNicheSlugs.map((slug) => [slug, { accepted: 'unknown', guest_post_cost: null, link_insertion_cost: null }]),
+    ),
+    dofollow: 'unknown', sponsored_tag: 'unknown', dofollow_expires_after_months: null,
+    permanence: 'unknown', min_live_months: null,
+    min_word_count: null, max_word_count: null, max_links: null,
+    turnaround_min_days: null, turnaround_max_days: null,
+    link_insertion_offered: 'unknown', homepage_placement: 'unknown', topic_restriction: null,
+    prices_exclude_vat: null, vat_notes: null, payment_methods: [], payment_timing: 'unknown',
+    minimum_order: null, bulk_discount_notes: null, price_valid_until: null, future_price_notes: null,
+    notes: null, confidence: {}, evidence: {},
+    ...over,
+  };
+}
+
+console.log('--- the schema ---');
+const wellFormed = extractionResultSchema.safeParse({ usable: true, ignore_reason: null, listings: [blank()] });
+is('a complete listing validates', wellFormed.success, true);
+is(
+  'a missing field is rejected rather than defaulted',
+  extractionResultSchema.safeParse({ usable: true, ignore_reason: null, listings: [{ domain: 'x.example' }] }).success,
+  false,
+);
+is(
+  'a price of zero is rejected',
+  extractionResultSchema.safeParse({ usable: true, ignore_reason: null, listings: [blank({ guest_post_cost: 0 })] }).success,
+  false,
+);
+is(
+  'an invented stance is rejected',
+  extractionResultSchema.safeParse({
+    usable: true, ignore_reason: null,
+    listings: [blank({ niches: { ...blank().niches, gambling: { accepted: 'maybe', guest_post_cost: null, link_insertion_cost: null } } })],
+  }).success,
+  false,
+);
+is('every sensitive niche has a slot', Object.keys(blank().niches).length, 7);
+is('and loan is one of them', sensitiveNicheSlugs.includes('loan'), true);
+
+console.log('\n--- single price with no topics named ---');
+const single = blank({ guest_post_cost: 150, contact_email: 'a@b.example' });
+is('is flagged for a human', flagsFor(single).includes('single-price-confirm-niches'), true);
+is('and every niche is left unknown', Object.values(single.niches).every((n) => n.accepted === 'unknown'), true);
+
+const spread = applyGeneralPriceToNiches(single);
+is('the button prices all seven', Object.values(spread.niches).every((n) => n.guest_post_cost === 150), true);
+is('and accepts them', Object.values(spread.niches).every((n) => n.accepted === 'yes'), true);
+is('without touching the general price', spread.guest_post_cost, 150);
+
+const withRefusal = applyGeneralPriceToNiches(
+  blank({ guest_post_cost: 150, niches: { ...blank().niches, adult: { accepted: 'no', guest_post_cost: null, link_insertion_cost: null } } }),
+);
+is('an explicit refusal survives the button', withRefusal.niches.adult!.accepted, 'no');
+is('and stays unpriced', withRefusal.niches.adult!.guest_post_cost, null);
+
+console.log('\n--- what is not flagged ---');
+const itemised = blank({
+  guest_post_cost: 100, contact_email: 'p@b.example',
+  niches: { ...blank().niches, gambling: { accepted: 'yes', guest_post_cost: 350, link_insertion_cost: 350 } },
+});
+is('an itemised reply is not a single-price reply', flagsFor(itemised).includes('single-price-confirm-niches'), false);
+is('a reply with a contact is not flagged for one', flagsFor(itemised).includes('no-contact-email'), false);
+is('a reply with no contact is', flagsFor(blank({ guest_post_cost: 1 })).includes('no-contact-email'), true);
+is(
+  'an offered alternative site is flagged',
+  flagsFor(blank({ relationship: 'offered instead of x.example', contact_email: 'a@b.example' })).includes('different-site-offered'),
+  true,
+);
+is(
+  'a future price rise is flagged',
+  flagsFor(blank({ contact_email: 'a@b.example', price_valid_until: '2027-01-01' })).includes('price-changes-later'),
+  true,
+);
+
+console.log('\n--- bulk approval safety ---');
+const confident = blank({ guest_post_cost: 100, contact_email: 'a@b.example', confidence: { guest_post_cost: 'high' },
+  niches: { ...blank().niches, gambling: { accepted: 'yes', guest_post_cost: 200, link_insertion_cost: null } } });
+is('a clean draft has no low-confidence fields', countLowConfidence(confident), 0);
+is('and no flags, so bulk approve may take it', flagsFor(confident).length, 0);
+const shaky = blank({ guest_post_cost: 100, contact_email: 'a@b.example', confidence: { guest_post_cost: 'low', turnaround_min_days: 'low' } });
+is('a guessed draft counts its low fields', countLowConfidence(shaky), 2);
+is('and is never swept up in bulk', countLowConfidence(shaky) > 0 || flagsFor(shaky).length > 0, true);
 
 console.log(failed ? `\n  ${failed} FAILED\n` : '\n  all passed\n');
 process.exit(failed ? 1 : 0);

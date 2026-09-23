@@ -432,3 +432,50 @@ alter table public.listing_drafts
 
 comment on column public.listing_drafts.flags is
   'Reviewer prompts, e.g. single-price-confirm-niches. Not field data - things a human must decide.';
+
+-- -------------------------------------------------------------- the switch --
+-- One row. Extraction is off until somebody turns it on, and the mode is a
+-- setting rather than a deploy: the first runs go through real time so the
+-- drafts can be read immediately, and the switch to Batch happens when the
+-- results are trusted, without touching code.
+create table if not exists public.sourcing_settings (
+  id smallint primary key default 1 check (id = 1),
+
+  -- Off by default. Uploading and parsing emails costs nothing and works
+  -- with this false; only the call to the model is gated.
+  enabled boolean not null default false,
+
+  mode text not null default 'realtime' check (mode in ('realtime', 'batch')),
+  model text not null default 'claude-opus-5',
+
+  -- A ceiling, checked before a run is submitted. Spend is measured from the
+  -- tokens the API reports, never estimated.
+  monthly_budget_usd numeric(10, 2) not null default 25.00,
+
+  updated_at timestamptz not null default timezone('utc', now()),
+  updated_by text
+);
+
+insert into public.sourcing_settings (id) values (1) on conflict (id) do nothing;
+
+alter table public.sourcing_settings enable row level security;
+
+do $$
+begin
+  create policy "Admins manage sourcing settings"
+    on public.sourcing_settings for all
+    using (public.is_admin()) with check (public.is_admin());
+exception
+  when duplicate_object then null;
+end;
+$$;
+
+do $$
+begin
+  create trigger sourcing_settings_set_updated_at
+    before update on public.sourcing_settings
+    for each row execute function public.set_updated_at();
+exception
+  when duplicate_object then null;
+end;
+$$;

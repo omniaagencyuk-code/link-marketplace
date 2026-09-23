@@ -7,6 +7,7 @@ import {
   FileText,
   FolderTree,
   Globe,
+  Inbox,
   LayoutDashboard,
   Newspaper,
   Package,
@@ -98,6 +99,7 @@ export const adminNav: NavItem[] = [
   { label: 'Blog', href: '/admin/blog', icon: Newspaper },
   { label: 'Users', href: '/admin/users', icon: Users },
   { label: 'Categories', href: '/admin/categories', icon: FolderTree },
+  { label: 'Publisher inbox', href: '/admin/sourcing', icon: Inbox },
   { label: 'Ahrefs refresh', href: '/admin/refresh', icon: RefreshCw },
   { label: 'Settings', href: '/admin/settings', icon: Settings },
 ];

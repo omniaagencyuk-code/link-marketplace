@@ -1,0 +1,586 @@
+'use client';
+
+import { useState, useTransition } from 'react';
+import { useRouter } from 'next/navigation';
+import { AlertTriangle, Check, Quote, Wand2, X } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Input, Textarea } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Select } from '@/components/ui/select';
+
+import {
+  approveDraftAction,
+  rejectDraftAction,
+  spreadGeneralPriceAction,
+} from '@/app/admin/(protected)/sourcing/actions';
+import { acceptedNicheLabel, sensitiveNicheSlugs } from '@/lib/config/accepted-niches';
+import { formatDateTime } from '@/lib/utils/format';
+import { cn } from '@/lib/utils/cn';
+import type { ExtractedListing } from '@/lib/sourcing/schema';
+
+type Current = {
+  domain: string;
+  status: string;
+  guest_post_cost: number | null;
+  link_insertion_cost: number | null;
+  contact_email: string | null;
+  contact_name: string | null;
+  min_word_count: number;
+  max_word_count: number;
+  max_links: number;
+  accepted: Record<string, boolean>;
+} | null;
+
+/**
+ * Checking one extraction.
+ *
+ * Everything is editable, because the reviewer is the authority and the model
+ * is a first draft. What the model was unsure about is marked, and what it
+ * read each value from is one hover away - the quote is the whole basis for
+ * trusting a number, so it must not be buried.
+ */
+export function DraftReview({
+  draftId,
+  domain,
+  status,
+  flags,
+  values,
+  confidence,
+  evidence,
+  current,
+  email,
+  extractedBy,
+}: {
+  draftId: string;
+  domain: string;
+  status: string;
+  flags: string[];
+  values: ExtractedListing;
+  confidence: Record<string, string>;
+  evidence: Record<string, string>;
+  current: Current;
+  email: {
+    fromAddress: string;
+    fromName: string | null;
+    subject: string | null;
+    sentAt: string | null;
+    body: string;
+    askedAboutDomain: string | null;
+  };
+  extractedBy: string;
+}) {
+  const router = useRouter();
+  const [draft, setDraft] = useState<ExtractedListing>(values);
+  const [busy, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
+  const [rejecting, setRejecting] = useState(false);
+  const [reason, setReason] = useState('');
+
+  const reviewed = status !== 'pending';
+
+  function set<K extends keyof ExtractedListing>(key: K, value: ExtractedListing[K]) {
+    setDraft((current) => ({ ...current, [key]: value }));
+  }
+
+  function setNiche(slug: string, patch: Partial<ExtractedListing['niches'][string]>) {
+    setDraft((current) => ({
+      ...current,
+      niches: { ...current.niches, [slug]: { ...current.niches[slug]!, ...patch } },
+    }));
+  }
+
+  const singlePrice = flags.includes('single-price-confirm-niches');
+
+  return (
+    <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+      {/* ------------------------------------------------------- the email */}
+      <Card className="lg:sticky lg:top-4 lg:self-start">
+        <CardHeader>
+          <CardTitle>The reply</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <dl className="space-y-1 text-[12px]">
+            <div className="flex gap-2">
+              <dt className="w-16 shrink-0 text-muted">From</dt>
+              <dd className="text-ink">
+                {email.fromName ? `${email.fromName} · ` : ''}
+                {email.fromAddress}
+              </dd>
+            </div>
+            {email.subject ? (
+              <div className="flex gap-2">
+                <dt className="w-16 shrink-0 text-muted">Subject</dt>
+                <dd className="text-ink">{email.subject}</dd>
+              </div>
+            ) : null}
+            {email.sentAt ? (
+              <div className="flex gap-2">
+                <dt className="w-16 shrink-0 text-muted">Received</dt>
+                <dd className="tabular text-ink">{formatDateTime(email.sentAt)}</dd>
+              </div>
+            ) : null}
+            <div className="flex gap-2">
+              <dt className="w-16 shrink-0 text-muted">We asked</dt>
+              <dd className="text-ink">
+                {email.askedAboutDomain ?? 'about "your website" - no domain named'}
+              </dd>
+            </div>
+          </dl>
+
+          <pre className="max-h-[32rem] overflow-auto rounded-lg border border-line bg-surface-sunken p-3 text-[12px] leading-relaxed whitespace-pre-wrap text-ink-soft">
+            {email.body}
+          </pre>
+          <p className="text-[11px] text-muted">Read by {extractedBy}.</p>
+        </CardContent>
+      </Card>
+
+      {/* ------------------------------------------------------ the reading */}
+      <div className="space-y-5">
+        {flags.length > 0 ? (
+          <Card>
+            <CardContent className="space-y-3 py-4">
+              {singlePrice ? (
+                <div className="space-y-2">
+                  <p className="flex items-start gap-2 text-[13px] text-ink">
+                    <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-negative" aria-hidden="true" />
+                    This reply gave one price and never mentioned topics. Every niche is left
+                    unknown, because a publisher who has not mentioned gambling has not agreed to
+                    carry it.
+                  </p>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={busy || reviewed}
+                    onClick={() =>
+                      startTransition(async () => {
+                        const result = await spreadGeneralPriceAction(draft);
+                        if (result.ok && result.values) setDraft(result.values);
+                      })
+                    }
+                  >
+                    <Wand2 className="h-3.5 w-3.5" aria-hidden="true" />
+                    Apply general price to all niches
+                  </Button>
+                </div>
+              ) : null}
+
+              {flags.filter((flag) => flag !== 'single-price-confirm-niches').length > 0 ? (
+                <ul className="space-y-1 text-[12px] text-muted">
+                  {flags
+                    .filter((flag) => flag !== 'single-price-confirm-niches')
+                    .map((flag) => (
+                      <li key={flag}>
+                        {flag === 'different-site-offered'
+                          ? `They offered a different site: ${draft.relationship ?? 'see notes'}`
+                          : flag === 'price-changes-later'
+                            ? 'These rates change on a date given in the email - check the validity fields.'
+                            : flag === 'no-contact-email'
+                              ? 'No contact address was found in the reply. The sender address is used unless you set one.'
+                              : flag}
+                      </li>
+                    ))}
+                </ul>
+              ) : null}
+            </CardContent>
+          </Card>
+        ) : null}
+
+        <Card>
+          <CardHeader>
+            <CardTitle>What we pay</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Field
+                label="Currency"
+                field="currency"
+                confidence={confidence}
+                evidence={evidence}
+              >
+                <Input
+                  value={draft.currency ?? ''}
+                  placeholder="EUR"
+                  maxLength={3}
+                  disabled={reviewed}
+                  onChange={(event) => set('currency', event.target.value.toUpperCase() || null)}
+                />
+              </Field>
+              <Money
+                label="Guest post (we supply content)"
+                field="guest_post_cost"
+                value={draft.guest_post_cost}
+                was={current?.guest_post_cost ?? null}
+                currency={draft.currency}
+                confidence={confidence}
+                evidence={evidence}
+                disabled={reviewed}
+                onChange={(value) => set('guest_post_cost', value)}
+              />
+              <Money
+                label="Guest post (they write it)"
+                field="guest_post_cost_written_by_publisher"
+                value={draft.guest_post_cost_written_by_publisher}
+                was={null}
+                currency={draft.currency}
+                confidence={confidence}
+                evidence={evidence}
+                disabled={reviewed}
+                onChange={(value) => set('guest_post_cost_written_by_publisher', value)}
+              />
+              <Money
+                label="Link insertion"
+                field="link_insertion_cost"
+                value={draft.link_insertion_cost}
+                was={current?.link_insertion_cost ?? null}
+                currency={draft.currency}
+                confidence={confidence}
+                evidence={evidence}
+                disabled={reviewed}
+                onChange={(value) => set('link_insertion_cost', value)}
+              />
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Topics</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            {sensitiveNicheSlugs.map((slug) => {
+              const terms = draft.niches[slug];
+              if (!terms) return null;
+              const wasAccepted = current?.accepted?.[slug];
+              return (
+                <div
+                  key={slug}
+                  className="grid items-center gap-2 border-b border-line pb-2 last:border-0 sm:grid-cols-[minmax(0,1fr)_7rem_6rem_6rem]"
+                >
+                  <span className="text-[13px] text-ink">
+                    {acceptedNicheLabel(slug)}
+                    {wasAccepted !== undefined && wasAccepted !== (terms.accepted === 'yes') ? (
+                      <span className="ml-1.5 text-[11px] text-muted">
+                        (was {wasAccepted ? 'accepted' : 'not accepted'})
+                      </span>
+                    ) : null}
+                  </span>
+                  <Select
+                    size="sm"
+                    aria-label={`${acceptedNicheLabel(slug)} accepted`}
+                    value={terms.accepted}
+                    disabled={reviewed}
+                    onChange={(event) =>
+                      setNiche(slug, { accepted: event.target.value as 'yes' | 'no' | 'unknown' })
+                    }
+                  >
+                    <option value="yes">Accepted</option>
+                    <option value="no">Refused</option>
+                    <option value="unknown">Not stated</option>
+                  </Select>
+                  <Input
+                    type="number"
+                    aria-label={`${acceptedNicheLabel(slug)} guest post cost`}
+                    placeholder="Post"
+                    value={terms.guest_post_cost ?? ''}
+                    disabled={reviewed}
+                    className="h-8 text-[12px]"
+                    onChange={(event) =>
+                      setNiche(slug, {
+                        guest_post_cost: event.target.value ? Number(event.target.value) : null,
+                      })
+                    }
+                  />
+                  <Input
+                    type="number"
+                    aria-label={`${acceptedNicheLabel(slug)} link insertion cost`}
+                    placeholder="Insert"
+                    value={terms.link_insertion_cost ?? ''}
+                    disabled={reviewed}
+                    className="h-8 text-[12px]"
+                    onChange={(event) =>
+                      setNiche(slug, {
+                        link_insertion_cost: event.target.value ? Number(event.target.value) : null,
+                      })
+                    }
+                  />
+                </div>
+              );
+            })}
+            <p className="pt-1 text-[11px] text-muted">
+              &quot;Not stated&quot; is not &quot;refused&quot;. Leave it alone unless the email
+              actually says.
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Terms and contact</CardTitle>
+          </CardHeader>
+          <CardContent className="grid gap-3 sm:grid-cols-2">
+            <Field label="Contact email" field="contact_email" confidence={confidence} evidence={evidence}>
+              <Input
+                value={draft.contact_email ?? ''}
+                placeholder={email.fromAddress}
+                disabled={reviewed}
+                onChange={(event) => set('contact_email', event.target.value || null)}
+              />
+            </Field>
+            <Field label="Contact name" field="contact_name" confidence={confidence} evidence={evidence}>
+              <Input
+                value={draft.contact_name ?? ''}
+                disabled={reviewed}
+                onChange={(event) => set('contact_name', event.target.value || null)}
+              />
+            </Field>
+
+            <Field label="Links" field="dofollow" confidence={confidence} evidence={evidence}>
+              <Select
+                value={draft.dofollow}
+                disabled={reviewed}
+                onChange={(event) => set('dofollow', event.target.value as 'yes' | 'no' | 'unknown')}
+              >
+                <option value="yes">Dofollow</option>
+                <option value="no">Nofollow</option>
+                <option value="unknown">Not stated</option>
+              </Select>
+            </Field>
+            <Field label="Sponsored tag" field="sponsored_tag" confidence={confidence} evidence={evidence}>
+              <Select
+                value={draft.sponsored_tag}
+                disabled={reviewed}
+                onChange={(event) =>
+                  set('sponsored_tag', event.target.value as ExtractedListing['sponsored_tag'])
+                }
+              >
+                <option value="yes">Always tagged</option>
+                <option value="no">Never tagged</option>
+                <option value="depends">Depends</option>
+                <option value="unknown">Not stated</option>
+              </Select>
+            </Field>
+
+            <Field
+              label="Dofollow expires after (months)"
+              field="dofollow_expires_after_months"
+              confidence={confidence}
+              evidence={evidence}
+            >
+              <Input
+                type="number"
+                value={draft.dofollow_expires_after_months ?? ''}
+                disabled={reviewed}
+                onChange={(event) =>
+                  set(
+                    'dofollow_expires_after_months',
+                    event.target.value ? Number(event.target.value) : null,
+                  )
+                }
+              />
+            </Field>
+            <Field label="Topic restriction" field="topic_restriction" confidence={confidence} evidence={evidence}>
+              <Input
+                value={draft.topic_restriction ?? ''}
+                placeholder="e.g. motorsport only"
+                disabled={reviewed}
+                onChange={(event) => set('topic_restriction', event.target.value || null)}
+              />
+            </Field>
+
+            <div className="sm:col-span-2">
+              <Field label="Notes" field="notes" confidence={confidence} evidence={evidence}>
+                <Textarea
+                  value={draft.notes ?? ''}
+                  disabled={reviewed}
+                  className="min-h-24"
+                  onChange={(event) => set('notes', event.target.value || null)}
+                />
+              </Field>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* ------------------------------------------------------- actions */}
+        {reviewed ? (
+          <Card>
+            <CardContent className="py-4 text-[13px] text-muted">
+              This draft has already been {status}. Nothing here can change it.
+            </CardContent>
+          </Card>
+        ) : (
+          <Card>
+            <CardContent className="space-y-3 py-4">
+              {error ? (
+                <p role="alert" className="text-[13px] text-negative">
+                  {error}
+                </p>
+              ) : null}
+
+              {rejecting ? (
+                <div className="space-y-2">
+                  <Label htmlFor="reject-reason">Why are you rejecting it?</Label>
+                  <Input
+                    id="reject-reason"
+                    value={reason}
+                    placeholder="e.g. rates are for their other site"
+                    onChange={(event) => setReason(event.target.value)}
+                  />
+                  <div className="flex gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={busy}
+                      onClick={() =>
+                        startTransition(async () => {
+                          await rejectDraftAction(draftId, reason);
+                          router.push('/admin/sourcing');
+                        })
+                      }
+                    >
+                      Reject {domain}
+                    </Button>
+                    <Button variant="ghost" size="sm" onClick={() => setRejecting(false)}>
+                      Cancel
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    variant="accent"
+                    disabled={busy}
+                    onClick={() =>
+                      startTransition(async () => {
+                        setError(null);
+                        const result = await approveDraftAction(draftId, draft);
+                        if (!result.ok) return setError(result.error ?? 'Could not approve.');
+                        router.push('/admin/sourcing');
+                      })
+                    }
+                  >
+                    <Check className="h-4 w-4" aria-hidden="true" />
+                    {current ? 'Update the listing' : 'Create the listing'}
+                  </Button>
+                  <Button variant="outline" disabled={busy} onClick={() => setRejecting(true)}>
+                    <X className="h-4 w-4" aria-hidden="true" />
+                    Reject
+                  </Button>
+                </div>
+              )}
+
+              <p className="text-[12px] text-muted">
+                {current
+                  ? `Updates ${current.domain}. Fields left blank here are not written, so nothing already on the listing is cleared.`
+                  : 'Creates the listing as a draft, unpublished, with no sell price set. It cannot appear in the marketplace until you price it.'}
+              </p>
+            </CardContent>
+          </Card>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** A labelled field that shows how sure the model was, and why. */
+function Field({
+  label,
+  field,
+  confidence,
+  evidence,
+  children,
+}: {
+  label: string;
+  field: string;
+  confidence: Record<string, string>;
+  evidence: Record<string, string>;
+  children: React.ReactNode;
+}) {
+  const level = confidence[field];
+  const quote = evidence[field];
+
+  return (
+    <div>
+      <div className="flex items-center gap-1.5">
+        <Label>{label}</Label>
+        {level === 'low' ? (
+          <span className="inline-flex items-center gap-1 rounded bg-negative/10 px-1.5 py-0.5 text-[10px] font-medium text-negative">
+            <AlertTriangle className="h-2.5 w-2.5" aria-hidden="true" />
+            low
+          </span>
+        ) : level === 'medium' ? (
+          <span className="rounded bg-surface-sunken px-1.5 py-0.5 text-[10px] text-muted">
+            inferred
+          </span>
+        ) : null}
+      </div>
+      <div className="mt-1.5">{children}</div>
+      {quote ? (
+        <p
+          title={quote}
+          className="mt-1 flex items-start gap-1 text-[11px] leading-snug text-muted"
+        >
+          <Quote className="mt-0.5 h-2.5 w-2.5 shrink-0" aria-hidden="true" />
+          <span className="line-clamp-2">{quote}</span>
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+/** A price, with what the listing said before it, where that differs. */
+function Money({
+  label,
+  field,
+  value,
+  was,
+  currency,
+  confidence,
+  evidence,
+  disabled,
+  onChange,
+}: {
+  label: string;
+  field: string;
+  value: number | null;
+  was: number | null;
+  currency: string | null;
+  confidence: Record<string, string>;
+  evidence: Record<string, string>;
+  disabled: boolean;
+  onChange: (value: number | null) => void;
+}) {
+  const changed = was != null && value != null && was !== value;
+
+  return (
+    <Field label={label} field={field} confidence={confidence} evidence={evidence}>
+      <div className="flex items-center gap-2">
+        <Input
+          type="number"
+          min={0}
+          step="0.01"
+          value={value ?? ''}
+          disabled={disabled}
+          onChange={(event) => onChange(event.target.value ? Number(event.target.value) : null)}
+        />
+        <span className="shrink-0 text-[12px] text-muted">{currency ?? ''}</span>
+      </div>
+      {changed ? (
+        <p
+          className={cn(
+            'tabular mt-1 text-[11px]',
+            value > was ? 'text-negative' : 'text-accent-700',
+          )}
+        >
+          was {was} {currency ?? ''} · {value > was ? 'up' : 'down'}{' '}
+          {Math.abs(Math.round(((value - was) / was) * 100))}%
+        </p>
+      ) : was != null && value == null ? (
+        <p className="tabular mt-1 text-[11px] text-muted">
+          listing has {was} {currency ?? ''}; not mentioned in this reply, so it stays
+        </p>
+      ) : null}
+    </Field>
+  );
+}
+

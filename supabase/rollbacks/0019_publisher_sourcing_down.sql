@@ -52,3 +52,5 @@ alter table public.websites drop column if exists topic_restriction;
 
 -- Last, because the policy table above uses it.
 drop type if exists public.niche_stance;
+
+drop table if exists public.sourcing_settings cascade;
