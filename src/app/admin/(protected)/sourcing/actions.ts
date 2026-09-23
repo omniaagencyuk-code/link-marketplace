@@ -161,13 +161,18 @@ export async function bulkApproveConfidentAction() {
 
   const { data } = await supabase
     .from('listing_drafts')
-    .select('id, domain, email_id, matched_website_id, values')
+    .select('id, domain, email_id, matched_website_id, values, flags')
     .eq('status', 'pending')
     .eq('low_confidence_count', 0)
-    .eq('flags', '{}')
     .limit(100);
 
-  const drafts = (data ?? []) as Record<string, unknown>[];
+  // The flag filter is applied here rather than in the query. Comparing a
+  // text[] column to an empty array through PostgREST is fiddly enough to get
+  // subtly wrong, and getting it wrong in this direction would bulk-approve
+  // the flagged drafts this action exists to leave alone.
+  const drafts = ((data ?? []) as Record<string, unknown>[]).filter(
+    (draft) => ((draft.flags as string[] | null) ?? []).length === 0,
+  );
   let approved = 0;
   const failures: string[] = [];
 
