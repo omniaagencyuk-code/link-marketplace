@@ -22,8 +22,32 @@ const brandLogo =
     fs.existsSync(path.join(process.cwd(), 'public', candidate)),
   ) ?? '';
 
+/**
+ * Where an uploaded image may be served from.
+ *
+ * The media library stores files in Supabase Storage, so a picture chosen in
+ * the admin has that project's hostname. Derived from the configured URL
+ * rather than hard-coded, and simply absent when Supabase is not configured -
+ * in which case there are no uploads to serve either.
+ */
+const supabaseHost = (() => {
+  try {
+    const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    return url ? new URL(url).hostname : null;
+  } catch {
+    return null;
+  }
+})();
+
 const nextConfig: NextConfig = {
   reactStrictMode: true,
+  images: supabaseHost
+    ? {
+        remotePatterns: [
+          { protocol: 'https', hostname: supabaseHost, pathname: '/storage/v1/object/public/**' },
+        ],
+      }
+    : undefined,
   poweredByHeader: false,
   env: {
     NEXT_PUBLIC_BRAND_LOGO: brandLogo,

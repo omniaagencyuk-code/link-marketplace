@@ -1,6 +1,6 @@
 'use client';
 
-import { ChevronDown, ChevronUp, Plus, RotateCcw, Trash2 } from 'lucide-react';
+import { ChevronDown, ChevronUp, Image as ImageIcon, Plus, RotateCcw, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import dynamic from 'next/dynamic';
 import { Button } from '@/components/ui/button';
@@ -9,6 +9,7 @@ import { Label } from '@/components/ui/label';
 import { cn } from '@/lib/utils/cn';
 import type { FieldDef, FieldValue, ImageValue, LinkValue } from '@/lib/cms/types';
 import { isRichTextDoc, type RichTextDoc } from '@/lib/cms/rich-text';
+import { MediaPicker } from './media-picker';
 
 /**
  * Loaded on demand.
@@ -159,37 +160,18 @@ function FieldControl({
       );
     }
 
-    case 'image': {
-      const current: ImageValue =
-        typeof value === 'object' && value !== null && 'src' in value
-          ? (value as ImageValue)
-          : { src: '', alt: '' };
+    case 'image':
       return (
-        <div className="space-y-2">
-          <Input
-            id={id}
-            value={current.src}
-            placeholder="/images/example.webp"
-            onChange={(event) => onChange({ ...current, src: event.target.value })}
-          />
-          <Input
-            value={current.alt}
-            placeholder="Describe the image for screen readers"
-            onChange={(event) => onChange({ ...current, alt: event.target.value })}
-          />
-          {current.src ? (
-            /* eslint-disable-next-line @next/next/no-img-element --
-               editor-supplied paths, including external ones, which the image
-               optimiser would reject. This is an admin preview, not a page. */
-            <img
-              src={current.src}
-              alt={current.alt}
-              className="max-h-32 rounded-md border border-line object-contain"
-            />
-          ) : null}
-        </div>
+        <ImageField
+          id={id}
+          value={
+            typeof value === 'object' && value !== null && 'src' in value
+              ? (value as ImageValue)
+              : { src: '', alt: '' }
+          }
+          onChange={onChange}
+        />
       );
-    }
 
     case 'list':
       return (
@@ -219,6 +201,69 @@ function CharCount({ value, max }: { value: FieldValue; max?: number }) {
     >
       {used} / {max}
     </p>
+  );
+}
+
+/**
+ * An image, chosen from the library or typed as a path.
+ *
+ * Both, deliberately. The library is where an editor's own pictures live, and
+ * the path field is still how you point at something committed to `/public` -
+ * the mascot artwork, say - which is not an upload and should not become one.
+ */
+function ImageField({
+  id,
+  value,
+  onChange,
+}: {
+  id: string;
+  value: ImageValue;
+  onChange: (value: FieldValue) => void;
+}) {
+  const [picking, setPicking] = useState(false);
+
+  return (
+    <div className="space-y-2">
+      <div className="flex gap-2">
+        <Input
+          id={id}
+          value={value.src}
+          placeholder="/images/example.webp"
+          onChange={(event) => onChange({ ...value, src: event.target.value })}
+        />
+        <Button type="button" variant="outline" size="sm" onClick={() => setPicking(true)}>
+          <ImageIcon className="h-3.5 w-3.5" aria-hidden="true" />
+          Library
+        </Button>
+      </div>
+
+      <Input
+        value={value.alt}
+        placeholder="Describe the image for screen readers"
+        onChange={(event) => onChange({ ...value, alt: event.target.value })}
+      />
+
+      {value.src ? (
+        /* eslint-disable-next-line @next/next/no-img-element --
+           editor-supplied paths, including external ones, which the image
+           optimiser would reject. This is an admin preview, not a page. */
+        <img
+          src={value.src}
+          alt={value.alt}
+          className="max-h-32 rounded-md border border-line object-contain"
+        />
+      ) : null}
+
+      <MediaPicker
+        open={picking}
+        onClose={() => setPicking(false)}
+        onSelect={(asset) =>
+          // The library's alt text is the starting point; a page can override
+          // it without changing what the file says about itself.
+          onChange({ src: asset.url, alt: value.alt || asset.alt })
+        }
+      />
+    </div>
   );
 }
 

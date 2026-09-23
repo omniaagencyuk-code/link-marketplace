@@ -47,6 +47,16 @@ a hand of cards with a few chips beside it.
 
 A second niche page would follow the same pattern: `parrots/<niche>-parrot`.
 
+## Uploads versus committed files
+
+Editorial pictures - anything inside page copy, and any image chosen through
+a CMS image field - are uploaded in the admin (the **Library** button beside
+an image field, or the image button in the rich text toolbar) and stored in
+Supabase. They need no deployment and are not in this folder.
+
+The files here are different: they are brand artwork the code reaches for by
+name, resolved at build time. Those stay committed.
+
 ## Adding them
 
 Drop the files in this folder using these exact names, commit and push. The

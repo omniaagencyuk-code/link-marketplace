@@ -22,6 +22,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils/cn';
 import { cleanRichTextDoc, isRichTextDoc, type RichTextDoc } from '@/lib/cms/rich-text';
+import { MediaPicker } from './media-picker';
 
 /**
  * The editorial editor.
@@ -60,6 +61,7 @@ export function RichTextEditor({
   id?: string;
 }) {
   const [linkOpen, setLinkOpen] = useState(false);
+  const [mediaOpen, setMediaOpen] = useState(false);
 
   // Markdown that has never been edited is converted once, on the way in.
   const initial = useMemo(() => (isRichTextDoc(value) ? value : markdownToDoc(value)), [value]);
@@ -197,7 +199,7 @@ export function RichTextEditor({
             <Link2Off className="h-3.5 w-3.5" aria-hidden="true" />
           </ToolButton>
         ) : null}
-        <ToolButton label="Image" onClick={() => insertImage(editor)}>
+        <ToolButton label="Image" onClick={() => setMediaOpen(true)}>
           <ImageIcon className="h-3.5 w-3.5" aria-hidden="true" />
         </ToolButton>
         <ToolButton
@@ -245,6 +247,13 @@ export function RichTextEditor({
       {editor.isActive('table') ? <TableBar editor={editor} /> : null}
 
       <EditorContent editor={editor} style={{ minHeight: rows * 24 }} className="px-3 py-2" />
+
+      {/* The same panel the image field uses, so an editor learns it once. */}
+      <MediaPicker
+        open={mediaOpen}
+        onClose={() => setMediaOpen(false)}
+        onSelect={(asset) => editor.chain().focus().setImage({ src: asset.url, alt: asset.alt }).run()}
+      />
     </div>
   );
 }
@@ -254,13 +263,6 @@ function currentHeading(editor: Editor): number {
     if (editor.isActive('heading', { level })) return level;
   }
   return 0;
-}
-
-function insertImage(editor: Editor) {
-  const src = window.prompt('Image path or URL', '/images/');
-  if (!src) return;
-  const alt = window.prompt('Describe the image for screen readers', '') ?? '';
-  editor.chain().focus().setImage({ src, alt }).run();
 }
 
 /** Row and column controls, only while the caret is in a table. */

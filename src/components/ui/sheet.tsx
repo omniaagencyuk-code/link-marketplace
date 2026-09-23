@@ -13,6 +13,15 @@ interface SheetProps {
   side?: 'left' | 'right' | 'bottom';
   children: ReactNode;
   footer?: ReactNode;
+  /**
+   * Hidden from large screens, which is the default.
+   *
+   * This panel began as the mobile filter drawer, where the desktop layout
+   * shows the same controls in a sidebar and the sheet must not appear on top
+   * of them. A panel that has no desktop equivalent - the media picker - sets
+   * this false, or it renders into nothing on the screens an admin uses.
+   */
+  mobileOnly?: boolean;
 }
 
 /**
@@ -27,6 +36,7 @@ export function Sheet({
   side = 'left',
   children,
   footer,
+  mobileOnly = true,
 }: SheetProps) {
   const panelRef = useRef<HTMLDivElement>(null);
 
@@ -55,7 +65,7 @@ export function Sheet({
         : 'inset-y-0 left-0 w-[min(24rem,92vw)]';
 
   return (
-    <div className="fixed inset-0 z-50 lg:hidden" role="presentation">
+    <div className={cn('fixed inset-0 z-50', mobileOnly && 'lg:hidden')} role="presentation">
       <div
         className="absolute inset-0 bg-navy-950/40 backdrop-blur-[1px]"
         onClick={onClose}
