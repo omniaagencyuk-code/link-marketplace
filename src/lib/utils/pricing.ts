@@ -123,3 +123,70 @@ export function groupNichePrices(prices: NichePrice[]) {
     }))
     .sort((a, b) => b.top - a.top);
 }
+
+/**
+ * The topic a buyer declares when none of the priced ones apply.
+ *
+ * A real slug rather than a blank, so an order records an answer rather than
+ * a gap. "Not answered" and "answered: nothing unusual" need to be different
+ * things: the first must block checkout, the second must not.
+ */
+export const GENERAL_TOPIC = 'general';
+
+export interface PlacementPrice {
+  /** What to charge. */
+  priceMinor: number;
+  /** What it would have cost on the standard rate. */
+  listPriceMinor: number;
+  /** True when the declared topic carries a premium. */
+  premium: boolean;
+}
+
+/**
+ * What one placement costs, given the topic it is for.
+ *
+ * The single answer to that question. The order card, the basket line and
+ * `priceBasket` all call this, so the number a buyer is shown and the number
+ * they are charged cannot drift apart - they are the same function of the
+ * same stored rates.
+ *
+ * Returns null when the placement is not on sale, which the caller reports as
+ * a rejected line rather than charging the list price for something the
+ * publisher has withdrawn.
+ */
+export function placementPrice(
+  website: Pick<Website, 'services' | 'nichePrices'>,
+  linkType: LinkTypeSlug,
+  topic?: string | null,
+): PlacementPrice | null {
+  const service = website.services.find(
+    (candidate) => candidate.type === linkType && candidate.available,
+  );
+  if (!service || service.priceMinor <= 0) return null;
+
+  const override = topic
+    ? website.nichePrices.find(
+        (price) => price.linkType === linkType && price.niche === topic && price.priceMinor > 0,
+      )
+    : undefined;
+
+  return {
+    priceMinor: override?.priceMinor ?? service.priceMinor,
+    listPriceMinor: service.priceMinor,
+    premium: Boolean(override),
+  };
+}
+
+/**
+ * Must this line declare a topic before it can be paid for?
+ *
+ * Only where the publisher prices this placement differently for something.
+ * On the ordinary listing - most of them - no question is asked and the
+ * checkout is exactly as it was.
+ */
+export function needsTopic(
+  website: Pick<Website, 'services' | 'nichePrices'>,
+  linkType: LinkTypeSlug,
+): boolean {
+  return overridesForType(website.nichePrices, linkType).length > 0;
+}

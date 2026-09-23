@@ -386,7 +386,9 @@ export interface OrderItemRow {
   website_domain: string;
   website_slug: string;
   service_type: OrderItem['serviceType'];
+  topic: string | null;
   price_minor: number;
+  list_price_minor: number | null;
   target_url: string | null;
   anchor_text: string | null;
   preferred_landing_page: string | null;
@@ -432,7 +434,12 @@ export function mapOrder(row: OrderRow): Order {
         websiteDomain: item.website_domain,
         websiteSlug: item.website_slug,
         serviceType: item.service_type,
+        topic: item.topic ?? undefined,
         priceMinor: toNumber(item.price_minor),
+        listPriceMinor:
+          item.list_price_minor === null || item.list_price_minor === undefined
+            ? undefined
+            : toNumber(item.list_price_minor),
         targetUrl: item.target_url ?? '',
         anchorText: item.anchor_text ?? '',
         preferredLandingPage: item.preferred_landing_page ?? undefined,

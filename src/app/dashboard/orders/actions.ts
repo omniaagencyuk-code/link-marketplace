@@ -12,6 +12,7 @@ import {
 import { getStripe } from '@/lib/stripe/client';
 import { isStripeEnabled } from '@/lib/stripe/config';
 import { linkTypeLabels } from '@/lib/utils/labels';
+import { acceptedNicheLabel } from '@/lib/config/accepted-niches';
 import { siteUrl } from '@/lib/config/brand';
 import type { DraftOrderItem } from '@/lib/types';
 
@@ -90,7 +91,18 @@ export async function startCheckoutAction(items: DraftOrderItem[]): Promise<Chec
           unit_amount: line.priceMinor,
           product_data: {
             name: `${linkTypeLabels[line.serviceType]} - ${line.websiteDomain}`,
-            description: `Target: ${line.targetUrl}`.slice(0, 500),
+            // Where a premium applied, the Stripe page and the receipt say
+            // which topic produced the higher figure. A customer comparing
+            // the receipt with the listing should not have to work that out.
+            description: [
+              line.priceMinor !== line.listPriceMinor
+                ? `${acceptedNicheLabel(line.topic ?? '')} rate`
+                : null,
+              `Target: ${line.targetUrl}`,
+            ]
+              .filter(Boolean)
+              .join(' - ')
+              .slice(0, 500),
           },
         },
       })),

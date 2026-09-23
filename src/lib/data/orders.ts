@@ -1,10 +1,13 @@
 import { websites } from './websites';
 import { users } from './users';
+import { placementPrice } from '@/lib/utils/pricing';
 import type { LinkTypeSlug, Order, OrderItem, OrderStatus } from '@/lib/types';
 
 interface RawOrderItem {
   websiteSlug: string;
   serviceType: LinkTypeSlug;
+  /** The declared subject, where the publisher prices topics apart. */
+  topic?: string;
   targetUrl: string;
   anchorText: string;
   status?: OrderStatus;
@@ -32,6 +35,7 @@ const rawOrders: RawOrder[] = [
       {
         websiteSlug: 'casinoguru-co-uk',
         serviceType: 'guest-post',
+        topic: 'gambling',
         targetUrl: 'https://northboundmedia.co.uk/casino-bonus-guide',
         anchorText: 'casino bonus guide',
         status: 'live',
@@ -40,6 +44,7 @@ const rawOrders: RawOrder[] = [
       {
         websiteSlug: 'bettingedge-co-uk',
         serviceType: 'niche-edit',
+        topic: 'gambling',
         targetUrl: 'https://northboundmedia.co.uk/odds-explained',
         anchorText: 'how betting odds work',
         status: 'live',
@@ -251,6 +256,11 @@ function buildOrders(): Order[] {
     const items: OrderItem[] = raw.items.map((rawItem, itemIndex) => {
       const website = websites.find((candidate) => candidate.slug === rawItem.websiteSlug);
       const service = website?.services.find((candidate) => candidate.type === rawItem.serviceType);
+      // Priced through the same function checkout uses, so a seeded gambling
+      // placement carries the gambling rate rather than a number typed here.
+      const priced = website
+        ? placementPrice(website, rawItem.serviceType, rawItem.topic)
+        : null;
       return {
         id: `${id}_item_${itemIndex + 1}`,
         orderId: id,
@@ -258,7 +268,9 @@ function buildOrders(): Order[] {
         websiteDomain: website?.domain ?? rawItem.websiteSlug,
         websiteSlug: rawItem.websiteSlug,
         serviceType: rawItem.serviceType,
-        priceMinor: service?.priceMinor ?? 0,
+        topic: rawItem.topic,
+        priceMinor: priced?.priceMinor ?? service?.priceMinor ?? 0,
+        listPriceMinor: priced?.listPriceMinor ?? service?.priceMinor ?? 0,
         targetUrl: rawItem.targetUrl,
         anchorText: rawItem.anchorText,
         notes: rawItem.notes,

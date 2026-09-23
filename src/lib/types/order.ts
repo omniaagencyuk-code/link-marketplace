@@ -15,7 +15,21 @@ export interface OrderItem {
   websiteDomain: string;
   websiteSlug: string;
   serviceType: LinkTypeSlug;
+  /**
+   * The accepted-niche slug the buyer declared this placement is about.
+   *
+   * Asked only where the publisher prices some topics differently, and it is
+   * what `priceMinor` was computed from. Undefined on orders placed before
+   * topics existed.
+   */
+  topic?: string;
   priceMinor: number;
+  /**
+   * The standard rate when this was bought, so the order still explains its
+   * own price after the rate card moves on. Equal to `priceMinor` unless a
+   * premium applied.
+   */
+  listPriceMinor?: number;
   targetUrl: string;
   anchorText: string;
   preferredLandingPage?: string;
@@ -59,6 +73,12 @@ export interface DraftOrderItem {
   websiteSlug: string;
   websiteDomain: string;
   serviceType: LinkTypeSlug;
+  /**
+   * What the placement is about, where the publisher prices topics
+   * differently. Blank means the buyer has not answered yet, which blocks
+   * checkout on that line rather than quietly billing the standard rate.
+   */
+  topic?: string;
   priceMinor: number;
   targetUrl: string;
   anchorText: string;

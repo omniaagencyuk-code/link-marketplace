@@ -4,6 +4,7 @@ import { Table, TableWrap, Td, Th, Tr } from '@/components/ui/table';
 import { OrderStatusBadge } from '@/components/shared/status-badge';
 import { formatDate, formatPrice } from '@/lib/utils/format';
 import { linkTypeLabels } from '@/lib/utils/labels';
+import { acceptedNicheLabel } from '@/lib/config/accepted-niches';
 import type { Order } from '@/lib/types';
 
 /** Flattened order-item view used on the dashboard and orders page. */
@@ -53,6 +54,12 @@ export function OrdersTable({ orders, limit }: { orders: Order[]; limit?: number
               </Td>
               <Td className="hidden text-[13px] text-ink-soft sm:table-cell">
                 {linkTypeLabels[item.serviceType]}
+                {/* What they declared, where it set the price they paid. */}
+                {item.topic ? (
+                  <span className="mt-0.5 block text-[11px] text-muted">
+                    {acceptedNicheLabel(item.topic)}
+                  </span>
+                ) : null}
               </Td>
               <Td className="hidden max-w-40 truncate text-[13px] text-ink-soft lg:table-cell">
                 {item.anchorText || '—'}

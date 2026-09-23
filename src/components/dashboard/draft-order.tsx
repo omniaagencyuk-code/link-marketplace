@@ -9,6 +9,7 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { DraftOrderItemCard } from './draft-order-item';
 import { useOrderDraft } from '@/lib/providers/order-draft-provider';
 import { formatPrice } from '@/lib/utils/format';
+import { needsTopic } from '@/lib/utils/pricing';
 import type { WebsiteListItem } from '@/lib/types';
 
 /**
@@ -27,6 +28,19 @@ export function DraftOrder({ websites }: { websites: WebsiteListItem[] }) {
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [rejected, setRejected] = useState<{ websiteDomain: string; reason: string }[]>([]);
+
+  /*
+    Lines that still owe an answer about their topic.
+
+    Counted here rather than in the draft provider because it needs the
+    publisher's rates, and the provider deliberately knows nothing but what is
+    in local storage. Checkout would reject these anyway - this is so the
+    buyer finds out before being sent to Stripe rather than after.
+  */
+  const missingTopics = items.filter((item) => {
+    const website = websites.find((candidate) => candidate.id === item.websiteId);
+    return website ? needsTopic(website, item.serviceType) && !item.topic : false;
+  }).length;
 
   function checkout() {
     setError(null);
@@ -109,7 +123,7 @@ export function DraftOrder({ websites }: { websites: WebsiteListItem[] }) {
               variant="accent"
               size="sm"
               onClick={checkout}
-              disabled={pending || incompleteCount > 0}
+              disabled={pending || incompleteCount > 0 || missingTopics > 0}
             >
               {pending ? 'Opening checkout...' : 'Checkout'}
             </Button>
@@ -121,6 +135,14 @@ export function DraftOrder({ websites }: { websites: WebsiteListItem[] }) {
             <AlertCircle className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
             {incompleteCount} {incompleteCount === 1 ? 'placement needs' : 'placements need'} a
             target URL before this order can be submitted.
+          </p>
+        ) : null}
+
+        {missingTopics > 0 ? (
+          <p className="mt-3 flex items-center gap-1.5 border-t border-line pt-3 text-[13px] text-negative">
+            <AlertCircle className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+            {missingTopics} {missingTopics === 1 ? 'placement needs' : 'placements need'} a topic:
+            those publishers charge different rates depending on the subject.
           </p>
         ) : null}
 

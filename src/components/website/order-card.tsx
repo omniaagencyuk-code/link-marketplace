@@ -142,8 +142,8 @@ export function OrderCard({ website }: { website: Website }) {
         ) : (
           <p className="flex items-start gap-1.5 text-[12px] leading-relaxed text-muted">
             <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-            You add your target URL, anchor text and any article on the order page. No payment is
-            taken now.
+            You add your target URL, anchor text{premiums.length > 0 ? ', the topic' : ''} and any
+            article on the order page. No payment is taken now.
           </p>
         )}
       </div>

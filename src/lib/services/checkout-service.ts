@@ -1,6 +1,7 @@
 import { isSupabaseEnabled } from '@/lib/supabase/config';
 import { getServerClient, getAdminScopedClient } from '@/lib/supabase/server';
 import { websiteService } from './website-service';
+import { needsTopic, placementPrice } from '@/lib/utils/pricing';
 import { mockStore } from './mock-store';
 import { mapOrder, type OrderRow } from '@/lib/supabase/mappers';
 import type { DraftOrderItem, Order, UserProfile } from '@/lib/types';
@@ -26,8 +27,12 @@ export interface PricedLine {
   websiteDomain: string;
   websiteSlug: string;
   serviceType: DraftOrderItem['serviceType'];
+  /** The topic the buyer declared, where the publisher prices them apart. */
+  topic?: string;
   /** The price the database holds, not the one the browser sent. */
   priceMinor: number;
+  /** The standard rate, recorded so the premium is legible on the order. */
+  listPriceMinor: number;
   targetUrl: string;
   anchorText: string;
   preferredLandingPage?: string;
@@ -66,10 +71,23 @@ export async function priceBasket(items: DraftOrderItem[]): Promise<PricingResul
       continue;
     }
 
-    const service = website.services.find(
-      (candidate) => candidate.type === item.serviceType && candidate.available,
-    );
-    if (!service) {
+    // The topic the browser sent is a declaration, not a price. It selects
+    // which stored rate applies; it can never be a number.
+    const topic = item.topic?.trim() || undefined;
+
+    // Asked for only where this publisher prices topics apart. A basket saved
+    // before that rate existed arrives without an answer, and is stopped here
+    // rather than billed at a rate the publisher no longer honours.
+    if (needsTopic(website, item.serviceType) && !topic) {
+      rejected.push({
+        websiteDomain: website.domain,
+        reason: 'Tell us what this placement is about - this publisher prices some topics differently.',
+      });
+      continue;
+    }
+
+    const price = placementPrice(website, item.serviceType, topic);
+    if (!price) {
       rejected.push({
         websiteDomain: website.domain,
         reason: 'That placement type is no longer offered on this website.',
@@ -87,7 +105,9 @@ export async function priceBasket(items: DraftOrderItem[]): Promise<PricingResul
       websiteDomain: website.domain,
       websiteSlug: website.slug,
       serviceType: item.serviceType,
-      priceMinor: service.priceMinor,
+      topic,
+      priceMinor: price.priceMinor,
+      listPriceMinor: price.listPriceMinor,
       targetUrl: item.targetUrl.trim(),
       anchorText: item.anchorText.trim(),
       preferredLandingPage: item.preferredLandingPage?.trim() || undefined,
@@ -138,7 +158,9 @@ export async function createPendingOrder(
         websiteDomain: line.websiteDomain,
         websiteSlug: line.websiteSlug,
         serviceType: line.serviceType,
+        topic: line.topic,
         priceMinor: line.priceMinor,
+        listPriceMinor: line.listPriceMinor,
         targetUrl: line.targetUrl,
         anchorText: line.anchorText,
         preferredLandingPage: line.preferredLandingPage,
@@ -179,8 +201,15 @@ export async function createPendingOrder(
     pricing.lines.map((line) => ({
       order_id: orderRow.id,
       website_id: line.websiteId,
+      // Copied in rather than joined: `websites` is readable only while a
+      // listing is active, so a join would blank the domain on a customer's
+      // own order the day the publisher was archived.
+      website_domain: line.websiteDomain,
+      website_slug: line.websiteSlug,
       service_type: line.serviceType,
+      topic: line.topic ?? null,
       price_minor: line.priceMinor,
+      list_price_minor: line.listPriceMinor,
       target_url: line.targetUrl,
       anchor_text: line.anchorText,
       preferred_landing_page: line.preferredLandingPage ?? null,

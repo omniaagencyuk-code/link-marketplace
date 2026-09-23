@@ -8,6 +8,7 @@ import { AdminOrderStatus } from '@/components/admin/admin-order-status';
 import { orderService, websiteService } from '@/lib/services';
 import { formatDateTime, formatPrice } from '@/lib/utils/format';
 import { linkTypeLabels, orderStatusLabels } from '@/lib/utils/labels';
+import { acceptedNicheLabel } from '@/lib/config/accepted-niches';
 import type { Website } from '@/lib/types';
 
 export const dynamic = 'force-dynamic';
@@ -75,6 +76,12 @@ export default async function AdminOrderPage({ params }: { params: Promise<{ id:
             const service = website?.services.find((entry) => entry.type === item.serviceType);
             const cost = service?.costPriceMinor;
             const profit = typeof cost === 'number' ? item.priceMinor - cost : null;
+            // A premium is visible from the order alone, at the rates of the
+            // day, rather than by looking up what the site charges now.
+            const premium =
+              typeof item.listPriceMinor === 'number' && item.listPriceMinor !== item.priceMinor
+                ? item.listPriceMinor
+                : null;
             const contact = website?.contact;
 
             return (
@@ -84,6 +91,7 @@ export default async function AdminOrderPage({ params }: { params: Promise<{ id:
                     <CardTitle>{item.websiteDomain}</CardTitle>
                     <p className="mt-1 text-[13px] text-muted">
                       {linkTypeLabels[item.serviceType]}
+                      {item.topic ? ` · ${acceptedNicheLabel(item.topic)}` : ''}
                     </p>
                   </div>
                   <Badge tone={item.status === 'live' ? 'accent' : 'neutral'}>
@@ -149,6 +157,13 @@ export default async function AdminOrderPage({ params }: { params: Promise<{ id:
                       strong={profit !== null}
                     />
                   </dl>
+
+                  {premium !== null ? (
+                    <p className="-mt-2 text-[12px] text-muted">
+                      {acceptedNicheLabel(item.topic ?? '')} rate. The standard rate on this
+                      placement was {formatPrice(premium)} when the order was placed.
+                    </p>
+                  ) : null}
 
                   {/* --------------------------------- what was ordered */}
                   <dl className="space-y-2 border-t border-line pt-4">

@@ -9,6 +9,8 @@ import { Label } from '@/components/ui/label';
 import { Select } from '@/components/ui/select';
 import { useOrderDraft } from '@/lib/providers/order-draft-provider';
 import { formatPrice, formatTurnaround } from '@/lib/utils/format';
+import { acceptedNicheLabel } from '@/lib/config/accepted-niches';
+import { GENERAL_TOPIC, overridesForType, placementPrice } from '@/lib/utils/pricing';
 import { linkTypeLabels } from '@/lib/utils/labels';
 import { cn } from '@/lib/utils/cn';
 import type { DraftOrderItem, LinkTypeSlug, WebsiteListItem } from '@/lib/types';
@@ -49,9 +51,25 @@ export function DraftOrderItemCard({
   const missingTarget = !item.targetUrl.trim();
   const fieldId = (name: string) => `${item.id}-${name}`;
 
+  // The topics this publisher charges differently for, for the placement
+  // being bought. Empty on most listings, and then no question is asked.
+  const premiums = website ? overridesForType(website.nichePrices, item.serviceType) : [];
+  const missingTopic = premiums.length > 0 && !item.topic;
+  const priced = website ? placementPrice(website, item.serviceType, item.topic) : null;
+  const premiumApplied = Boolean(priced?.premium);
+
   function onServiceChange(type: LinkTypeSlug) {
-    const next = services.find((candidate) => candidate.type === type);
+    if (!website) return;
+    // Changing the placement can change which topics carry a premium, so the
+    // price is recomputed from the topic rather than carried across.
+    const next = placementPrice(website, type, item.topic);
     update(item.id, { serviceType: type, priceMinor: next?.priceMinor ?? item.priceMinor });
+  }
+
+  function onTopicChange(topic: string) {
+    if (!website) return;
+    const next = placementPrice(website, item.serviceType, topic);
+    update(item.id, { topic, priceMinor: next?.priceMinor ?? item.priceMinor });
   }
 
   function onFileChange(event: React.ChangeEvent<HTMLInputElement>) {
@@ -93,6 +111,11 @@ export function DraftOrderItemCard({
 
         <div className="flex items-center gap-3">
           <span className="tabular text-[15px] font-semibold text-ink">
+            {premiumApplied && priced ? (
+              <span className="mr-1.5 text-[12px] font-normal text-muted line-through">
+                {formatPrice(priced.listPriceMinor)}
+              </span>
+            ) : null}
             {formatPrice(item.priceMinor)}
           </span>
           <Button
@@ -116,11 +139,22 @@ export function DraftOrderItemCard({
               onChange={(event) => onServiceChange(event.target.value as LinkTypeSlug)}
               className="mt-1.5"
             >
-              {services.map((candidate) => (
-                <option key={candidate.id} value={candidate.type}>
-                  {linkTypeLabels[candidate.type]} - {formatPrice(candidate.priceMinor)}
-                </option>
-              ))}
+              {/*
+                Priced for the topic already chosen, so this select and the
+                topic select below it cannot show two different numbers for
+                the placement the buyer is about to pay for.
+              */}
+              {services.map((candidate) => {
+                const forTopic = website
+                  ? placementPrice(website, candidate.type, item.topic)
+                  : null;
+                return (
+                  <option key={candidate.id} value={candidate.type}>
+                    {linkTypeLabels[candidate.type]} -{' '}
+                    {formatPrice(forTopic?.priceMinor ?? candidate.priceMinor)}
+                  </option>
+                );
+              })}
             </Select>
           </div>
         ) : (
@@ -131,6 +165,46 @@ export function DraftOrderItemCard({
             </p>
           </div>
         )}
+
+        {premiums.length > 0 ? (
+          <div className="sm:col-span-2">
+            <Label htmlFor={fieldId('topic')}>
+              What is this placement about?<span className="ml-0.5 text-negative">*</span>
+            </Label>
+            <Select
+              id={fieldId('topic')}
+              value={item.topic ?? ''}
+              onChange={(event) => onTopicChange(event.target.value)}
+              aria-invalid={missingTopic}
+              aria-describedby={fieldId('topic-hint')}
+              className="mt-1.5"
+            >
+              <option value="" disabled>
+                Choose a topic
+              </option>
+              {premiums.map((price) => (
+                <option key={price.niche} value={price.niche}>
+                  {acceptedNicheLabel(price.niche)} - {formatPrice(price.priceMinor)}
+                </option>
+              ))}
+              <option value={GENERAL_TOPIC}>
+                None of these - {formatPrice(priced?.listPriceMinor ?? item.priceMinor)}
+              </option>
+            </Select>
+            <p
+              id={fieldId('topic-hint')}
+              className={cn('mt-1 text-[12px]', missingTopic ? 'text-negative' : 'text-muted')}
+            >
+              {/*
+                Said plainly rather than buried: the buyer is choosing the
+                price, and a publisher who finds gambling content sold as
+                general content will pull the placement.
+              */}
+              {website?.domain ?? 'This publisher'} charges more for some topics. Pick the one your
+              content is about.
+            </p>
+          </div>
+        ) : null}
 
         <div>
           <Label htmlFor={fieldId('target')}>
