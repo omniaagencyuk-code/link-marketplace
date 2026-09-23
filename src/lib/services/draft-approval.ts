@@ -171,7 +171,7 @@ export async function approveDraft(
       status: created ? 'approved' : 'merged',
       reviewed_by: options.reviewer ?? null,
       reviewed_at: new Date().toISOString(),
-      values: listing as unknown as Record<string, unknown>,
+      proposed: listing as unknown as Record<string, unknown>,
     })
     .eq('id', draftId);
 

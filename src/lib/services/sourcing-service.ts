@@ -446,7 +446,7 @@ export const sourcingService = {
           email_id: outcome.emailId,
           domain,
           matched_website_id: match ? (match as { id: string }).id : null,
-          values: listing as unknown as Record<string, unknown>,
+          proposed: listing as unknown as Record<string, unknown>,
           confidence: listing.confidence,
           evidence: listing.evidence,
           low_confidence_count: countLowConfidence(listing),

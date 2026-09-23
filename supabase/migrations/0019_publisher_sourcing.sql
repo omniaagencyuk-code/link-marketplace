@@ -302,7 +302,12 @@ create table if not exists public.listing_drafts (
   -- read each one from. Three objects keyed the same way rather than one
   -- object of triples, so the review UI can ask "which fields are low" in one
   -- pass without walking every value.
-  values jsonb not null default '{}'::jsonb,
+  --
+  -- Named `proposed` rather than `values`: VALUES is a reserved word, and
+  -- while the server accepts it as a column name, the Supabase SQL editor
+  -- parses statements itself and refuses. Quoting it would work and would
+  -- leave every future query needing the quotes to be remembered.
+  proposed jsonb not null default '{}'::jsonb,
   confidence jsonb not null default '{}'::jsonb,
   evidence jsonb not null default '{}'::jsonb,
   low_confidence_count smallint not null default 0,

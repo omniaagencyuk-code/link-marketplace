@@ -93,7 +93,7 @@ export async function approveDraftAction(draftId: string, edited: unknown) {
 
   const { data } = await supabase
     .from('listing_drafts')
-    .select('id, domain, email_id, matched_website_id, values, status')
+    .select('id, domain, email_id, matched_website_id, proposed, status')
     .eq('id', draftId)
     .maybeSingle();
 
@@ -103,7 +103,7 @@ export async function approveDraftAction(draftId: string, edited: unknown) {
     return { ok: false, error: 'That draft has already been reviewed.' };
   }
 
-  const parsed = extractedListingSchema.safeParse(edited ?? draft.values);
+  const parsed = extractedListingSchema.safeParse(edited ?? draft.proposed);
   if (!parsed.success) {
     return {
       ok: false,
@@ -161,7 +161,7 @@ export async function bulkApproveConfidentAction() {
 
   const { data } = await supabase
     .from('listing_drafts')
-    .select('id, domain, email_id, matched_website_id, values, flags')
+    .select('id, domain, email_id, matched_website_id, proposed, flags')
     .eq('status', 'pending')
     .eq('low_confidence_count', 0)
     .limit(100);
@@ -177,7 +177,7 @@ export async function bulkApproveConfidentAction() {
   const failures: string[] = [];
 
   for (const draft of drafts) {
-    const parsed = extractedListingSchema.safeParse(draft.values);
+    const parsed = extractedListingSchema.safeParse(draft.proposed);
     if (!parsed.success) {
       failures.push(String(draft.domain));
       continue;
