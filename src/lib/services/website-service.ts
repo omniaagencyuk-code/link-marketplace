@@ -209,10 +209,16 @@ export const websiteService = {
    * so the preview represents the marketplace instead of advertising its five
    * strongest sites.
    */
-  async getPublicPreview(limit = 6): Promise<MarketplacePreview> {
-    if (isSupabaseEnabled()) return supabaseWebsiteRepository.getPublicPreview(limit);
+  async getPublicPreview(limit = 6, niche?: NicheSlug): Promise<MarketplacePreview> {
+    if (isSupabaseEnabled()) return supabaseWebsiteRepository.getPublicPreview(limit, niche);
 
-    const active = listItems();
+    const all = listItems();
+    const active = niche
+      ? all.filter(
+          (website) => website.niche === niche || website.secondaryNiches.includes(niche),
+        )
+      : all;
+
     const stride = Math.max(1, Math.floor(active.length / Math.max(limit, 1)));
     const sample: WebsiteListItem[] = [];
     for (let index = 0; index < active.length && sample.length < limit; index += stride) {
@@ -224,8 +230,10 @@ export const websiteService = {
         sample.sort((a, b) => b.metrics.domainRating - a.metrics.domainRating),
         limit,
       ),
+      // Scoped to the niche when one was asked for, so a niche page quotes its
+      // own count rather than the whole marketplace's.
       totalWebsites: active.length,
-      totalNiches: new Set(active.map((website) => website.niche)).size,
+      totalNiches: niche ? 1 : new Set(active.map((website) => website.niche)).size,
       totalCountries: new Set(active.map((website) => website.country)).size,
     };
   },

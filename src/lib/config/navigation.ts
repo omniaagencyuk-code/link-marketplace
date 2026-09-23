@@ -111,6 +111,7 @@ export const footerNav: { title: string; items: NavItem[] }[] = [
       { label: 'Niche edits', href: '/niche-edits' },
       { label: 'Content writing', href: '/content-writing' },
       { label: 'Digital PR', href: '/digital-pr' },
+      { label: 'Gambling link building', href: '/gambling-link-building' },
     ],
   },
   {

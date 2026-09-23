@@ -4,6 +4,7 @@ import * as guestPosts from './pages/guest-posts';
 import * as nicheEdits from './pages/niche-edits';
 import * as digitalPr from './pages/digital-pr';
 import * as agencies from './pages/link-building-agencies';
+import * as gambling from './pages/gambling-link-building';
 import * as pricing from './pages/pricing';
 import * as howItWorks from './pages/how-it-works';
 import * as contentWriting from './pages/content-writing';
@@ -32,6 +33,7 @@ export const pageRegistry: RegisteredPage[] = [
   nicheEdits,
   digitalPr,
   agencies,
+  gambling,
   contentWriting,
   pricing,
   howItWorks,

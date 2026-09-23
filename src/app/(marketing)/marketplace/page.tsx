@@ -81,7 +81,53 @@ const gatewayPoints = [
   },
 ];
 
-export default async function MarketplacePage() {
+/**
+ * Filters worth carrying through a sign-up.
+ *
+ * A visitor arriving from a niche landing page hits this gateway with the
+ * filter they chose already in the URL, and losing it at the sign-up form
+ * would drop them into an unfiltered marketplace wondering where the gambling
+ * sites went. Only keys the marketplace itself understands are carried, so
+ * the round trip cannot be used to smuggle anything through.
+ */
+const CARRIED_PARAMS = [
+  'q',
+  'niche',
+  'country',
+  'lang',
+  'service',
+  'attr',
+  'drMin',
+  'drMax',
+  'trMin',
+  'trMax',
+  'rdMin',
+  'rdMax',
+  'priceMin',
+  'priceMax',
+  'turnaround',
+  'verified',
+  'sort',
+  'view',
+  'size',
+];
+
+function marketplaceTarget(params: Record<string, string | string[] | undefined>): string {
+  const carried = new URLSearchParams();
+  for (const key of CARRIED_PARAMS) {
+    const value = params[key];
+    const single = Array.isArray(value) ? value[0] : value;
+    if (typeof single === 'string' && single !== '') carried.set(key, single);
+  }
+  const query = carried.toString();
+  return query ? `/marketplace?${query}` : '/marketplace';
+}
+
+export default async function MarketplacePage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
   const user = await getCurrentUser();
 
   if (user) {
@@ -130,6 +176,11 @@ export default async function MarketplacePage() {
 
   const preview = await websiteService.getPublicPreview(6);
 
+  // Where sign-up sends them back to: whatever they were already filtering by.
+  const next = encodeURIComponent(marketplaceTarget(await searchParams));
+  const signupHref = `/signup?next=${next}`;
+  const loginHref = `/login?next=${next}`;
+
   return (
     <>
       <section className="tropical-wash relative overflow-hidden border-b border-line bg-white">
@@ -154,13 +205,13 @@ export default async function MarketplacePage() {
 
               <div className="mt-7 flex flex-wrap items-center gap-3">
                 <Button asChild variant="accent" size="lg">
-                  <Link href="/signup?next=%2Fmarketplace">
+                  <Link href={signupHref}>
                     Create Free Account
                     <ArrowRight className="h-4 w-4" aria-hidden="true" />
                   </Link>
                 </Button>
                 <Button asChild variant="outline" size="lg">
-                  <Link href="/login?next=%2Fmarketplace">Log In</Link>
+                  <Link href={loginHref}>Log In</Link>
                 </Button>
               </div>
 
@@ -198,7 +249,7 @@ export default async function MarketplacePage() {
                 rows={preview.rows}
                 cta={{
                   label: 'Unlock the Marketplace',
-                  href: '/signup?next=%2Fmarketplace',
+                  href: signupHref,
                   caption: 'Free account. No subscription required.',
                 }}
               />
@@ -262,7 +313,7 @@ export default async function MarketplacePage() {
           </p>
           <div className="mt-7 flex flex-wrap items-center justify-center gap-3">
             <Button asChild variant="accent" size="lg">
-              <Link href="/signup?next=%2Fmarketplace">
+              <Link href={signupHref}>
                 Create Free Account
                 <ArrowRight className="h-4 w-4" aria-hidden="true" />
               </Link>

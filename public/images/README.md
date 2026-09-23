@@ -32,6 +32,21 @@ The homepage mascot: the full macaw on a branch.
 - Resolution order lives in `src/components/home/parrot-hero.tsx`
   (`MASCOT_CANDIDATES`).
 
+## parrots/gambling-parrot.(webp|avif|png|svg)
+
+The mascot on /gambling-link-building: the same macaw, in sunglasses, holding
+a hand of cards with a few chips beside it.
+
+- Transparent background. It sits on the pale green hero wash.
+- Near square, like the homepage mascot. The `<Image>` is declared 1263 x 1246
+  and a very different ratio will shift the hero as it loads.
+- Until a file exists at this path the drawn parrot stands in, so the page is
+  never broken and never shows a missing image.
+- The path is editable in the admin under Pages -> Gambling link building ->
+  Hero -> Mascot artwork, so a differently named file needs no code change.
+
+A second niche page would follow the same pattern: `parrots/<niche>-parrot`.
+
 ## Adding them
 
 Drop the files in this folder using these exact names, commit and push. The

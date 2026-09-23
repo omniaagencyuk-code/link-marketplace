@@ -19,12 +19,22 @@ export function RedactedPreview({
   note = 'Create an account to view all websites',
   cta,
   className,
+  lockPrice = false,
 }: {
   rows: PreviewRow[];
   title?: string;
   note?: string;
   cta?: { label: string; href: string; caption?: string };
   className?: string;
+  /**
+   * Replace the price band with a lock.
+   *
+   * The band is already anonymised - it is a £100 range, not a listing's
+   * price - so pages that want to show what the marketplace looks like keep
+   * it. A page whose whole argument is "the numbers are behind the sign-up"
+   * says that instead.
+   */
+  lockPrice?: boolean;
 }) {
   return (
     <section
@@ -107,8 +117,15 @@ export function RedactedPreview({
                 <td className="tabular px-2 py-2.5 text-right text-[13px] text-ink-soft">
                   {row.traffic}
                 </td>
-                <td className="tabular px-5 py-2.5 text-right text-[13px] font-medium text-ink">
-                  {row.priceBand}
+                <td className="px-5 py-2.5 text-right text-[13px] font-medium text-ink">
+                  {lockPrice ? (
+                    <span className="inline-flex items-center gap-1 text-muted">
+                      <Lock className="h-3 w-3 shrink-0" aria-hidden="true" />
+                      <span className="text-[12px]">Members</span>
+                    </span>
+                  ) : (
+                    <span className="tabular">{row.priceBand}</span>
+                  )}
                 </td>
               </tr>
             ))}

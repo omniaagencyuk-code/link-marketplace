@@ -60,6 +60,11 @@ const MAX_LIST_ROWS = 2000;
 
 type Client = ReturnType<typeof getAdminScopedClient>;
 
+/** Primary or secondary - the same test the marketplace filter applies. */
+function matchesNiche(website: WebsiteListItem, niche: NicheSlug): boolean {
+  return website.niche === niche || website.secondaryNiches.includes(niche);
+}
+
 /** Category ids for a set of slugs, in one query. */
 async function categoryIds(supabase: Client, slugs: string[]): Promise<Map<string, string>> {
   const wanted = [...new Set(slugs.filter(Boolean))];
@@ -357,20 +362,26 @@ export const supabaseWebsiteRepository = {
    * function, so what escapes is a masked label and banded metrics - never a
    * domain, slug or id.
    */
-  async getPublicPreview(limit = 6): Promise<MarketplacePreview> {
+  async getPublicPreview(limit = 6, niche?: NicheSlug): Promise<MarketplacePreview> {
     const admin = getAdminClient();
     const supabase = admin ?? (await getServerClient());
 
+    // A niche landing page needs every listing in its niche counted, not the
+    // first 120 by rank, so the read widens when one is asked for. The
+    // filtering happens here rather than in the query because a listing's
+    // niche lives in a join table and its secondary niches in another row -
+    // the same reason `countByNiche` counts in JavaScript.
     const { data } = await supabase
       .from('websites')
       .select(WEBSITE_SELECT)
       .eq('status', 'active')
       .order('domain_rating', { ascending: false })
-      .limit(120);
+      .limit(niche ? MAX_LIST_ROWS : 120);
 
-    const websites = ((data as unknown as WebsiteRow[] | null) ?? []).map((row) =>
+    const all = ((data as unknown as WebsiteRow[] | null) ?? []).map((row) =>
       toListItem(mapWebsite(row)),
     );
+    const websites = niche ? all.filter((website) => matchesNiche(website, niche)) : all;
 
     // Spread across the inventory rather than taking the strongest few, so the
     // preview represents the marketplace instead of advertising its top end.
@@ -380,9 +391,22 @@ export const supabaseWebsiteRepository = {
       sample.push(websites[index] as WebsiteListItem);
     }
 
+    const rows = toPreviewRows(sample, limit);
+
+    // Scoped to the niche when one was asked for: a page about gambling
+    // quoting the whole marketplace's total would be quoting the wrong number.
+    if (niche) {
+      return {
+        rows,
+        totalWebsites: websites.length,
+        totalNiches: 1,
+        totalCountries: new Set(websites.map((website) => website.country)).size,
+      };
+    }
+
     const stats = await supabaseWebsiteRepository.getStats();
     return {
-      rows: toPreviewRows(sample, limit),
+      rows,
       totalWebsites: stats.totalWebsites,
       totalNiches: stats.totalNiches,
       totalCountries: stats.totalCountries,
