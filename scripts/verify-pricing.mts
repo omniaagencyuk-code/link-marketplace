@@ -16,6 +16,8 @@ import {
   type RoundingTier,
 } from '../src/lib/pricing/engine';
 import { ratesFromSource, RATE_MOVE_THRESHOLD_PCT } from '../src/lib/services/fx-service';
+import { breakdownSteps } from '../src/lib/pricing/steps';
+import { formatPrice } from '../src/lib/utils/format';
 import { placementPrice, tierFor } from '../src/lib/utils/pricing';
 
 let failed = 0;
@@ -320,6 +322,84 @@ console.log('\n--- which buyer is charged what ---');
     'where nothing has been calculated everyone pays the same',
     placementPrice(unpriced, 'guest-post', null, 'agency')!.priceMinor,
     20000,
+  );
+}
+
+console.log('\n--- how a price explains itself ---');
+{
+  // The breakdown is the only account anyone gets of why a listing costs what
+  // it costs, so it has to end on the number actually charged and pass
+  // through every step that moved it.
+  const foreign = computePrice(
+    { costMinor: 10900, currency: 'USD', fxRate: 0.79, paymentMethods: ['paypal'],
+      pricesExcludeVat: null, vatRatePct: null },
+    rules, bands, rounding,
+  );
+  const labels = breakdownSteps(foreign).map((step) => step.label);
+
+  is('it opens with what the publisher charges', labels[0], 'Publisher price');
+  is('it ends on the agency price', labels[labels.length - 1], 'Agency price');
+  is(
+    'a foreign cost shows its conversion',
+    labels.some((label) => label.startsWith('Converted at')),
+    true,
+  );
+  is(
+    'the publisher price keeps their currency, not ours',
+    breakdownSteps(foreign)[0].value,
+    '109.00 USD',
+  );
+  is(
+    'the true cost is shown, not just implied',
+    breakdownSteps(foreign).find((step) => step.label === 'True cost')?.value,
+    formatPrice(foreign.trueCostMinor),
+  );
+  is(
+    'and the last money figure before agency is what it sells at',
+    breakdownSteps(foreign).find((step) => step.label === 'Sells at')?.value,
+    formatPrice(foreign.sellMinor),
+  );
+
+  const domestic = computePrice(
+    { costMinor: 10000, currency: 'GBP', fxRate: 1, paymentMethods: ['bank'],
+      pricesExcludeVat: null, vatRatePct: null },
+    rules, bands, rounding,
+  );
+  is(
+    'a sterling cost has no conversion line to read past',
+    breakdownSteps(domestic).some((step) => step.label.startsWith('Converted at')),
+    false,
+  );
+  is(
+    'a publisher who charges no VAT gets no VAT line',
+    breakdownSteps(domestic).some((step) => step.label === 'Publisher VAT'),
+    false,
+  );
+
+  const vatted = computePrice(
+    { costMinor: 10000, currency: 'GBP', fxRate: 1, paymentMethods: ['bank'],
+      pricesExcludeVat: true, vatRatePct: 20 },
+    rules, bands, rounding,
+  );
+  is(
+    'a publisher who adds VAT gets one',
+    breakdownSteps(vatted).find((step) => step.label === 'Publisher VAT')?.value,
+    formatPrice(vatted.vatMinor),
+  );
+
+  // A £50 placement's band gives 60%, which is £30 - under the floor. The
+  // floor is what set this price, and saying "Markup (60%)" would name the
+  // wrong reason for a number somebody may have to defend.
+  const tiny = computePrice(
+    { costMinor: 5000, currency: 'GBP', fxRate: 1, paymentMethods: ['bank'],
+      pricesExcludeVat: null, vatRatePct: null },
+    rules, bands, rounding,
+  );
+  is('the floor, not the band, set this price', tiny.minimumApplied, true);
+  is(
+    'and the floor is what the breakdown says set it',
+    breakdownSteps(tiny).some((step) => step.label.includes('minimum margin')),
+    true,
   );
 }
 

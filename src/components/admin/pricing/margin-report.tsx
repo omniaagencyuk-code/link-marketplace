@@ -9,6 +9,7 @@ import { Select } from '@/components/ui/select';
 import { formatPrice } from '@/lib/utils/format';
 import { acceptedNicheLabel } from '@/lib/config/accepted-niches';
 import { linkTypeLabels } from '@/lib/utils/labels';
+import { breakdownSteps } from '@/lib/pricing/steps';
 import type { PriceBreakdown } from '@/lib/pricing/engine';
 import type { LinkTypeSlug } from '@/lib/types';
 
@@ -173,30 +174,15 @@ export function MarginReport({
   );
 }
 
-/** The chain from what the publisher charges to what a buyer pays. */
 function Breakdown({ row }: { row: MarginRow }) {
   const b = row.breakdown;
-  const steps: [string, string][] = [
-    [`Publisher price`, `${b.costMinor / 100} ${b.currency}`],
-    [
-      `Converted at ${b.fxRate.toFixed(4)} plus ${b.fxBufferPct}% buffer`,
-      formatPrice(b.costGbpMinor),
-    ],
-    [`Payment fee (${b.feeLabel})`, formatPrice(b.feeMinor)],
-    ...((b.vatMinor > 0 ? [[`Publisher VAT`, formatPrice(b.vatMinor)]] : []) as [string, string][]),
-    [`True cost`, formatPrice(b.trueCostMinor)],
-    [`Markup (${b.bandLabel})`, formatPrice(b.markupMinor)],
-    [`Before rounding`, formatPrice(b.unroundedMinor)],
-    [`Sells at`, formatPrice(b.sellMinor)],
-    [`Agency price`, formatPrice(b.agencyMinor)],
-  ];
 
   return (
     <dl className="mt-2 space-y-0.5 rounded-lg border border-line bg-surface-sunken p-2.5 text-[12px] font-normal">
-      {steps.map(([label, value]) => (
-        <div key={label} className="tabular flex justify-between gap-3">
-          <dt className="text-muted">{label}</dt>
-          <dd className="text-ink">{value}</dd>
+      {breakdownSteps(b).map((step) => (
+        <div key={step.label} className="tabular flex justify-between gap-3">
+          <dt className="text-muted">{step.label}</dt>
+          <dd className="text-ink">{step.value}</dd>
         </div>
       ))}
       {row.isOverride && row.currentMinor != null ? (
