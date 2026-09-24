@@ -73,6 +73,29 @@ export async function runExtractionAction(options: { limit?: number; dryRun?: bo
   return result;
 }
 
+/**
+ * Put failed emails back in the queue.
+ *
+ * Extraction only ever reads rows marked 'new', so a failure is otherwise a
+ * dead end: the email sits there with its reason and no button can reach it.
+ * Ignored emails are deliberately not included - "nothing usable in this
+ * one" is a finished answer, not a stuck job.
+ */
+export async function retryFailedAction() {
+  await requireAdminSession();
+  const supabase = getAdminScopedClient();
+
+  const { data } = await supabase
+    .from('inbound_emails')
+    .update({ status: 'new', status_reason: null, batch_id: null })
+    .eq('status', 'failed')
+    .select('id');
+
+  revalidatePath('/admin/sourcing');
+  const count = (data ?? []).length;
+  return { ok: true, count };
+}
+
 export async function collectBatchesAction() {
   await requireAdminSession();
   const result = await sourcingService.collectBatches();

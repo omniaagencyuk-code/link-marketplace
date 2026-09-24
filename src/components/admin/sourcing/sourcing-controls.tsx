@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useTransition } from 'react';
-import { AlertCircle, Check, CloudUpload, FlaskConical, Play, RefreshCw } from 'lucide-react';
+import { AlertCircle, Check, CloudUpload, FlaskConical, Play, RefreshCw, RotateCcw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input, Textarea } from '@/components/ui/input';
@@ -11,6 +11,7 @@ import { Badge } from '@/components/ui/badge';
 import {
   collectBatchesAction,
   ingestMboxAction,
+  retryFailedAction,
   ingestPastedAction,
   runExtractionAction,
   updateSourcingSettingsAction,
@@ -183,6 +184,25 @@ export function SourcingControls({
               <Play className="h-3.5 w-3.5" aria-hidden="true" />
               Read {pending} waiting
             </Button>
+            {(counts.failed ?? 0) > 0 ? (
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={busy}
+                onClick={() =>
+                  startTransition(async () => {
+                    const result = await retryFailedAction();
+                    report(
+                      true,
+                      `${result.count} ${result.count === 1 ? 'email is' : 'emails are'} back in the queue. Press Read to try again.`,
+                    );
+                  })
+                }
+              >
+                <RotateCcw className="h-3.5 w-3.5" aria-hidden="true" />
+                Retry {counts.failed} failed
+              </Button>
+            ) : null}
             {runningBatches > 0 ? (
               <Button
                 variant="outline"

@@ -36,7 +36,7 @@ async function load() {
 
   const supabase = getAdminScopedClient();
 
-  const [settings, pending, spent, drafts, emails, batches] = await Promise.all([
+  const [settings, pending, spent, drafts, emails, problems, batches] = await Promise.all([
     sourcingService.getSettings(),
     sourcingService.pendingCount().catch(() => 0),
     sourcingService.spentThisMonthUsd().catch(() => 0),
@@ -47,6 +47,12 @@ async function load() {
       .order('low_confidence_count', { ascending: true })
       .limit(200),
     supabase.from('inbound_emails').select('status'),
+    supabase
+      .from('inbound_emails')
+      .select('id, from_address, subject, status, status_reason, sent_at')
+      .in('status', ['failed', 'ignored'])
+      .order('updated_at', { ascending: false })
+      .limit(20),
     supabase
       .from('extraction_batches')
       .select('id, mode, status, email_count, succeeded_count, failed_count, created_at')
@@ -88,9 +94,58 @@ async function load() {
     spent,
     counts,
     drafts: draftRows,
+    problems: (problems.data ?? []) as Record<string, unknown>[],
     batches: (batches.data ?? []) as Record<string, unknown>[],
     schemaError: drafts.error?.message ?? emails.error?.message ?? null,
   };
+}
+
+function ProblemEmails({ rows }: { rows: Record<string, unknown>[] }) {
+  const failed = rows.filter((row) => row.status === 'failed');
+  const ignored = rows.filter((row) => row.status === 'ignored');
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Emails that produced no draft</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {failed.length > 0 ? (
+          <div>
+            <p className="mb-1.5 text-[12px] font-medium text-negative">
+              Failed - these can be read again once the cause is fixed
+            </p>
+            <ul className="space-y-1.5">
+              {failed.map((row) => (
+                <li key={String(row.id)} className="text-[13px]">
+                  <span className="font-medium text-ink">{String(row.from_address)}</span>
+                  <span className="block text-[12px] leading-snug text-negative">
+                    {String(row.status_reason ?? 'No reason recorded.')}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+
+        {ignored.length > 0 ? (
+          <div className={failed.length > 0 ? 'border-t border-line pt-3' : ''}>
+            <p className="mb-1.5 text-[12px] font-medium text-muted">
+              Nothing usable in them - this is a normal outcome, not an error
+            </p>
+            <ul className="space-y-1">
+              {ignored.map((row) => (
+                <li key={String(row.id)} className="text-[12px] text-muted">
+                  <span className="text-ink-soft">{String(row.from_address)}</span> -{' '}
+                  {String(row.status_reason ?? 'no reason recorded')}
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+      </CardContent>
+    </Card>
+  );
 }
 
 export default async function SourcingPage() {
@@ -136,6 +191,13 @@ export default async function SourcingPage() {
         counts={counts}
         batches={state.batches}
       />
+
+      {/*
+        Why an email did not become a draft, in the admin's face rather than
+        in a column only a database query would show. A count of failures
+        with no reason attached is the one thing worse than the failure.
+      */}
+      {state.problems.length > 0 ? <ProblemEmails rows={state.problems} /> : null}
 
       <Card>
         <CardHeader className="flex flex-wrap items-center justify-between gap-2">

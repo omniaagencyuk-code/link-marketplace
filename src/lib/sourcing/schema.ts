@@ -95,15 +95,30 @@ export const extractedListingSchema = z.object({
   notes: z.string().nullable(),
 
   /**
-   * Confidence and evidence, keyed by field name.
+   * Confidence and evidence, one entry per field the model filled in.
    *
-   * Free-form maps rather than a field-by-field pair: the reviewer only needs
-   * them for fields the model actually filled in, and a fixed shape would
-   * make the model emit forty "high"s to say nothing.
+   * Arrays, not maps, and that is not a style choice. Structured outputs
+   * require a strict JSON Schema, and a Zod record compiles to
+   * `{type: "object", properties: {}, additionalProperties: false}` - a
+   * closed, empty object the model is forbidden from putting anything in.
+   * Silently: it returns `{}`, every draft reads as fully confident, and the
+   * flag that keeps a guessed price away from bulk approve never fires.
+   *
+   * An array of closed objects has no such problem. They are turned back
+   * into maps on the way into the database, which is the shape the review
+   * screen wants.
    */
-  confidence: z.record(z.string(), confidence),
-  evidence: z.record(z.string(), z.string()),
+  confidence: z.array(z.object({ field: z.string(), level: confidence })),
+  evidence: z.array(z.object({ field: z.string(), quote: z.string() })),
 });
+
+/** The array the model returns, as the map everything downstream reads. */
+export function asMap<T extends { field: string }, V>(
+  entries: T[],
+  value: (entry: T) => V,
+): Record<string, V> {
+  return Object.fromEntries(entries.map((entry) => [entry.field, value(entry)]));
+}
 
 export const extractionResultSchema = z.object({
   /**

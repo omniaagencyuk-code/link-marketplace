@@ -35,7 +35,7 @@ export function flagsFor(listing: ExtractedListing): string[] {
 }
 
 export function countLowConfidence(listing: ExtractedListing): number {
-  return Object.values(listing.confidence).filter((value) => value === 'low').length;
+  return listing.confidence.filter((entry) => entry.level === 'low').length;
 }
 
 /**

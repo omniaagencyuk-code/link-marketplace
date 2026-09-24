@@ -11,6 +11,7 @@ import { readMbox, readPastedEmail, domainFromSubject, stripQuotedHistory } from
 import { extractionResultSchema, type ExtractedListing } from '../src/lib/sourcing/schema';
 import { applyGeneralPriceToNiches, countLowConfidence, flagsFor } from '../src/lib/sourcing/review';
 import { sensitiveNicheSlugs } from '../src/lib/config/accepted-niches';
+import { zodOutputFormat } from '@anthropic-ai/sdk/helpers/zod';
 
 let failed = 0;
 const ok = (label: string) => console.log(`  PASS  ${label}`);
@@ -128,9 +129,30 @@ function blank(over: Partial<ExtractedListing> = {}): ExtractedListing {
     link_insertion_offered: 'unknown', homepage_placement: 'unknown', topic_restriction: null,
     prices_exclude_vat: null, vat_notes: null, payment_methods: [], payment_timing: 'unknown',
     minimum_order: null, bulk_discount_notes: null, price_valid_until: null, future_price_notes: null,
-    notes: null, confidence: {}, evidence: {},
+    notes: null, confidence: [], evidence: [],
     ...over,
   };
+}
+
+/** The parsed listing really carries the entry, rather than dropping it. */
+function wellFormedConfidence(result: ReturnType<typeof extractionResultSchema.safeParse>): boolean {
+  if (!result.success) return false;
+  const entries = result.data.listings[0]?.confidence ?? [];
+  return entries.length === 1 && entries[0]!.level === 'low';
+}
+
+/**
+ * The schema actually sent to the API must have somewhere to put an entry.
+ * A closed, empty object type-checks and passes every local test while
+ * making the field impossible to populate - which is exactly what happened.
+ */
+function generatedSchemaAcceptsEntries(): boolean {
+  const format = zodOutputFormat(extractionResultSchema) as unknown as Record<string, any>;
+  const listing = (format.schema ?? format.json_schema?.schema)?.properties?.listings?.items;
+  const node = listing?.properties?.confidence;
+  if (node?.type !== 'array') return false;
+  const entry = node.items;
+  return entry?.type === 'object' && Boolean(entry.properties?.field) && Boolean(entry.properties?.level);
 }
 
 console.log('--- the schema ---');
@@ -155,6 +177,16 @@ is(
   false,
 );
 is('every sensitive niche has a slot', Object.keys(blank().niches).length, 7);
+
+// The bug this shape exists to prevent: a Zod record compiles to a closed,
+// empty object under strict JSON Schema, so the model could never return a
+// confidence entry and every draft read as fully confident.
+const withConfidence = extractionResultSchema.safeParse({
+  usable: true, ignore_reason: null,
+  listings: [blank({ confidence: [{ field: 'guest_post_cost', level: 'low' }], evidence: [{ field: 'guest_post_cost', quote: '150 EUR' }] })],
+});
+is('a confidence entry survives the schema', wellFormedConfidence(withConfidence), true);
+is('and the generated JSON schema lets the model send one', generatedSchemaAcceptsEntries(), true);
 is('and loan is one of them', sensitiveNicheSlugs.includes('loan'), true);
 
 console.log('\n--- single price with no topics named ---');
@@ -193,11 +225,13 @@ is(
 );
 
 console.log('\n--- bulk approval safety ---');
-const confident = blank({ guest_post_cost: 100, contact_email: 'a@b.example', confidence: { guest_post_cost: 'high' },
+const confident = blank({ guest_post_cost: 100, contact_email: 'a@b.example', confidence: [{ field: 'guest_post_cost', level: 'high' }],
   niches: { ...blank().niches, gambling: { accepted: 'yes', guest_post_cost: 200, link_insertion_cost: null } } });
 is('a clean draft has no low-confidence fields', countLowConfidence(confident), 0);
 is('and no flags, so bulk approve may take it', flagsFor(confident).length, 0);
-const shaky = blank({ guest_post_cost: 100, contact_email: 'a@b.example', confidence: { guest_post_cost: 'low', turnaround_min_days: 'low' } });
+const shaky = blank({ guest_post_cost: 100, contact_email: 'a@b.example', confidence: [
+  { field: 'guest_post_cost', level: 'low' }, { field: 'turnaround_min_days', level: 'low' },
+] });
 is('a guessed draft counts its low fields', countLowConfidence(shaky), 2);
 is('and is never swept up in bulk', countLowConfidence(shaky) > 0 || flagsFor(shaky).length > 0, true);
 

@@ -14,6 +14,7 @@ import {
   type ExtractionRequest,
 } from '@/lib/sourcing/client';
 import { countLowConfidence, flagsFor } from '@/lib/sourcing/review';
+import { asMap } from '@/lib/sourcing/schema';
 
 /**
  * Publisher sourcing: emails in, drafts out, nothing live without a human.
@@ -447,8 +448,11 @@ export const sourcingService = {
           domain,
           matched_website_id: match ? (match as { id: string }).id : null,
           proposed: listing as unknown as Record<string, unknown>,
-          confidence: listing.confidence,
-          evidence: listing.evidence,
+          // Stored as maps keyed by field, which is what the review screen
+          // reads. The array shape exists only because the model's schema
+          // cannot express an open map.
+          confidence: asMap(listing.confidence, (entry) => entry.level),
+          evidence: asMap(listing.evidence, (entry) => entry.quote),
           low_confidence_count: countLowConfidence(listing),
           flags: flagsFor(listing),
           status: 'pending',
