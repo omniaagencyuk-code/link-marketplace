@@ -423,12 +423,15 @@ export function AdminWebsitesTable({ websites }: { websites: WebsiteListItem[] }
                         <DropdownItem
                           disabled={pending}
                           onClick={() => {
-                            startTransition(() =>
-                              setWebsiteStatusAction(
+                            startTransition(async () => {
+                              const result = await setWebsiteStatusAction(
                                 website.id,
                                 website.status === 'archived' ? 'active' : 'archived',
-                              ),
-                            );
+                              );
+                              // Restoring a listing that was never priced is
+                              // refused, and the reason is worth reading.
+                              if (result?.error) window.alert(result.error);
+                            });
                             close();
                           }}
                         >

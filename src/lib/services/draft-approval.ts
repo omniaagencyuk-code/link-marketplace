@@ -2,6 +2,7 @@ import { getAdminScopedClient } from '@/lib/supabase/server';
 import { websiteService } from './website-service';
 import { sensitiveNicheSlugs, legacyAcceptanceFlags } from '@/lib/config/accepted-niches';
 import { sellableNiches } from '@/lib/sourcing/review';
+import { pricingService } from './pricing-service';
 import type { ExtractedListing } from '@/lib/sourcing/schema';
 import type { Website } from '@/lib/types';
 
@@ -191,6 +192,20 @@ export async function approveDraft(
       proposed: listing as unknown as Record<string, unknown>,
     })
     .eq('id', draftId);
+
+  /*
+    Price it now that the costs are in.
+
+    Scoped to this listing, so approving one draft does not push the whole
+    marketplace through the engine. A failure here must not lose the
+    approval: the listing and its costs are already written and correct, and
+    a price can be recalculated at any time from the pricing screen.
+  */
+  try {
+    await pricingService.apply([websiteId]);
+  } catch (error) {
+    console.error(`Could not price ${options.domain} after approval`, error);
+  }
 
   return { websiteId, created, domain: options.domain };
 }

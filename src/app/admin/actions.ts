@@ -244,7 +244,14 @@ function revalidateMarketplace(slug?: string) {
 export async function setWebsiteStatusAction(id: string, status: WebsiteStatus) {
   await requireAdminSession();
 
-  const updated = await websiteService.setStatus(id, status);
+  // Publishing an unpriced listing is refused rather than thrown: the reason
+  // is something the admin can act on, and a 500 would just look broken.
+  let updated;
+  try {
+    updated = await websiteService.setStatus(id, status);
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : 'Could not change the status.' };
+  }
   revalidateMarketplace(updated?.slug);
 }
 

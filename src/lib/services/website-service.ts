@@ -280,7 +280,27 @@ export const websiteService = {
     return updated;
   },
 
+  /**
+   * Publish or unpublish a listing.
+   *
+   * A listing cannot go active with nothing priced. Sourcing creates listings
+   * from publisher emails with a cost and no sell price, so the marketplace
+   * would otherwise be one careless click away from showing a domain at
+   * zero - which reads as free, and is the one pricing mistake a customer
+   * will act on immediately.
+   */
   async setStatus(id: string, status: WebsiteStatus) {
+    if (status === 'active') {
+      const website = await websiteService.getById(id);
+      const priced = website?.services.some(
+        (service) => service.available && service.priceMinor > 0,
+      );
+      if (!priced) {
+        throw new Error(
+          'This listing has no sell price yet. Price it on the Pricing screen, or set one by hand, before publishing it.',
+        );
+      }
+    }
     return websiteService.update(id, { status });
   },
 

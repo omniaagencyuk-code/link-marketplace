@@ -4,6 +4,10 @@
     {
       "path": "/api/cron/ahrefs-refresh",
       "schedule": "0 3 * * *"
+    },
+    {
+      "path": "/api/cron/fx-rates",
+      "schedule": "0 2 * * *"
     }
   ]
 }

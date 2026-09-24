@@ -15,6 +15,7 @@ import {
   type PricingRules,
   type RoundingTier,
 } from '../src/lib/pricing/engine';
+import { ratesFromSource, RATE_MOVE_THRESHOLD_PCT } from '../src/lib/services/fx-service';
 
 let failed = 0;
 const ok = (l: string) => console.log(`  PASS  ${l}`);
@@ -229,6 +230,42 @@ console.log('\n--- the FX buffer ---');
   is('GBP against itself needs no conversion', 
     computePrice({ costMinor: 10000, currency: 'GBP', fxRate: 1, paymentMethods: ['bank'], pricesExcludeVat: false, vatRatePct: null }, { ...rules, fxBufferPct: 0 }, bands, rounding).costGbpMinor,
     10000);
+}
+
+console.log('\n--- exchange rates ---');
+{
+  // frankfurter publishes GBP -> X. Pricing needs X -> GBP, and getting that
+  // backwards would make a European publisher look forty times cheaper.
+  const { rows } = ratesFromSource({ EUR: 1.19, USD: 1.27, DKK: 8.87 }, new Map(), '2026-09-24T00:00:00Z');
+  const eur = rows.find((row) => row.currency === 'EUR')!;
+  const rate = Number(eur.rate_to_gbp);
+  Math.abs(rate - 0.840336) < 0.0001
+    ? ok(`1.19 EUR per pound becomes ${rate.toFixed(4)} GBP per euro`)
+    : bad('the rate is inverted', String(rate));
+  rate < 1 ? ok('a euro is worth less than a pound, as it should be') : bad('euro under a pound');
+
+  const dkk = Number(rows.find((row) => row.currency === 'DKK')!.rate_to_gbp);
+  dkk < 0.2 ? ok(`and a krone is worth ${dkk.toFixed(4)}, not 8.87`) : bad('krone inverted', String(dkk));
+
+  is('GBP is never fetched, it is fixed at 1', rows.some((row) => row.currency === 'GBP'), false);
+  is('a zero or broken rate is dropped rather than stored',
+    ratesFromSource({ EUR: 0, USD: -1, JPY: Number.NaN }, new Map(), '2026-09-24T00:00:00Z').rows.length, 0);
+
+  // The 2% rule that triggers a recalculation.
+  const previous = new Map([['EUR', 0.84], ['USD', 0.79]]);
+  const { moved } = ratesFromSource({ EUR: 1.19, USD: 1.30 }, previous, '2026-09-24T00:00:00Z');
+  is('a rate that barely moved does not trigger anything', moved.some((m) => m.currency === 'EUR'), false);
+  is('one that moved more than 2% does', moved.some((m) => m.currency === 'USD'), true);
+  is('and the threshold is the stated 2%', RATE_MOVE_THRESHOLD_PCT, 2);
+
+  // A price computed at the stored rate must match one computed by hand.
+  const priced = computePrice(
+    { costMinor: 10900, currency: 'USD', fxRate: 1 / 1.27, paymentMethods: ['paypal'], pricesExcludeVat: false, vatRatePct: null },
+    rules, bands, rounding,
+  );
+  const expectedGbp = Math.round((10900 / 1.27) * 1.04);
+  is('109 dollars converts as expected', priced.costGbpMinor, expectedGbp);
+  console.log(`  109 USD -> ${gbp(priced.costGbpMinor)} true ${gbp(priced.trueCostMinor)} -> sells ${gbp(priced.sellMinor)} (margin ${gbp(priced.marginMinor)})`);
 }
 
 console.log(failed ? `\n  ${failed} FAILED\n` : '\n  all passed\n');

@@ -143,7 +143,7 @@ export function roundUp(minor: number, tiers: RoundingTier[]): number {
 
   const allowed = new Set(tier.allowedLastDigits);
   // Work in whole pounds: no price point anybody wants ends in pence.
-  let pounds = Math.ceil(minor / 100);
+  const pounds = Math.ceil(minor / 100);
   // A bounded search. The gap between allowed endings is at most ten pounds,
   // so this cannot run away even if the digits are configured oddly.
   for (let step = 0; step <= 10; step += 1) {
