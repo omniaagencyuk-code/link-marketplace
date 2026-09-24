@@ -15,6 +15,7 @@
     "verify:rls": "./scripts/verify-rls.sh",
     "verify:import": "tsx scripts/verify-import.mts",
     "verify:sourcing": "tsx scripts/verify-sourcing.mts",
+    "verify:pricing": "tsx scripts/verify-pricing.mts",
     "verify:sessions": "tsx scripts/verify-sessions.mts"
   },
   "dependencies": {
