@@ -12,6 +12,7 @@ import {
   collectBatchesAction,
   ingestMboxAction,
   retryFailedAction,
+  rereadAllAction,
   ingestPastedAction,
   runExtractionAction,
   updateSourcingSettingsAction,
@@ -201,6 +202,32 @@ export function SourcingControls({
               >
                 <RotateCcw className="h-3.5 w-3.5" aria-hidden="true" />
                 Retry {counts.failed} failed
+              </Button>
+            ) : null}
+            {(counts.extracted ?? 0) + (counts.ignored ?? 0) > 0 ? (
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={busy}
+                onClick={() => {
+                  if (
+                    !window.confirm(
+                      'Read every stored email again under the current rules? Drafts still waiting for review are replaced. Listings you have already approved are untouched. This costs money, like any other run.',
+                    )
+                  ) {
+                    return;
+                  }
+                  startTransition(async () => {
+                    const result = await rereadAllAction();
+                    report(
+                      true,
+                      `${result.count} ${result.count === 1 ? 'email is' : 'emails are'} back in the queue. Press Read to extract them again.`,
+                    );
+                  });
+                }}
+              >
+                <RotateCcw className="h-3.5 w-3.5" aria-hidden="true" />
+                Re-read all
               </Button>
             ) : null}
             {runningBatches > 0 ? (

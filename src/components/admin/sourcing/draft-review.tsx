@@ -12,6 +12,7 @@ import { Select } from '@/components/ui/select';
 import {
   approveDraftAction,
   approveEmailBatchAction,
+  rereadEmailAction,
   rejectDraftAction,
   spreadGeneralPriceAction,
 } from '@/app/admin/(protected)/sourcing/actions';
@@ -44,6 +45,7 @@ type Current = {
  */
 export function DraftReview({
   draftId,
+  emailId,
   domain,
   status,
   flags,
@@ -56,6 +58,7 @@ export function DraftReview({
   extractedBy,
 }: {
   draftId: string;
+  emailId: string;
   domain: string;
   status: string;
   flags: string[];
@@ -138,7 +141,24 @@ export function DraftReview({
           <pre className="max-h-[32rem] overflow-auto rounded-lg border border-line bg-surface-sunken p-3 text-[12px] leading-relaxed whitespace-pre-wrap text-ink-soft">
             {email.body}
           </pre>
-          <p className="text-[11px] text-muted">Read by {extractedBy}.</p>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="text-[11px] text-muted">Read by {extractedBy}.</p>
+            {!reviewed ? (
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() =>
+                  startTransition(async () => {
+                    await rereadEmailAction(emailId);
+                    router.push('/admin/sourcing');
+                  })
+                }
+                className="text-[11px] text-accent-700 hover:underline disabled:opacity-50"
+              >
+                Read it again under the current rules
+              </button>
+            ) : null}
+          </div>
         </CardContent>
       </Card>
 

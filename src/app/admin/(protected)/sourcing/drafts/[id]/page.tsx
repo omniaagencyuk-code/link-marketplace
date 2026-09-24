@@ -55,7 +55,7 @@ export default async function DraftPage({ params }: { params: Promise<{ id: stri
   const { data } = await supabase
     .from('listing_drafts')
     .select(
-      'id, domain, status, flags, low_confidence_count, matched_website_id, proposed, confidence, evidence, extraction_model, prompt_version, reject_reason, inbound_emails (id, from_address, from_name, subject, sent_at, body_text, asked_about_domain)',
+      'id, email_id, domain, status, flags, low_confidence_count, matched_website_id, proposed, confidence, evidence, extraction_model, prompt_version, reject_reason, inbound_emails (id, from_address, from_name, subject, sent_at, body_text, asked_about_domain)',
     )
     .eq('id', id)
     .maybeSingle();
@@ -112,6 +112,7 @@ export default async function DraftPage({ params }: { params: Promise<{ id: stri
 
       <DraftReview
         draftId={String(draft.id)}
+        emailId={String(draft.email_id)}
         domain={String(draft.domain)}
         status={String(draft.status)}
         flags={(draft.flags as string[]) ?? []}

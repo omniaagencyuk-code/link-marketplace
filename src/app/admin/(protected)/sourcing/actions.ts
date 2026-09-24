@@ -96,6 +96,56 @@ export async function retryFailedAction() {
   return { ok: true, count };
 }
 
+/**
+ * Read an email again under the current rules.
+ *
+ * The extraction rules change - a rule is wrong, a case nobody had seen turns
+ * up - and drafts made under the old ones are stuck: extraction only reads
+ * emails marked 'new', so an already-read email had no way back. Every draft
+ * records the rules version it was made under, which is only useful if there
+ * is something to do about it.
+ *
+ * Its pending drafts go first. An approved one is a listing now and is left
+ * alone; a rejected one stays rejected, because re-reading is not a way to
+ * quietly undo somebody's decision.
+ */
+export async function rereadEmailAction(emailId: string) {
+  await requireAdminSession();
+  const supabase = getAdminScopedClient();
+
+  await supabase.from('listing_drafts').delete().eq('email_id', emailId).eq('status', 'pending');
+  await supabase
+    .from('inbound_emails')
+    .update({ status: 'new', status_reason: null, batch_id: null, extracted_at: null })
+    .eq('id', emailId);
+
+  revalidatePath('/admin/sourcing');
+  return { ok: true };
+}
+
+/** Put every already-read email back in the queue, under the current rules. */
+export async function rereadAllAction() {
+  await requireAdminSession();
+  const supabase = getAdminScopedClient();
+
+  const { data } = await supabase
+    .from('inbound_emails')
+    .select('id')
+    .in('status', ['extracted', 'ignored']);
+
+  const ids = ((data ?? []) as { id: string }[]).map((row) => row.id);
+  if (ids.length === 0) return { ok: true, count: 0 };
+
+  await supabase.from('listing_drafts').delete().in('email_id', ids).eq('status', 'pending');
+  await supabase
+    .from('inbound_emails')
+    .update({ status: 'new', status_reason: null, batch_id: null, extracted_at: null })
+    .in('id', ids);
+
+  revalidatePath('/admin/sourcing');
+  return { ok: true, count: ids.length };
+}
+
 export async function collectBatchesAction() {
   await requireAdminSession();
   const result = await sourcingService.collectBatches();

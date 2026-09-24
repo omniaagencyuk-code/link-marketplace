@@ -85,7 +85,22 @@ export async function approveDraft(
     };
   }
 
-  let websiteId = options.matchedWebsiteId;
+  /*
+    Look the domain up again rather than trusting the match recorded when the
+    email was read. Between extraction and approval the site may have arrived
+    another way - a CSV import, a second reply about the same network, the
+    duplicate sitting next to this one in the queue - and `websites.domain` is
+    unique, so a stale "this is new" turns into a failed insert with nothing
+    useful to say. Re-checking turns the second of two duplicates into an
+    ordinary update, which is what it is.
+  */
+  const { data: existing } = await supabase
+    .from('websites')
+    .select('id')
+    .eq('domain', options.domain)
+    .maybeSingle();
+
+  let websiteId = (existing as { id: string } | null)?.id ?? options.matchedWebsiteId;
   const created = !websiteId;
 
   if (websiteId) {
