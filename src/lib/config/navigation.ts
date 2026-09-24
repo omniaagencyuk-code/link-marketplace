@@ -2,6 +2,7 @@ import type { LucideIcon } from 'lucide-react';
 import {
   BarChart3,
   Bookmark,
+  Calculator,
   CreditCard,
   FileCode2,
   FileText,
@@ -100,6 +101,7 @@ export const adminNav: NavItem[] = [
   { label: 'Users', href: '/admin/users', icon: Users },
   { label: 'Categories', href: '/admin/categories', icon: FolderTree },
   { label: 'Publisher inbox', href: '/admin/sourcing', icon: Inbox },
+  { label: 'Pricing', href: '/admin/pricing', icon: Calculator },
   { label: 'Ahrefs refresh', href: '/admin/refresh', icon: RefreshCw },
   { label: 'Settings', href: '/admin/settings', icon: Settings },
 ];

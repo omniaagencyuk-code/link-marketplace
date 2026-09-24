@@ -26,6 +26,14 @@ export interface FxRate {
   fetchedAt: string;
   /** Absolute move since the last fetch, as a percentage. */
   movedPct: number;
+  /**
+   * How old the rate is, in days.
+   *
+   * Worked out here rather than wherever it is displayed: reading the clock
+   * inside a render makes the output depend on when React happened to run,
+   * and both the lint rule and the reasoning behind it are right about that.
+   */
+  ageDays: number;
 }
 
 /**
@@ -73,15 +81,18 @@ export const fxService = {
     if (!isSupabaseEnabled()) return [];
     const supabase = getAdminScopedClient();
     const { data } = await supabase.from('fx_rates').select('*').order('currency');
+    const now = Date.now();
 
     return ((data ?? []) as Record<string, unknown>[]).map((row) => {
       const rate = Number(row.rate_to_gbp);
       const previous = row.previous_rate_to_gbp == null ? null : Number(row.previous_rate_to_gbp);
+      const fetchedAt = String(row.fetched_at);
       return {
+        ageDays: (now - new Date(fetchedAt).getTime()) / 86_400_000,
         currency: String(row.currency),
         rateToGbp: rate,
         previousRateToGbp: previous,
-        fetchedAt: String(row.fetched_at),
+        fetchedAt,
         movedPct: previous && previous > 0 ? Math.abs((rate - previous) / previous) * 100 : 0,
       };
     });
