@@ -8,6 +8,13 @@ import { Badge } from '@/components/ui/badge';
 import { orderService, settingsService, websiteService } from '@/lib/services';
 import { requireCustomerSession } from '@/lib/auth/customer-access';
 
+/*
+  Never cached. An order's status changes from a Stripe webhook seconds after
+  the customer gets back from paying, and a cached copy of this page shows
+  somebody who has just paid that their order is a draft they never submitted.
+*/
+export const dynamic = 'force-dynamic';
+
 export const metadata: Metadata = { title: 'Orders' };
 
 export default async function OrdersPage() {

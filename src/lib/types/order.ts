@@ -44,6 +44,8 @@ export interface OrderItem {
   updatedAt: string;
 }
 
+export type PaymentStatus = 'unpaid' | 'processing' | 'paid' | 'refunded' | 'failed';
+
 export interface Order {
   id: string;
   /** Human readable reference, e.g. "LM-10428". */
@@ -52,6 +54,12 @@ export interface Order {
   customerName: string;
   customerEmail: string;
   status: OrderStatus;
+  /**
+   * Where the money got to, which is not the same question as where the work
+   * got to. A paid order sits in 'draft' for the moment between the customer
+   * returning from Stripe and the webhook arriving.
+   */
+  paymentStatus?: PaymentStatus;
   /** The net: the sum of the placement prices, before VAT. */
   totalMinor: number;
   /** VAT charged, from Stripe. Undefined until the payment lands. */

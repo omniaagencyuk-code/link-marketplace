@@ -68,7 +68,7 @@ export function OrdersTable({ orders, limit }: { orders: Order[]; limit?: number
                 {formatDate(order.placedAt)}
               </Td>
               <Td>
-                <OrderStatusBadge status={item.status} />
+                <OrderStatusBadge status={item.status} paymentStatus={order.paymentStatus} />
               </Td>
               <Td className="tabular text-right text-[13px] font-semibold text-ink">
                 {formatPrice(item.priceMinor)}
