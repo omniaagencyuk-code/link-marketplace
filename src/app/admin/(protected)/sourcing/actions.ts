@@ -223,6 +223,128 @@ export async function bulkApproveConfidentAction() {
   return { ok: true, approved, failures };
 }
 
+/**
+ * Approve this draft and every other one from the same email.
+ *
+ * The network case: sixty portals, one set of terms, one reviewer who has
+ * just satisfied themselves that the reading is right. Each sibling is
+ * approved with its OWN stored values, so an exception - the one site priced
+ * differently, or the one that refuses gambling - is approved as itself and
+ * not flattened into the network's terms.
+ *
+ * `applyEdits` carries the reviewer's corrections across, but only where a
+ * sibling still holds the same value this draft had before the edit. A
+ * correction to a price the whole network shares reaches all of them; the
+ * same correction leaves the site that was always quoted differently alone.
+ * That rule is what makes the button safe to press on sixty listings.
+ */
+export async function approveEmailBatchAction(
+  draftId: string,
+  edited: unknown,
+  applyEdits: boolean,
+) {
+  const by = await reviewer();
+  const supabase = getAdminScopedClient();
+
+  const { data: current } = await supabase
+    .from('listing_drafts')
+    .select('id, domain, email_id, matched_website_id, proposed, status')
+    .eq('id', draftId)
+    .maybeSingle();
+
+  if (!current) return { ok: false, error: 'That draft no longer exists.' };
+  const draft = current as Record<string, unknown>;
+
+  const parsedEdited = extractedListingSchema.safeParse(edited ?? draft.proposed);
+  if (!parsedEdited.success) return { ok: false, error: 'Those values are not valid.' };
+
+  const before = extractedListingSchema.safeParse(draft.proposed);
+  const changed =
+    applyEdits && before.success ? changedFields(before.data, parsedEdited.data) : new Map();
+
+  const { data: rest } = await supabase
+    .from('listing_drafts')
+    .select('id, domain, email_id, matched_website_id, proposed')
+    .eq('email_id', String(draft.email_id))
+    .eq('status', 'pending')
+    .neq('id', draftId);
+
+  let approved = 0;
+  const failures: string[] = [];
+
+  // This one first, with the reviewer's edits exactly as they left them.
+  if (draft.status === 'pending') {
+    try {
+      await approveDraft(draftId, parsedEdited.data, {
+        domain: String(draft.domain),
+        matchedWebsiteId: (draft.matched_website_id as string | null) ?? null,
+        emailId: String(draft.email_id),
+        reviewer: by,
+      });
+      approved += 1;
+    } catch {
+      failures.push(String(draft.domain));
+    }
+  }
+
+  for (const row of (rest ?? []) as Record<string, unknown>[]) {
+    const parsed = extractedListingSchema.safeParse(row.proposed);
+    if (!parsed.success) {
+      failures.push(String(row.domain));
+      continue;
+    }
+
+    const values = applyCorrections(parsed.data, changed, before.success ? before.data : null);
+
+    try {
+      await approveDraft(String(row.id), values, {
+        domain: String(row.domain),
+        matchedWebsiteId: (row.matched_website_id as string | null) ?? null,
+        emailId: String(row.email_id),
+        reviewer: by,
+      });
+      approved += 1;
+    } catch {
+      failures.push(String(row.domain));
+    }
+  }
+
+  revalidatePath('/admin/sourcing');
+  revalidatePath('/admin/websites');
+  return { ok: true, approved, failures };
+}
+
+/** Top-level fields the reviewer actually changed, and what they changed to. */
+function changedFields(before: ExtractedListing, after: ExtractedListing): Map<string, unknown> {
+  const changed = new Map<string, unknown>();
+  for (const key of Object.keys(after) as (keyof ExtractedListing)[]) {
+    // Per-domain by nature, and never shared across a network.
+    if (key === 'domain' || key === 'also_applies_to' || key === 'confidence' || key === 'evidence') {
+      continue;
+    }
+    if (JSON.stringify(before[key]) !== JSON.stringify(after[key])) {
+      changed.set(key, after[key]);
+    }
+  }
+  return changed;
+}
+
+/** A correction reaches a sibling only where the sibling still agrees. */
+function applyCorrections(
+  sibling: ExtractedListing,
+  changed: Map<string, unknown>,
+  before: ExtractedListing | null,
+): ExtractedListing {
+  if (!before || changed.size === 0) return sibling;
+
+  const next = { ...sibling } as Record<string, unknown>;
+  for (const [key, value] of changed) {
+    const original = (before as Record<string, unknown>)[key];
+    if (JSON.stringify(next[key]) === JSON.stringify(original)) next[key] = value;
+  }
+  return next as ExtractedListing;
+}
+
 /** The "apply the general price to every niche" button, as a reviewer action. */
 export async function spreadGeneralPriceAction(values: unknown): Promise<{
   ok: boolean;

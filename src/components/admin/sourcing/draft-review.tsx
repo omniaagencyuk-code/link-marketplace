@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
-import { AlertTriangle, Check, Quote, Wand2, X } from 'lucide-react';
+import { AlertTriangle, Check, Layers, Quote, Wand2, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input, Textarea } from '@/components/ui/input';
@@ -11,6 +11,7 @@ import { Select } from '@/components/ui/select';
 
 import {
   approveDraftAction,
+  approveEmailBatchAction,
   rejectDraftAction,
   spreadGeneralPriceAction,
 } from '@/app/admin/(protected)/sourcing/actions';
@@ -51,6 +52,7 @@ export function DraftReview({
   evidence,
   current,
   email,
+  siblingCount,
   extractedBy,
 }: {
   draftId: string;
@@ -61,6 +63,7 @@ export function DraftReview({
   confidence: Record<string, string>;
   evidence: Record<string, string>;
   current: Current;
+  siblingCount: number;
   email: {
     fromAddress: string;
     fromName: string | null;
@@ -93,6 +96,8 @@ export function DraftReview({
 
   const singlePrice = flags.includes('single-price-confirm-niches');
   const assumed = assumedNiches(draft);
+  const edited = JSON.stringify(draft) !== JSON.stringify(values);
+  const [spreadEdits, setSpreadEdits] = useState(true);
 
   return (
     <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
@@ -742,26 +747,77 @@ export function DraftReview({
                   </div>
                 </div>
               ) : (
-                <div className="flex flex-wrap gap-2">
-                  <Button
-                    variant="accent"
-                    disabled={busy}
-                    onClick={() =>
-                      startTransition(async () => {
-                        setError(null);
-                        const result = await approveDraftAction(draftId, draft);
-                        if (!result.ok) return setError(result.error ?? 'Could not approve.');
-                        router.push('/admin/sourcing');
-                      })
-                    }
-                  >
-                    <Check className="h-4 w-4" aria-hidden="true" />
-                    {current ? 'Update the listing' : 'Create the listing'}
-                  </Button>
-                  <Button variant="outline" disabled={busy} onClick={() => setRejecting(true)}>
-                    <X className="h-4 w-4" aria-hidden="true" />
-                    Reject
-                  </Button>
+                <div className="space-y-3">
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      variant="accent"
+                      disabled={busy}
+                      onClick={() =>
+                        startTransition(async () => {
+                          setError(null);
+                          const result = await approveDraftAction(draftId, draft);
+                          if (!result.ok) return setError(result.error ?? 'Could not approve.');
+                          router.push('/admin/sourcing');
+                        })
+                      }
+                    >
+                      <Check className="h-4 w-4" aria-hidden="true" />
+                      {current ? 'Update the listing' : 'Create the listing'}
+                    </Button>
+                    <Button variant="outline" disabled={busy} onClick={() => setRejecting(true)}>
+                      <X className="h-4 w-4" aria-hidden="true" />
+                      Reject
+                    </Button>
+                  </div>
+
+                  {/*
+                    The network case. Checking one of sixty portals usually
+                    settles all sixty, and clicking through the rest one at a
+                    time teaches nobody anything.
+                  */}
+                  {siblingCount > 0 ? (
+                    <div className="space-y-2 border-t border-line pt-3">
+                      <Button
+                        variant="outline"
+                        disabled={busy}
+                        onClick={() =>
+                          startTransition(async () => {
+                            setError(null);
+                            const result = await approveEmailBatchAction(
+                              draftId,
+                              draft,
+                              edited && spreadEdits,
+                            );
+                            if (!result.ok) return setError(result.error ?? 'Could not approve.');
+                            router.push('/admin/sourcing');
+                          })
+                        }
+                      >
+                        <Layers className="h-4 w-4" aria-hidden="true" />
+                        Approve all {siblingCount + 1} from this email
+                      </Button>
+
+                      {edited ? (
+                        <label className="flex items-start gap-2 text-[12px] leading-relaxed text-ink-soft">
+                          <input
+                            type="checkbox"
+                            checked={spreadEdits}
+                            onChange={(event) => setSpreadEdits(event.target.checked)}
+                            className="mt-0.5 h-3.5 w-3.5 accent-[var(--color-accent-600)]"
+                          />
+                          <span>
+                            Apply my changes to the others too, where they currently hold the same
+                            value. A site the publisher quoted differently keeps its own.
+                          </span>
+                        </label>
+                      ) : (
+                        <p className="text-[12px] leading-relaxed text-muted">
+                          Each of the others is approved with its own values, so a site priced
+                          differently or refusing a topic stays as the email described it.
+                        </p>
+                      )}
+                    </div>
+                  ) : null}
                 </div>
               )}
 

@@ -82,6 +82,15 @@ export default async function DraftPage({ params }: { params: Promise<{ id: stri
     ? await currentValues(String(draft.matched_website_id))
     : null;
 
+  // Other domains from the same reply still waiting. A network answer
+  // produces dozens, and checking one usually settles the lot.
+  const { count: siblings } = await supabase
+    .from('listing_drafts')
+    .select('id', { count: 'exact', head: true })
+    .eq('email_id', String(draft.email_id))
+    .eq('status', 'pending')
+    .neq('id', String(draft.id));
+
   return (
     <div className="space-y-5">
       <Link
@@ -118,6 +127,7 @@ export default async function DraftPage({ params }: { params: Promise<{ id: stri
           body: String(email?.body_text ?? ''),
           askedAboutDomain: (email?.asked_about_domain as string | null) ?? null,
         }}
+        siblingCount={siblings ?? 0}
         extractedBy={`${draft.extraction_model ?? 'unknown model'} · rules ${draft.prompt_version ?? 'unknown'}`}
       />
     </div>
