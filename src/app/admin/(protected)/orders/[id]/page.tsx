@@ -265,10 +265,25 @@ export default async function AdminOrderPage({ params }: { params: Promise<{ id:
                   strong
                 />
               </dl>
-              {order.taxMinor === 0 ? (
+              {/*
+                Two identical-looking things, and only the country tells them
+                apart. A UK order with no VAT is not a quirk of the customer:
+                it means Stripe has no UK registration, and a fifth of the
+                revenue on every sale is owed to HMRC out of what was taken.
+              */}
+              {order.taxMinor === 0 && order.billingCountry === 'GB' ? (
+                <p className="mt-2 flex items-start gap-1.5 rounded-lg border border-negative/30 bg-negative/5 px-2.5 py-2 text-[12px] leading-relaxed text-negative">
+                  <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                  <span>
+                    A UK customer paid no VAT. That is almost certainly a missing UK registration
+                    in Stripe Tax - the VAT is still owed, out of what was charged. Check Stripe
+                    before taking more orders.
+                  </span>
+                </p>
+              ) : order.taxMinor === 0 ? (
                 <p className="mt-2 text-[12px] leading-relaxed text-muted">
-                  No VAT was charged - an overseas customer, or a business that gave a valid VAT
-                  number.
+                  No VAT{order.billingCountry ? ` (billed to ${order.billingCountry})` : ''} - an
+                  overseas customer, or a business that gave a valid VAT number.
                 </p>
               ) : null}
               {!costsKnown ? (

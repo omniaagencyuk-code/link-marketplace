@@ -61,3 +61,21 @@ update public.order_items as item
  where parent.id = item.order_id
    and item.status = 'draft'
    and parent.status <> 'draft';
+
+-- ---------------------------------------------------------------------------
+-- Where the customer said they were
+--
+-- Needed to tell two identical-looking things apart. A UK order with no VAT
+-- on it is either correct - an overseas customer, a business that gave a
+-- valid VAT number - or a missing tax registration quietly costing a fifth of
+-- the revenue on every sale. Without the country, both read as "no VAT" and
+-- nobody notices until a VAT return.
+--
+-- Recorded from the Stripe session, which collected the billing address.
+-- ---------------------------------------------------------------------------
+
+alter table public.orders
+  add column if not exists billing_country char(2);
+
+comment on column public.orders.billing_country is
+  'Billing country from the Stripe session, so a zero-VAT order can be judged.';

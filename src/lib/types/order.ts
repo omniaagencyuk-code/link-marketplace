@@ -66,6 +66,8 @@ export interface Order {
   taxMinor?: number;
   /** What Stripe actually took. Undefined until the payment lands. */
   chargedMinor?: number;
+  /** Billing country from Stripe, so a zero-VAT order can be judged. */
+  billingCountry?: string;
   currency: 'GBP' | 'USD' | 'EUR';
   items: OrderItem[];
   placedAt: string;

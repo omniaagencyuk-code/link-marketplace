@@ -33,3 +33,5 @@ $$;
 
 revoke all on function public.set_order_status(uuid, public.order_status, text, text) from public;
 grant execute on function public.set_order_status(uuid, public.order_status, text, text) to service_role;
+
+alter table public.orders drop column if exists billing_country;

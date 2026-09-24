@@ -43,6 +43,7 @@ function amountsFrom(session: Stripe.Checkout.Session) {
   return {
     chargedMinor: session.amount_total ?? null,
     taxMinor: session.total_details?.amount_tax ?? null,
+    billingCountry: session.customer_details?.address?.country ?? null,
   };
 }
 

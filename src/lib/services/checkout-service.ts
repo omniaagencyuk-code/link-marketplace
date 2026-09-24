@@ -257,6 +257,8 @@ export interface PaidAmounts {
   chargedMinor?: number | null;
   /** The VAT within it. Zero on a zero-rated or reverse-charge sale. */
   taxMinor?: number | null;
+  /** Where they said they were, which is what decides whether zero is right. */
+  billingCountry?: string | null;
 }
 
 export async function markOrderPaid(
@@ -287,6 +289,7 @@ export async function markOrderPaid(
       // rate; this is the amount that left the customer's account.
       ...(amounts.chargedMinor == null ? {} : { charged_minor: amounts.chargedMinor }),
       ...(amounts.taxMinor == null ? {} : { tax_minor: amounts.taxMinor }),
+      ...(amounts.billingCountry == null ? {} : { billing_country: amounts.billingCountry }),
     })
     .eq('id', order.id);
 
