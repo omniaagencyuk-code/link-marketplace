@@ -105,6 +105,37 @@ export const pricingService = {
     };
   },
 
+  /**
+   * Which currencies our publishers actually charge in.
+   *
+   * The rates panel used to show the first sixteen alphabetically, which put
+   * USD - the currency most of the inventory is quoted in - off the end of
+   * the list. A panel that cannot show the one currency you need is worse
+   * than no panel: it reads as a missing rate when the rate is there.
+   */
+  async currenciesInUse(): Promise<{ currency: string; listings: number }[]> {
+    if (!isSupabaseEnabled()) return [];
+
+    const supabase = getAdminScopedClient();
+    const { data } = await supabase
+      .from('website_commercials')
+      .select('cost_currency, websites!inner (status)')
+      .neq('websites.status', 'archived');
+
+    const counts = new Map<string, number>();
+    for (const row of (data ?? []) as Record<string, unknown>[]) {
+      // Trimmed because the column is char(3): a code stored short comes back
+      // padded, and 'US ' would look like a currency of its own.
+      const currency = String(row.cost_currency ?? '').trim().toUpperCase();
+      if (!currency) continue;
+      counts.set(currency, (counts.get(currency) ?? 0) + 1);
+    }
+
+    return [...counts.entries()]
+      .map(([currency, listings]) => ({ currency, listings }))
+      .sort((a, b) => b.listings - a.listings || a.currency.localeCompare(b.currency));
+  },
+
   async updateRules(patch: Partial<PricingRules>, updatedBy?: string): Promise<void> {
     const supabase = getAdminScopedClient();
     const columns: Record<string, unknown> = { updated_by: updatedBy ?? null };
@@ -196,7 +227,8 @@ export const pricingService = {
       if (!costMinor || costMinor <= 0) return;
 
       const commercials = commercialsFor.get(websiteId);
-      const currency = (commercials?.cost_currency as string | null)?.toUpperCase() || 'GBP';
+      const currency =
+        (commercials?.cost_currency as string | null)?.trim().toUpperCase() || 'GBP';
       const rate = rates.get(currency);
 
       // A cost in a currency we have no rate for is not priced at a guess.

@@ -32,10 +32,11 @@ export default async function PricingPage() {
     );
   }
 
-  const [settings, rates, calculated] = await Promise.all([
+  const [settings, rates, calculated, currenciesInUse] = await Promise.all([
     pricingService.getSettings(),
     fxService.list().catch(() => []),
     pricingService.calculate().catch(() => ({ rows: [], missingRates: [] as string[] })),
+    pricingService.currenciesInUse().catch(() => []),
   ]);
 
   const priced = calculated.rows;
@@ -99,7 +100,12 @@ export default async function PricingPage() {
         />
       </div>
 
-      <PricingRulesEditor settings={settings} rates={rates} staleRateCount={staleRateCount} />
+      <PricingRulesEditor
+        settings={settings}
+        rates={rates}
+        staleRateCount={staleRateCount}
+        currenciesInUse={currenciesInUse}
+      />
 
       <Card>
         <CardHeader>

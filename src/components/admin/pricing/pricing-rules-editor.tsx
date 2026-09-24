@@ -31,16 +31,33 @@ export function PricingRulesEditor({
   settings,
   rates,
   staleRateCount,
+  currenciesInUse = [],
 }: {
   settings: PricingSettings;
   rates: FxRate[];
   /** Counted on the server: the clock is not something a render may read. */
   staleRateCount: number;
+  /** What our publishers actually charge in, commonest first. */
+  currenciesInUse?: { currency: string; listings: number }[];
 }) {
   const [draft, setDraft] = useState<PricingRules>(settings.rules);
   const [preview, setPreview] = useState<Preview | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [busy, startTransition] = useTransition();
+  const [showAllRates, setShowAllRates] = useState(false);
+
+  // GBP is in the table as a fixed 1 and is not a conversion anyone needs to
+  // read, but a publisher who charges in it is still worth counting.
+  const rateFor = new Map(rates.map((rate) => [rate.currency, rate.rateToGbp]));
+  const inUse = currenciesInUse.map((entry) => ({
+    ...entry,
+    rateToGbp: entry.currency === 'GBP' ? 1 : (rateFor.get(entry.currency) ?? null),
+  }));
+  const missingInUse = inUse.filter((entry) => entry.rateToGbp == null).map((e) => e.currency);
+  const usedCodes = new Set(currenciesInUse.map((entry) => entry.currency));
+  const otherRates = rates.filter(
+    (rate) => rate.currency !== 'GBP' && !usedCodes.has(rate.currency),
+  );
 
   const edited = JSON.stringify(draft) !== JSON.stringify(settings.rules);
 
@@ -206,17 +223,63 @@ export function PricingRulesEditor({
               No rates stored yet. Press Refresh rates, or wait for the 02:00 job.
             </p>
           ) : (
-            <ul className="tabular grid grid-cols-2 gap-x-6 gap-y-1 text-[12px] sm:grid-cols-4">
-              {rates
-                .filter((rate) => rate.currency !== 'GBP')
-                .slice(0, 16)
-                .map((rate) => (
-                  <li key={rate.currency} className="flex justify-between gap-2">
-                    <span className="text-muted">{rate.currency}</span>
-                    <span className="text-ink">{rate.rateToGbp.toFixed(4)}</span>
-                  </li>
-                ))}
-            </ul>
+            <>
+              {/* The currencies we actually pay in come first and are named
+                  as such. Sorted alphabetically and cut off at sixteen, this
+                  panel could not show USD at all - which reads exactly like a
+                  missing rate when the rate is sitting in the table. */}
+              {inUse.length > 0 ? (
+                <ul className="tabular mb-3 grid grid-cols-1 gap-x-6 gap-y-1 text-[12px] sm:grid-cols-2">
+                  {inUse.map((entry) => (
+                    <li
+                      key={entry.currency}
+                      className="flex items-baseline justify-between gap-2 rounded bg-surface-sunken px-2 py-1"
+                    >
+                      <span className="text-ink">
+                        {entry.currency}
+                        <span className="ml-1.5 text-[11px] text-muted">
+                          {entry.listings} {entry.listings === 1 ? 'listing' : 'listings'}
+                        </span>
+                      </span>
+                      {entry.rateToGbp == null ? (
+                        <span className="text-[11px] font-medium text-negative">no rate</span>
+                      ) : (
+                        <span className="text-ink">{entry.rateToGbp.toFixed(4)}</span>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+
+              <button
+                type="button"
+                onClick={() => setShowAllRates((open) => !open)}
+                aria-expanded={showAllRates}
+                className="text-[12px] text-accent-700 hover:underline"
+              >
+                {showAllRates ? 'Hide' : `Show all ${otherRates.length} other rates`}
+              </button>
+
+              {showAllRates ? (
+                <ul className="tabular mt-2 grid grid-cols-2 gap-x-6 gap-y-1 text-[12px] sm:grid-cols-4">
+                  {otherRates.map((rate) => (
+                    <li key={rate.currency} className="flex justify-between gap-2">
+                      <span className="text-muted">{rate.currency}</span>
+                      <span className="text-ink">{rate.rateToGbp.toFixed(4)}</span>
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+
+              {missingInUse.length > 0 ? (
+                <p className="mt-2 flex items-start gap-1.5 text-[11px] leading-snug text-negative">
+                  <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" aria-hidden="true" />
+                  No rate for {missingInUse.join(', ')}, so those listings are not priced at all and
+                  cannot be published. Press Refresh rates; if it stays missing, the currency is not
+                  in the ECB set and those prices need setting by hand.
+                </p>
+              ) : null}
+            </>
           )}
           {staleRateCount > 0 ? (
             <p className="mt-1.5 flex items-center gap-1.5 text-[11px] text-negative">
