@@ -134,12 +134,41 @@ export function groupNichePrices(prices: NichePrice[]) {
 export const GENERAL_TOPIC = 'general';
 
 export interface PlacementPrice {
-  /** What to charge. */
+  /** What to charge this buyer. */
   priceMinor: number;
-  /** What it would have cost on the standard rate. */
+  /** What it would have cost on the standard rate for the same buyer. */
   listPriceMinor: number;
   /** True when the declared topic carries a premium. */
   premium: boolean;
+  /** True when an agency rate was used rather than the standard one. */
+  agencyRate: boolean;
+}
+
+/**
+ * Which buyers get the agency rate.
+ *
+ * The plan already on the profile, so there is no second notion of who is an
+ * agency to drift out of step with the one on the billing page.
+ */
+export type BuyerTier = 'standard' | 'agency';
+
+export function tierFor(plan: string | undefined): BuyerTier {
+  return plan === 'agency' ? 'agency' : 'standard';
+}
+
+/** The price for this buyer: the agency one where there is one. */
+function forTier(
+  standardMinor: number,
+  agencyMinor: number | undefined,
+  tier: BuyerTier,
+): { minor: number; agencyRate: boolean } {
+  // Only ever downward. An agency price above the standard one would be a
+  // calculation fault, and charging it would be charging a loyal customer
+  // more for being one.
+  if (tier === 'agency' && agencyMinor != null && agencyMinor > 0 && agencyMinor < standardMinor) {
+    return { minor: agencyMinor, agencyRate: true };
+  }
+  return { minor: standardMinor, agencyRate: false };
 }
 
 /**
@@ -158,11 +187,14 @@ export function placementPrice(
   website: Pick<Website, 'services' | 'nichePrices'>,
   linkType: LinkTypeSlug,
   topic?: string | null,
+  tier: BuyerTier = 'standard',
 ): PlacementPrice | null {
   const service = website.services.find(
     (candidate) => candidate.type === linkType && candidate.available,
   );
   if (!service || service.priceMinor <= 0) return null;
+
+  const standard = forTier(service.priceMinor, service.agencyPriceMinor, tier);
 
   const override = topic
     ? website.nichePrices.find(
@@ -170,10 +202,18 @@ export function placementPrice(
       )
     : undefined;
 
+  const chosen = override
+    ? forTier(override.priceMinor, override.agencyPriceMinor, tier)
+    : standard;
+
   return {
-    priceMinor: override?.priceMinor ?? service.priceMinor,
-    listPriceMinor: service.priceMinor,
+    priceMinor: chosen.minor,
+    // The standard rate for the same buyer, so a basket line comparing the
+    // two is comparing like with like rather than an agency niche price
+    // against a retail general one.
+    listPriceMinor: standard.minor,
     premium: Boolean(override),
+    agencyRate: chosen.agencyRate || standard.agencyRate,
   };
 }
 

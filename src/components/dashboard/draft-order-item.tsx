@@ -10,7 +10,7 @@ import { Select } from '@/components/ui/select';
 import { useOrderDraft } from '@/lib/providers/order-draft-provider';
 import { formatPrice, formatTurnaround } from '@/lib/utils/format';
 import { acceptedNicheLabel } from '@/lib/config/accepted-niches';
-import { GENERAL_TOPIC, overridesForType, placementPrice } from '@/lib/utils/pricing';
+import { GENERAL_TOPIC, overridesForType, placementPrice, type BuyerTier } from '@/lib/utils/pricing';
 import { linkTypeLabels } from '@/lib/utils/labels';
 import { cn } from '@/lib/utils/cn';
 import type { DraftOrderItem, LinkTypeSlug, WebsiteListItem } from '@/lib/types';
@@ -36,10 +36,12 @@ export function DraftOrderItemCard({
   item,
   website,
   index,
+  tier = 'standard',
 }: {
   item: DraftOrderItem;
   website?: WebsiteListItem;
   index: number;
+  tier?: BuyerTier;
 }) {
   const { update, remove } = useOrderDraft();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -55,20 +57,20 @@ export function DraftOrderItemCard({
   // being bought. Empty on most listings, and then no question is asked.
   const premiums = website ? overridesForType(website.nichePrices, item.serviceType) : [];
   const missingTopic = premiums.length > 0 && !item.topic;
-  const priced = website ? placementPrice(website, item.serviceType, item.topic) : null;
+  const priced = website ? placementPrice(website, item.serviceType, item.topic, tier) : null;
   const premiumApplied = Boolean(priced?.premium);
 
   function onServiceChange(type: LinkTypeSlug) {
     if (!website) return;
     // Changing the placement can change which topics carry a premium, so the
     // price is recomputed from the topic rather than carried across.
-    const next = placementPrice(website, type, item.topic);
+    const next = placementPrice(website, type, item.topic, tier);
     update(item.id, { serviceType: type, priceMinor: next?.priceMinor ?? item.priceMinor });
   }
 
   function onTopicChange(topic: string) {
     if (!website) return;
-    const next = placementPrice(website, item.serviceType, topic);
+    const next = placementPrice(website, item.serviceType, topic, tier);
     update(item.id, { topic, priceMinor: next?.priceMinor ?? item.priceMinor });
   }
 
@@ -146,7 +148,7 @@ export function DraftOrderItemCard({
               */}
               {services.map((candidate) => {
                 const forTopic = website
-                  ? placementPrice(website, candidate.type, item.topic)
+                  ? placementPrice(website, candidate.type, item.topic, tier)
                   : null;
                 return (
                   <option key={candidate.id} value={candidate.type}>

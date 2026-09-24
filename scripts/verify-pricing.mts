@@ -16,6 +16,7 @@ import {
   type RoundingTier,
 } from '../src/lib/pricing/engine';
 import { ratesFromSource, RATE_MOVE_THRESHOLD_PCT } from '../src/lib/services/fx-service';
+import { placementPrice, tierFor } from '../src/lib/utils/pricing';
 
 let failed = 0;
 const ok = (l: string) => console.log(`  PASS  ${l}`);
@@ -266,6 +267,60 @@ console.log('\n--- exchange rates ---');
   const expectedGbp = Math.round((10900 / 1.27) * 1.04);
   is('109 dollars converts as expected', priced.costGbpMinor, expectedGbp);
   console.log(`  109 USD -> ${gbp(priced.costGbpMinor)} true ${gbp(priced.trueCostMinor)} -> sells ${gbp(priced.sellMinor)} (margin ${gbp(priced.marginMinor)})`);
+}
+
+console.log('\n--- which buyer is charged what ---');
+{
+  const site = {
+    services: [
+      { id: 's1', websiteId: 'w1', type: 'guest-post' as const, priceMinor: 29500, agencyPriceMinor: 27500,
+        turnaroundMinDays: 1, turnaroundMaxDays: 5, available: true },
+    ],
+    nichePrices: [
+      { niche: 'gambling', linkType: 'guest-post' as const, priceMinor: 49500, agencyPriceMinor: 44500 },
+    ],
+  };
+
+  is('a starter account is standard', tierFor('starter'), 'standard');
+  is('growth is standard too', tierFor('growth'), 'standard');
+  is('only agency is agency', tierFor('agency'), 'agency');
+  is('and an unknown plan is standard', tierFor(undefined), 'standard');
+
+  is('a standard buyer pays the list price', placementPrice(site, 'guest-post')!.priceMinor, 29500);
+  is('an agency pays the agency price', placementPrice(site, 'guest-post', null, 'agency')!.priceMinor, 27500);
+  is('and is told so', placementPrice(site, 'guest-post', null, 'agency')!.agencyRate, true);
+  is('a standard buyer is not', placementPrice(site, 'guest-post')!.agencyRate, false);
+
+  is('a standard buyer pays the niche price', placementPrice(site, 'guest-post', 'gambling')!.priceMinor, 49500);
+  is('an agency pays the agency niche price', placementPrice(site, 'guest-post', 'gambling', 'agency')!.priceMinor, 44500);
+  is(
+    'and the comparison shown is agency against agency',
+    placementPrice(site, 'guest-post', 'gambling', 'agency')!.listPriceMinor,
+    27500,
+  );
+
+  // A calculation fault must never charge a loyal customer more.
+  const wrong = {
+    services: [{ id: 's1', websiteId: 'w1', type: 'guest-post' as const, priceMinor: 10000, agencyPriceMinor: 15000,
+      turnaroundMinDays: 1, turnaroundMaxDays: 5, available: true }],
+    nichePrices: [],
+  };
+  is(
+    'an agency price above the standard one is ignored',
+    placementPrice(wrong, 'guest-post', null, 'agency')!.priceMinor,
+    10000,
+  );
+
+  const unpriced = {
+    services: [{ id: 's1', websiteId: 'w1', type: 'guest-post' as const, priceMinor: 20000,
+      turnaroundMinDays: 1, turnaroundMaxDays: 5, available: true }],
+    nichePrices: [],
+  };
+  is(
+    'where nothing has been calculated everyone pays the same',
+    placementPrice(unpriced, 'guest-post', null, 'agency')!.priceMinor,
+    20000,
+  );
 }
 
 console.log(failed ? `\n  ${failed} FAILED\n` : '\n  all passed\n');

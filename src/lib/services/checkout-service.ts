@@ -1,7 +1,7 @@
 import { isSupabaseEnabled } from '@/lib/supabase/config';
 import { getServerClient, getAdminScopedClient } from '@/lib/supabase/server';
 import { websiteService } from './website-service';
-import { needsTopic, placementPrice } from '@/lib/utils/pricing';
+import { needsTopic, placementPrice, tierFor, type BuyerTier } from '@/lib/utils/pricing';
 import { mockStore } from './mock-store';
 import { mapOrder, type OrderRow } from '@/lib/supabase/mappers';
 import type { DraftOrderItem, Order, UserProfile } from '@/lib/types';
@@ -33,6 +33,8 @@ export interface PricedLine {
   priceMinor: number;
   /** The standard rate, recorded so the premium is legible on the order. */
   listPriceMinor: number;
+  /** True when this buyer's agency rate was used. */
+  agencyRate: boolean;
   targetUrl: string;
   anchorText: string;
   preferredLandingPage?: string;
@@ -53,7 +55,10 @@ export interface PricingResult {
  * since it went in the basket is caught. Those lines are rejected rather than
  * silently charged at the old price.
  */
-export async function priceBasket(items: DraftOrderItem[]): Promise<PricingResult> {
+export async function priceBasket(
+  items: DraftOrderItem[],
+  tier: BuyerTier = 'standard',
+): Promise<PricingResult> {
   const lines: PricedLine[] = [];
   const rejected: PricingResult['rejected'] = [];
 
@@ -86,7 +91,7 @@ export async function priceBasket(items: DraftOrderItem[]): Promise<PricingResul
       continue;
     }
 
-    const price = placementPrice(website, item.serviceType, topic);
+    const price = placementPrice(website, item.serviceType, topic, tier);
     if (!price) {
       rejected.push({
         websiteDomain: website.domain,
@@ -108,6 +113,7 @@ export async function priceBasket(items: DraftOrderItem[]): Promise<PricingResul
       topic,
       priceMinor: price.priceMinor,
       listPriceMinor: price.listPriceMinor,
+      agencyRate: price.agencyRate,
       targetUrl: item.targetUrl.trim(),
       anchorText: item.anchorText.trim(),
       preferredLandingPage: item.preferredLandingPage?.trim() || undefined,

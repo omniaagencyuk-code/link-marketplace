@@ -23,6 +23,11 @@ export interface Service {
   type: LinkTypeSlug;
   /** Price in minor units (pence) to avoid floating point rounding. */
   priceMinor: number;
+  /**
+   * What an agency account pays. Undefined where nothing has been calculated
+   * yet, and then everyone pays `priceMinor`.
+   */
+  agencyPriceMinor?: number;
   /** Turnaround window in business days. */
   turnaroundMinDays: number;
   turnaroundMaxDays: number;
@@ -53,6 +58,8 @@ export interface NichePrice {
   niche: AcceptedNicheSlug;
   linkType: LinkTypeSlug;
   priceMinor: number;
+  /** What an agency account pays for this niche. */
+  agencyPriceMinor?: number;
 }
 
 /** Editorial rules a buyer needs to know before ordering. */

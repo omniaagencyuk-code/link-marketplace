@@ -52,7 +52,9 @@ export interface WebsiteRow {
   traffic_change_pct: number | string | null;
   top_country_share: number | null;
   audience_split: { country: string; share: number; traffic?: number }[] | null;
-  website_niche_prices?: { niche: string; link_type: LinkTypeSlug; price_minor: number }[] | null;
+  website_niche_prices?:
+    | { niche: string; link_type: LinkTypeSlug; price_minor: number; agency_price_minor: number | null }[]
+    | null;
   /**
    * Only ever present on an admin read. A customer's query does not ask for
    * it, and the table has no policy that would answer if it did.
@@ -90,6 +92,7 @@ export interface ServiceRow {
   website_id: string;
   type: Service['type'];
   price_minor: number;
+  agency_price_minor: number | null;
   turnaround_min_days: number;
   turnaround_max_days: number;
   available: boolean;
@@ -110,7 +113,7 @@ export const WEBSITE_SELECT = `
   primary_category:categories!websites_primary_category_id_fkey (slug),
   website_categories (categories (slug)),
   services (*),
-  website_niche_prices (niche, link_type, price_minor)
+  website_niche_prices (niche, link_type, price_minor, agency_price_minor)
 `;
 
 /**
@@ -127,7 +130,7 @@ export const WEBSITE_SELECT_ADMIN = `
   primary_category:categories!websites_primary_category_id_fkey (slug),
   website_categories (categories (slug)),
   services (*, service_costs (cost_price_minor)),
-  website_niche_prices (niche, link_type, price_minor),
+  website_niche_prices (niche, link_type, price_minor, agency_price_minor),
   website_contacts (email, contact_name, notes)
 `;
 
@@ -170,6 +173,9 @@ export function mapService(row: ServiceRow): Service {
     websiteId: row.website_id,
     type: row.type,
     priceMinor: toNumber(row.price_minor),
+    ...(row.agency_price_minor == null
+      ? {}
+      : { agencyPriceMinor: toNumber(row.agency_price_minor) }),
     turnaroundMinDays: toNumber(row.turnaround_min_days, 3),
     turnaroundMaxDays: toNumber(row.turnaround_max_days, 7),
     available: row.available ?? true,
@@ -234,6 +240,9 @@ export function mapWebsite(row: WebsiteRow): Website {
         niche: entry.niche,
         linkType: entry.link_type,
         priceMinor: toNumber(entry.price_minor),
+        ...(entry.agency_price_minor == null
+          ? {}
+          : { agencyPriceMinor: toNumber(entry.agency_price_minor) }),
       }))
       .filter((entry) => entry.priceMinor > 0)
       .sort((a, b) => b.priceMinor - a.priceMinor),

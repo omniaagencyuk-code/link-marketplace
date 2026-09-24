@@ -13,6 +13,7 @@ import { getStripe } from '@/lib/stripe/client';
 import { isStripeEnabled } from '@/lib/stripe/config';
 import { linkTypeLabels } from '@/lib/utils/labels';
 import { acceptedNicheLabel } from '@/lib/config/accepted-niches';
+import { tierFor } from '@/lib/utils/pricing';
 import { siteUrl } from '@/lib/config/brand';
 import type { DraftOrderItem } from '@/lib/types';
 
@@ -56,7 +57,9 @@ export async function startCheckoutAction(items: DraftOrderItem[]): Promise<Chec
   }
 
   const settings = await settingsService.get();
-  const pricing = await priceBasket(items);
+  // The buyer's own tier, read from their profile on the server. A basket
+  // that asked for the agency rate would be a basket that could claim it.
+  const pricing = await priceBasket(items, tierFor(user.plan));
 
   if (pricing.lines.length === 0) {
     return {

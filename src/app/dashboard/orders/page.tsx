@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { orderService, settingsService, websiteService } from '@/lib/services';
 import { requireCustomerSession } from '@/lib/auth/customer-access';
+import { tierFor } from '@/lib/utils/pricing';
 
 /*
   Never cached. An order's status changes from a Stripe webhook seconds after
@@ -37,7 +38,7 @@ export default async function OrdersPage() {
         }
       />
 
-      <DraftOrder websites={websites} />
+      <DraftOrder websites={websites} tier={tierFor(user.plan)} />
 
       <section className="mt-8" aria-labelledby="all-orders">
         <div className="mb-4 flex flex-wrap items-center gap-2">

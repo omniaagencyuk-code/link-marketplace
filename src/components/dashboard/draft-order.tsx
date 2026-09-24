@@ -9,7 +9,7 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { DraftOrderItemCard } from './draft-order-item';
 import { useOrderDraft } from '@/lib/providers/order-draft-provider';
 import { formatPrice } from '@/lib/utils/format';
-import { needsTopic } from '@/lib/utils/pricing';
+import { needsTopic, type BuyerTier } from '@/lib/utils/pricing';
 import type { WebsiteListItem } from '@/lib/types';
 
 /**
@@ -23,7 +23,14 @@ import type { WebsiteListItem } from '@/lib/types';
  * indicative: checkout re-prices every line against the database before
  * charging, so a stale or edited basket cannot change what is paid.
  */
-export function DraftOrder({ websites }: { websites: WebsiteListItem[] }) {
+export function DraftOrder({
+  websites,
+  tier = 'standard',
+}: {
+  websites: WebsiteListItem[];
+  /** From the viewer's profile on the server. Checkout re-reads it anyway. */
+  tier?: BuyerTier;
+}) {
   const { items, totalMinor, incompleteCount, clear, hydrated } = useOrderDraft();
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -102,6 +109,7 @@ export function DraftOrder({ websites }: { websites: WebsiteListItem[] }) {
             item={item}
             index={index}
             website={websites.find((website) => website.id === item.websiteId)}
+            tier={tier}
           />
         ))}
       </ul>

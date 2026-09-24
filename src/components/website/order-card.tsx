@@ -8,7 +8,7 @@ import { FavouriteButton } from '@/components/marketplace/favourite-button';
 import { useOrderDraft } from '@/lib/providers/order-draft-provider';
 import { formatPrice, formatTurnaround } from '@/lib/utils/format';
 import { acceptedNicheLabel } from '@/lib/config/accepted-niches';
-import { overridesForType } from '@/lib/utils/pricing';
+import { overridesForType, placementPrice, type BuyerTier } from '@/lib/utils/pricing';
 import { linkTypeDescriptions, linkTypeLabels } from '@/lib/utils/labels';
 import { cn } from '@/lib/utils/cn';
 import type { Service, Website } from '@/lib/types';
@@ -20,7 +20,14 @@ import type { Service, Website } from '@/lib/types';
  * text, landing page, notes and the optional article are collected once, on
  * the order page, so browsing and buying stay separate.
  */
-export function OrderCard({ website }: { website: Website }) {
+export function OrderCard({
+  website,
+  tier = 'standard',
+}: {
+  website: Website;
+  /** Read from the viewer's profile on the server, never from the browser. */
+  tier?: BuyerTier;
+}) {
   const available = website.services.filter((service) => service.available);
   const { add } = useOrderDraft();
   const [serviceId, setServiceId] = useState(available[0]?.id ?? '');
@@ -28,6 +35,8 @@ export function OrderCard({ website }: { website: Website }) {
 
   const selected = available.find((service) => service.id === serviceId) ?? available[0];
   const premiums = selected ? overridesForType(website.nichePrices, selected.type) : [];
+  // What this buyer pays, which is not always the list price.
+  const priced = selected ? placementPrice(website, selected.type, null, tier) : null;
 
   function addToOrder() {
     if (!selected) return;
@@ -36,7 +45,7 @@ export function OrderCard({ website }: { website: Website }) {
       websiteSlug: website.slug,
       websiteDomain: website.domain,
       serviceType: selected.type,
-      priceMinor: selected.priceMinor,
+      priceMinor: priced?.priceMinor ?? selected.priceMinor,
       targetUrl: '',
       anchorText: '',
     });
@@ -89,8 +98,18 @@ export function OrderCard({ website }: { website: Website }) {
       <div className="space-y-3 border-t border-line bg-surface/60 px-5 py-4">
         <div className="tabular flex items-center justify-between text-sm">
           <span className="text-muted">{linkTypeLabels[selected.type]}</span>
-          <span className="font-semibold text-ink">{formatPrice(selected.priceMinor)}</span>
+          <span className="font-semibold text-ink">
+            {priced?.agencyRate ? (
+              <span className="mr-1.5 text-[12px] font-normal text-muted line-through">
+                {formatPrice(selected.priceMinor)}
+              </span>
+            ) : null}
+            {formatPrice(priced?.priceMinor ?? selected.priceMinor)}
+          </span>
         </div>
+        {priced?.agencyRate ? (
+          <p className="text-[12px] text-accent-700">Your agency rate.</p>
+        ) : null}
 
         {/*
           The premiums for the placement being bought, and only that one:
