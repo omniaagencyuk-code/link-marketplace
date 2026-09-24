@@ -263,6 +263,31 @@ const withRefusal = applyGeneralPriceToNiches(
 is('an explicit refusal survives the button', withRefusal.niches.adult!.accepted, 'no');
 is('and stays unpriced', withRefusal.niches.adult!.guest_post_cost, null);
 
+console.log('\n--- a price with no currency ---');
+{
+  // The one that got through: a reply quoting 109 with no currency was
+  // stored as a bare number and read as pounds by everything downstream.
+  const noCurrency = blank({ guest_post_cost: 109, contact_email: 'a@b.example' });
+  is('is flagged for a human', flagsFor(noCurrency).includes('price-without-currency'), true);
+
+  const stated = blank({ guest_post_cost: 109, currency: 'USD', contact_email: 'a@b.example' });
+  is('a stated currency is not', flagsFor(stated).includes('price-without-currency'), false);
+
+  // No money quoted at all is a different problem, and not this one.
+  const noPrice = blank({ contact_email: 'a@b.example' });
+  is('a reply quoting nothing is not flagged for it', flagsFor(noPrice).includes('price-without-currency'), false);
+
+  // A price hiding in the niche rate card counts just as much as a headline.
+  const nicheOnly = blank({
+    contact_email: 'a@b.example',
+    niches: { ...blank().niches, gambling: { accepted: 'yes', guest_post_cost: 350, link_insertion_cost: null } },
+  });
+  is('a niche-only price still needs a currency', flagsFor(nicheOnly).includes('price-without-currency'), true);
+
+  const banner = blank({ banner_cost: 50, contact_email: 'a@b.example' });
+  is('and so does a banner price', flagsFor(banner).includes('price-without-currency'), true);
+}
+
 console.log('\n--- what is not flagged ---');
 const itemised = blank({
   guest_post_cost: 100, contact_email: 'p@b.example',
@@ -346,10 +371,18 @@ is(
 );
 
 console.log('\n--- bulk approval safety ---');
-const confident = blank({ guest_post_cost: 100, contact_email: 'a@b.example', confidence: [{ field: 'guest_post_cost', level: 'high' }],
+// A genuinely clean draft states what it is charging in. The currency was
+// missing from this fixture, which is the same omission that let a real one
+// through.
+const confident = blank({ guest_post_cost: 100, currency: 'GBP', contact_email: 'a@b.example', confidence: [{ field: 'guest_post_cost', level: 'high' }],
   niches: { ...blank().niches, gambling: { accepted: 'yes', guest_post_cost: 200, link_insertion_cost: null } } });
 is('a clean draft has no low-confidence fields', countLowConfidence(confident), 0);
 is('and no flags, so bulk approve may take it', flagsFor(confident).length, 0);
+
+// The safety property that matters here: a price whose currency nobody
+// stated must never be swept in by Approve all.
+const currencyless = { ...confident, currency: null };
+is('a draft with no currency is never swept up in bulk', flagsFor(currencyless).length > 0, true);
 const shaky = blank({ guest_post_cost: 100, contact_email: 'a@b.example', confidence: [
   { field: 'guest_post_cost', level: 'low' }, { field: 'turnaround_min_days', level: 'low' },
 ] });

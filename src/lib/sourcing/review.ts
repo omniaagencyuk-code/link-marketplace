@@ -91,6 +91,19 @@ export function expandListings(listings: ExtractedListing[]): ExpandedDraft[] {
  * forbidden from spreading a lone price across the sensitive topics, so the
  * draft arrives with them all unknown and somebody has to say.
  */
+/** Whether the reply quoted any money at all, in any of the places it can. */
+function hasAnyPrice(listing: ExtractedListing): boolean {
+  if (listing.guest_post_cost != null) return true;
+  if (listing.guest_post_cost_written_by_publisher != null) return true;
+  if (listing.link_insertion_cost != null) return true;
+  if (listing.homepage_link_cost != null) return true;
+  if (listing.banner_cost != null) return true;
+  return sensitiveNicheSlugs.some((slug) => {
+    const terms = listing.niches[slug];
+    return terms?.guest_post_cost != null || terms?.link_insertion_cost != null;
+  });
+}
+
 export function flagsFor(listing: ExtractedListing): string[] {
   const flags: string[] = [];
 
@@ -102,6 +115,13 @@ export function flagsFor(listing: ExtractedListing): string[] {
   if (listing.guest_post_cost != null && everyNicheUnknown) {
     flags.push('single-price-confirm-niches');
   }
+  // A price with no currency is a number that means nothing. It used to be
+  // stored anyway and read as pounds everywhere downstream, which is how a
+  // publisher quoting dollars came to be shown as quoting pounds. The reply
+  // rarely omits it outright - more often the symbol was the only clue and
+  // the model would not invent a code from it, which is the right call and
+  // exactly when a human should be asked.
+  if (hasAnyPrice(listing) && !listing.currency) flags.push('price-without-currency');
   if (listing.relationship) flags.push('different-site-offered');
   if (listing.price_valid_until || listing.future_price_notes) flags.push('price-changes-later');
   if (!listing.contact_email) flags.push('no-contact-email');
