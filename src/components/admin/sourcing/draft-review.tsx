@@ -240,6 +240,36 @@ export function DraftReview({
                 onChange={(value) => set('link_insertion_cost', value)}
               />
             </div>
+
+            {/* Recurring placements. Not sold in the marketplace, but they are
+                often the most valuable thing in a reply and were invisible
+                here until a publisher quoted both and neither appeared. */}
+            <div className="grid gap-3 border-t border-line pt-4 sm:grid-cols-2">
+              <Periodic
+                label="Homepage link"
+                field="homepage_link_cost"
+                value={draft.homepage_link_cost}
+                period={draft.homepage_link_period}
+                currency={draft.currency}
+                confidence={confidence}
+                evidence={evidence}
+                disabled={reviewed}
+                onValue={(value) => set('homepage_link_cost', value)}
+                onPeriod={(value) => set('homepage_link_period', value)}
+              />
+              <Periodic
+                label="Banner"
+                field="banner_cost"
+                value={draft.banner_cost}
+                period={draft.banner_period}
+                currency={draft.currency}
+                confidence={confidence}
+                evidence={evidence}
+                disabled={reviewed}
+                onValue={(value) => set('banner_cost', value)}
+                onPeriod={(value) => set('banner_period', value)}
+              />
+            </div>
           </CardContent>
         </Card>
 
@@ -316,25 +346,9 @@ export function DraftReview({
 
         <Card>
           <CardHeader>
-            <CardTitle>Terms and contact</CardTitle>
+            <CardTitle>Publishing terms</CardTitle>
           </CardHeader>
           <CardContent className="grid gap-3 sm:grid-cols-2">
-            <Field label="Contact email" field="contact_email" confidence={confidence} evidence={evidence}>
-              <Input
-                value={draft.contact_email ?? ''}
-                placeholder={email.fromAddress}
-                disabled={reviewed}
-                onChange={(event) => set('contact_email', event.target.value || null)}
-              />
-            </Field>
-            <Field label="Contact name" field="contact_name" confidence={confidence} evidence={evidence}>
-              <Input
-                value={draft.contact_name ?? ''}
-                disabled={reviewed}
-                onChange={(event) => set('contact_name', event.target.value || null)}
-              />
-            </Field>
-
             <Field label="Links" field="dofollow" confidence={confidence} evidence={evidence}>
               <Select
                 value={draft.dofollow}
@@ -372,11 +386,108 @@ export function DraftReview({
                 value={draft.dofollow_expires_after_months ?? ''}
                 disabled={reviewed}
                 onChange={(event) =>
-                  set(
-                    'dofollow_expires_after_months',
-                    event.target.value ? Number(event.target.value) : null,
-                  )
+                  set('dofollow_expires_after_months', numberOrNull(event.target.value))
                 }
+              />
+            </Field>
+            <Field label="Permanence" field="permanence" confidence={confidence} evidence={evidence}>
+              <Select
+                value={draft.permanence}
+                disabled={reviewed}
+                onChange={(event) =>
+                  set('permanence', event.target.value as ExtractedListing['permanence'])
+                }
+              >
+                <option value="permanent">Permanent</option>
+                <option value="fixed-term">Fixed term</option>
+                <option value="unknown">Not stated</option>
+              </Select>
+            </Field>
+
+            <Field label="Minimum months live" field="min_live_months" confidence={confidence} evidence={evidence}>
+              <Input
+                type="number"
+                value={draft.min_live_months ?? ''}
+                disabled={reviewed}
+                onChange={(event) => set('min_live_months', numberOrNull(event.target.value))}
+              />
+            </Field>
+            <Field label="Max links per article" field="max_links" confidence={confidence} evidence={evidence}>
+              <Input
+                type="number"
+                value={draft.max_links ?? ''}
+                disabled={reviewed}
+                onChange={(event) => set('max_links', numberOrNull(event.target.value))}
+              />
+            </Field>
+
+            <Field label="Word count, from" field="min_word_count" confidence={confidence} evidence={evidence}>
+              <Input
+                type="number"
+                value={draft.min_word_count ?? ''}
+                disabled={reviewed}
+                onChange={(event) => set('min_word_count', numberOrNull(event.target.value))}
+              />
+            </Field>
+            <Field label="Word count, to" field="max_word_count" confidence={confidence} evidence={evidence}>
+              <Input
+                type="number"
+                value={draft.max_word_count ?? ''}
+                disabled={reviewed}
+                onChange={(event) => set('max_word_count', numberOrNull(event.target.value))}
+              />
+            </Field>
+
+            <Field label="Turnaround, from (days)" field="turnaround_min_days" confidence={confidence} evidence={evidence}>
+              <Input
+                type="number"
+                value={draft.turnaround_min_days ?? ''}
+                disabled={reviewed}
+                onChange={(event) => set('turnaround_min_days', numberOrNull(event.target.value))}
+              />
+            </Field>
+            <Field label="Turnaround, to (days)" field="turnaround_max_days" confidence={confidence} evidence={evidence}>
+              <Input
+                type="number"
+                value={draft.turnaround_max_days ?? ''}
+                disabled={reviewed}
+                onChange={(event) => set('turnaround_max_days', numberOrNull(event.target.value))}
+              />
+            </Field>
+
+            <Field label="Link insertion offered" field="link_insertion_offered" confidence={confidence} evidence={evidence}>
+              <Select
+                value={draft.link_insertion_offered}
+                disabled={reviewed}
+                onChange={(event) =>
+                  set('link_insertion_offered', event.target.value as 'yes' | 'no' | 'unknown')
+                }
+              >
+                <option value="yes">Offered</option>
+                <option value="no">Not offered</option>
+                <option value="unknown">Not stated</option>
+              </Select>
+            </Field>
+            <Field label="Appears on the homepage" field="homepage_placement" confidence={confidence} evidence={evidence}>
+              <Select
+                value={draft.homepage_placement}
+                disabled={reviewed}
+                onChange={(event) =>
+                  set('homepage_placement', event.target.value as 'yes' | 'no' | 'unknown')
+                }
+              >
+                <option value="yes">Yes</option>
+                <option value="no">No</option>
+                <option value="unknown">Not stated</option>
+              </Select>
+            </Field>
+
+            <Field label="Language" field="language" confidence={confidence} evidence={evidence}>
+              <Input
+                value={draft.language ?? ''}
+                placeholder="e.g. cs"
+                disabled={reviewed}
+                onChange={(event) => set('language', event.target.value || null)}
               />
             </Field>
             <Field label="Topic restriction" field="topic_restriction" confidence={confidence} evidence={evidence}>
@@ -387,6 +498,149 @@ export function DraftReview({
                 onChange={(event) => set('topic_restriction', event.target.value || null)}
               />
             </Field>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Commercial terms</CardTitle>
+          </CardHeader>
+          <CardContent className="grid gap-3 sm:grid-cols-2">
+            <Field label="Prices exclude VAT" field="prices_exclude_vat" confidence={confidence} evidence={evidence}>
+              <Select
+                value={draft.prices_exclude_vat === null ? 'unknown' : draft.prices_exclude_vat ? 'yes' : 'no'}
+                disabled={reviewed}
+                onChange={(event) =>
+                  set(
+                    'prices_exclude_vat',
+                    event.target.value === 'unknown' ? null : event.target.value === 'yes',
+                  )
+                }
+              >
+                <option value="yes">Yes, VAT is on top</option>
+                <option value="no">No, prices include VAT</option>
+                <option value="unknown">Not stated</option>
+              </Select>
+            </Field>
+            <Field label="When they want paying" field="payment_timing" confidence={confidence} evidence={evidence}>
+              <Select
+                value={draft.payment_timing}
+                disabled={reviewed}
+                onChange={(event) =>
+                  set('payment_timing', event.target.value as ExtractedListing['payment_timing'])
+                }
+              >
+                <option value="prepaid">Up front</option>
+                <option value="on-publication">On publication</option>
+                <option value="after-live-link">After the link is live</option>
+                <option value="unknown">Not stated</option>
+              </Select>
+            </Field>
+
+            <div className="sm:col-span-2">
+              <Field label="Payment methods" field="payment_methods" confidence={confidence} evidence={evidence}>
+                <div className="flex flex-wrap gap-x-4 gap-y-1.5">
+                  {PAYMENT_METHODS.map((method) => (
+                    <label key={method.value} className="flex items-center gap-1.5 text-[13px] text-ink">
+                      <input
+                        type="checkbox"
+                        checked={draft.payment_methods.includes(method.value)}
+                        disabled={reviewed}
+                        className="h-3.5 w-3.5 accent-[var(--color-accent-600)]"
+                        onChange={(event) =>
+                          set(
+                            'payment_methods',
+                            event.target.checked
+                              ? [...draft.payment_methods, method.value]
+                              : draft.payment_methods.filter((entry) => entry !== method.value),
+                          )
+                        }
+                      />
+                      {method.label}
+                    </label>
+                  ))}
+                </div>
+              </Field>
+            </div>
+
+            <Field label="Minimum order" field="minimum_order" confidence={confidence} evidence={evidence}>
+              <Input
+                value={draft.minimum_order ?? ''}
+                placeholder="e.g. 2 posts minimum"
+                disabled={reviewed}
+                onChange={(event) => set('minimum_order', event.target.value || null)}
+              />
+            </Field>
+            <Field label="Prices valid until" field="price_valid_until" confidence={confidence} evidence={evidence}>
+              <Input
+                type="date"
+                value={draft.price_valid_until ?? ''}
+                disabled={reviewed}
+                onChange={(event) => set('price_valid_until', event.target.value || null)}
+              />
+            </Field>
+
+            <div className="sm:col-span-2">
+              <Field label="VAT notes" field="vat_notes" confidence={confidence} evidence={evidence}>
+                <Input
+                  value={draft.vat_notes ?? ''}
+                  disabled={reviewed}
+                  onChange={(event) => set('vat_notes', event.target.value || null)}
+                />
+              </Field>
+            </div>
+            <div className="sm:col-span-2">
+              <Field label="Bulk discounts" field="bulk_discount_notes" confidence={confidence} evidence={evidence}>
+                <Input
+                  value={draft.bulk_discount_notes ?? ''}
+                  disabled={reviewed}
+                  onChange={(event) => set('bulk_discount_notes', event.target.value || null)}
+                />
+              </Field>
+            </div>
+            <div className="sm:col-span-2">
+              <Field label="Future price changes" field="future_price_notes" confidence={confidence} evidence={evidence}>
+                <Input
+                  value={draft.future_price_notes ?? ''}
+                  disabled={reviewed}
+                  onChange={(event) => set('future_price_notes', event.target.value || null)}
+                />
+              </Field>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Contact and notes</CardTitle>
+          </CardHeader>
+          <CardContent className="grid gap-3 sm:grid-cols-2">
+            <Field label="Contact email" field="contact_email" confidence={confidence} evidence={evidence}>
+              <Input
+                value={draft.contact_email ?? ''}
+                placeholder={email.fromAddress}
+                disabled={reviewed}
+                onChange={(event) => set('contact_email', event.target.value || null)}
+              />
+            </Field>
+            <Field label="Contact name" field="contact_name" confidence={confidence} evidence={evidence}>
+              <Input
+                value={draft.contact_name ?? ''}
+                disabled={reviewed}
+                onChange={(event) => set('contact_name', event.target.value || null)}
+              />
+            </Field>
+
+            <div className="sm:col-span-2">
+              <Field label="Internal contact notes" field="contact_notes" confidence={confidence} evidence={evidence}>
+                <Input
+                  value={draft.contact_notes ?? ''}
+                  placeholder="Never shown to customers"
+                  disabled={reviewed}
+                  onChange={(event) => set('contact_notes', event.target.value || null)}
+                />
+              </Field>
+            </div>
 
             <div className="sm:col-span-2">
               <Field label="Notes" field="notes" confidence={confidence} evidence={evidence}>
@@ -398,6 +652,19 @@ export function DraftReview({
                 />
               </Field>
             </div>
+
+            {draft.relationship ? (
+              <div className="sm:col-span-2">
+                <Field label="Relationship to the site we asked about" field="relationship" confidence={confidence} evidence={evidence}>
+                  <Textarea
+                    value={draft.relationship}
+                    disabled={reviewed}
+                    className="min-h-16"
+                    onChange={(event) => set('relationship', event.target.value || null)}
+                  />
+                </Field>
+              </div>
+            ) : null}
           </CardContent>
         </Card>
 
@@ -479,6 +746,83 @@ export function DraftReview({
         )}
       </div>
     </div>
+  );
+}
+
+/** The payment methods the schema allows, in the words an account manager uses. */
+const PAYMENT_METHODS: { value: ExtractedListing['payment_methods'][number]; label: string }[] = [
+  { value: 'paypal', label: 'PayPal' },
+  { value: 'bank', label: 'Bank transfer' },
+  { value: 'invoice', label: 'Invoice' },
+  { value: 'crypto', label: 'Crypto' },
+  { value: 'pix', label: 'Pix' },
+  { value: 'upi', label: 'UPI' },
+  { value: 'western_union', label: 'Western Union' },
+];
+
+/** An emptied number field means "not stated", never zero. */
+function numberOrNull(value: string): number | null {
+  return value.trim() === '' ? null : Number(value);
+}
+
+/**
+ * A price that repeats, with the period it repeats on.
+ *
+ * A homepage link at 199 a year and one at 199 a month are different
+ * businesses, so the period sits beside the number rather than in a note.
+ */
+function Periodic({
+  label,
+  field,
+  value,
+  period,
+  currency,
+  confidence,
+  evidence,
+  disabled,
+  onValue,
+  onPeriod,
+}: {
+  label: string;
+  field: string;
+  value: number | null;
+  period: ExtractedListing['homepage_link_period'];
+  currency: string | null;
+  confidence: Record<string, string>;
+  evidence: Record<string, string>;
+  disabled: boolean;
+  onValue: (value: number | null) => void;
+  onPeriod: (value: ExtractedListing['homepage_link_period']) => void;
+}) {
+  return (
+    <Field label={label} field={field} confidence={confidence} evidence={evidence}>
+      <div className="flex items-center gap-2">
+        <Input
+          type="number"
+          min={0}
+          step="0.01"
+          value={value ?? ''}
+          disabled={disabled}
+          onChange={(event) => onValue(numberOrNull(event.target.value))}
+        />
+        <span className="shrink-0 text-[12px] text-muted">{currency ?? ''}</span>
+        <Select
+          size="sm"
+          aria-label={`${label} period`}
+          value={period ?? ''}
+          disabled={disabled}
+          className="w-28 shrink-0"
+          onChange={(event) =>
+            onPeriod((event.target.value || null) as ExtractedListing['homepage_link_period'])
+          }
+        >
+          <option value="">Period?</option>
+          <option value="month">per month</option>
+          <option value="year">per year</option>
+          <option value="one-off">one-off</option>
+        </Select>
+      </div>
+    </Field>
   );
 }
 
