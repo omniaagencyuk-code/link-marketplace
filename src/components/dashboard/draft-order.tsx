@@ -113,7 +113,11 @@ export function DraftOrder({ websites }: { websites: WebsiteListItem[] }) {
             <span className="ml-2 text-[17px] font-semibold text-ink">
               {formatPrice(totalMinor)}
             </span>
-            <span className="ml-2 text-[12px] text-muted">excluding VAT</span>
+            {/* Not "excluding VAT" flatly: whether any is due depends on the
+                billing address, which Stripe collects at checkout. A UK
+                customer pays 20% on top; an overseas business giving a valid
+                VAT number pays none. */}
+            <span className="ml-2 text-[12px] text-muted">before VAT</span>
           </p>
           <div className="flex items-center gap-2">
             <Button asChild variant="outline" size="sm">
@@ -168,7 +172,8 @@ export function DraftOrder({ websites }: { websites: WebsiteListItem[] }) {
 
         <p className="mt-3 text-[12px] text-muted">
           Your order is saved in this browser. Nothing is charged until you check out, and prices
-          are confirmed against the marketplace at that point.
+          are confirmed against the marketplace at that point. VAT is worked out at checkout from
+          your billing address and shown before you pay.
         </p>
       </div>
     </section>

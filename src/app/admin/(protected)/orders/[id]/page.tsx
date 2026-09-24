@@ -243,7 +243,18 @@ export default async function AdminOrderPage({ params }: { params: Promise<{ id:
             </CardHeader>
             <CardContent>
               <dl className="space-y-2 text-[13px]">
-                <Row label="Order total" value={formatPrice(order.totalMinor)} />
+                <Row label="Net" value={formatPrice(order.totalMinor)} />
+                {/*
+                  VAT is shown but never counted into profit: it is collected
+                  on HMRC's behalf and passed on. Treating it as revenue would
+                  overstate the margin on every UK order by a fifth.
+                */}
+                {order.taxMinor !== undefined ? (
+                  <Row label="VAT" value={formatPrice(order.taxMinor)} />
+                ) : null}
+                {order.chargedMinor !== undefined ? (
+                  <Row label="Customer paid" value={formatPrice(order.chargedMinor)} />
+                ) : null}
                 <Row
                   label="Cost"
                   value={costsKnown ? formatPrice(costTotal) : `${formatPrice(costTotal)} so far`}
@@ -254,6 +265,12 @@ export default async function AdminOrderPage({ params }: { params: Promise<{ id:
                   strong
                 />
               </dl>
+              {order.taxMinor === 0 ? (
+                <p className="mt-2 text-[12px] leading-relaxed text-muted">
+                  No VAT was charged - an overseas customer, or a business that gave a valid VAT
+                  number.
+                </p>
+              ) : null}
               {!costsKnown ? (
                 // Said plainly rather than shown as a confident number: a
                 // missing cost reads as zero in arithmetic, and a profit

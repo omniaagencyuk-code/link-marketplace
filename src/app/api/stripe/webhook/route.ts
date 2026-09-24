@@ -32,6 +32,20 @@ import {
 
 export const dynamic = 'force-dynamic';
 
+/**
+ * What was charged, and how much of it was VAT.
+ *
+ * Taken from the session rather than recalculated: Stripe applied the rate,
+ * knowing the billing address and any VAT number the customer entered, and
+ * the order should record the figure that actually left their account.
+ */
+function amountsFrom(session: Stripe.Checkout.Session) {
+  return {
+    chargedMinor: session.amount_total ?? null,
+    taxMinor: session.total_details?.amount_tax ?? null,
+  };
+}
+
 export async function POST(request: NextRequest) {
   const stripe = getStripe();
   const secret = stripeWebhookSecret();
@@ -76,7 +90,7 @@ export async function POST(request: NextRequest) {
 
         const paymentIntent =
           typeof session.payment_intent === 'string' ? session.payment_intent : null;
-        await markOrderPaid(session.id, paymentIntent);
+        await markOrderPaid(session.id, paymentIntent, amountsFrom(session));
         break;
       }
 
@@ -84,7 +98,7 @@ export async function POST(request: NextRequest) {
         const session = event.data.object as Stripe.Checkout.Session;
         const paymentIntent =
           typeof session.payment_intent === 'string' ? session.payment_intent : null;
-        await markOrderPaid(session.id, paymentIntent);
+        await markOrderPaid(session.id, paymentIntent, amountsFrom(session));
         break;
       }
 

@@ -52,7 +52,12 @@ export interface Order {
   customerName: string;
   customerEmail: string;
   status: OrderStatus;
+  /** The net: the sum of the placement prices, before VAT. */
   totalMinor: number;
+  /** VAT charged, from Stripe. Undefined until the payment lands. */
+  taxMinor?: number;
+  /** What Stripe actually took. Undefined until the payment lands. */
+  chargedMinor?: number;
   currency: 'GBP' | 'USD' | 'EUR';
   items: OrderItem[];
   placedAt: string;

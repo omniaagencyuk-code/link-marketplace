@@ -84,11 +84,25 @@ export async function startCheckoutAction(items: DraftOrderItem[]): Promise<Chec
       // typing an address we already hold.
       customer_email: user.email,
       client_reference_id: order.id,
+      // Stripe works out the VAT. It knows the billing address it just
+      // collected and whether a valid VAT number made the sale a reverse
+      // charge; a rate calculated in this codebase would only ever be a way
+      // to disagree with the amount actually taken.
+      automatic_tax: { enabled: true },
+      // Required for that: there is no VAT rate without knowing where the
+      // customer is.
+      billing_address_collection: 'required',
+      // A business customer can give their VAT number, which is what makes an
+      // overseas B2B sale zero-rated instead of charged at 20%.
+      tax_id_collection: { enabled: true },
       line_items: pricing.lines.map((line) => ({
         quantity: 1,
         price_data: {
           currency: settings.currency.toLowerCase(),
           unit_amount: line.priceMinor,
+          // Our prices are net: VAT goes on top rather than being carved out
+          // of the figure the publisher and the customer both saw.
+          tax_behavior: 'exclusive' as const,
           product_data: {
             name: `${linkTypeLabels[line.serviceType]} - ${line.websiteDomain}`,
             // Where a premium applied, the Stripe page and the receipt say

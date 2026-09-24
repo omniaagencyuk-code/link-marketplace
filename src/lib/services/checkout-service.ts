@@ -252,9 +252,17 @@ export async function attachCheckoutSession(orderId: string, sessionId: string):
  * to work from. The request's authenticity is established by the signature
  * check before this is called.
  */
+export interface PaidAmounts {
+  /** What Stripe actually took, including VAT. */
+  chargedMinor?: number | null;
+  /** The VAT within it. Zero on a zero-rated or reverse-charge sale. */
+  taxMinor?: number | null;
+}
+
 export async function markOrderPaid(
   sessionId: string,
   paymentIntentId: string | null,
+  amounts: PaidAmounts = {},
 ): Promise<{ orderId: string; alreadyPaid: boolean } | null> {
   if (!isSupabaseEnabled()) return null;
 
@@ -275,6 +283,10 @@ export async function markOrderPaid(
       payment_status: 'paid',
       stripe_payment_intent_id: paymentIntentId,
       paid_at: new Date().toISOString(),
+      // Recorded from the session rather than computed. Stripe decided the
+      // rate; this is the amount that left the customer's account.
+      ...(amounts.chargedMinor == null ? {} : { charged_minor: amounts.chargedMinor }),
+      ...(amounts.taxMinor == null ? {} : { tax_minor: amounts.taxMinor }),
     })
     .eq('id', order.id);
 

@@ -409,6 +409,8 @@ export interface OrderRow {
   customer_email: string | null;
   status: Order['status'];
   total_minor: number;
+  tax_minor: number | null;
+  charged_minor: number | null;
   currency: Order['currency'];
   placed_at: string;
   updated_at: string;
@@ -425,6 +427,8 @@ export function mapOrder(row: OrderRow): Order {
     customerEmail: row.customer_email ?? '',
     status: row.status,
     totalMinor: toNumber(row.total_minor),
+    taxMinor: row.tax_minor == null ? undefined : toNumber(row.tax_minor),
+    chargedMinor: row.charged_minor == null ? undefined : toNumber(row.charged_minor),
     currency: row.currency ?? 'GBP',
     items: (row.order_items ?? []).map(
       (item): OrderItem => ({
