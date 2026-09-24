@@ -2,11 +2,15 @@
 
 import Link from 'next/link';
 import { useState, useTransition } from 'react';
-import { AlertTriangle, Sparkles } from 'lucide-react';
+import { AlertTriangle, Sparkles, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Table, TableWrap, Td, Th, Tr } from '@/components/ui/table';
-import { bulkApproveConfidentAction } from '@/app/admin/(protected)/sourcing/actions';
+import {
+  bulkApproveConfidentAction,
+  discardDraftsAction,
+} from '@/app/admin/(protected)/sourcing/actions';
 import { formatDate } from '@/lib/utils/format';
 import type { DraftRow } from '@/app/admin/(protected)/sourcing/page';
 
@@ -22,6 +26,19 @@ const FLAG_LABELS: Record<string, string> = {
 export function DraftsTable({ drafts }: { drafts: DraftRow[] }) {
   const [busy, startTransition] = useTransition();
   const [result, setResult] = useState<string | null>(null);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+
+  const allSelected = drafts.length > 0 && selected.size === drafts.length;
+  const someSelected = selected.size > 0 && !allSelected;
+
+  function toggle(id: string) {
+    setSelected((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
 
   const confident = drafts.filter(
     (draft) => draft.lowConfidenceCount === 0 && draft.flags.length === 0,
@@ -77,6 +94,45 @@ export function DraftsTable({ drafts }: { drafts: DraftRow[] }) {
         </p>
       ) : null}
 
+      {selected.size > 0 ? (
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-line bg-surface-sunken px-3 py-2">
+          <p className="text-[13px] text-ink-soft">
+            {selected.size} {selected.size === 1 ? 'draft' : 'drafts'} selected
+          </p>
+          <div className="flex items-center gap-2">
+            <Button variant="ghost" size="sm" onClick={() => setSelected(new Set())}>
+              Clear selection
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={busy}
+              onClick={() => {
+                if (
+                  !window.confirm(
+                    `Delete ${selected.size} ${selected.size === 1 ? 'draft' : 'drafts'}? They are gone for good. Listings you have already approved are not affected, and the emails stay, so you can read them again.`,
+                  )
+                ) {
+                  return;
+                }
+                startTransition(async () => {
+                  const outcome = await discardDraftsAction([...selected]);
+                  setSelected(new Set());
+                  setResult(
+                    outcome.ok
+                      ? `Deleted ${outcome.discarded} ${outcome.discarded === 1 ? 'draft' : 'drafts'}.`
+                      : (outcome.error ?? 'Could not delete those.'),
+                  );
+                });
+              }}
+            >
+              <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
+              Delete selected
+            </Button>
+          </div>
+        </div>
+      ) : null}
+
       {result ? (
         <p role="status" className="text-[13px] text-ink-soft">
           {result}
@@ -88,6 +144,16 @@ export function DraftsTable({ drafts }: { drafts: DraftRow[] }) {
           <caption className="sr-only">Listing drafts awaiting review</caption>
           <thead>
             <tr>
+              <Th className="w-10">
+                <Checkbox
+                  aria-label={allSelected ? 'Clear selection' : 'Select every draft'}
+                  checked={allSelected}
+                  indeterminate={someSelected}
+                  onChange={() =>
+                    setSelected(allSelected ? new Set() : new Set(drafts.map((draft) => draft.id)))
+                  }
+                />
+              </Th>
               <Th>Domain</Th>
               <Th className="hidden md:table-cell">From</Th>
               <Th className="hidden lg:table-cell">Received</Th>
@@ -101,6 +167,13 @@ export function DraftsTable({ drafts }: { drafts: DraftRow[] }) {
           <tbody>
             {drafts.map((draft) => (
               <Tr key={draft.id}>
+                <Td>
+                  <Checkbox
+                    aria-label={`Select ${draft.domain}`}
+                    checked={selected.has(draft.id)}
+                    onChange={() => toggle(draft.id)}
+                  />
+                </Td>
                 <Td className="text-[13px] font-medium">
                   <Link
                     href={`/admin/sourcing/drafts/${draft.id}`}

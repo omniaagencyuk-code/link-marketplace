@@ -183,6 +183,36 @@ export async function discardEmailAction(emailId: string, reason?: string) {
   return { ok: true, discarded: (data ?? []).length };
 }
 
+/**
+ * Delete drafts outright.
+ *
+ * Distinct from rejecting one, which keeps the row and its reason because
+ * somebody looked at it and decided. This is for drafts that should never
+ * have been there - a reply read twice, a network expanded before the rules
+ * were right - where fifty-eight rejection records would be noise rather
+ * than history.
+ *
+ * Only pending drafts go. An approved one is a listing now, and deleting the
+ * draft behind it would not remove the listing anyway.
+ */
+export async function discardDraftsAction(draftIds: string[]) {
+  await requireAdminSession();
+  if (draftIds.length === 0) return { ok: true, discarded: 0 };
+
+  const supabase = getAdminScopedClient();
+  const { data, error } = await supabase
+    .from('listing_drafts')
+    .delete()
+    .in('id', draftIds.slice(0, 500))
+    .eq('status', 'pending')
+    .select('id');
+
+  if (error) return { ok: false, error: error.message, discarded: 0 };
+
+  revalidatePath('/admin/sourcing');
+  return { ok: true, discarded: (data ?? []).length };
+}
+
 export async function collectBatchesAction() {
   await requireAdminSession();
   const result = await sourcingService.collectBatches();
