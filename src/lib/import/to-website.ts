@@ -1,3 +1,4 @@
+import { brand } from '@/lib/config/brand';
 import { slugifyDomain } from '@/lib/utils/format';
 import { legacyAcceptanceFlags, matchAcceptedNiches } from '@/lib/config/accepted-niches';
 import { nicheFromPriceFieldKey, type ImportFieldKey } from './fields';
@@ -67,6 +68,13 @@ export function toWebsitePatch(
   ];
   if (priceKeys.some(has)) {
     patch.services = buildServices(values, supplied, existing);
+
+    // Recorded on the website as well as stamped on each cost, because the
+    // pricing engine reads it from the commercial terms and would otherwise
+    // refuse to price an imported listing for want of a currency nobody was
+    // ever asked for.
+    const costCurrency = patch.services.find((service) => service.costCurrency)?.costCurrency;
+    if (costCurrency) patch.costCurrency = costCurrency;
   }
 
   // ------------------------------------------------------------------ rules
@@ -238,6 +246,15 @@ function buildServices(
       available: previous?.available ?? true,
       note: previous?.note,
       costPriceMinor,
+      // A cost typed into our own CSV, in a column beside a sell price in our
+      // own currency, is in our currency. A cost read out of a publisher's
+      // email is in whatever the publisher said - that one is set at approval
+      // and is why the two paths record it separately rather than defaulting.
+      ...(costSupplied && costPriceMinor !== undefined
+        ? { costCurrency: brand.currency }
+        : previous?.costCurrency
+          ? { costCurrency: previous.costCurrency }
+          : {}),
     });
   }
 

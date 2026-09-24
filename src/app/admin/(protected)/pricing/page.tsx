@@ -35,7 +35,9 @@ export default async function PricingPage() {
   const [settings, rates, calculated, currenciesInUse] = await Promise.all([
     pricingService.getSettings(),
     fxService.list().catch(() => []),
-    pricingService.calculate().catch(() => ({ rows: [], missingRates: [] as string[] })),
+    pricingService
+      .calculate()
+      .catch(() => ({ rows: [], missingRates: [] as string[], noCurrency: [] as string[] })),
     pricingService.currenciesInUse().catch(() => []),
   ]);
 
@@ -129,6 +131,26 @@ export default async function PricingPage() {
           />
         </CardContent>
       </Card>
+
+      {calculated.noCurrency.length > 0 ? (
+        <Card>
+          <CardContent className="flex items-start gap-2 py-4 text-[13px] text-negative">
+            <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+            <span>
+              {calculated.noCurrency.length}{' '}
+              {calculated.noCurrency.length === 1 ? 'listing has' : 'listings have'} a cost with no
+              currency recorded, so {calculated.noCurrency.length === 1 ? 'it was' : 'they were'} not
+              priced. A cost of 109 is not a price until we know whether the publisher meant dollars
+              or pounds. Set it on each listing under &ldquo;What the publisher charges in&rdquo;:{' '}
+              {calculated.noCurrency.slice(0, 8).join(', ')}
+              {calculated.noCurrency.length > 8
+                ? ` and ${calculated.noCurrency.length - 8} more`
+                : ''}
+              .
+            </span>
+          </CardContent>
+        </Card>
+      ) : null}
 
       {calculated.missingRates.length > 0 ? (
         <Card>

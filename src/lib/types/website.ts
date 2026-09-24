@@ -43,6 +43,20 @@ export interface Service {
    * a cost of zero.
    */
   costPriceMinor?: number;
+  /**
+   * The currency `costPriceMinor` is quoted in, e.g. 'USD'.
+   *
+   * It travels with the number on purpose. The currency is stored once, on
+   * `website_commercials`, and a cost read without joining it is just an
+   * integer that looks like pounds - which is how $109 came to be displayed
+   * as £109, and subtracted from a sterling sell price to produce a profit
+   * that was never real. Every reader of a cost now has its unit in hand and
+   * cannot silently assume.
+   *
+   * `undefined` means no currency has been recorded, which is not GBP. It is
+   * "we do not know what this publisher charges in".
+   */
+  costCurrency?: string;
 }
 
 /**
@@ -167,6 +181,17 @@ export interface Website {
    * the public reads never ask for it and the public methods strip it.
    */
   contact?: PublisherContact;
+  /**
+   * The currency this publisher quotes every one of their rates in.
+   *
+   * The record of it, stored once on `website_commercials`. Each service
+   * carries a copy as `Service.costCurrency` so that a cost can never be read
+   * without its unit, but this is the one that is written.
+   *
+   * Undefined means nobody has recorded one. That is not GBP - it is a gap,
+   * and pricing refuses to convert across it rather than assuming ours.
+   */
+  costCurrency?: string;
   rules: PublishingRules;
   /** Manually vetted by the in-house editorial team. */
   verified: boolean;

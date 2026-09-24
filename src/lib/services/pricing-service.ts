@@ -167,8 +167,8 @@ export const pricingService = {
   async calculate(
     settings?: PricingSettings,
     websiteIds?: string[],
-  ): Promise<{ rows: PriceRow[]; missingRates: string[] }> {
-    if (!isSupabaseEnabled()) return { rows: [], missingRates: [] };
+  ): Promise<{ rows: PriceRow[]; missingRates: string[]; noCurrency: string[] }> {
+    if (!isSupabaseEnabled()) return { rows: [], missingRates: [], noCurrency: [] };
 
     const supabase = getAdminScopedClient();
     const resolved = settings ?? (await pricingService.getSettings());
@@ -215,6 +215,7 @@ export const pricingService = {
 
     const rows: PriceRow[] = [];
     const missingRates = new Set<string>();
+    const noCurrency = new Set<string>();
 
     /** One cost, priced, or skipped with a reason we can report. */
     const price = (
@@ -227,8 +228,17 @@ export const pricingService = {
       if (!costMinor || costMinor <= 0) return;
 
       const commercials = commercialsFor.get(websiteId);
-      const currency =
-        (commercials?.cost_currency as string | null)?.trim().toUpperCase() || 'GBP';
+      const currency = (commercials?.cost_currency as string | null)?.trim().toUpperCase();
+
+      // No currency recorded is not an invitation to assume ours. It used to
+      // default to GBP, which reads a $109 publisher as a £109 one and prices
+      // the listing off a cost out by a third. Absence is reported, like a
+      // missing rate, and the listing waits for a human to say.
+      if (!currency) {
+        noCurrency.add(domainFor.get(websiteId) ?? websiteId);
+        return;
+      }
+
       const rate = rates.get(currency);
 
       // A cost in a currency we have no rate for is not priced at a guess.
@@ -294,7 +304,7 @@ export const pricingService = {
       );
     }
 
-    return { rows, missingRates: [...missingRates] };
+    return { rows, missingRates: [...missingRates], noCurrency: [...noCurrency] };
   },
 
   /**
@@ -308,9 +318,13 @@ export const pricingService = {
     priced: number;
     skippedOverrides: number;
     missingRates: string[];
+    noCurrency: string[];
   }> {
     const supabase = getAdminScopedClient();
-    const { rows, missingRates } = await pricingService.calculate(undefined, websiteIds);
+    const { rows, missingRates, noCurrency } = await pricingService.calculate(
+      undefined,
+      websiteIds,
+    );
 
     const services: Record<string, unknown>[] = [];
     const nichePrices: Record<string, unknown>[] = [];
@@ -389,6 +403,11 @@ export const pricingService = {
         .upsert(calculations, { onConflict: 'website_id,link_type,niche' });
     }
 
-    return { priced: rows.length - skippedOverrides, skippedOverrides, missingRates };
+    return {
+      priced: rows.length - skippedOverrides,
+      skippedOverrides,
+      missingRates,
+      noCurrency,
+    };
   },
 };

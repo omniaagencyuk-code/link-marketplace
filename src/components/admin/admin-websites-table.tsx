@@ -20,7 +20,11 @@ import {
 import { nicheName } from '@/lib/data/categories';
 import { countryShortName } from '@/lib/data/countries';
 import { formatCompactNumber, formatPrice, formatTurnaround } from '@/lib/utils/format';
-import { servicesMissingCost, websiteMargin } from '@/lib/utils/margin';
+import {
+  servicesInForeignCurrency,
+  servicesMissingCost,
+  websiteMargin,
+} from '@/lib/utils/margin';
 import type { WebsiteListItem, WebsiteStatus } from '@/lib/types';
 
 const statusFilters: { value: WebsiteStatus | 'all'; label: string }[] = [
@@ -119,6 +123,12 @@ export function AdminWebsitesTable({ websites }: { websites: WebsiteListItem[] }
    * A dash means no cost has been recorded, which is not the same as breaking
    * even - showing a zero there would read as "this costs us nothing" and
    * quietly overstate the margin on every site nobody has priced yet.
+   *
+   * It also means a cost we cannot subtract here: a publisher quoting in
+   * dollars needs the rate, the buffer and the payment fee applied before
+   * their number means anything against a sterling price, and all three live
+   * in the pricing engine. The dash is honest; the figure this used to print
+   * was not.
    */
   function costOf(website: WebsiteListItem) {
     const margin = websiteMargin(website);
@@ -127,17 +137,42 @@ export function AdminWebsitesTable({ websites }: { websites: WebsiteListItem[] }
 
   function profitOf(website: WebsiteListItem) {
     const margin = websiteMargin(website);
-    if (!margin) return <span className="text-muted">&mdash;</span>;
+    const foreign = servicesInForeignCurrency(website);
+
+    if (!margin) {
+      return (
+        <span
+          className="text-muted"
+          title={
+            foreign > 0
+              ? 'Priced in another currency. The real margin is on the Pricing screen, where the conversion happens.'
+              : 'No cost recorded.'
+          }
+        >
+          {foreign > 0 ? 'in FX' : '\u2014'}
+        </span>
+      );
+    }
 
     const missing = servicesMissingCost(website);
     return (
       <span className={margin.profitMinor >= 0 ? 'text-accent-700' : 'text-coral-700'}>
         {formatPrice(margin.profitMinor)}
         <span className="ml-1 text-muted">({margin.marginPct}%)</span>
-        {missing > 0 ? (
+        {missing > 0 || foreign > 0 ? (
           <span
             className="ml-1 text-muted"
-            title={`${missing} service${missing === 1 ? '' : 's'} with no cost recorded, left out of this figure`}
+            title={[
+              missing > 0
+                ? `${missing} service${missing === 1 ? '' : 's'} with no cost recorded`
+                : '',
+              foreign > 0
+                ? `${foreign} priced in another currency`
+                : '',
+            ]
+              .filter(Boolean)
+              .join(', ')
+              .concat(', left out of this figure')}
           >
             *
           </span>

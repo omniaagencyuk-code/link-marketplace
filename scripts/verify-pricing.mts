@@ -18,6 +18,13 @@ import {
 import { ratesFromSource, RATE_MOVE_THRESHOLD_PCT } from '../src/lib/services/fx-service';
 import { breakdownSteps } from '../src/lib/pricing/steps';
 import { formatPrice } from '../src/lib/utils/format';
+import {
+  marginBlock,
+  serviceMargin,
+  servicesInForeignCurrency,
+  websiteMargin,
+} from '../src/lib/utils/margin';
+import type { Service } from '../src/lib/types';
 import { placementPrice, tierFor } from '../src/lib/utils/pricing';
 
 let failed = 0;
@@ -401,6 +408,42 @@ console.log('\n--- how a price explains itself ---');
     breakdownSteps(tiny).some((step) => step.label.includes('minimum margin')),
     true,
   );
+}
+
+console.log('\n--- a cost is never subtracted from a price in other money ---');
+{
+  // The bug this suite exists to prevent: a publisher charging $109 was shown
+  // as costing £109, and the editor printed "£36 profit" on a sell price of
+  // £145. The real cost is nearer £93 once converted, buffered and paid for,
+  // and the real margin is nearer £52. Both numbers are wrong, and the wrong
+  // one is the one somebody sets prices from.
+  const base = {
+    id: 'svc', websiteId: 'w1', type: 'guest-post' as const,
+    turnaroundMinDays: 1, turnaroundMaxDays: 5, available: true,
+  };
+  const dollars: Service = { ...base, priceMinor: 14500, costPriceMinor: 10900, costCurrency: 'USD' };
+  const pounds: Service = { ...base, priceMinor: 14500, costPriceMinor: 10900, costCurrency: 'GBP' };
+  const unstated: Service = { ...base, priceMinor: 14500, costPriceMinor: 10900 };
+  const noCost: Service = { ...base, priceMinor: 14500 };
+
+  is('a dollar cost yields no sterling margin', serviceMargin(dollars, 'GBP'), null);
+  is('and says why', marginBlock(dollars, 'GBP'), 'foreign-currency');
+  is('a sterling cost still does', serviceMargin(pounds, 'GBP')?.profitMinor, 3600);
+  is('and is not blocked', marginBlock(pounds, 'GBP'), null);
+
+  // An unrecorded currency is a gap, not a quiet vote for ours.
+  is('an unstated currency yields no margin either', serviceMargin(unstated, 'GBP'), null);
+  is('and is not reported as a missing cost', marginBlock(unstated, 'GBP'), 'foreign-currency');
+  is('a missing cost still reads as one', marginBlock(noCost, 'GBP'), 'no-cost');
+
+  // The site total must drop the foreign row rather than adding it in at
+  // face value, which would understate the margin on every mixed listing.
+  const site = { services: [pounds, { ...dollars, type: 'niche-edit' as const }] };
+  is('the site total counts only what it can compare', websiteMargin(site, 'GBP')?.costMinor, 10900);
+  is('and counts the foreign one so it can be explained', servicesInForeignCurrency(site, 'GBP'), 1);
+
+  // Selling in dollars one day would make the dollar cost the comparable one.
+  is('the comparison follows what we sell in', serviceMargin(dollars, 'USD')?.profitMinor, 3600);
 }
 
 console.log(failed ? `\n  ${failed} FAILED\n` : '\n  all passed\n');

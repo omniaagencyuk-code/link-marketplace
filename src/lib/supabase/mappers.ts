@@ -63,6 +63,11 @@ export interface WebsiteRow {
     | { email: string | null; contact_name: string | null; notes: string | null }
     | { email: string | null; contact_name: string | null; notes: string | null }[]
     | null;
+  /** Admin-only join. Holds the currency every cost on this site is quoted in. */
+  website_commercials?:
+    | { cost_currency: string | null }
+    | { cost_currency: string | null }[]
+    | null;
   spam_score: number | null;
   min_word_count: number | null;
   max_word_count: number | null;
@@ -131,7 +136,8 @@ export const WEBSITE_SELECT_ADMIN = `
   website_categories (categories (slug)),
   services (*, service_costs (cost_price_minor)),
   website_niche_prices (niche, link_type, price_minor, agency_price_minor),
-  website_contacts (email, contact_name, notes)
+  website_contacts (email, contact_name, notes),
+  website_commercials (cost_currency)
 `;
 
 /** Null stays undefined: "not measured" must not become a measurement of 0. */
@@ -167,7 +173,14 @@ function contactFromRow(row: WebsiteRow): PublisherContact | undefined {
   return Object.keys(contact).length ? contact : undefined;
 }
 
-export function mapService(row: ServiceRow): Service {
+/**
+ * @param costCurrency The publisher's currency, from `website_commercials`.
+ *   Passed in rather than joined per service because a publisher quotes every
+ *   rate in one currency - but it is stamped onto each service so that no
+ *   helper can ever hold a cost without its unit.
+ */
+export function mapService(row: ServiceRow, costCurrency?: string): Service {
+  const cost = costFromRow(row);
   return {
     id: row.id,
     websiteId: row.website_id,
@@ -180,7 +193,10 @@ export function mapService(row: ServiceRow): Service {
     turnaroundMaxDays: toNumber(row.turnaround_max_days, 7),
     available: row.available ?? true,
     note: row.note ?? undefined,
-    costPriceMinor: costFromRow(row),
+    costPriceMinor: cost,
+    // Only where there is a cost for it to describe. A currency hanging off a
+    // service with no cost is noise.
+    ...(cost !== undefined && costCurrency ? { costCurrency } : {}),
   };
 }
 
@@ -200,7 +216,21 @@ function costFromRow(row: ServiceRow): number | undefined {
   return record.cost_price_minor;
 }
 
+/**
+ * The publisher's own currency, if the caller was allowed to read it.
+ *
+ * `char(3)` comes back padded when a short code was stored, so it is trimmed
+ * here: 'US ' would otherwise read as a currency of its own and match no rate.
+ */
+function costCurrencyFromRow(row: WebsiteRow): string | undefined {
+  const joined = row.website_commercials;
+  const record = Array.isArray(joined) ? joined[0] : joined;
+  const code = record?.cost_currency?.trim().toUpperCase();
+  return code ? code : undefined;
+}
+
 export function mapWebsite(row: WebsiteRow): Website {
+  const costCurrency = costCurrencyFromRow(row);
   const primaryNiche = (row.primary_category?.slug ?? 'technology') as NicheSlug;
   const secondary = (row.website_categories ?? [])
     .map((entry) => entry.categories?.slug)
@@ -231,8 +261,9 @@ export function mapWebsite(row: WebsiteRow): Website {
       })),
       spamScore: toOptionalNumber(row.spam_score),
     },
-    services: (row.services ?? []).map(mapService),
+    services: (row.services ?? []).map((service) => mapService(service, costCurrency)),
     ...(contactFromRow(row) ? { contact: contactFromRow(row) } : {}),
+    ...(costCurrency ? { costCurrency } : {}),
     // Biggest first, so the listing leads with the price a buyer in a
     // regulated niche is actually looking for.
     nichePrices: (row.website_niche_prices ?? [])

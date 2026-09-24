@@ -59,6 +59,8 @@ function readString(formData: FormData, key: string, fallback = '') {
  * a matter of guessing that zero meant delete.
  */
 function buildServices(formData: FormData, websiteId: string, existing: Service[]): Service[] {
+  // One currency per publisher, stamped onto every cost it describes.
+  const costCurrency = readString(formData, 'costCurrency').trim().toUpperCase();
   const min = readNumber(formData, 'turnaroundMin', 3);
   const max = readNumber(formData, 'turnaroundMax', 5);
   const types: LinkTypeSlug[] = ['guest-post', 'niche-edit', 'digital-pr'];
@@ -88,6 +90,7 @@ function buildServices(formData: FormData, websiteId: string, existing: Service[
           costEntered && Number.isFinite(costValue) && costValue >= 0
             ? Math.round(costValue * 100)
             : undefined,
+        ...(costCurrency.length === 3 ? { costCurrency } : {}),
       };
     });
 }
@@ -171,6 +174,11 @@ function buildPatch(formData: FormData, websiteId: string, existing?: Website): 
     } as Website['metrics'],
     services,
     nichePrices: buildNichePrices(formData, acceptedNiches, services),
+    // Read straight from the form so an admin can correct a currency the
+    // email extraction got wrong, or fill one it never stated. Blank stays
+    // blank: "not recorded" is an answer, and pricing refuses to guess past
+    // it rather than treating the publisher as British.
+    costCurrency: readString(formData, 'costCurrency'),
     contact: {
       email: readString(formData, 'contactEmail'),
       name: readString(formData, 'contactName'),

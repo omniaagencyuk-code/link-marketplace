@@ -24,7 +24,7 @@ export default async function EditWebsitePage({ params }: { params: Promise<{ id
   // would produce - not what last week's run happened to write down.
   const { rows, missingRates } = await pricingService
     .calculate(pricingSettings, [id])
-    .catch(() => ({ rows: [], missingRates: [] as string[] }));
+    .catch(() => ({ rows: [], missingRates: [] as string[], noCurrency: [] as string[] }));
 
   const minMarginMinor = pricingSettings.rules.minMarginMinor;
   const prices: ListingPrice[] = rows.map((row) => {

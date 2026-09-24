@@ -247,6 +247,43 @@ async function syncContact(
   if (error) throw new Error(`Failed to save the publisher contact: ${error.message}`);
 }
 
+/**
+ * The publisher's currency, written to the commercial terms table.
+ *
+ * It lives there rather than beside the cost because a publisher quotes
+ * everything in one currency - but until now nothing in the admin could set
+ * it. Only the email extraction wrote it, so a listing whose currency was
+ * read wrong, or never stated, could not be corrected from a browser. That is
+ * the whole reason a dollar cost sat on screen labelled as pounds.
+ *
+ * Upserted rather than updated: a website added by hand has no commercials
+ * row until something writes one.
+ */
+async function syncCostCurrency(
+  supabase: Client,
+  websiteId: string,
+  costCurrency: string | undefined,
+  updatedBy?: string,
+) {
+  // An update that does not mention it must not clear it.
+  if (costCurrency === undefined) return;
+
+  const code = costCurrency.trim().toUpperCase();
+
+  const { error } = await supabase.from('website_commercials').upsert(
+    {
+      website_id: websiteId,
+      // Blank clears it back to "not recorded", which is a real answer and
+      // not the same as GBP.
+      cost_currency: code.length === 3 ? code : null,
+      updated_by: updatedBy ?? null,
+    },
+    { onConflict: 'website_id' },
+  );
+
+  if (error) throw new Error(`Failed to save the publisher currency: ${error.message}`);
+}
+
 export const supabaseWebsiteRepository = {
   async getAll(): Promise<WebsiteListItem[]> {
     const supabase = await getServerClient();
@@ -476,6 +513,7 @@ export const supabaseWebsiteRepository = {
     await syncServices(supabase, created.id, input.services);
     await syncNichePrices(supabase, created.id, input.nichePrices);
     await syncContact(supabase, created.id, input.contact);
+    await syncCostCurrency(supabase, created.id, input.costCurrency);
 
     return (await supabaseWebsiteRepository.getById(created.id)) ?? created;
   },
@@ -495,6 +533,7 @@ export const supabaseWebsiteRepository = {
     await syncServices(supabase, id, patch.services);
     await syncNichePrices(supabase, id, patch.nichePrices);
     await syncContact(supabase, id, patch.contact);
+    await syncCostCurrency(supabase, id, patch.costCurrency);
 
     // Re-read rather than trusting the update's return value: the services and
     // categories were written after it, so it would be a stale picture.
