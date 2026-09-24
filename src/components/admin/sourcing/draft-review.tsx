@@ -15,6 +15,7 @@ import {
   spreadGeneralPriceAction,
 } from '@/app/admin/(protected)/sourcing/actions';
 import { acceptedNicheLabel, sensitiveNicheSlugs } from '@/lib/config/accepted-niches';
+import { assumedNiches } from '@/lib/sourcing/review';
 import { formatDateTime } from '@/lib/utils/format';
 import { cn } from '@/lib/utils/cn';
 import type { ExtractedListing } from '@/lib/sourcing/schema';
@@ -91,6 +92,7 @@ export function DraftReview({
   }
 
   const singlePrice = flags.includes('single-price-confirm-niches');
+  const assumed = assumedNiches(draft);
 
   return (
     <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
@@ -274,10 +276,26 @@ export function DraftReview({
         </Card>
 
         <Card>
-          <CardHeader>
+          <CardHeader className="flex flex-wrap items-center justify-between gap-2">
             <CardTitle>Topics</CardTitle>
+            {assumed.length > 0 ? (
+              <span className="inline-flex items-center gap-1 rounded bg-warning/10 px-2 py-0.5 text-[11px] font-medium text-warning">
+                <AlertTriangle className="h-3 w-3" aria-hidden="true" />
+                {assumed.length} of {sensitiveNicheSlugs.length} assumed
+              </span>
+            ) : null}
           </CardHeader>
           <CardContent className="space-y-2">
+            {assumed.length > 0 ? (
+              <p className="mb-1 rounded-lg border border-line bg-surface-sunken px-3 py-2 text-[12px] leading-relaxed text-ink-soft">
+                This reply says nothing about{' '}
+                <strong className="font-medium text-ink">
+                  {assumed.map((slug) => acceptedNicheLabel(slug)).join(', ')}
+                </strong>
+                . They will be sold as accepted at the standard rate. Set any of them to Refused if
+                you know otherwise, or ask the publisher before pricing them.
+              </p>
+            ) : null}
             {sensitiveNicheSlugs.map((slug) => {
               const terms = draft.niches[slug];
               if (!terms) return null;
@@ -289,7 +307,15 @@ export function DraftReview({
                 >
                   <span className="text-[13px] text-ink">
                     {acceptedNicheLabel(slug)}
-                    {wasAccepted !== undefined && wasAccepted !== (terms.accepted === 'yes') ? (
+                    {terms.accepted === 'unknown' ? (
+                      <span
+                        title="The email does not mention this topic. It will be sold as accepted."
+                        className="ml-1.5 rounded bg-warning/10 px-1.5 py-0.5 text-[10px] font-medium text-warning"
+                      >
+                        assumed
+                      </span>
+                    ) : null}
+                    {wasAccepted !== undefined && wasAccepted !== (terms.accepted !== 'no') ? (
                       <span className="ml-1.5 text-[11px] text-muted">
                         (was {wasAccepted ? 'accepted' : 'not accepted'})
                       </span>
@@ -304,9 +330,9 @@ export function DraftReview({
                       setNiche(slug, { accepted: event.target.value as 'yes' | 'no' | 'unknown' })
                     }
                   >
-                    <option value="yes">Accepted</option>
+                    <option value="yes">Accepted - they said so</option>
                     <option value="no">Refused</option>
-                    <option value="unknown">Not stated</option>
+                    <option value="unknown">Not stated - will be accepted</option>
                   </Select>
                   <Input
                     type="number"
@@ -338,8 +364,9 @@ export function DraftReview({
               );
             })}
             <p className="pt-1 text-[11px] text-muted">
-              &quot;Not stated&quot; is not &quot;refused&quot;. Leave it alone unless the email
-              actually says.
+              A topic the email never mentions is sold as accepted. Only mark one{' '}
+              <strong className="font-medium text-ink-soft">Refused</strong> when the publisher
+              actually said no - that is the one setting here that stops a sale.
             </p>
           </CardContent>
         </Card>

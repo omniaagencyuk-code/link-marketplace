@@ -1,6 +1,7 @@
 import { getAdminScopedClient } from '@/lib/supabase/server';
 import { websiteService } from './website-service';
 import { sensitiveNicheSlugs, legacyAcceptanceFlags } from '@/lib/config/accepted-niches';
+import { sellableNiches } from '@/lib/sourcing/review';
 import type { ExtractedListing } from '@/lib/sourcing/schema';
 import type { Website } from '@/lib/types';
 
@@ -65,9 +66,10 @@ export async function approveDraft(
   if (listing.sponsored_tag === 'no') rules.sponsoredTag = 'never';
   if (listing.sponsored_tag === 'depends') rules.sponsoredTag = 'on-request';
 
-  // The niches the publisher said yes to, kept in step with the policy table
-  // the same way the five legacy booleans are kept in step with this array.
-  const acceptedNow = sensitiveNicheSlugs.filter((slug) => listing.niches[slug]?.accepted === 'yes');
+  // Everything not explicitly refused. The policy table below keeps the
+  // stated answer; this array is what the marketplace sells, and it is kept
+  // in step with the five legacy booleans the same way it always was.
+  const acceptedNow = sellableNiches(listing);
   if (acceptedNow.length > 0) {
     rules.acceptedNiches = acceptedNow;
     Object.assign(rules, legacyAcceptanceFlags(acceptedNow));

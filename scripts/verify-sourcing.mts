@@ -9,7 +9,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { readMbox, readPastedEmail, domainFromSubject, stripQuotedHistory } from '../src/lib/sourcing/mbox';
 import { extractionResultSchema, fromWire, wireResultSchema, type ExtractedListing } from '../src/lib/sourcing/schema';
-import { applyGeneralPriceToNiches, countLowConfidence, flagsFor } from '../src/lib/sourcing/review';
+import { applyGeneralPriceToNiches, countLowConfidence, flagsFor, sellableNiches } from '../src/lib/sourcing/review';
 import { sensitiveNicheSlugs } from '../src/lib/config/accepted-niches';
 import { zodOutputFormat } from '@anthropic-ai/sdk/helpers/zod';
 
@@ -280,6 +280,21 @@ is(
   'a future price rise is flagged',
   flagsFor(blank({ contact_email: 'a@b.example', price_valid_until: '2027-01-01' })).includes('price-changes-later'),
   true,
+);
+
+console.log('\n--- what a listing ends up selling ---');
+const silent = blank({ guest_post_cost: 100 });
+is('a topic nobody mentioned is sellable', sellableNiches(silent).length, 7);
+const refusedAdult = blank({
+  guest_post_cost: 100,
+  niches: { ...blank().niches, adult: { accepted: 'no', guest_post_cost: null, link_insertion_cost: null } },
+});
+is('an explicit refusal is not', sellableNiches(refusedAdult).includes('adult'), false);
+is('and the rest still are', sellableNiches(refusedAdult).length, 6);
+is(
+  'the draft still records that nobody said',
+  silent.niches.gambling!.accepted,
+  'unknown',
 );
 
 console.log('\n--- bulk approval safety ---');

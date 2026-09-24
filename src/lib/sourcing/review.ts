@@ -34,6 +34,29 @@ export function flagsFor(listing: ExtractedListing): string[] {
   return flags;
 }
 
+/**
+ * The niches a listing is sellable for.
+ *
+ * Everything the publisher did not explicitly refuse - so an email that never
+ * mentions gambling produces a listing that accepts gambling. That is a
+ * deliberate commercial choice: most publishers who take regulated content
+ * never say so unprompted, and the cost of asking one extra question is lower
+ * than the cost of a site sitting invisible in every filter that matters.
+ *
+ * It is applied here, at approval, and not in extraction. The draft keeps
+ * recording what the email actually said, so "they told us yes" and "nobody
+ * asked" stay distinguishable - which is the first thing anyone will want if
+ * a publisher ever turns an order down.
+ */
+export function sellableNiches(listing: ExtractedListing): string[] {
+  return sensitiveNicheSlugs.filter((slug) => listing.niches[slug]?.accepted !== 'no');
+}
+
+/** Topics nobody mentioned, which will be sold as accepted anyway. */
+export function assumedNiches(listing: ExtractedListing): string[] {
+  return sensitiveNicheSlugs.filter((slug) => listing.niches[slug]?.accepted === 'unknown');
+}
+
 export function countLowConfidence(listing: ExtractedListing): number {
   return listing.confidence.filter((entry) => entry.level === 'low').length;
 }
