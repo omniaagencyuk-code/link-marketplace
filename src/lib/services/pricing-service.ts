@@ -136,6 +136,47 @@ export const pricingService = {
       .sort((a, b) => b.listings - a.listings || a.currency.localeCompare(b.currency));
   },
 
+  /**
+   * What each listing actually costs us, in GBP.
+   *
+   * Read from `price_calculations` rather than recomputed, so the figure in
+   * the websites table is the same one the pricing screen and the listing
+   * breakdown show. Three screens disagreeing about a cost would be worse
+   * than the table showing nothing.
+   *
+   * Only the general rate per placement type: the niche rows are a rate card,
+   * not additional cost, and adding them would treat one placement as several.
+   *
+   * It is the true cost - converted, buffered, and with the payment fee and
+   * any publisher VAT in it - because that is what leaves our account, and a
+   * profit worked out against anything less is one we do not make.
+   */
+  async trueCostsByWebsite(
+    websiteIds?: string[],
+  ): Promise<Record<string, Record<string, number>>> {
+    if (!isSupabaseEnabled()) return {};
+
+    const supabase = getAdminScopedClient();
+    let query = supabase
+      .from('price_calculations')
+      .select('website_id, link_type, true_cost_minor')
+      .eq('niche', '');
+    if (websiteIds?.length) query = query.in('website_id', websiteIds);
+
+    const { data } = await query;
+
+    const byWebsite: Record<string, Record<string, number>> = {};
+    for (const row of (data ?? []) as Record<string, unknown>[]) {
+      const websiteId = String(row.website_id);
+      const linkType = String(row.link_type);
+      const cost = Number(row.true_cost_minor);
+      if (!Number.isFinite(cost)) continue;
+      (byWebsite[websiteId] ??= {})[linkType] = cost;
+    }
+
+    return byWebsite;
+  },
+
   async updateRules(patch: Partial<PricingRules>, updatedBy?: string): Promise<void> {
     const supabase = getAdminScopedClient();
     const columns: Record<string, unknown> = { updated_by: updatedBy ?? null };

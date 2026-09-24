@@ -23,6 +23,7 @@ import {
   serviceMargin,
   servicesInForeignCurrency,
   websiteMargin,
+  websiteMarginConverted,
 } from '../src/lib/utils/margin';
 import type { Service } from '../src/lib/types';
 import { placementPrice, tierFor } from '../src/lib/utils/pricing';
@@ -444,6 +445,48 @@ console.log('\n--- a cost is never subtracted from a price in other money ---');
 
   // Selling in dollars one day would make the dollar cost the comparable one.
   is('the comparison follows what we sell in', serviceMargin(dollars, 'USD')?.profitMinor, 3600);
+}
+
+console.log('\n--- the admin table, in our own money ---');
+{
+  // "in FX" is honest and useless. Once the engine has converted the cost,
+  // the table can show both sides in GBP - and must show the true cost, not
+  // the raw conversion, or the profit is one we do not make.
+  const base = {
+    websiteId: 'w1', turnaroundMinDays: 1, turnaroundMaxDays: 5, available: true,
+  };
+  const site = {
+    services: [
+      { ...base, id: 'a', type: 'guest-post' as const, priceMinor: 15500, costPriceMinor: 10900, costCurrency: 'USD' },
+      { ...base, id: 'b', type: 'niche-edit' as const, priceMinor: 9500, costPriceMinor: 5000, costCurrency: 'USD' },
+    ],
+  };
+
+  const trueCosts = { 'guest-post': 9313, 'niche-edit': 4300 };
+  const converted = websiteMarginConverted(site, trueCosts);
+  is('the dollar cost becomes a sterling one', converted?.costMinor, 13613);
+  is('and the profit is the difference in sterling', converted?.profitMinor, 25000 - 13613);
+  is('with a margin percentage of the sell price', converted?.marginPct, 45.5);
+
+  // A placement the engine has not priced is left out of both sides, not
+  // counted as free - the same rule the native version follows.
+  const partial = websiteMarginConverted(site, { 'guest-post': 9313 });
+  is('an unpriced placement is left out of the cost', partial?.costMinor, 9313);
+  is('and out of the price it is compared against', partial?.priceMinor, 15500);
+
+  is('a site the engine has never seen yields nothing', websiteMarginConverted(site, undefined), null);
+  is('and so does an empty calculation set', websiteMarginConverted(site, {}), null);
+
+  // The sell price comes from the listing, not the calculation, so a price
+  // set by hand shows the margin actually being earned on it.
+  const overridden = {
+    services: [{ ...base, id: 'a', type: 'guest-post' as const, priceMinor: 12000, costPriceMinor: 10900, costCurrency: 'USD' }],
+  };
+  is(
+    'a hand-set price is measured against the real cost',
+    websiteMarginConverted(overridden, { 'guest-post': 9313 })?.profitMinor,
+    2687,
+  );
 }
 
 console.log(failed ? `\n  ${failed} FAILED\n` : '\n  all passed\n');

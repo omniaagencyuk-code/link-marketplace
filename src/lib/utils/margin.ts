@@ -111,3 +111,39 @@ export function servicesInForeignCurrency(
       typeof service.costPriceMinor === 'number' && !comparable(service, currency),
   ).length;
 }
+
+/**
+ * The site's position in our own money, whatever the publisher charges in.
+ *
+ * `trueCostByType` comes from `price_calculations`: the publisher's price
+ * converted at the stored rate, with the buffer, the payment fee and any VAT
+ * they add. It is what the placement actually costs us, so it is the only
+ * figure a sterling profit can honestly be worked out against.
+ *
+ * Only placements with both a sell price and a calculated cost are counted.
+ * A service the engine has not priced is left out of both sides rather than
+ * counted as free - the same rule the native-currency version follows, for
+ * the same reason.
+ */
+export function websiteMarginConverted(
+  website: Pick<Website, 'services'>,
+  trueCostByType: Record<string, number> | undefined,
+): Margin | null {
+  if (!trueCostByType) return null;
+
+  const counted = website.services.filter(
+    (service) => typeof trueCostByType[service.type] === 'number',
+  );
+  if (counted.length === 0) return null;
+
+  const priceMinor = counted.reduce((total, service) => total + service.priceMinor, 0);
+  const costMinor = counted.reduce((total, service) => total + trueCostByType[service.type], 0);
+  const profitMinor = priceMinor - costMinor;
+
+  return {
+    priceMinor,
+    costMinor,
+    profitMinor,
+    marginPct: priceMinor > 0 ? Math.round((profitMinor / priceMinor) * 1000) / 10 : 0,
+  };
+}

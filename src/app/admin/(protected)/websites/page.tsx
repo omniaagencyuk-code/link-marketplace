@@ -5,13 +5,18 @@ import { AdminWebsitesTable } from '@/components/admin/admin-websites-table';
 import { ImportHistory } from '@/components/admin/import/import-history';
 import { Button } from '@/components/ui/button';
 import { importHistoryService, websiteService } from '@/lib/services';
+import { pricingService } from '@/lib/services/pricing-service';
 
 export const dynamic = 'force-dynamic';
 
 export default async function AdminWebsitesPage() {
-  const [websites, imports] = await Promise.all([
+  const [websites, imports, trueCosts] = await Promise.all([
     websiteService.getAllForAdmin(),
     importHistoryService.getRecent(5),
+    // What each listing costs us in GBP. Without it a dollar publisher shows
+    // no cost and no profit at all, which is honest but not much use in a
+    // table somebody scans.
+    pricingService.trueCostsByWebsite().catch(() => ({})),
   ]);
 
   return (
@@ -36,7 +41,7 @@ export default async function AdminWebsitesPage() {
           </div>
         }
       />
-      <AdminWebsitesTable websites={websites} />
+      <AdminWebsitesTable websites={websites} trueCosts={trueCosts} />
       <ImportHistory runs={imports} />
     </>
   );

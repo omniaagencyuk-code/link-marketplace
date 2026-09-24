@@ -24,6 +24,7 @@ import {
   servicesInForeignCurrency,
   servicesMissingCost,
   websiteMargin,
+  websiteMarginConverted,
 } from '@/lib/utils/margin';
 import type { WebsiteListItem, WebsiteStatus } from '@/lib/types';
 
@@ -35,7 +36,18 @@ const statusFilters: { value: WebsiteStatus | 'all'; label: string }[] = [
   { value: 'archived', label: 'Archived' },
 ];
 
-export function AdminWebsitesTable({ websites }: { websites: WebsiteListItem[] }) {
+export function AdminWebsitesTable({
+  websites,
+  trueCosts = {},
+}: {
+  websites: WebsiteListItem[];
+  /**
+   * What each listing costs us in GBP, by placement type, from the pricing
+   * engine. Without it a publisher quoting in dollars can only be shown as
+   * "not priced" - the raw number is not comparable with a sterling price.
+   */
+  trueCosts?: Record<string, Record<string, number>>;
+}) {
   const [term, setTerm] = useState('');
   const [status, setStatus] = useState<WebsiteStatus | 'all'>('all');
   const [pending, startTransition] = useTransition();
@@ -130,49 +142,68 @@ export function AdminWebsitesTable({ websites }: { websites: WebsiteListItem[] }
    * in the pricing engine. The dash is honest; the figure this used to print
    * was not.
    */
+  /**
+   * The converted figure where the engine has one, the native one otherwise.
+   *
+   * A publisher quoting in dollars has no sterling cost until the engine has
+   * converted it, so the engine's answer is preferred for every listing, not
+   * only the foreign ones - otherwise a site would change which arithmetic it
+   * was displayed with depending on where its publisher banks.
+   */
+  function marginOf(website: WebsiteListItem) {
+    const converted = websiteMarginConverted(website, trueCosts[website.id]);
+    if (converted) return { margin: converted, converted: true };
+
+    const native = websiteMargin(website);
+    return native ? { margin: native, converted: false } : null;
+  }
+
   function costOf(website: WebsiteListItem) {
-    const margin = websiteMargin(website);
-    return margin ? formatPrice(margin.costMinor) : '\u2014';
+    const result = marginOf(website);
+    if (!result) return <span className="text-muted">&mdash;</span>;
+
+    return (
+      <span
+        title={
+          result.converted
+            ? 'What the placement costs us in GBP: the publisher\u2019s price converted at the stored rate, plus the FX buffer, the payment fee and any VAT they add.'
+            : 'What we pay the publisher.'
+        }
+      >
+        {formatPrice(result.margin.costMinor)}
+      </span>
+    );
   }
 
   function profitOf(website: WebsiteListItem) {
-    const margin = websiteMargin(website);
+    const result = marginOf(website);
     const foreign = servicesInForeignCurrency(website);
 
-    if (!margin) {
+    if (!result) {
       return (
         <span
           className="text-muted"
           title={
             foreign > 0
-              ? 'Priced in another currency. The real margin is on the Pricing screen, where the conversion happens.'
+              ? 'Priced in another currency and not yet run through the engine. Recalculate on the Pricing screen and the GBP cost and profit appear here.'
               : 'No cost recorded.'
           }
         >
-          {foreign > 0 ? 'in FX' : '\u2014'}
+          &mdash;
         </span>
       );
     }
 
+    const margin = result.margin;
     const missing = servicesMissingCost(website);
     return (
       <span className={margin.profitMinor >= 0 ? 'text-accent-700' : 'text-coral-700'}>
         {formatPrice(margin.profitMinor)}
         <span className="ml-1 text-muted">({margin.marginPct}%)</span>
-        {missing > 0 || foreign > 0 ? (
+        {missing > 0 ? (
           <span
             className="ml-1 text-muted"
-            title={[
-              missing > 0
-                ? `${missing} service${missing === 1 ? '' : 's'} with no cost recorded`
-                : '',
-              foreign > 0
-                ? `${foreign} priced in another currency`
-                : '',
-            ]
-              .filter(Boolean)
-              .join(', ')
-              .concat(', left out of this figure')}
+            title={`${missing} service${missing === 1 ? '' : 's'} with no cost recorded, left out of this figure`}
           >
             *
           </span>
