@@ -68,7 +68,20 @@ function getClient(): Anthropic {
       'Extraction needs ANTHROPIC_API_KEY. Add it to the Vercel project environment and redeploy.',
     );
   }
-  return new Anthropic({ apiKey });
+
+  /*
+    An organisation-level key has to say which workspace to bill and attribute
+    the call to; a workspace-scoped key carries that already and needs no
+    header. Supporting both means an existing key keeps working - swapping a
+    key that is referenced in one place is easy, but it is not free, and there
+    is no reason to force it.
+  */
+  const workspaceId = process.env.ANTHROPIC_WORKSPACE_ID?.trim();
+
+  return new Anthropic({
+    apiKey,
+    ...(workspaceId ? { defaultHeaders: { 'anthropic-workspace-id': workspaceId } } : {}),
+  });
 }
 
 /**
@@ -237,6 +250,18 @@ function messageFor(error: unknown): string {
     return 'Rate limited by the API. Try a smaller run, or switch the mode to batch.';
   }
   if (error instanceof Anthropic.APIError) {
+    // The one error whose fix is not guessable from its own wording.
+    if (/not scoped to a workspace/i.test(error.message)) {
+      return (
+        'This API key belongs to the organisation rather than to a workspace. ' +
+        'Either create a workspace-scoped key in the Anthropic console and replace ' +
+        'ANTHROPIC_API_KEY, or set ANTHROPIC_WORKSPACE_ID in Vercel to the workspace id ' +
+        '(it is in the console URL when you open the workspace, starting wrkspc_). Redeploy after either.'
+      );
+    }
+    if (/credit balance/i.test(error.message)) {
+      return 'The Anthropic account has no credit. Top it up in the console, then press Retry.';
+    }
     return `API error ${error.status}: ${error.message}`.slice(0, 400);
   }
   return error instanceof Error ? error.message.slice(0, 400) : 'Unknown error.';
