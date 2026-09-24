@@ -38,6 +38,16 @@ const nicheTerms = z.object({
 export const extractedListingSchema = z.object({
   domain: z.string(),
   /**
+   * Other domains the very same terms cover.
+   *
+   * A publisher with a network quotes one rate and lists thirty sites. Asking
+   * the model to repeat forty fields thirty times would cost thirty times as
+   * much, risk truncation, and invite it to drift between copies. It says the
+   * terms once and names the domains; the expansion is done in code, where it
+   * is exact and auditable.
+   */
+  also_applies_to: z.array(z.string()),
+  /**
    * Why this domain is here when it is not the one we wrote to - e.g. the
    * publisher declined for the site we asked about and offered another.
    */
@@ -168,6 +178,8 @@ const wireNiche = z.object({
 
 export const wireListingSchema = z.object({
   domain: z.string(),
+  /** Other domains these same terms cover. Empty for a single-site reply. */
+  also_applies_to: z.array(z.string()),
   relationship: z.string(),
 
   contact_email: z.string(),
@@ -242,6 +254,7 @@ export function fromWire(result: WireResult): ExtractionResult {
     ignore_reason: text(result.ignore_reason),
     listings: result.listings.map((listing) => ({
       domain: listing.domain,
+      also_applies_to: listing.also_applies_to,
       relationship: text(listing.relationship),
       contact_email: text(listing.contact_email),
       contact_name: text(listing.contact_name),

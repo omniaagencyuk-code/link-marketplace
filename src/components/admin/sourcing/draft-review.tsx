@@ -173,7 +173,9 @@ export function DraftReview({
                     .filter((flag) => flag !== 'single-price-confirm-niches')
                     .map((flag) => (
                       <li key={flag}>
-                        {flag === 'different-site-offered'
+                        {flag === 'terms-from-network'
+                          ? 'These terms were quoted for the publisher\u2019s network as a whole, not for this domain by name. The prices are the network rate.'
+                          : flag === 'different-site-offered'
                           ? `They offered a different site: ${draft.relationship ?? 'see notes'}`
                           : flag === 'price-changes-later'
                             ? 'These rates change on a date given in the email - check the validity fields.'

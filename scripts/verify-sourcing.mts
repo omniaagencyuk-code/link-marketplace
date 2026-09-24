@@ -9,7 +9,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { readMbox, readPastedEmail, domainFromSubject, stripQuotedHistory } from '../src/lib/sourcing/mbox';
 import { extractionResultSchema, fromWire, wireResultSchema, type ExtractedListing } from '../src/lib/sourcing/schema';
-import { applyGeneralPriceToNiches, countLowConfidence, flagsFor, sellableNiches } from '../src/lib/sourcing/review';
+import { applyGeneralPriceToNiches, countLowConfidence, expandListings, flagsFor, sellableNiches } from '../src/lib/sourcing/review';
 import { sensitiveNicheSlugs } from '../src/lib/config/accepted-niches';
 import { zodOutputFormat } from '@anthropic-ai/sdk/helpers/zod';
 
@@ -129,7 +129,7 @@ function blank(over: Partial<ExtractedListing> = {}): ExtractedListing {
     link_insertion_offered: 'unknown', homepage_placement: 'unknown', topic_restriction: null,
     prices_exclude_vat: null, vat_notes: null, payment_methods: [], payment_timing: 'unknown',
     minimum_order: null, bulk_discount_notes: null, price_valid_until: null, future_price_notes: null,
-    notes: null, confidence: [], evidence: [],
+    notes: null, confidence: [], evidence: [], also_applies_to: [],
     ...over,
   };
 }
@@ -214,7 +214,7 @@ console.log('\n--- sentinels on the wire ---');
 const wire = wireResultSchema.safeParse({
   usable: true, ignore_reason: '',
   listings: [{
-    domain: 'test.example', relationship: '',
+    domain: 'test.example', also_applies_to: [], relationship: '',
     contact_email: '', contact_name: '', contact_notes: '',
     language: '', currency: 'EUR',
     guest_post_cost: 150, guest_post_cost_written_by_publisher: 0,
@@ -281,6 +281,54 @@ is(
   flagsFor(blank({ contact_email: 'a@b.example', price_valid_until: '2027-01-01' })).includes('price-changes-later'),
   true,
 );
+
+console.log('\n--- a reply covering a whole network ---');
+{
+  const network = expandListings([
+    blank({ domain: 'a.example', also_applies_to: ['b.example', 'www.c.example'], guest_post_cost: 400 }),
+  ]);
+  is('every domain becomes its own draft', network.length, 3);
+  is('including the one the terms were quoted on', network.some((d) => d.domain === 'a.example'), true);
+  is('www is stripped on the way in', network.some((d) => d.domain === 'c.example'), true);
+  is('the terms are carried across', network.every((d) => d.listing.guest_post_cost === 400), true);
+  is('and each draft speaks only for itself', network.every((d) => d.listing.also_applies_to.length === 0), true);
+  is('the carried ones say where the terms came from', network.filter((d) => d.inheritedFrom === 'a.example').length, 2);
+  is('the quoted one does not', network.find((d) => d.domain === 'a.example')?.inheritedFrom, undefined);
+}
+
+{
+  // The case that would silently lose money: a network rate plus one site
+  // priced differently, or one that refuses a topic the others take.
+  const withException = expandListings([
+    blank({ domain: 'a.example', also_applies_to: ['b.example', 'c.example'], guest_post_cost: 250 }),
+    blank({ domain: 'c.example', guest_post_cost: 500 }),
+  ]);
+  is('an exception still produces one draft per domain', withException.length, 3);
+  is('and keeps its own price', withException.find((d) => d.domain === 'c.example')?.listing.guest_post_cost, 500);
+  is('while the rest keep the network price', withException.find((d) => d.domain === 'b.example')?.listing.guest_post_cost, 250);
+  is('the exception is not marked as inherited', withException.find((d) => d.domain === 'c.example')?.inheritedFrom, undefined);
+}
+
+{
+  const refusal = expandListings([
+    blank({ domain: 'a.example', also_applies_to: ['lochside.example'], guest_post_cost: 250 }),
+    blank({
+      domain: 'lochside.example', guest_post_cost: 250,
+      niches: { ...blank().niches, gambling: { accepted: 'no', guest_post_cost: null, link_insertion_cost: null } },
+    }),
+  ]);
+  is("a site's own refusal survives the network", refusal.find((d) => d.domain === 'lochside.example')?.listing.niches.gambling!.accepted, 'no');
+  is('and the others are unaffected', refusal.find((d) => d.domain === 'a.example')?.listing.niches.gambling!.accepted, 'unknown');
+}
+
+{
+  const messy = expandListings([
+    blank({ domain: 'a.example', also_applies_to: ['a.example', 'https://b.example/page', '', 'not a domain'] }),
+  ]);
+  is('a domain repeated in its own network list is not duplicated', messy.filter((d) => d.domain === 'a.example').length, 1);
+  is('a url is reduced to its domain', messy.some((d) => d.domain === 'b.example'), true);
+  is('junk entries are dropped', messy.length, 2);
+}
 
 console.log('\n--- what a listing ends up selling ---');
 const silent = blank({ guest_post_cost: 100 });

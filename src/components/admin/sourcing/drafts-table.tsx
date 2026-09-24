@@ -16,6 +16,7 @@ const FLAG_LABELS: Record<string, string> = {
   'different-site-offered': 'Different site offered',
   'price-changes-later': 'Price changes later',
   'no-contact-email': 'No contact email',
+  'terms-from-network': 'Terms from the network reply',
 };
 
 export function DraftsTable({ drafts }: { drafts: DraftRow[] }) {

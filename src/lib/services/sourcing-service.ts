@@ -1,6 +1,5 @@
 import { getAdminScopedClient } from '@/lib/supabase/server';
 import { isSupabaseEnabled } from '@/lib/supabase/config';
-import { normaliseDomain } from '@/lib/import/normalise';
 import { readMbox, readPastedEmail, type ParsedMessage } from '@/lib/sourcing/mbox';
 import {
   collectBatch,
@@ -13,7 +12,7 @@ import {
   type ExtractionOutcome,
   type ExtractionRequest,
 } from '@/lib/sourcing/client';
-import { countLowConfidence, flagsFor } from '@/lib/sourcing/review';
+import { countLowConfidence, expandListings, flagsFor } from '@/lib/sourcing/review';
 import { asMap } from '@/lib/sourcing/schema';
 
 /**
@@ -438,34 +437,37 @@ export const sourcingService = {
         continue;
       }
 
-      const drafts = [];
-      for (const listing of result.listings) {
-        const domain = normaliseDomain(listing.domain);
-        if (!domain) continue;
+      // One row per domain the reply covers, network included.
+      const expanded = expandListings(result.listings);
 
-        const { data: match } = await supabase
-          .from('websites')
-          .select('id')
-          .eq('domain', domain)
-          .maybeSingle();
+      // All the matches in one query rather than one per domain: a reply
+      // covering sixty portals would otherwise be sixty round trips.
+      const { data: matches } = await supabase
+        .from('websites')
+        .select('id, domain')
+        .in('domain', expanded.map((entry) => entry.domain));
+      const matchByDomain = new Map(
+        ((matches ?? []) as { id: string; domain: string }[]).map((row) => [row.domain, row.id]),
+      );
 
-        drafts.push({
-          email_id: outcome.emailId,
-          domain,
-          matched_website_id: match ? (match as { id: string }).id : null,
-          proposed: listing as unknown as Record<string, unknown>,
-          // Stored as maps keyed by field, which is what the review screen
-          // reads. The array shape exists only because the model's schema
-          // cannot express an open map.
-          confidence: asMap(listing.confidence, (entry) => entry.level),
-          evidence: asMap(listing.evidence, (entry) => entry.quote),
-          low_confidence_count: countLowConfidence(listing),
-          flags: flagsFor(listing),
-          status: 'pending',
-          extraction_model: model,
-          prompt_version: PROMPT_VERSION,
-        });
-      }
+      const drafts = expanded.map((entry) => ({
+        email_id: outcome.emailId,
+        domain: entry.domain,
+        matched_website_id: matchByDomain.get(entry.domain) ?? null,
+        proposed: entry.listing as unknown as Record<string, unknown>,
+        // Stored as maps keyed by field, which is what the review screen
+        // reads. The array shape exists only because the model's schema
+        // cannot express an open map.
+        confidence: asMap(entry.listing.confidence, (item) => item.level),
+        evidence: asMap(entry.listing.evidence, (item) => item.quote),
+        low_confidence_count: countLowConfidence(entry.listing),
+        flags: entry.inheritedFrom
+          ? [...flagsFor(entry.listing), 'terms-from-network']
+          : flagsFor(entry.listing),
+        status: 'pending',
+        extraction_model: model,
+        prompt_version: PROMPT_VERSION,
+      }));
 
       if (drafts.length > 0) {
         // Re-extracting replaces rather than doubles.

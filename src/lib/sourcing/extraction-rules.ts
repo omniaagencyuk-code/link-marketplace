@@ -13,7 +13,7 @@ import { sensitiveNicheSlugs } from '@/lib/config/accepted-niches';
  * the drafts made under the old one can be found and re-extracted.
  */
 
-export const PROMPT_VERSION = '2026-09-24.1';
+export const PROMPT_VERSION = '2026-09-24.2';
 
 export const EXTRACTION_RULES = `You are reading a reply from a website publisher to a cold outreach email asking for their advertising rates. Turn it into structured data.
 
@@ -50,11 +50,33 @@ Example: "Normal posts 100 EUR, sensitive niches 250 EUR, no adult" means all se
 
 This is different from rule 7. A phrase meaning "the sensitive ones" covers all seven; a list of named niches covers only the names.
 
-## 3. One draft per domain
+## 3. Every domain in the reply becomes a listing
 
-- A reply covering several sites produces one listing per site, each with its own prices and its own exceptions.
-- If a site in a network has an exception ("all of these take gambling except lochside"), apply it to that site only.
-- If the publisher declines for the site we asked about but offers a different one, produce the listing for the site they offered and say so in "relationship".
+Publishers routinely answer for a whole network. Capture all of it.
+
+List EVERY domain the publisher offers placements on - a network list, a signature, a "we also run" aside. A domain mentioned only as an example of their work, or as a competitor, or in a link to an article, is not an offer and is not included.
+
+Do not repeat the terms per domain. Instead:
+
+- Put the terms ONCE, on the domain that best represents them (the one we wrote to, or the first listed).
+- Put every other domain those same terms cover in "also_applies_to".
+- If some domains have DIFFERENT terms, give them their own entry in "listings" with their own numbers, and leave them out of "also_applies_to".
+
+Worked examples.
+
+"We operate a.com, b.com and c.com. 400 EUR per post on any of them."
+-> one listing: domain a.com, also_applies_to ["b.com", "c.com"], 400 EUR.
+
+"a.com, b.com, c.com are 400 EUR. d.com is 500 EUR."
+-> two listings: a.com with also_applies_to ["b.com", "c.com"] at 400, and d.com at 500 with an empty also_applies_to.
+
+"All ten sites take gambling except lochside.com."
+-> the main listing covers the nine, and lochside.com gets its own entry with gambling "no" and the same prices.
+
+"Pick any 5 of our 40 portals for $109."
+-> one listing for the portal we wrote to, also_applies_to the other 39, $109 on each. We buy per placement, so the quoted price is the price for a placement; say in "notes" that it covers up to five.
+
+If the publisher declines for the site we asked about but offers another, the offered site is the listing and "relationship" says so.
 
 ## 4. Finding the domain
 
