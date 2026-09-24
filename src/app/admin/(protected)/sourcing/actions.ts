@@ -184,6 +184,52 @@ export async function discardEmailAction(emailId: string, reason?: string) {
 }
 
 /**
+ * Approve a chosen set, each with its own values.
+ *
+ * Between "everything from this email" and "everything nothing is flagged
+ * on" there is the ordinary case: these eleven, because I have read them and
+ * they are right. Nothing is copied between them - each draft is approved as
+ * it stands, so a site priced differently stays priced differently.
+ */
+export async function approveSelectedAction(draftIds: string[]) {
+  const by = await reviewer();
+  if (draftIds.length === 0) return { ok: true, approved: 0, failures: [] as string[] };
+
+  const supabase = getAdminScopedClient();
+  const { data } = await supabase
+    .from('listing_drafts')
+    .select('id, domain, email_id, matched_website_id, proposed')
+    .in('id', draftIds.slice(0, 500))
+    .eq('status', 'pending');
+
+  let approved = 0;
+  const failures: string[] = [];
+
+  for (const row of (data ?? []) as Record<string, unknown>[]) {
+    const parsed = extractedListingSchema.safeParse(row.proposed);
+    if (!parsed.success) {
+      failures.push(String(row.domain));
+      continue;
+    }
+    try {
+      await approveDraft(String(row.id), parsed.data, {
+        domain: String(row.domain),
+        matchedWebsiteId: (row.matched_website_id as string | null) ?? null,
+        emailId: String(row.email_id),
+        reviewer: by,
+      });
+      approved += 1;
+    } catch {
+      failures.push(String(row.domain));
+    }
+  }
+
+  revalidatePath('/admin/sourcing');
+  revalidatePath('/admin/websites');
+  return { ok: true, approved, failures };
+}
+
+/**
  * Delete drafts outright.
  *
  * Distinct from rejecting one, which keeps the row and its reason because

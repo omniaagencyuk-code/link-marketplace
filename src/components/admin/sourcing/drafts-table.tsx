@@ -2,12 +2,13 @@
 
 import Link from 'next/link';
 import { useState, useTransition } from 'react';
-import { AlertTriangle, Sparkles, Trash2 } from 'lucide-react';
+import { AlertTriangle, Check, Sparkles, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Table, TableWrap, Td, Th, Tr } from '@/components/ui/table';
 import {
+  approveSelectedAction,
   bulkApproveConfidentAction,
   discardDraftsAction,
 } from '@/app/admin/(protected)/sourcing/actions';
@@ -102,6 +103,44 @@ export function DraftsTable({ drafts }: { drafts: DraftRow[] }) {
           <div className="flex items-center gap-2">
             <Button variant="ghost" size="sm" onClick={() => setSelected(new Set())}>
               Clear selection
+            </Button>
+            <Button
+              variant="accent"
+              size="sm"
+              disabled={busy}
+              onClick={() => {
+                // The count of flagged ones goes in the question, because
+                // approving a draft nobody has opened is the easiest way for
+                // this queue to put a wrong price into the database.
+                const chosen = drafts.filter((draft) => selected.has(draft.id));
+                const needsALook = chosen.filter(
+                  (draft) => draft.lowConfidenceCount > 0 || draft.flags.length > 0,
+                ).length;
+                const warning = needsALook
+                  ? ` ${needsALook} of them ${needsALook === 1 ? 'has something' : 'have something'} flagged for a human.`
+                  : '';
+                if (
+                  !window.confirm(
+                    `Approve ${chosen.length} ${chosen.length === 1 ? 'draft' : 'drafts'}?${warning} Each is approved with its own values, creating or updating a listing.`,
+                  )
+                ) {
+                  return;
+                }
+                startTransition(async () => {
+                  const outcome = await approveSelectedAction([...selected]);
+                  setSelected(new Set());
+                  setResult(
+                    `Approved ${outcome.approved}.${
+                      outcome.failures.length
+                        ? ` Could not approve: ${outcome.failures.join(', ')}.`
+                        : ''
+                    }`,
+                  );
+                });
+              }}
+            >
+              <Check className="h-3.5 w-3.5" aria-hidden="true" />
+              Approve selected
             </Button>
             <Button
               variant="outline"
