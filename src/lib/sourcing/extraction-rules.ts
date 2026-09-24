@@ -13,11 +13,22 @@ import { sensitiveNicheSlugs } from '@/lib/config/accepted-niches';
  * the drafts made under the old one can be found and re-extracted.
  */
 
-export const PROMPT_VERSION = '2026-09-23.1';
+export const PROMPT_VERSION = '2026-09-24.1';
 
 export const EXTRACTION_RULES = `You are reading a reply from a website publisher to a cold outreach email asking for their advertising rates. Turn it into structured data.
 
 Return JSON only, matching the schema exactly.
+
+## 0. How to say "the email does not mention this"
+
+Every field must be present. There are no nulls and nothing is optional. To say a thing was not stated:
+
+- a number -> 0
+- a string -> ""
+- a yes/no field -> "unknown"
+- a period or category -> ""
+
+A 0 means the email is silent, NOT that the placement is free. Never write 0 for a price you actually found, and never invent a number to fill a field.
 
 ## 1. Blank means not stated
 
@@ -27,7 +38,7 @@ This is the most important rule. An empty field must never be read as a refusal.
 - Set a niche to "yes" ONLY when the email explicitly includes it, or clearly says everything is accepted ("any topic, no surcharge").
 - Everything else is "unknown". If you are weighing whether something counts as explicit, it is "unknown".
 
-The same applies to every other field: if the email does not say, the value is null.
+The same applies to every other field: if the email does not say, use the empty value from rule 0.
 
 ## 2. Sensitive-niche pricing
 
@@ -73,7 +84,7 @@ For a vague category like "Finance" or "YMYL", do not assign it to a niche. Put 
 
 When the email gives a single price and says nothing about topics at all:
 - put it in "guest_post_cost"
-- leave every niche "unknown" with null prices
+- leave every niche "unknown" with 0 prices
 - set confidence "low" for guest_post_cost
 
 Do not assume the single price covers sensitive topics. Publishers who charge extra for gambling usually say so only when asked twice.
@@ -82,7 +93,7 @@ Do not assume the single price covers sensitive topics. Publishers who charge ex
 
 Record a per-niche link insertion price only where the email says the niche rates apply to insertions too ("same rates as above based on niche").
 
-If link insertion is offered for general topics only, set each niche's link_insertion_cost to null and link_insertion_offered to "no".
+If link insertion is offered for general topics only, set each niche's link_insertion_cost to 0 and link_insertion_offered to "no".
 
 ## 10. Multiple rates by payment method
 
@@ -103,7 +114,7 @@ For every field you fill in, add:
 - "confidence": "high" when the email states it plainly; "medium" when you inferred it from clear context; "low" when you are reading between the lines, applying a default, or resolving an ambiguous category.
 - "evidence": the shortest quote from the email that shows where the value came from, in the original language. This is what a human checks you against, so quote rather than paraphrase.
 
-Do not add confidence or evidence for fields you left null.
+Do not add confidence or evidence for fields you left empty.
 
 ## When there is nothing to extract
 

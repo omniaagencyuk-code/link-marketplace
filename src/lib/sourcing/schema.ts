@@ -134,3 +134,162 @@ export const extractionResultSchema = z.object({
 export type ExtractedListing = z.infer<typeof extractedListingSchema>;
 export type ExtractionResult = z.infer<typeof extractionResultSchema>;
 export type Stance = z.infer<typeof stance>;
+
+// ---------------------------------------------------------------- the wire
+
+/**
+ * The same data, in the shape the API will actually accept.
+ *
+ * Structured outputs compile the schema into a constrained decoder, and every
+ * nullable field is a union - `["number","null"]`. There is a hard limit of 16
+ * union-typed parameters per schema, and a reply about a publisher's terms has
+ * about thirty fields that can legitimately be absent. The request is refused
+ * outright: "too many parameters with union types ... exponential compilation
+ * cost".
+ *
+ * So nothing on the wire is nullable. Absence is a sentinel: 0 for a number,
+ * "" for a string, "unknown" for a stance. That costs nothing in meaning here
+ * because none of these numbers can legitimately be zero - a price, a word
+ * count, a number of months - and the sentinels are turned back into null by
+ * `fromWire` before anything else sees them.
+ *
+ * The internal shape above keeps its nulls. This one exists only for the
+ * journey there and back.
+ */
+
+const wireMoney = z.number().describe('0 when the email does not say');
+const wirePeriod = z.enum(['month', 'year', 'one-off', '']);
+
+const wireNiche = z.object({
+  accepted: stance,
+  guest_post_cost: wireMoney,
+  link_insertion_cost: wireMoney,
+});
+
+export const wireListingSchema = z.object({
+  domain: z.string(),
+  relationship: z.string(),
+
+  contact_email: z.string(),
+  contact_name: z.string(),
+  contact_notes: z.string(),
+
+  language: z.string(),
+  currency: z.string(),
+
+  guest_post_cost: wireMoney,
+  guest_post_cost_written_by_publisher: wireMoney,
+  link_insertion_cost: wireMoney,
+  homepage_link_cost: wireMoney,
+  homepage_link_period: wirePeriod,
+  banner_cost: wireMoney,
+  banner_period: wirePeriod,
+
+  niches: z.object(
+    Object.fromEntries(sensitiveNicheSlugs.map((slug) => [slug, wireNiche])) as Record<
+      string,
+      typeof wireNiche
+    >,
+  ),
+
+  dofollow: stance,
+  sponsored_tag: z.enum(['yes', 'no', 'depends', 'unknown']),
+  dofollow_expires_after_months: z.number(),
+  permanence: z.enum(['permanent', 'fixed-term', 'unknown']),
+  min_live_months: z.number(),
+  min_word_count: z.number(),
+  max_word_count: z.number(),
+  max_links: z.number(),
+  turnaround_min_days: z.number(),
+  turnaround_max_days: z.number(),
+  link_insertion_offered: stance,
+  homepage_placement: stance,
+  topic_restriction: z.string(),
+
+  prices_exclude_vat: z.enum(['yes', 'no', 'unknown']),
+  vat_notes: z.string(),
+  payment_methods: z.array(
+    z.enum(['paypal', 'bank', 'invoice', 'crypto', 'pix', 'upi', 'western_union']),
+  ),
+  payment_timing: z.enum(['prepaid', 'on-publication', 'after-live-link', 'unknown']),
+
+  minimum_order: z.string(),
+  bulk_discount_notes: z.string(),
+  price_valid_until: z.string(),
+  future_price_notes: z.string(),
+
+  notes: z.string(),
+
+  confidence: z.array(z.object({ field: z.string(), level: confidence })),
+  evidence: z.array(z.object({ field: z.string(), quote: z.string() })),
+});
+
+export const wireResultSchema = z.object({
+  usable: z.boolean(),
+  ignore_reason: z.string(),
+  listings: z.array(wireListingSchema),
+});
+
+export type WireResult = z.infer<typeof wireResultSchema>;
+
+/** A sentinel back to the absence it stands for. */
+const text = (value: string): string | null => (value.trim() === '' ? null : value.trim());
+const amount = (value: number): number | null => (value > 0 ? value : null);
+
+export function fromWire(result: WireResult): ExtractionResult {
+  return {
+    usable: result.usable,
+    ignore_reason: text(result.ignore_reason),
+    listings: result.listings.map((listing) => ({
+      domain: listing.domain,
+      relationship: text(listing.relationship),
+      contact_email: text(listing.contact_email),
+      contact_name: text(listing.contact_name),
+      contact_notes: text(listing.contact_notes),
+      language: text(listing.language),
+      currency: text(listing.currency),
+      guest_post_cost: amount(listing.guest_post_cost),
+      guest_post_cost_written_by_publisher: amount(listing.guest_post_cost_written_by_publisher),
+      link_insertion_cost: amount(listing.link_insertion_cost),
+      homepage_link_cost: amount(listing.homepage_link_cost),
+      homepage_link_period: listing.homepage_link_period === '' ? null : listing.homepage_link_period,
+      banner_cost: amount(listing.banner_cost),
+      banner_period: listing.banner_period === '' ? null : listing.banner_period,
+      niches: Object.fromEntries(
+        Object.entries(listing.niches).map(([slug, terms]) => [
+          slug,
+          {
+            accepted: terms.accepted,
+            guest_post_cost: amount(terms.guest_post_cost),
+            link_insertion_cost: amount(terms.link_insertion_cost),
+          },
+        ]),
+      ),
+      dofollow: listing.dofollow,
+      sponsored_tag: listing.sponsored_tag,
+      dofollow_expires_after_months: amount(listing.dofollow_expires_after_months),
+      permanence: listing.permanence,
+      min_live_months: amount(listing.min_live_months),
+      min_word_count: amount(listing.min_word_count),
+      max_word_count: amount(listing.max_word_count),
+      max_links: amount(listing.max_links),
+      turnaround_min_days: amount(listing.turnaround_min_days),
+      turnaround_max_days: amount(listing.turnaround_max_days),
+      link_insertion_offered: listing.link_insertion_offered,
+      homepage_placement: listing.homepage_placement,
+      topic_restriction: text(listing.topic_restriction),
+      prices_exclude_vat:
+        listing.prices_exclude_vat === 'unknown' ? null : listing.prices_exclude_vat === 'yes',
+      vat_notes: text(listing.vat_notes),
+      payment_methods: listing.payment_methods,
+      payment_timing: listing.payment_timing,
+      minimum_order: text(listing.minimum_order),
+      bulk_discount_notes: text(listing.bulk_discount_notes),
+      price_valid_until: text(listing.price_valid_until),
+      future_price_notes: text(listing.future_price_notes),
+      notes: text(listing.notes),
+      confidence: listing.confidence,
+      evidence: listing.evidence,
+    })),
+  };
+}

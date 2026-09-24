@@ -1,7 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { zodOutputFormat } from '@anthropic-ai/sdk/helpers/zod';
 import { EXTRACTION_RULES, PROMPT_VERSION, buildUserMessage } from './extraction-rules';
-import { extractionResultSchema, type ExtractionResult } from './schema';
+import { fromWire, wireResultSchema, type ExtractionResult } from './schema';
 
 /**
  * Talking to the model.
@@ -115,7 +115,7 @@ function requestBody(request: ExtractionRequest, model: string) {
         }),
       },
     ],
-    output_config: { format: zodOutputFormat(extractionResultSchema) },
+    output_config: { format: zodOutputFormat(wireResultSchema) },
   };
 }
 
@@ -142,7 +142,9 @@ export async function extractNow(
 
     return {
       emailId: request.emailId,
-      result: response.parsed_output,
+      // Sentinels back to nulls at the boundary, so nothing downstream ever
+      // sees the shape the wire forced on us.
+      result: fromWire(response.parsed_output),
       usage: {
         inputTokens: response.usage.input_tokens + (response.usage.cache_read_input_tokens ?? 0),
         outputTokens: response.usage.output_tokens,
@@ -209,7 +211,7 @@ export async function collectBatch(providerBatchId: string): Promise<ExtractionO
       .map((block) => block.text)
       .join('');
 
-    const parsed = extractionResultSchema.safeParse(safeJson(text));
+    const parsed = wireResultSchema.safeParse(safeJson(text));
     if (!parsed.success) {
       outcomes.push({
         emailId,
@@ -223,7 +225,7 @@ export async function collectBatch(providerBatchId: string): Promise<ExtractionO
 
     outcomes.push({
       emailId,
-      result: parsed.data,
+      result: fromWire(parsed.data),
       usage: {
         inputTokens: message.usage.input_tokens + (message.usage.cache_read_input_tokens ?? 0),
         outputTokens: message.usage.output_tokens,

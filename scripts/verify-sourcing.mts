@@ -8,7 +8,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { readMbox, readPastedEmail, domainFromSubject, stripQuotedHistory } from '../src/lib/sourcing/mbox';
-import { extractionResultSchema, type ExtractedListing } from '../src/lib/sourcing/schema';
+import { extractionResultSchema, fromWire, wireResultSchema, type ExtractedListing } from '../src/lib/sourcing/schema';
 import { applyGeneralPriceToNiches, countLowConfidence, flagsFor } from '../src/lib/sourcing/review';
 import { sensitiveNicheSlugs } from '../src/lib/config/accepted-niches';
 import { zodOutputFormat } from '@anthropic-ai/sdk/helpers/zod';
@@ -155,6 +155,19 @@ function generatedSchemaAcceptsEntries(): boolean {
   return entry?.type === 'object' && Boolean(entry.properties?.field) && Boolean(entry.properties?.level);
 }
 
+/** Union-typed nodes in the schema actually sent to the API. */
+function countUnions(): number {
+  const format = zodOutputFormat(wireResultSchema) as unknown as Record<string, any>;
+  let count = 0;
+  const walk = (node: any) => {
+    if (!node || typeof node !== 'object') return;
+    if (Array.isArray(node.type) || node.anyOf || node.oneOf) count += 1;
+    for (const value of Object.values(node)) if (value && typeof value === 'object') walk(value);
+  };
+  walk(format.schema ?? format.json_schema?.schema);
+  return count;
+}
+
 console.log('--- the schema ---');
 const wellFormed = extractionResultSchema.safeParse({ usable: true, ignore_reason: null, listings: [blank()] });
 is('a complete listing validates', wellFormed.success, true);
@@ -187,6 +200,51 @@ const withConfidence = extractionResultSchema.safeParse({
 });
 is('a confidence entry survives the schema', wellFormedConfidence(withConfidence), true);
 is('and the generated JSON schema lets the model send one', generatedSchemaAcceptsEntries(), true);
+
+// Structured outputs refuse a schema with more than 16 union-typed
+// parameters, and every nullable field is a union. Thirty-odd optional
+// fields put the first version 8 over the limit, and the request was
+// rejected outright rather than degrading.
+const unions = countUnions();
+unions <= 16
+  ? ok(`the wire schema has ${unions} union-typed parameters (limit 16)`)
+  : bad('wire schema unions', `${unions} exceeds the limit of 16`);
+
+console.log('\n--- sentinels on the wire ---');
+const wire = wireResultSchema.safeParse({
+  usable: true, ignore_reason: '',
+  listings: [{
+    domain: 'test.example', relationship: '',
+    contact_email: '', contact_name: '', contact_notes: '',
+    language: '', currency: 'EUR',
+    guest_post_cost: 150, guest_post_cost_written_by_publisher: 0,
+    link_insertion_cost: 0, homepage_link_cost: 0, homepage_link_period: '',
+    banner_cost: 0, banner_period: '',
+    niches: Object.fromEntries(sensitiveNicheSlugs.map((slug) => [slug, { accepted: 'unknown', guest_post_cost: 0, link_insertion_cost: 0 }])),
+    dofollow: 'yes', sponsored_tag: 'unknown', dofollow_expires_after_months: 0,
+    permanence: 'unknown', min_live_months: 0, min_word_count: 0, max_word_count: 0, max_links: 0,
+    turnaround_min_days: 1, turnaround_max_days: 5,
+    link_insertion_offered: 'unknown', homepage_placement: 'unknown', topic_restriction: '',
+    prices_exclude_vat: 'unknown', vat_notes: '', payment_methods: [], payment_timing: 'unknown',
+    minimum_order: '', bulk_discount_notes: '', price_valid_until: '', future_price_notes: '',
+    notes: '', confidence: [{ field: 'guest_post_cost', level: 'high' }], evidence: [],
+  }],
+});
+is('a sentinel-filled reply validates', wire.success, true);
+
+if (wire.success) {
+  const converted = fromWire(wire.data);
+  const listing = converted.listings[0]!;
+  is('a real price survives', listing.guest_post_cost, 150);
+  is('a zero price becomes not-stated', listing.link_insertion_cost, null);
+  is('an empty string becomes not-stated', listing.contact_email, null);
+  is('an empty period becomes not-stated', listing.banner_period, null);
+  is('"unknown" VAT becomes not-stated', listing.prices_exclude_vat, null);
+  is('a zero niche price becomes not-stated', listing.niches.gambling!.guest_post_cost, null);
+  is('and the stance is untouched', listing.niches.gambling!.accepted, 'unknown');
+  is('the converted listing satisfies the internal schema', extractionResultSchema.safeParse(converted).success, true);
+  is('a single price with no topics is still flagged', flagsFor(listing).includes('single-price-confirm-niches'), true);
+}
 is('and loan is one of them', sensitiveNicheSlugs.includes('loan'), true);
 
 console.log('\n--- single price with no topics named ---');
