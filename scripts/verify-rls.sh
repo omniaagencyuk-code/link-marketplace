@@ -72,3 +72,6 @@ run -f "$ROOT/supabase/tests/08_niche_prices.sql" 2>&1 | grep -v '^$'
 echo
 echo "--- publisher contacts ---"
 run -f "$ROOT/supabase/tests/09_publisher_contacts.sql" 2>&1 | grep -v '^$'
+echo
+echo "--- order items follow their order ---"
+run -f "$ROOT/supabase/tests/10_order_item_status.sql" 2>&1 | grep -v '^$'
