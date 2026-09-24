@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { ArrowLeft, Mail, Lock } from 'lucide-react';
+import { ArrowLeft, AlertTriangle, Mail, Lock } from 'lucide-react';
 import { PageTitle } from '@/components/dashboard/page-title';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -9,6 +9,7 @@ import { orderService, websiteService } from '@/lib/services';
 import { formatDateTime, formatPrice } from '@/lib/utils/format';
 import { linkTypeLabels, orderStatusLabels } from '@/lib/utils/labels';
 import { acceptedNicheLabel } from '@/lib/config/accepted-niches';
+import { nicheStances } from '@/lib/services/niche-policy';
 import type { Website } from '@/lib/types';
 
 export const dynamic = 'force-dynamic';
@@ -40,6 +41,14 @@ export default async function AdminOrderPage({ params }: { params: Promise<{ id:
   const byId = new Map(
     websites.filter(Boolean).map((website) => [(website as Website).id, website as Website]),
   );
+
+  /*
+    Whether each site was ever confirmed for the topic it was bought for.
+    Only sites sourced from an email have an answer here: one added by hand
+    or by CSV has no record either way, and warning about those would put a
+    caution on every legacy order and teach everyone to ignore it.
+  */
+  const stances = await nicheStances(Array.from(byId.keys()));
 
   const costTotal = order.items.reduce((total, item) => {
     const service = byId
@@ -83,6 +92,10 @@ export default async function AdminOrderPage({ params }: { params: Promise<{ id:
                 ? item.listPriceMinor
                 : null;
             const contact = website?.contact;
+            // 'unknown' means we never asked and sold it anyway; 'no' means
+            // the publisher told us they do not take it, which should not
+            // have been sellable and is worth knowing before writing to them.
+            const stance = item.topic ? stances.get(`${item.websiteId}:${item.topic}`) : undefined;
 
             return (
               <Card key={item.id}>
@@ -109,6 +122,25 @@ export default async function AdminOrderPage({ params }: { params: Promise<{ id:
                       </h3>
                       <span className="text-[11px] text-muted">Internal only</span>
                     </div>
+
+                    {stance === 'unknown' || stance === 'no' ? (
+                      <p className="mt-3 flex items-start gap-2 rounded-lg border border-warning/30 bg-warning/5 px-3 py-2 text-[12px] leading-relaxed text-ink-soft">
+                        <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-warning" aria-hidden="true" />
+                        {stance === 'no' ? (
+                          <span>
+                            This publisher told us they do <strong className="font-medium">not</strong>{' '}
+                            take {acceptedNicheLabel(item.topic ?? '')}. Confirm before placing, and
+                            check the listing is not still selling it.
+                          </span>
+                        ) : (
+                          <span>
+                            We never confirmed that this site takes{' '}
+                            {acceptedNicheLabel(item.topic ?? '')} - their reply did not mention it.
+                            Worth asking in the same email.
+                          </span>
+                        )}
+                      </p>
+                    ) : null}
 
                     {contact?.email ? (
                       <div className="mt-3 space-y-1.5">
