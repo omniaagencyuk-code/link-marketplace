@@ -146,6 +146,43 @@ export async function rereadAllAction() {
   return { ok: true, count: ids.length };
 }
 
+/**
+ * Throw an email away, with everything it produced.
+ *
+ * The same reply arrives twice - pasted once with headers and once without,
+ * or forwarded by two people - and each copy becomes its own set of drafts.
+ * Approving both is harmless now that approval re-checks the domain, but it
+ * means working through the same sixty listings a second time for nothing.
+ *
+ * The email is kept and marked ignored rather than deleted, so a later
+ * upload of the same export does not quietly bring it back: dedupe is on
+ * Message-ID, and a row that is gone no longer dedupes anything.
+ */
+export async function discardEmailAction(emailId: string, reason?: string) {
+  const by = await reviewer();
+  const supabase = getAdminScopedClient();
+
+  const { data } = await supabase
+    .from('listing_drafts')
+    .delete()
+    .eq('email_id', emailId)
+    .eq('status', 'pending')
+    .select('id');
+
+  await supabase
+    .from('inbound_emails')
+    .update({
+      status: 'ignored',
+      status_reason: reason?.trim()
+        ? `Discarded: ${reason.trim()}`
+        : `Discarded by ${by ?? 'an admin'}`,
+    })
+    .eq('id', emailId);
+
+  revalidatePath('/admin/sourcing');
+  return { ok: true, discarded: (data ?? []).length };
+}
+
 export async function collectBatchesAction() {
   await requireAdminSession();
   const result = await sourcingService.collectBatches();

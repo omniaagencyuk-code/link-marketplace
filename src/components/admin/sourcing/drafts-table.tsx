@@ -27,6 +27,18 @@ export function DraftsTable({ drafts }: { drafts: DraftRow[] }) {
     (draft) => draft.lowConfidenceCount === 0 && draft.flags.length === 0,
   );
 
+  /*
+    Domains waiting more than once, which means the same reply was read
+    twice. Approving both is harmless - approval re-checks the domain, so the
+    second is an update - but it is sixty listings to work through for
+    nothing, and it is not obvious from a list this long that it is happening.
+  */
+  const perDomain = drafts.reduce<Record<string, number>>((all, draft) => {
+    all[draft.domain] = (all[draft.domain] ?? 0) + 1;
+    return all;
+  }, {});
+  const repeated = Object.values(perDomain).filter((count) => count > 1).length;
+
   return (
     <div className="space-y-3">
       {confident.length > 0 ? (
@@ -54,6 +66,15 @@ export function DraftsTable({ drafts }: { drafts: DraftRow[] }) {
             Approve all {confident.length}
           </Button>
         </div>
+      ) : null}
+
+      {repeated > 0 ? (
+        <p className="rounded-lg border border-line bg-surface-sunken px-3 py-2 text-[13px] text-ink-soft">
+          {repeated} {repeated === 1 ? 'domain appears' : 'domains appear'} more than once, so the
+          same reply has been read twice. Open one of the repeats and use{' '}
+          <span className="font-medium text-ink">throw away this email and its drafts</span> on
+          whichever copy you do not want.
+        </p>
       ) : null}
 
       {result ? (
@@ -87,6 +108,14 @@ export function DraftsTable({ drafts }: { drafts: DraftRow[] }) {
                   >
                     {draft.domain}
                   </Link>
+                  {(perDomain[draft.domain] ?? 0) > 1 ? (
+                    <span
+                      title="This domain is waiting in more than one draft."
+                      className="ml-1.5 rounded bg-surface-sunken px-1.5 py-0.5 text-[10px] text-muted"
+                    >
+                      x{perDomain[draft.domain]}
+                    </span>
+                  ) : null}
                 </Td>
                 <Td className="hidden truncate text-[12px] text-muted md:table-cell">
                   {draft.fromAddress}

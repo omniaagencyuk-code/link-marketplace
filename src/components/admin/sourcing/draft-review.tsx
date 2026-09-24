@@ -13,6 +13,7 @@ import {
   approveDraftAction,
   approveEmailBatchAction,
   rereadEmailAction,
+  discardEmailAction,
   rejectDraftAction,
   spreadGeneralPriceAction,
 } from '@/app/admin/(protected)/sourcing/actions';
@@ -816,6 +817,27 @@ export function DraftReview({
                         <Layers className="h-4 w-4" aria-hidden="true" />
                         Approve all {siblingCount + 1} from this email
                       </Button>
+
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onClick={() => {
+                          if (
+                            !window.confirm(
+                              `Throw away this email and all ${siblingCount + 1} drafts from it? Use this when the same reply was read twice. Listings you have already approved are not affected.`,
+                            )
+                          ) {
+                            return;
+                          }
+                          startTransition(async () => {
+                            await discardEmailAction(emailId);
+                            router.push('/admin/sourcing');
+                          });
+                        }}
+                        className="block text-[12px] text-muted hover:text-negative hover:underline disabled:opacity-50"
+                      >
+                        Or throw away this email and all {siblingCount + 1} of its drafts
+                      </button>
 
                       {edited ? (
                         <label className="flex items-start gap-2 text-[12px] leading-relaxed text-ink-soft">
