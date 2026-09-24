@@ -303,12 +303,16 @@ export const sourcingService = {
     }
 
     const applied = await sourcingService.applyOutcomes(batchId, outcomes, settings.model);
-    return {
-      ok: true,
-      batchId,
-      ...applied,
-      message: `Read ${applied.extracted} of ${requests.length}. ${applied.draftsCreated} ${applied.draftsCreated === 1 ? 'draft' : 'drafts'} are waiting for review.`,
-    };
+
+    // The reason goes in the message that appears the moment the run ends.
+    // A bare "read 0 of 1" sends somebody to the database to find out why,
+    // which is exactly the trip this line exists to save.
+    const summary =
+      applied.failed > 0 && applied.firstError
+        ? `Read ${applied.extracted} of ${requests.length}. ${applied.failed} failed: ${applied.firstError}`
+        : `Read ${applied.extracted} of ${requests.length}. ${applied.draftsCreated} ${applied.draftsCreated === 1 ? 'draft' : 'drafts'} are waiting for review.`;
+
+    return { ok: applied.failed === 0, batchId, ...applied, message: summary };
   },
 
   /** Poll every running batch and collect the ones that have finished. */
@@ -394,13 +398,14 @@ export const sourcingService = {
     batchId: string,
     outcomes: ExtractionOutcome[],
     model: string,
-  ): Promise<{ extracted: number; failed: number; draftsCreated: number }> {
+  ): Promise<{ extracted: number; failed: number; draftsCreated: number; firstError?: string }> {
     const supabase = getAdminScopedClient();
     let extracted = 0;
     let failed = 0;
     let draftsCreated = 0;
     let inputTokens = 0;
     let outputTokens = 0;
+    let firstError: string | undefined;
 
     for (const outcome of outcomes) {
       inputTokens += outcome.usage?.inputTokens ?? 0;
@@ -408,6 +413,7 @@ export const sourcingService = {
 
       if (outcome.error || !outcome.result) {
         failed += 1;
+        firstError ??= outcome.error;
         await supabase
           .from('inbound_emails')
           .update({ status: 'failed', status_reason: outcome.error ?? 'No result.' })
@@ -488,7 +494,7 @@ export const sourcingService = {
       })
       .eq('id', batchId);
 
-    return { extracted, failed, draftsCreated };
+    return { extracted, failed, draftsCreated, firstError };
   },
 };
 
