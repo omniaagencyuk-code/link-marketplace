@@ -37,6 +37,15 @@ const bad = (l: string, d?: string) => {
 const is = (l: string, actual: unknown, expected: unknown) =>
   actual === expected ? ok(l) : bad(l, `expected ${String(expected)}, got ${String(actual)}`);
 
+/*
+  Abstract figures, not the shipped ones.
+
+  These test the engine: given these bands and this floor, does it do the
+  right thing. The numbers that actually ship are rows in `pricing_bands` and
+  `pricing_rules`, editable on the pricing screen, and were converted to
+  dollars by migration 0025. Pinning them here as well would make every band
+  adjustment a failing test for no gain.
+*/
 const rules: PricingRules = {
   fxBufferPct: 4,
   paypalFeePct: 4,
@@ -62,7 +71,7 @@ const rounding: RoundingTier[] = [
   { minMinor: 100000, allowedLastDigits: [9] },
 ];
 
-const gbp = (minor: number) => `£${(minor / 100).toFixed(2)}`;
+const money = (minor: number) => `$${(minor / 100).toFixed(2)}`;
 
 console.log('\n--- payment fees: the cheapest method we could actually use ---');
 is('PayPal is 4% plus 30p', paymentFee(10000, ['paypal'], rules).feeMinor, 430);
@@ -91,12 +100,12 @@ is(
 );
 
 console.log('\n--- the bands ---');
-is('just under 50 pounds is the flat band', bandFor(4999, bands)?.flatMinor, 4000);
-is('exactly 50 pounds starts 60%', bandFor(5000, bands)?.markupPct, 60);
+is('just under the first threshold is the flat band', bandFor(4999, bands)?.flatMinor, 4000);
+is('exactly at it starts 60%', bandFor(5000, bands)?.markupPct, 60);
 is('149.99 is still 60%', bandFor(14999, bands)?.markupPct, 60);
-is('150 pounds starts 40%', bandFor(15000, bands)?.markupPct, 40);
+is('the next threshold starts 40%', bandFor(15000, bands)?.markupPct, 40);
 is('399.99 is still 40%', bandFor(39999, bands)?.markupPct, 40);
-is('400 pounds starts 30%', bandFor(40000, bands)?.markupPct, 30);
+is('and the top one starts 30%', bandFor(40000, bands)?.markupPct, 30);
 is('and a large cost stays in the top band', bandFor(500000, bands)?.markupPct, 30);
 
 console.log('\n--- rounding, always upward ---');
@@ -111,7 +120,7 @@ is('1291 becomes 1299', roundUp(129100, rounding), 129900);
 is('above a thousand it must end in 9, so 1300 becomes 1309', roundUp(130000, rounding), 130900);
 [9100, 12345, 45600, 99999, 250000].forEach((value) => {
   const rounded = roundUp(value, rounding);
-  if (rounded < value) bad(`rounding never goes down (${gbp(value)})`);
+  if (rounded < value) bad(`rounding never goes down (${money(value)})`);
 });
 ok('rounding never returns less than it was given');
 
@@ -132,9 +141,9 @@ console.log('\n--- a whole price, worked through ---');
     rounding,
   );
   console.log(
-    `  400 EUR -> ${gbp(b.costGbpMinor)} +fees ${gbp(b.feeMinor)} = ${gbp(b.trueCostMinor)} true, ${b.bandLabel} -> ${gbp(b.sellMinor)} (margin ${gbp(b.marginMinor)}, ${b.marginPct.toFixed(0)}%)`,
+    `  400 EUR -> ${money(b.costBaseMinor)} +fees ${money(b.feeMinor)} = ${money(b.trueCostMinor)} true, ${b.bandLabel} -> ${money(b.sellMinor)} (margin ${money(b.marginMinor)}, ${b.marginPct.toFixed(0)}%)`,
   );
-  is('converted with the 4% buffer', b.costGbpMinor, 34944);
+  is('converted with the 4% buffer', b.costBaseMinor, 34944);
   is('bank transfer costs nothing', b.feeMinor, 0);
   is('no VAT rate stated, so none added', b.vatMinor, 0);
   is('true cost is the converted cost', b.trueCostMinor, 34944);
@@ -150,7 +159,7 @@ console.log('\n--- VAT a publisher charges us ---');
     rules, bands, rounding,
   );
   withVat.vatMinor > 0 ? ok('25% Danish VAT is a real cost while it is not reclaimable') : bad('VAT added');
-  is('and it is in the true cost', withVat.trueCostMinor, withVat.costGbpMinor + withVat.vatMinor);
+  is('and it is in the true cost', withVat.trueCostMinor, withVat.costBaseMinor + withVat.vatMinor);
 
   const reclaimable = computePrice(
     { costMinor: 40000, currency: 'DKK', fxRate: 0.11, paymentMethods: ['bank'], pricesExcludeVat: true, vatRatePct: 25 },
@@ -172,9 +181,9 @@ console.log('\n--- the minimum margin ---');
     { costMinor: 1000, currency: 'GBP', fxRate: 1, paymentMethods: ['bank'], pricesExcludeVat: false, vatRatePct: null },
     rules, bands, rounding,
   );
-  cheap.marginMinor >= 4000 ? ok(`a 10 pound placement still makes 40: ${gbp(cheap.marginMinor)}`) : bad('minimum margin on a cheap placement', gbp(cheap.marginMinor));
+  cheap.marginMinor >= 4000 ? ok(`a 10 pound placement still makes 40: ${money(cheap.marginMinor)}`) : bad('minimum margin on a cheap placement', money(cheap.marginMinor));
 
-  // 30% of a 60 pound cost is 18 pounds, under the floor.
+  // 30% of a 60 unit cost is 18, under the floor.
   const thin = computePrice(
     { costMinor: 6000, currency: 'GBP', fxRate: 1, paymentMethods: ['bank'], pricesExcludeVat: false, vatRatePct: null },
     { ...rules, minMarginMinor: 4000 },
@@ -182,7 +191,7 @@ console.log('\n--- the minimum margin ---');
     rounding,
   );
   is('a percentage that falls short is lifted to the floor', thin.minimumApplied, true);
-  thin.marginMinor >= 4000 ? ok('and the margin clears it') : bad('lifted margin clears the floor', gbp(thin.marginMinor));
+  thin.marginMinor >= 4000 ? ok('and the margin clears it') : bad('lifted margin clears the floor', money(thin.marginMinor));
 
   // Every band, every plausible cost: the floor must never be breached.
   let breaches = 0;
@@ -193,7 +202,7 @@ console.log('\n--- the minimum margin ---');
     );
     if (b.marginMinor < rules.minMarginMinor) breaches += 1;
   }
-  is('no cost from 1 to 2000 pounds produces a margin under the floor', breaches, 0);
+  is('no cost across the whole sweep produces a margin under the floor', breaches, 0);
 }
 
 console.log('\n--- the agency tier ---');
@@ -203,10 +212,10 @@ console.log('\n--- the agency tier ---');
     rules, bands, rounding,
   );
   is('the standard price uses the 40% band', b.bandLabel, '40%');
-  b.agencyMinor < b.sellMinor ? ok(`agency pays less: ${gbp(b.agencyMinor)} against ${gbp(b.sellMinor)}`) : bad('agency pays less');
+  b.agencyMinor < b.sellMinor ? ok(`agency pays less: ${money(b.agencyMinor)} against ${money(b.sellMinor)}`) : bad('agency pays less');
   b.agencyMinor - b.trueCostMinor >= rules.minMarginMinor
     ? ok('and the agency price still clears the minimum margin')
-    : bad('agency clears the minimum', gbp(b.agencyMinor - b.trueCostMinor));
+    : bad('agency clears the minimum', money(b.agencyMinor - b.trueCostMinor));
 
   // Where the discount would take the margin under the floor, the floor wins.
   let agencyBreaches = 0;
@@ -236,47 +245,82 @@ console.log('\n--- the FX buffer ---');
     { costMinor: 10000, currency: 'EUR', fxRate: 0.84, paymentMethods: ['bank'], pricesExcludeVat: false, vatRatePct: null },
     { ...rules, fxBufferPct: 0 }, bands, rounding,
   );
-  withBuffer.costGbpMinor > without.costGbpMinor ? ok('the buffer raises the cost we price from') : bad('buffer raises cost');
-  is('a 4% buffer on 84 pounds is 87.36', withBuffer.costGbpMinor, 8736);
-  is('GBP against itself needs no conversion', 
-    computePrice({ costMinor: 10000, currency: 'GBP', fxRate: 1, paymentMethods: ['bank'], pricesExcludeVat: false, vatRatePct: null }, { ...rules, fxBufferPct: 0 }, bands, rounding).costGbpMinor,
+  withBuffer.costBaseMinor > without.costBaseMinor ? ok('the buffer raises the cost we price from') : bad('buffer raises cost');
+  is('a 4% buffer on 84 is 87.36', withBuffer.costBaseMinor, 8736);
+  is('our own currency against itself needs no conversion',
+    computePrice({ costMinor: 10000, currency: 'USD', fxRate: 1, paymentMethods: ['bank'], pricesExcludeVat: false, vatRatePct: null }, { ...rules, fxBufferPct: 0 }, bands, rounding).costBaseMinor,
     10000);
 }
 
 console.log('\n--- exchange rates ---');
 {
-  // frankfurter publishes GBP -> X. Pricing needs X -> GBP, and getting that
-  // backwards would make a European publisher look forty times cheaper.
-  const { rows } = ratesFromSource({ EUR: 1.19, USD: 1.27, DKK: 8.87 }, new Map(), '2026-09-24T00:00:00Z');
+  // frankfurter publishes base -> X. Pricing needs X -> base, and getting
+  // that backwards would make a European publisher look forty times cheaper.
+  // The base is USD now; the inversion is the same either way, which is the
+  // point of naming the field for its role rather than for a currency.
+  const { rows } = ratesFromSource(
+    { EUR: 0.89, GBP: 0.746, DKK: 6.63 },
+    new Map(),
+    '2026-09-24T00:00:00Z',
+    'USD',
+  );
   const eur = rows.find((row) => row.currency === 'EUR')!;
-  const rate = Number(eur.rate_to_gbp);
-  Math.abs(rate - 0.840336) < 0.0001
-    ? ok(`1.19 EUR per pound becomes ${rate.toFixed(4)} GBP per euro`)
+  const rate = Number(eur.rate_to_base);
+  Math.abs(rate - 1.1236) < 0.001
+    ? ok(`0.89 EUR per dollar becomes ${rate.toFixed(4)} USD per euro`)
     : bad('the rate is inverted', String(rate));
-  rate < 1 ? ok('a euro is worth less than a pound, as it should be') : bad('euro under a pound');
+  rate > 1 ? ok('a euro is worth more than a dollar, as it should be') : bad('euro under a dollar');
 
-  const dkk = Number(rows.find((row) => row.currency === 'DKK')!.rate_to_gbp);
-  dkk < 0.2 ? ok(`and a krone is worth ${dkk.toFixed(4)}, not 8.87`) : bad('krone inverted', String(dkk));
+  const gbpRate = Number(rows.find((row) => row.currency === 'GBP')!.rate_to_base);
+  gbpRate > 1.2
+    ? ok(`and a pound is worth ${gbpRate.toFixed(4)} dollars, not 0.746`)
+    : bad('pound inverted', String(gbpRate));
 
-  is('GBP is never fetched, it is fixed at 1', rows.some((row) => row.currency === 'GBP'), false);
-  is('a zero or broken rate is dropped rather than stored',
-    ratesFromSource({ EUR: 0, USD: -1, JPY: Number.NaN }, new Map(), '2026-09-24T00:00:00Z').rows.length, 0);
+  const dkk = Number(rows.find((row) => row.currency === 'DKK')!.rate_to_base);
+  dkk < 0.5 ? ok(`and a krone is worth ${dkk.toFixed(4)}, not 6.63`) : bad('krone inverted', String(dkk));
+
+  is('every row records which base it is against', eur.base_currency, 'USD');
+  is(
+    'the base itself is never fetched, it is fixed at 1',
+    rows.some((row) => row.currency === 'USD'),
+    false,
+  );
+  is(
+    'a zero or broken rate is dropped rather than stored',
+    ratesFromSource({ EUR: 0, GBP: -1, JPY: Number.NaN }, new Map(), '2026-09-24T00:00:00Z', 'USD')
+      .rows.length,
+    0,
+  );
 
   // The 2% rule that triggers a recalculation.
-  const previous = new Map([['EUR', 0.84], ['USD', 0.79]]);
-  const { moved } = ratesFromSource({ EUR: 1.19, USD: 1.30 }, previous, '2026-09-24T00:00:00Z');
+  const previous = new Map([
+    ['EUR', 1.1236],
+    ['GBP', 1.28],
+  ]);
+  const { moved } = ratesFromSource({ EUR: 0.89, GBP: 0.746 }, previous, '2026-09-24T00:00:00Z', 'USD');
   is('a rate that barely moved does not trigger anything', moved.some((m) => m.currency === 'EUR'), false);
-  is('one that moved more than 2% does', moved.some((m) => m.currency === 'USD'), true);
+  is('one that moved more than 2% does', moved.some((m) => m.currency === 'GBP'), true);
   is('and the threshold is the stated 2%', RATE_MOVE_THRESHOLD_PCT, 2);
 
-  // A price computed at the stored rate must match one computed by hand.
-  const priced = computePrice(
-    { costMinor: 10900, currency: 'USD', fxRate: 1 / 1.27, paymentMethods: ['paypal'], pricesExcludeVat: false, vatRatePct: null },
+  // A publisher who quotes in our own currency needs no conversion at all,
+  // which is the whole reason for the switch: most of them quote in dollars.
+  const native = computePrice(
+    { costMinor: 10900, currency: 'USD', fxRate: 1, paymentMethods: ['paypal'], pricesExcludeVat: false, vatRatePct: null },
     rules, bands, rounding,
   );
-  const expectedGbp = Math.round((10900 / 1.27) * 1.04);
-  is('109 dollars converts as expected', priced.costGbpMinor, expectedGbp);
-  console.log(`  109 USD -> ${gbp(priced.costGbpMinor)} true ${gbp(priced.trueCostMinor)} -> sells ${gbp(priced.sellMinor)} (margin ${gbp(priced.marginMinor)})`);
+  is('109 dollars is 109 dollars, plus only the buffer', native.costBaseMinor, Math.round(10900 * 1.04));
+  console.log(
+    `  109 USD -> ${money(native.costBaseMinor)} true ${money(native.trueCostMinor)} -> sells ${money(native.sellMinor)} (margin ${money(native.marginMinor)})`,
+  );
+
+  // And one who quotes in pounds is converted up, not down.
+  const british = computePrice(
+    { costMinor: 10900, currency: 'GBP', fxRate: 1.34, paymentMethods: ['paypal'], pricesExcludeVat: false, vatRatePct: null },
+    rules, bands, rounding,
+  );
+  british.costBaseMinor > native.costBaseMinor
+    ? ok('a pound cost converts up into dollars, not down')
+    : bad('pound cost converted the wrong way', String(british.costBaseMinor));
 }
 
 console.log('\n--- which buyer is charged what ---');
@@ -338,8 +382,9 @@ console.log('\n--- how a price explains itself ---');
   // The breakdown is the only account anyone gets of why a listing costs what
   // it costs, so it has to end on the number actually charged and pass
   // through every step that moved it.
+  // Foreign now means "not dollars". The base moved, so this test had to.
   const foreign = computePrice(
-    { costMinor: 10900, currency: 'USD', fxRate: 0.79, paymentMethods: ['paypal'],
+    { costMinor: 10900, currency: 'GBP', fxRate: 1.34, paymentMethods: ['paypal'],
       pricesExcludeVat: null, vatRatePct: null },
     rules, bands, rounding,
   );
@@ -355,7 +400,7 @@ console.log('\n--- how a price explains itself ---');
   is(
     'the publisher price keeps their currency, not ours',
     breakdownSteps(foreign)[0].value,
-    '109.00 USD',
+    '109.00 GBP',
   );
   is(
     'the true cost is shown, not just implied',
@@ -369,12 +414,12 @@ console.log('\n--- how a price explains itself ---');
   );
 
   const domestic = computePrice(
-    { costMinor: 10000, currency: 'GBP', fxRate: 1, paymentMethods: ['bank'],
+    { costMinor: 10000, currency: 'USD', fxRate: 1, paymentMethods: ['bank'],
       pricesExcludeVat: null, vatRatePct: null },
     rules, bands, rounding,
   );
   is(
-    'a sterling cost has no conversion line to read past',
+    'a cost already in our own currency has no conversion line to read past',
     breakdownSteps(domestic).some((step) => step.label.startsWith('Converted at')),
     false,
   );
@@ -385,7 +430,7 @@ console.log('\n--- how a price explains itself ---');
   );
 
   const vatted = computePrice(
-    { costMinor: 10000, currency: 'GBP', fxRate: 1, paymentMethods: ['bank'],
+    { costMinor: 10000, currency: 'USD', fxRate: 1, paymentMethods: ['bank'],
       pricesExcludeVat: true, vatRatePct: 20 },
     rules, bands, rounding,
   );
@@ -395,11 +440,11 @@ console.log('\n--- how a price explains itself ---');
     formatPrice(vatted.vatMinor),
   );
 
-  // A £50 placement's band gives 60%, which is £30 - under the floor. The
-  // floor is what set this price, and saying "Markup (60%)" would name the
-  // wrong reason for a number somebody may have to defend.
+  // A placement priced in the middle band gives 60%, which lands under the
+  // floor. The floor is what set this price, and saying "Markup (60%)" would
+  // name the wrong reason for a number somebody may have to defend.
   const tiny = computePrice(
-    { costMinor: 5000, currency: 'GBP', fxRate: 1, paymentMethods: ['bank'],
+    { costMinor: 5000, currency: 'USD', fxRate: 1, paymentMethods: ['bank'],
       pricesExcludeVat: null, vatRatePct: null },
     rules, bands, rounding,
   );

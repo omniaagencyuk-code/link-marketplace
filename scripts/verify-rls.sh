@@ -36,41 +36,39 @@ run() { $PSQL -d pp_rls_test -q "$@"; }
 
 run -v ON_ERROR_STOP=1 -f "$ROOT/supabase/tests/00_supabase_shim.sql" || exit 1
 
+# Each migration is applied, then applied again straight away.
+#
+# The second run is the real scenario: these are pasted into the Supabase SQL
+# editor by hand, and one that half applies has to be safe to retry. It is
+# checked here rather than at the end because a migration that renames a
+# column cannot be replayed once a later one has renamed it again - and
+# nobody does that anyway. Migrations run in order, once.
+#
+# From 0017 only: everything before it predates the check and has long since
+# been applied to the live database, so it will never run again.
+RERUN_FROM="0017"
+rerun_failures=0
+
 for migration in "$ROOT"/supabase/migrations/*.sql; do
   # The .paste.sql copies are the same statements, flattened for the SQL
   # editor. Applying them here would run every migration twice.
   case "$migration" in *.paste.sql) continue;; esac
+
   if ! run -v ON_ERROR_STOP=1 -f "$migration" >/dev/null 2>&1; then
     echo "MIGRATION FAILED: $(basename "$migration")"
     run -v ON_ERROR_STOP=1 -f "$migration" 2>&1 | grep ERROR | head -3
     exit 1
   fi
-done
-echo "all migrations applied"
 
-# Run the recent migrations a second time.
-#
-# Migrations are applied by hand in the Supabase SQL editor, so one that half
-# applies and then refuses to be re-run leaves whoever is holding it with
-# nothing to do but edit it by hand. Most statements say "if not exists";
-# `create type` and `create policy` cannot, and have to be wrapped in a DO
-# block that swallows duplicate_object.
-#
-# Only from 0017. Everything before it was written before this check existed
-# and has long since been applied to the live database, so it will never be
-# run again - retrofitting those carries risk and buys nothing. Anything new
-# sorts above the threshold and is checked.
-RERUN_FROM="0017"
-rerun_failures=0
-for migration in "$ROOT"/supabase/migrations/*.sql; do
-  case "$migration" in *.paste.sql) continue;; esac
-  [[ "$(basename "$migration")" < "$RERUN_FROM" ]] && continue
-  if ! run -v ON_ERROR_STOP=1 -f "$migration" >/dev/null 2>&1; then
-    echo "NOT RE-RUNNABLE: $(basename "$migration")"
-    run -v ON_ERROR_STOP=1 -f "$migration" 2>&1 | grep ERROR | head -2
-    rerun_failures=$((rerun_failures + 1))
+  if [[ ! "$(basename "$migration")" < "$RERUN_FROM" ]]; then
+    if ! run -v ON_ERROR_STOP=1 -f "$migration" >/dev/null 2>&1; then
+      echo "NOT RE-RUNNABLE: $(basename "$migration")"
+      run -v ON_ERROR_STOP=1 -f "$migration" 2>&1 | grep ERROR | head -2
+      rerun_failures=$((rerun_failures + 1))
+    fi
   fi
 done
+echo "all migrations applied"
 if [ "$rerun_failures" -eq 0 ]; then
   echo "and every migration from $RERUN_FROM survives being run twice"
 fi

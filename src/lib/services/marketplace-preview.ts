@@ -1,3 +1,4 @@
+import { currencySymbol } from '@/lib/utils/format';
 import type { NicheSlug, WebsiteListItem } from '@/lib/types';
 
 /**
@@ -59,11 +60,19 @@ function bandTraffic(value: number): string {
   return `${Math.round(value / 100) * 100}`;
 }
 
-function bandPrice(minor: number, currencySymbol = '£'): string {
+/**
+ * A price rounded into a hundred-wide band.
+ *
+ * The symbol comes from the marketplace currency rather than a default
+ * argument nobody passed: it said £ while every other price on the page said
+ * $, which on the one page shown to signed-out visitors is the worst place
+ * for the two to disagree.
+ */
+function bandPrice(minor: number, symbol = currencySymbol()): string {
   const units = minor / 100;
-  if (units < 100) return `${currencySymbol}50-100`;
+  if (units < 100) return `${symbol}50-100`;
   const lower = Math.floor(units / 100) * 100;
-  return `${currencySymbol}${lower}-${lower + 100}`;
+  return `${symbol}${lower}-${lower + 100}`;
 }
 
 /**

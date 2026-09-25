@@ -99,6 +99,22 @@ export async function recalculateAction() {
   return { ok: true, ...applied };
 }
 
+/**
+ * Replace the markup bands.
+ *
+ * No preview gate on this one, unlike the rules: a band edit is followed by
+ * the same Recalculate with its own preview, and making somebody preview
+ * twice to change one number is how a screen stops being used.
+ */
+export async function saveBandsAction(
+  bands: { minCostMinor: number; markupPct: number | null; flatMinor: number | null }[],
+) {
+  await requireAdminSession();
+  const result = await pricingService.replaceBands(bands);
+  revalidatePath('/admin/pricing');
+  return result;
+}
+
 export async function refreshRatesAction() {
   await requireAdminSession();
   const result = await fxService.refresh();

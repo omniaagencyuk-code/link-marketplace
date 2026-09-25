@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { setOverrideAction } from '@/app/admin/(protected)/pricing/actions';
-import { formatPrice } from '@/lib/utils/format';
+import { currencySymbol, formatPrice } from '@/lib/utils/format';
 import { acceptedNicheLabel } from '@/lib/config/accepted-niches';
 import { linkTypeLabels } from '@/lib/utils/labels';
 import type { LinkTypeSlug } from '@/lib/types';
@@ -139,7 +139,7 @@ export function ListingPricing({
                 {open ? (
                   <>
                     <div className="flex items-center gap-1.5">
-                      <span className="text-[13px] text-muted">£</span>
+                      <span className="text-[13px] text-muted">{currencySymbol()}</span>
                       <Input
                         type="number"
                         step="0.01"

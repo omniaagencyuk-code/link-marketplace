@@ -10,9 +10,10 @@ import {
   previewRulesAction,
   recalculateAction,
   refreshRatesAction,
+  saveBandsAction,
   saveRulesAction,
 } from '@/app/admin/(protected)/pricing/actions';
-import { formatPrice } from '@/lib/utils/format';
+import { currencySymbol, formatPrice } from '@/lib/utils/format';
 import type { PricingSettings } from '@/lib/services/pricing-service';
 import type { PricingRules } from '@/lib/pricing/engine';
 import type { FxRate } from '@/lib/services/fx-service';
@@ -45,15 +46,17 @@ export function PricingRulesEditor({
   const [message, setMessage] = useState<string | null>(null);
   const [busy, startTransition] = useTransition();
   const [showAllRates, setShowAllRates] = useState(false);
+  const [bands, setBands] = useState(settings.bands);
+  const bandsEdited = JSON.stringify(bands) !== JSON.stringify(settings.bands);
 
   // GBP is in the table as a fixed 1 and is not a conversion anyone needs to
   // read, but a publisher who charges in it is still worth counting.
-  const rateFor = new Map(rates.map((rate) => [rate.currency, rate.rateToGbp]));
+  const rateFor = new Map(rates.map((rate) => [rate.currency, rate.rateToBase]));
   const inUse = currenciesInUse.map((entry) => ({
     ...entry,
-    rateToGbp: entry.currency === 'GBP' ? 1 : (rateFor.get(entry.currency) ?? null),
+    rateToBase: entry.currency === 'GBP' ? 1 : (rateFor.get(entry.currency) ?? null),
   }));
-  const missingInUse = inUse.filter((entry) => entry.rateToGbp == null).map((e) => e.currency);
+  const missingInUse = inUse.filter((entry) => entry.rateToBase == null).map((e) => e.currency);
   const usedCodes = new Set(currenciesInUse.map((entry) => entry.currency));
   const otherRates = rates.filter(
     (rate) => rate.currency !== 'GBP' && !usedCodes.has(rate.currency),
@@ -70,7 +73,7 @@ export function PricingRulesEditor({
     <div>
       <Label htmlFor={key}>{label}</Label>
       <div className="mt-1.5 flex items-center gap-1.5">
-        <span className="text-[13px] text-muted">£</span>
+        <span className="text-[13px] text-muted">{currencySymbol()}</span>
         <Input
           id={key}
           type="number"
@@ -190,29 +193,157 @@ export function PricingRulesEditor({
           </div>
         </div>
 
-        {/* ------------------------------------------------- bands, read only */}
+        {/* -------------------------------------------------------- bands */}
         <div className="border-t border-line pt-4">
-          <p className="mb-2 text-[13px] font-medium text-ink">Markup bands</p>
-          <ul className="space-y-1 text-[13px] text-ink-soft">
-            {settings.bands.map((band, index) => {
-              const next = settings.bands[index + 1];
-              return (
-                <li key={band.minCostMinor} className="tabular flex justify-between gap-3">
-                  <span>
-                    {formatPrice(band.minCostMinor)}
-                    {next ? ` to ${formatPrice(next.minCostMinor - 1)}` : ' and above'}
-                  </span>
-                  <span className="font-medium text-ink">
-                    {band.flatMinor != null ? `+${formatPrice(band.flatMinor)}` : `+${band.markupPct}%`}
-                  </span>
-                </li>
-              );
-            })}
-          </ul>
-          <p className="mt-1.5 text-[11px] text-muted">
-            Bands are rows in <code>pricing_bands</code>. Editing them here is the next thing worth
-            building; for now they change in the database and take effect on the next recalculation.
-          </p>
+          <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+            <p className="text-[13px] font-medium text-ink">Markup bands</p>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={busy}
+              onClick={() =>
+                setBands((current) => [
+                  ...current,
+                  {
+                    // Above the current top band, so a new row never lands in
+                    // the middle of a set somebody has just arranged.
+                    minCostMinor: (current[current.length - 1]?.minCostMinor ?? 0) + 10000,
+                    markupPct: 30,
+                    flatMinor: null,
+                  },
+                ])
+              }
+            >
+              Add a band
+            </Button>
+          </div>
+
+          <div className="space-y-2">
+            {bands.map((band, index) => (
+              <div key={index} className="flex flex-wrap items-center gap-2">
+                <span className="text-[12px] text-muted">From</span>
+                <Input
+                  type="number"
+                  min={0}
+                  step="0.01"
+                  aria-label={`Band ${index + 1} starts at`}
+                  value={band.minCostMinor / 100}
+                  disabled={index === 0}
+                  onChange={(event) =>
+                    setBands((current) =>
+                      current.map((row, i) =>
+                        i === index
+                          ? { ...row, minCostMinor: Math.round(Number(event.target.value) * 100) }
+                          : row,
+                      ),
+                    )
+                  }
+                  className="w-28 text-[13px]"
+                />
+
+                <span className="text-[12px] text-muted">add</span>
+                {band.flatMinor != null ? (
+                  <Input
+                    type="number"
+                    min={0}
+                    step="0.01"
+                    aria-label={`Band ${index + 1} flat amount`}
+                    value={band.flatMinor / 100}
+                    onChange={(event) =>
+                      setBands((current) =>
+                        current.map((row, i) =>
+                          i === index
+                            ? { ...row, flatMinor: Math.round(Number(event.target.value) * 100) }
+                            : row,
+                        ),
+                      )
+                    }
+                    className="w-24 text-[13px]"
+                  />
+                ) : (
+                  <Input
+                    type="number"
+                    min={0}
+                    step="1"
+                    aria-label={`Band ${index + 1} markup percentage`}
+                    value={band.markupPct ?? 0}
+                    onChange={(event) =>
+                      setBands((current) =>
+                        current.map((row, i) =>
+                          i === index ? { ...row, markupPct: Number(event.target.value) } : row,
+                        ),
+                      )
+                    }
+                    className="w-20 text-[13px]"
+                  />
+                )}
+
+                {/* A band is one or the other. Offering both invites a row
+                    that adds 30% and forty dollars, which no band means. */}
+                <button
+                  type="button"
+                  onClick={() =>
+                    setBands((current) =>
+                      current.map((row, i) =>
+                        i === index
+                          ? row.flatMinor != null
+                            ? { ...row, flatMinor: null, markupPct: 30 }
+                            : { ...row, markupPct: null, flatMinor: 4000 }
+                          : row,
+                      ),
+                    )
+                  }
+                  className="text-[12px] text-accent-700 hover:underline"
+                >
+                  {band.flatMinor != null ? 'flat' : '%'}
+                </button>
+
+                {index > 0 ? (
+                  <button
+                    type="button"
+                    aria-label={`Remove band ${index + 1}`}
+                    onClick={() => setBands((current) => current.filter((_, i) => i !== index))}
+                    className="text-[12px] text-muted hover:text-negative"
+                  >
+                    remove
+                  </button>
+                ) : null}
+              </div>
+            ))}
+          </div>
+
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={busy || !bandsEdited}
+              onClick={() =>
+                startTransition(async () => {
+                  const result = await saveBandsAction(bands);
+                  setMessage(
+                    result.ok
+                      ? 'Bands saved. They take effect on the next recalculation.'
+                      : (result.error ?? 'Could not save the bands.'),
+                  );
+                })
+              }
+            >
+              Save bands
+            </Button>
+            {bandsEdited ? (
+              <button
+                type="button"
+                onClick={() => setBands(settings.bands)}
+                className="text-[12px] text-muted hover:text-ink"
+              >
+                Undo
+              </button>
+            ) : null}
+            <p className="text-[11px] text-muted">
+              The first band starts at 0 and cannot move: below it, nothing would be marked up at
+              all.
+            </p>
+          </div>
         </div>
 
         {/* ---------------------------------------------------------- rates */}
@@ -241,10 +372,10 @@ export function PricingRulesEditor({
                           {entry.listings} {entry.listings === 1 ? 'listing' : 'listings'}
                         </span>
                       </span>
-                      {entry.rateToGbp == null ? (
+                      {entry.rateToBase == null ? (
                         <span className="text-[11px] font-medium text-negative">no rate</span>
                       ) : (
-                        <span className="text-ink">{entry.rateToGbp.toFixed(4)}</span>
+                        <span className="text-ink">{entry.rateToBase.toFixed(4)}</span>
                       )}
                     </li>
                   ))}
@@ -265,7 +396,7 @@ export function PricingRulesEditor({
                   {otherRates.map((rate) => (
                     <li key={rate.currency} className="flex justify-between gap-2">
                       <span className="text-muted">{rate.currency}</span>
-                      <span className="text-ink">{rate.rateToGbp.toFixed(4)}</span>
+                      <span className="text-ink">{rate.rateToBase.toFixed(4)}</span>
                     </li>
                   ))}
                 </ul>

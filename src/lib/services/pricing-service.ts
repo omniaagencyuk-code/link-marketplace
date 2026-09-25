@@ -137,7 +137,57 @@ export const pricingService = {
   },
 
   /**
-   * What each listing actually costs us, in GBP.
+   * Replace the markup bands.
+   *
+   * Written as a set rather than row by row: bands are only meaningful in
+   * relation to each other, and a half-applied edit could leave a gap that
+   * prices nothing, or an overlap that prices twice. Deleted and reinserted
+   * in one call so the table is never in an order nobody chose.
+   */
+  async replaceBands(bands: MarkupBand[]): Promise<{ ok: boolean; error?: string }> {
+    if (!isSupabaseEnabled()) return { ok: false, error: 'The database is not connected.' };
+
+    const sorted = [...bands]
+      .filter((band) => Number.isFinite(band.minCostMinor) && band.minCostMinor >= 0)
+      .sort((a, b) => a.minCostMinor - b.minCostMinor);
+
+    if (sorted.length === 0) return { ok: false, error: 'There has to be at least one band.' };
+    // The first has to start at zero or the cheapest placements fall through
+    // every band and get no markup at all.
+    if (sorted[0]!.minCostMinor !== 0) {
+      return { ok: false, error: 'The first band has to start at 0, or cheap listings get no markup.' };
+    }
+    if (new Set(sorted.map((band) => band.minCostMinor)).size !== sorted.length) {
+      return { ok: false, error: 'Two bands cannot start at the same cost.' };
+    }
+    for (const band of sorted) {
+      const hasPct = band.markupPct != null && band.markupPct > 0;
+      const hasFlat = band.flatMinor != null && band.flatMinor > 0;
+      if (hasPct === hasFlat) {
+        return { ok: false, error: 'Each band needs either a percentage or a flat amount, not both and not neither.' };
+      }
+    }
+
+    const supabase = getAdminScopedClient();
+    const { error: clearError } = await supabase
+      .from('pricing_bands')
+      .delete()
+      .gte('min_cost_minor', 0);
+    if (clearError) return { ok: false, error: clearError.message };
+
+    const { error } = await supabase.from('pricing_bands').insert(
+      sorted.map((band) => ({
+        min_cost_minor: Math.round(band.minCostMinor),
+        markup_pct: band.markupPct != null && band.markupPct > 0 ? band.markupPct : null,
+        flat_minor: band.flatMinor != null && band.flatMinor > 0 ? Math.round(band.flatMinor) : null,
+      })),
+    );
+
+    return error ? { ok: false, error: error.message } : { ok: true };
+  },
+
+  /**
+   * What each listing actually costs us, in the currency we sell in.
    *
    * Read from `price_calculations` rather than recomputed, so the figure in
    * the websites table is the same one the pricing screen and the listing
@@ -381,7 +431,7 @@ export const pricingService = {
         currency: row.breakdown.currency,
         fx_rate: row.breakdown.fxRate,
         fx_buffer_pct: row.breakdown.fxBufferPct,
-        cost_gbp_minor: row.breakdown.costGbpMinor,
+        cost_base_minor: row.breakdown.costBaseMinor,
         fee_minor: row.breakdown.feeMinor,
         vat_minor: row.breakdown.vatMinor,
         true_cost_minor: row.breakdown.trueCostMinor,

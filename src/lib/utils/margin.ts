@@ -1,3 +1,4 @@
+import { brand } from '@/lib/config/brand';
 import type { Service, Website } from '@/lib/types';
 
 /**
@@ -40,7 +41,7 @@ function comparable(service: Service, currency: string): boolean {
   return (service.costCurrency ?? '').toUpperCase() === currency.toUpperCase();
 }
 
-export function serviceMargin(service: Service, currency = 'GBP'): Margin | null {
+export function serviceMargin(service: Service, currency = brand.currency): Margin | null {
   if (!comparable(service, currency)) return null;
 
   const priceMinor = service.priceMinor;
@@ -57,7 +58,7 @@ export function serviceMargin(service: Service, currency = 'GBP'): Margin | null
 }
 
 /** Why `serviceMargin` gave nothing back, so a caller can say which it was. */
-export function marginBlock(service: Service, currency = 'GBP'): MarginBlock | null {
+export function marginBlock(service: Service, currency = brand.currency): MarginBlock | null {
   if (typeof service.costPriceMinor !== 'number') return 'no-cost';
   if (!comparable(service, currency)) return 'foreign-currency';
   return null;
@@ -73,7 +74,7 @@ export function marginBlock(service: Service, currency = 'GBP'): MarginBlock | n
  */
 export function websiteMargin(
   website: Pick<Website, 'services'>,
-  currency = 'GBP',
+  currency = brand.currency,
 ): Margin | null {
   const priced = website.services.filter((service) => comparable(service, currency));
   if (priced.length === 0) return null;
@@ -104,7 +105,7 @@ export function servicesMissingCost(website: Pick<Website, 'services'>): number 
  */
 export function servicesInForeignCurrency(
   website: Pick<Website, 'services'>,
-  currency = 'GBP',
+  currency = brand.currency,
 ): number {
   return website.services.filter(
     (service) =>

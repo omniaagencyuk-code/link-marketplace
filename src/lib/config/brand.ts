@@ -94,7 +94,14 @@ export const brand: BrandConfig = {
     x: 'https://x.com/pressparrot',
     linkedin: 'https://www.linkedin.com/company/pressparrot',
   },
-  currency: 'GBP',
+  // What we sell in, and what the engine works in. Publishers quote in
+  // dollars, so converting their price into pounds to mark it up and sell it
+  // in pounds put a conversion between the number we are quoted and the
+  // number we charge, for no reason but where the company banks.
+  //
+  // The locale stays British: we are a UK company writing to customers in
+  // English, and en-GB renders a dollar amount as $1,234.00 perfectly well.
+  currency: 'USD',
   locale: 'en-GB',
   storageNamespace: 'pressparrot',
 };

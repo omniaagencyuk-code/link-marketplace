@@ -1,5 +1,6 @@
 import { getAdminScopedClient } from '@/lib/supabase/server';
 import { isSupabaseEnabled } from '@/lib/supabase/config';
+import { brand } from '@/lib/config/brand';
 
 /**
  * Exchange rates, fetched daily and stored.
@@ -12,17 +13,26 @@ import { isSupabaseEnabled } from '@/lib/supabase/config';
  *
  * frankfurter.app publishes the ECB reference rates. No key, no account, and
  * the rates are the ones a bank would defend in an argument.
+ *
+ * "Base" throughout means the currency we sell in, which is a setting. It was
+ * GBP and is now USD, and the columns are named for the role rather than for
+ * the currency - a field called rate_to_gbp holding a rate to dollars is how
+ * this goes wrong again in six months.
  */
 
-const SOURCE = 'https://api.frankfurter.app/latest?from=GBP';
+/** The source, asked for rates against whatever we sell in. */
+function source(base: string): string {
+  return `https://api.frankfurter.app/latest?from=${encodeURIComponent(base)}`;
+}
 
 /** How far a rate must move before every price is worth recalculating. */
 export const RATE_MOVE_THRESHOLD_PCT = 2;
 
 export interface FxRate {
   currency: string;
-  rateToGbp: number;
-  previousRateToGbp: number | null;
+  /** One unit of `currency` in the currency we sell in. */
+  rateToBase: number;
+  previousRateToBase: number | null;
   fetchedAt: string;
   /** Absolute move since the last fetch, as a percentage. */
   movedPct: number;
@@ -40,34 +50,37 @@ export interface FxRate {
  * The source's rates, turned into ours.
  *
  * Pure, and separated from the fetch on purpose: the inversion is the part
- * that can be silently wrong. frankfurter gives GBP -> X; we price X -> GBP,
- * and getting that backwards would not throw. It would make every European
- * publisher look about forty times cheaper than they are.
+ * that can be silently wrong. frankfurter gives base -> X; we price X ->
+ * base, and getting that backwards would not throw. It would make every
+ * European publisher look about forty times cheaper than they are.
  */
 export function ratesFromSource(
-  gbpTo: Record<string, number>,
+  baseTo: Record<string, number>,
   previousByCurrency: Map<string, number>,
   fetchedAt: string,
+  base: string,
 ): { rows: Record<string, unknown>[]; moved: { currency: string; movedPct: number }[] } {
   const rows: Record<string, unknown>[] = [];
   const moved: { currency: string; movedPct: number }[] = [];
 
-  for (const [currency, perGbp] of Object.entries(gbpTo)) {
-    if (!Number.isFinite(perGbp) || perGbp <= 0) continue;
-    if (currency === 'GBP') continue;
+  for (const [currency, perBase] of Object.entries(baseTo)) {
+    if (!Number.isFinite(perBase) || perBase <= 0) continue;
+    // The base against itself is fixed at 1 and is never fetched.
+    if (currency === base) continue;
 
-    const rateToGbp = 1 / perGbp;
+    const rateToBase = 1 / perBase;
     const previous = previousByCurrency.get(currency) ?? null;
 
     if (previous && previous > 0) {
-      const movedPct = Math.abs((rateToGbp - previous) / previous) * 100;
+      const movedPct = Math.abs((rateToBase - previous) / previous) * 100;
       if (movedPct >= RATE_MOVE_THRESHOLD_PCT) moved.push({ currency, movedPct });
     }
 
     rows.push({
       currency,
-      rate_to_gbp: rateToGbp,
-      previous_rate_to_gbp: previous,
+      rate_to_base: rateToBase,
+      previous_rate_to_base: previous,
+      base_currency: base,
       source: 'frankfurter.app',
       fetched_at: fetchedAt,
     });
@@ -84,14 +97,14 @@ export const fxService = {
     const now = Date.now();
 
     return ((data ?? []) as Record<string, unknown>[]).map((row) => {
-      const rate = Number(row.rate_to_gbp);
-      const previous = row.previous_rate_to_gbp == null ? null : Number(row.previous_rate_to_gbp);
+      const rate = Number(row.rate_to_base);
+      const previous = row.previous_rate_to_base == null ? null : Number(row.previous_rate_to_base);
       const fetchedAt = String(row.fetched_at);
       return {
         ageDays: (now - new Date(fetchedAt).getTime()) / 86_400_000,
         currency: String(row.currency),
-        rateToGbp: rate,
-        previousRateToGbp: previous,
+        rateToBase: rate,
+        previousRateToBase: previous,
         fetchedAt,
         movedPct: previous && previous > 0 ? Math.abs((rate - previous) / previous) * 100 : 0,
       };
@@ -101,10 +114,10 @@ export const fxService = {
   /** Currency to rate, for the pricing run. */
   async rateMap(): Promise<Map<string, number>> {
     const rates = await fxService.list();
-    const map = new Map(rates.map((rate) => [rate.currency, rate.rateToGbp]));
-    // Always present, and never fetched: a GBP publisher must not be at the
-    // mercy of whether today's fetch succeeded.
-    map.set('GBP', 1);
+    const map = new Map(rates.map((rate) => [rate.currency, rate.rateToBase]));
+    // Always present, and never fetched: a publisher who charges in our own
+    // currency must not be at the mercy of whether today's fetch succeeded.
+    map.set(brand.currency, 1);
     return map;
   },
 
@@ -123,9 +136,10 @@ export const fxService = {
       return { updated: 0, moved: [], error: 'The database is not connected on this deployment.' };
     }
 
+    const base = brand.currency;
     let payload: { rates?: Record<string, number> };
     try {
-      const response = await fetch(SOURCE, {
+      const response = await fetch(source(base), {
         headers: { accept: 'application/json' },
         // The daily job can wait; a pricing run is never behind this.
         signal: AbortSignal.timeout(15_000),
@@ -142,17 +156,22 @@ export const fxService = {
       };
     }
 
-    // The source gives GBP -> X. We price in the other direction.
-    const gbpTo = payload.rates ?? {};
-    if (Object.keys(gbpTo).length === 0) {
+    // The source gives base -> X. We price in the other direction.
+    const baseTo = payload.rates ?? {};
+    if (Object.keys(baseTo).length === 0) {
       return { updated: 0, moved: [], error: 'The rate source returned no rates.' };
     }
 
     const supabase = getAdminScopedClient();
     const existing = await fxService.list();
-    const previousByCurrency = new Map(existing.map((rate) => [rate.currency, rate.rateToGbp]));
+    const previousByCurrency = new Map(existing.map((rate) => [rate.currency, rate.rateToBase]));
 
-    const { rows, moved } = ratesFromSource(gbpTo, previousByCurrency, new Date().toISOString());
+    const { rows, moved } = ratesFromSource(
+      baseTo,
+      previousByCurrency,
+      new Date().toISOString(),
+      base,
+    );
 
     const { error } = await supabase.from('fx_rates').upsert(rows, { onConflict: 'currency' });
     if (error) return { updated: 0, moved: [], error: `Could not store the rates: ${error.message}` };

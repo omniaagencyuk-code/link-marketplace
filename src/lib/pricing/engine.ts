@@ -50,8 +50,14 @@ export interface PriceBreakdown {
   currency: string;
   fxRate: number;
   fxBufferPct: number;
-  /** After conversion and the buffer, before fees and VAT. */
-  costGbpMinor: number;
+  /**
+   * After conversion and the buffer, before fees and VAT.
+   *
+   * In the currency we sell in, whatever that is - named for the role rather
+   * than the currency, because it used to be called costBaseMinor and held
+   * dollars for about a day.
+   */
+  costBaseMinor: number;
   feeMinor: number;
   feeLabel: string;
   vatMinor: number;
@@ -160,18 +166,18 @@ export function computePrice(
 ): PriceBreakdown {
   // --- into GBP, with the buffer -------------------------------------------
   const converted = input.costMinor * input.fxRate;
-  const costGbpMinor = Math.round(converted * (1 + rules.fxBufferPct / 100));
+  const costBaseMinor = Math.round(converted * (1 + rules.fxBufferPct / 100));
 
   // --- what it costs to pay them -------------------------------------------
-  const { feeMinor, label: feeLabel } = paymentFee(costGbpMinor, input.paymentMethods, rules);
+  const { feeMinor, label: feeLabel } = paymentFee(costBaseMinor, input.paymentMethods, rules);
 
   // --- their VAT, where it is a real cost to us ----------------------------
   const vatMinor =
     input.pricesExcludeVat && !rules.vatReclaimable && input.vatRatePct
-      ? Math.round((costGbpMinor * input.vatRatePct) / 100)
+      ? Math.round((costBaseMinor * input.vatRatePct) / 100)
       : 0;
 
-  const trueCostMinor = costGbpMinor + feeMinor + vatMinor;
+  const trueCostMinor = costBaseMinor + feeMinor + vatMinor;
 
   // --- markup ---------------------------------------------------------------
   const band = bandFor(trueCostMinor, bands);
@@ -214,7 +220,7 @@ export function computePrice(
     currency: input.currency,
     fxRate: input.fxRate,
     fxBufferPct: rules.fxBufferPct,
-    costGbpMinor,
+    costBaseMinor,
     feeMinor,
     feeLabel,
     vatMinor,

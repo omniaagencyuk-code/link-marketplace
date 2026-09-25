@@ -1,3 +1,4 @@
+import { brand } from '@/lib/config/brand';
 import { formatPrice } from '@/lib/utils/format';
 import type { PriceBreakdown } from './engine';
 
@@ -21,12 +22,14 @@ export function breakdownSteps(b: PriceBreakdown): PriceStep[] {
     { label: 'Publisher price', value: `${(b.costMinor / 100).toFixed(2)} ${b.currency}` },
   ];
 
-  // A publisher who charges in pounds has no conversion to show, and a line
-  // reading "converted at 1.0000" is noise on most of the list.
-  if (b.currency !== 'GBP') {
+  // A publisher who already charges in our own currency has no conversion to
+  // show, and a line reading "converted at 1.0000" is noise on most of the
+  // list. Compared against what we sell in rather than against a hard-coded
+  // GBP, which was wrong the moment we started selling in dollars.
+  if (b.currency !== brand.currency) {
     steps.push({
       label: `Converted at ${b.fxRate.toFixed(4)}, plus ${b.fxBufferPct}% buffer`,
-      value: formatPrice(b.costGbpMinor),
+      value: formatPrice(b.costBaseMinor),
     });
   }
 
