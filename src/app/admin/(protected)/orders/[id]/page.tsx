@@ -6,7 +6,9 @@ import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { AdminOrderStatus } from '@/components/admin/admin-order-status';
 import { AdminItemDelivery } from '@/components/admin/admin-item-delivery';
+import { AdminOrderEmails } from '@/components/admin/admin-order-emails';
 import { orderService, websiteService } from '@/lib/services';
+import { emailService } from '@/lib/services/email-service';
 import { formatDateTime, formatPrice } from '@/lib/utils/format';
 import { linkTypeLabels, orderStatusLabels } from '@/lib/utils/labels';
 import { acceptedNicheLabel } from '@/lib/config/accepted-niches';
@@ -42,6 +44,10 @@ export default async function AdminOrderPage({ params }: { params: Promise<{ id:
   const byId = new Map(
     websites.filter(Boolean).map((website) => [(website as Website).id, website as Website]),
   );
+
+  // What we have told the customer about this order. A failure to load it is
+  // not a reason to fail the page.
+  const emails = await emailService.forOrder(order.id).catch(() => []);
 
   /*
     Whether each site was ever confirmed for the topic it was bought for.
@@ -301,6 +307,8 @@ export default async function AdminOrderPage({ params }: { params: Promise<{ id:
               ) : null}
             </CardContent>
           </Card>
+
+          <AdminOrderEmails emails={emails} />
         </aside>
       </div>
     </>

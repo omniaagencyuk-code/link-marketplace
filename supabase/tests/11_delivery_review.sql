@@ -145,3 +145,36 @@ delete from public.orders where reference in ('PP-MINE', 'PP-THEIRS');
 select 'issues cascade with the order: ' || (count(*) = 0) from public.order_item_issues;
 delete from public.websites where slug = 'delivery-test-com';
 delete from auth.users where email = 'stranger@test';
+
+-- ------------------------------------------------------------- email log --
+-- What we sent, and what we failed to send. Admin only: a customer's own
+-- address is in there, but so is every other customer's.
+insert into public.email_log (template, to_address, subject)
+values ('placement-delivered', 'someone@example.com', 'Your placement is live');
+
+set role anon;
+select 'anon reads the email log: ' || count(*) from public.email_log;
+reset role;
+
+set role authenticated;
+set request.jwt.claim.sub = '22222222-2222-2222-2222-222222222222';
+select 'a customer reads the email log: ' || count(*) from public.email_log;
+do $$
+begin
+  insert into public.email_log (template, to_address, subject)
+  values ('forged', 'attacker@example.com', 'Sent on your behalf');
+  raise notice 'a customer wrote to the email log: true';
+exception
+  when insufficient_privilege then raise notice 'a customer cannot write to the email log: true';
+end;
+$$;
+reset role;
+reset request.jwt.claim.sub;
+
+set role authenticated;
+set request.jwt.claim.sub = '11111111-1111-1111-1111-111111111111';
+select 'an admin reads the email log: ' || count(*) from public.email_log;
+reset role;
+reset request.jwt.claim.sub;
+
+delete from public.email_log;

@@ -20,6 +20,7 @@ export const defaultSettings: BrandSettings = {
   // consent. A month after approving to tell us a link has been pulled.
   deliveryAutoApproveDays: 14,
   postApprovalIssueDays: 30,
+  approvalReminderDays: 3,
   contentPricing: {
     mode: 'tiered',
     perWordMinor: 0,

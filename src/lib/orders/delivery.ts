@@ -114,3 +114,32 @@ export function deliveredItems<T extends DeliverableItem>(items: T[]): T[] {
 export function autoApproveDate(deliveredAt: Date, windowDays: number): Date {
   return new Date(deliveredAt.getTime() + windowDays * 86_400_000);
 }
+
+/**
+ * Placements whose review window is nearly up.
+ *
+ * `windowDays` before the deadline, and not already warned. Worth sending for
+ * their sake and ours: an auto-approval the customer was warned about is one
+ * we can stand behind, and one they were not is an argument waiting to
+ * happen.
+ *
+ * Anything already past its deadline is excluded. A warning that the window
+ * closes "in -2 days" is not a warning, and the auto-approval job is about to
+ * settle it anyway.
+ */
+export function dueForReminder<T extends DeliverableItem & { reminderSentAt?: string }>(
+  items: T[],
+  reminderDays: number,
+  now: Date,
+): T[] {
+  return items.filter((item) => {
+    if (deliveryState(item) !== 'awaiting-approval') return false;
+    if (item.reminderSentAt) return false;
+    if (!item.autoApproveAt) return false;
+
+    const deadline = Date.parse(item.autoApproveAt);
+    if (deadline <= now.getTime()) return false;
+
+    return deadline - now.getTime() <= reminderDays * 86_400_000;
+  });
+}

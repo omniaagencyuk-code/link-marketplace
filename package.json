@@ -18,7 +18,8 @@
     "verify:pricing": "tsx scripts/verify-pricing.mts",
     "verify:sessions": "tsx scripts/verify-sessions.mts",
     "verify:delivery": "tsx scripts/verify-delivery.mts",
-    "flatten": "node scripts/flatten-migration.mjs"
+    "flatten": "node scripts/flatten-migration.mjs",
+    "verify:email": "tsx scripts/verify-email.mts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.128.0",
@@ -35,6 +36,7 @@
     "papaparse": "^5.7.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
+    "resend": "^6.29.0",
     "stripe": "^22.6.2",
     "tailwind-merge": "^3.3.1",
     "zod": "^4.6.5"

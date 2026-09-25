@@ -2,12 +2,24 @@ import { getAdminScopedClient } from '@/lib/supabase/server';
 import { isSupabaseEnabled } from '@/lib/supabase/config';
 import { settingsService } from './settings-service';
 import { mockStore } from './mock-store';
+import { emailService } from './email-service';
+import { emailToAdmin } from '@/lib/email/config';
+import {
+  approvalReminder,
+  issueRaised,
+  issueResolved,
+  placementDelivered,
+  type BrandBits,
+} from '@/lib/email/templates';
+import { siteUrl } from '@/lib/config/brand';
 import type { Order } from '@/lib/types';
 import {
   autoApproveDate,
   canApprove,
   canReportIssue,
+  daysUntilAutoApproval,
   dueForAutoApproval,
+  dueForReminder,
   orderIsComplete,
   type DeliverableItem,
 } from '@/lib/orders/delivery';
@@ -142,6 +154,64 @@ async function reopenOrder(orderId: string): Promise<void> {
   await supabase.from('orders').update({ completed_at: null }).eq('id', orderId);
 }
 
+/**
+ * Everything an email about a placement needs to say.
+ *
+ * One query rather than four, and read after the write rather than before:
+ * the message has to describe what actually happened, not what we were about
+ * to attempt.
+ */
+interface ItemContext {
+  itemId: string;
+  orderId: string;
+  orderReference: string;
+  customerEmail: string;
+  customerName: string;
+  domain: string;
+  liveUrl?: string;
+  autoApproveAt?: string;
+}
+
+async function itemContext(itemId: string): Promise<ItemContext | null> {
+  if (!isSupabaseEnabled()) return null;
+
+  const { data } = await getAdminScopedClient()
+    .from('order_items')
+    .select(
+      'id, order_id, website_domain, live_url, auto_approve_at, orders!inner (id, reference, customer_email, customer_name)',
+    )
+    .eq('id', itemId)
+    .maybeSingle();
+
+  if (!data) return null;
+
+  /* eslint-disable @typescript-eslint/no-explicit-any */
+  const row = data as any;
+  const order = Array.isArray(row.orders) ? row.orders[0] : row.orders;
+  /* eslint-enable @typescript-eslint/no-explicit-any */
+  if (!order) return null;
+
+  return {
+    itemId: row.id,
+    orderId: row.order_id,
+    orderReference: order.reference ?? '',
+    customerEmail: order.customer_email ?? '',
+    customerName: order.customer_name ?? '',
+    domain: row.website_domain ?? '',
+    liveUrl: row.live_url ?? undefined,
+    autoApproveAt: row.auto_approve_at ?? undefined,
+  };
+}
+
+async function brandBits(): Promise<BrandBits> {
+  const settings = await settingsService.get();
+  return {
+    brandName: settings.brandName,
+    supportEmail: settings.supportEmail,
+    siteUrl,
+  };
+}
+
 export const deliveryService = {
   /**
    * Hand a finished placement to the customer.
@@ -203,6 +273,30 @@ export const deliveryService = {
       .eq('id', itemId)
       .maybeSingle();
     if (data) await reopenOrder((data as { order_id: string }).order_id);
+
+    // After the write, never before: the email says the placement is live, so
+    // it must not go out unless it is. A failure to send is logged and does
+    // not undo the delivery - the customer can still see it by logging in.
+    const context = await itemContext(itemId);
+    if (context?.customerEmail && context.liveUrl) {
+      const brand = await brandBits();
+      await emailService.send({
+        ...placementDelivered(
+          {
+            domain: context.domain,
+            liveUrl: context.liveUrl,
+            orderReference: context.orderReference,
+            orderId: context.orderId,
+            autoApproveAt: context.autoApproveAt,
+          },
+          brand,
+        ),
+        to: context.customerEmail,
+        template: 'placement-delivered',
+        orderId: context.orderId,
+        orderItemId: itemId,
+      });
+    }
 
     void deliveredBy;
     return { ok: true };
@@ -343,6 +437,32 @@ export const deliveryService = {
     await supabase.from('order_items').update({ approval: 'issue-raised' }).eq('id', itemId);
     await reopenOrder(item.orderId);
 
+    // To us, not to them. Without this a complaint sits in the admin until
+    // somebody happens to look, which on a quiet week is days.
+    const context = await itemContext(itemId);
+    if (context) {
+      const brand = await brandBits();
+      await emailService.send({
+        ...issueRaised(
+          {
+            domain: context.domain,
+            customerName: context.customerName,
+            customerEmail: context.customerEmail,
+            orderReference: context.orderReference,
+            orderId: context.orderId,
+            message: text,
+          },
+          brand,
+        ),
+        to: emailToAdmin(brand.supportEmail),
+        // So hitting reply answers the customer rather than ourselves.
+        replyTo: context.customerEmail || undefined,
+        template: 'issue-raised',
+        orderId: context.orderId,
+        orderItemId: itemId,
+      });
+    }
+
     return { ok: true };
   },
 
@@ -351,6 +471,12 @@ export const deliveryService = {
     if (!isSupabaseEnabled()) return { ok: false, error: 'The database is not connected.' };
 
     const supabase = getAdminScopedClient();
+    const { data: issue } = await supabase
+      .from('order_item_issues')
+      .select('order_item_id')
+      .eq('id', issueId)
+      .maybeSingle();
+
     const { error } = await supabase
       .from('order_item_issues')
       .update({
@@ -360,7 +486,30 @@ export const deliveryService = {
       })
       .eq('id', issueId);
 
-    return error ? { ok: false, error: error.message } : { ok: true };
+    if (error) return { ok: false, error: error.message };
+
+    const itemId = (issue as { order_item_id: string } | null)?.order_item_id;
+    const context = itemId ? await itemContext(itemId) : null;
+    if (context?.customerEmail) {
+      const brand = await brandBits();
+      await emailService.send({
+        ...issueResolved(
+          {
+            domain: context.domain,
+            orderReference: context.orderReference,
+            orderId: context.orderId,
+            note: note.trim(),
+          },
+          brand,
+        ),
+        to: context.customerEmail,
+        template: 'issue-resolved',
+        orderId: context.orderId,
+        orderItemId: context.itemId,
+      });
+    }
+
+    return { ok: true };
   },
 
   /** Every open complaint, newest first. The admin's queue. */
@@ -403,6 +552,89 @@ export const deliveryService = {
       };
     });
     /* eslint-enable @typescript-eslint/no-explicit-any */
+  },
+
+  /**
+   * Warn whoever is about to run out of time.
+   *
+   * Marked as reminded before the send rather than after, so a provider
+   * timeout cannot turn into the same customer being warned every day until
+   * somebody notices. The idempotency key covers the other direction: a job
+   * run twice in a day is one email, not two.
+   */
+  async sendApprovalReminders(): Promise<{ reminded: number }> {
+    if (!isSupabaseEnabled()) return { reminded: 0 };
+
+    const supabase = getAdminScopedClient();
+    const settings = await settingsService.get();
+    const now = new Date();
+
+    const { data } = await supabase
+      .from('order_items')
+      .select(
+        'id, order_id, delivered_at, approval, auto_approve_at, reminder_sent_at, website_domain, orders!inner (id, reference, customer_email)',
+      )
+      .eq('approval', 'pending')
+      .not('delivered_at', 'is', null)
+      .is('reminder_sent_at', null);
+
+    /* eslint-disable @typescript-eslint/no-explicit-any */
+    const rows = ((data ?? []) as any[]).map((row) => {
+      const order = Array.isArray(row.orders) ? row.orders[0] : row.orders;
+      return {
+        id: row.id as string,
+        orderId: row.order_id as string,
+        deliveredAt: row.delivered_at ?? undefined,
+        approval: (row.approval ?? 'pending') as DeliverableItem['approval'],
+        autoApproveAt: row.auto_approve_at ?? undefined,
+        reminderSentAt: row.reminder_sent_at ?? undefined,
+        domain: (row.website_domain as string) ?? '',
+        orderReference: (order?.reference as string) ?? '',
+        customerEmail: (order?.customer_email as string) ?? '',
+      };
+    });
+    /* eslint-enable @typescript-eslint/no-explicit-any */
+
+    // The rule lives in one place and is tested there, so the query narrows
+    // and this decides.
+    const due = dueForReminder(rows, settings.approvalReminderDays, now);
+    if (due.length === 0) return { reminded: 0 };
+
+    const brand = await brandBits();
+    let reminded = 0;
+
+    for (const item of due) {
+      if (!item.customerEmail) continue;
+
+      await supabase
+        .from('order_items')
+        .update({ reminder_sent_at: now.toISOString() })
+        .eq('id', item.id);
+
+      const daysLeft = daysUntilAutoApproval(item, now) ?? 0;
+      const result = await emailService.send({
+        ...approvalReminder(
+          {
+            domain: item.domain,
+            orderReference: item.orderReference,
+            orderId: item.orderId,
+            daysLeft,
+            autoApproveAt: item.autoApproveAt!,
+          },
+          brand,
+        ),
+        to: item.customerEmail,
+        template: 'approval-reminder',
+        orderId: item.orderId,
+        orderItemId: item.id,
+        // One warning per placement per day, whatever runs the job.
+        idempotencyKey: `reminder:${item.id}:${now.toISOString().slice(0, 10)}`,
+      });
+
+      if (result.sent) reminded += 1;
+    }
+
+    return { reminded };
   },
 
   /**

@@ -34,5 +34,7 @@ export interface BrandSettings {
   deliveryAutoApproveDays: number;
   /** How long after approving a customer may still report a problem. */
   postApprovalIssueDays: number;
+  /** How many days before the deadline to warn them it is closing. */
+  approvalReminderDays: number;
   updatedAt: string;
 }

@@ -419,6 +419,8 @@ export const supabaseSettingsRepository = {
         (row.delivery_auto_approve_days as number) ?? defaultSettings.deliveryAutoApproveDays,
       postApprovalIssueDays:
         (row.post_approval_issue_days as number) ?? defaultSettings.postApprovalIssueDays,
+      approvalReminderDays:
+        (row.approval_reminder_days as number) ?? defaultSettings.approvalReminderDays,
       updatedAt: (row.updated_at as string) ?? defaultSettings.updatedAt,
     };
   },
@@ -440,6 +442,8 @@ export const supabaseSettingsRepository = {
       row.delivery_auto_approve_days = patch.deliveryAutoApproveDays;
     if (patch.postApprovalIssueDays !== undefined)
       row.post_approval_issue_days = patch.postApprovalIssueDays;
+    if (patch.approvalReminderDays !== undefined)
+      row.approval_reminder_days = patch.approvalReminderDays;
 
     const { data } = await supabase.from('settings').select('id').limit(1).maybeSingle();
     if (data?.id) {
