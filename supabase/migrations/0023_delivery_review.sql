@@ -13,6 +13,14 @@
 -- complaint without pretending the work went backwards.
 -- ---------------------------------------------------------------------------
 
+-- All of it or none of it.
+--
+-- Wrapped in an explicit transaction because this is applied by hand: a run
+-- that stops halfway leaves columns that exist, columns that do not, and no
+-- way to tell which from looking at the file. Rolling back to where it
+-- started is always recoverable; a half-migrated orders table is not.
+begin;
+
 -- ---------------------------------------------------------------- approval --
 -- Wrapped because `create type` has no "if not exists", and it is the only
 -- statement in this file that cannot be run twice. A migration that half
@@ -166,3 +174,5 @@ alter table public.settings
 alter table public.settings
   add column if not exists post_approval_issue_days smallint not null default 30
     check (post_approval_issue_days >= 0);
+
+commit;
