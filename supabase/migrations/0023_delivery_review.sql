@@ -13,13 +13,13 @@
 -- complaint without pretending the work went backwards.
 -- ---------------------------------------------------------------------------
 
--- All of it or none of it.
+-- No explicit transaction.
 --
--- Wrapped in an explicit transaction because this is applied by hand: a run
--- that stops halfway leaves columns that exist, columns that do not, and no
--- way to tell which from looking at the file. Rolling back to where it
--- started is always recoverable; a half-migrated orders table is not.
-begin;
+-- It had one, and the Supabase SQL editor reported success and persisted
+-- nothing: it wraps a script in its own transaction, and an inner commit
+-- leaves it with one to undo. Retrying is safe without it instead - every
+-- statement below either says "if not exists" or swallows duplicate_object,
+-- so a run that stops halfway can simply be run again.
 
 -- ---------------------------------------------------------------- approval --
 -- Wrapped because `create type` has no "if not exists", and it is the only
@@ -174,5 +174,3 @@ alter table public.settings
 alter table public.settings
   add column if not exists post_approval_issue_days smallint not null default 30
     check (post_approval_issue_days >= 0);
-
-commit;
