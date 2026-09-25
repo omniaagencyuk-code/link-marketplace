@@ -33,7 +33,7 @@ import type {
  * in the upper.
  */
 
-const ORDER_SELECT = '*, order_items (*)';
+const ORDER_SELECT = '*, order_items (*, order_item_issues (*))';
 const CONTENT_ORDER_SELECT =
   '*, content_order_items (*, content_revisions (*), content_messages (*), content_deliveries (*))';
 const CONTENT_ITEM_SELECT =
@@ -415,6 +415,10 @@ export const supabaseSettingsRepository = {
       marginPct: (row.margin_pct as number) ?? defaultSettings.marginPct,
       contentPricing:
         (row.content_pricing as BrandSettings['contentPricing']) ?? defaultSettings.contentPricing,
+      deliveryAutoApproveDays:
+        (row.delivery_auto_approve_days as number) ?? defaultSettings.deliveryAutoApproveDays,
+      postApprovalIssueDays:
+        (row.post_approval_issue_days as number) ?? defaultSettings.postApprovalIssueDays,
       updatedAt: (row.updated_at as string) ?? defaultSettings.updatedAt,
     };
   },
@@ -432,6 +436,10 @@ export const supabaseSettingsRepository = {
     if (patch.defaultSort !== undefined) row.default_sort = patch.defaultSort;
     if (patch.marginPct !== undefined) row.margin_pct = patch.marginPct;
     if (patch.contentPricing !== undefined) row.content_pricing = patch.contentPricing;
+    if (patch.deliveryAutoApproveDays !== undefined)
+      row.delivery_auto_approve_days = patch.deliveryAutoApproveDays;
+    if (patch.postApprovalIssueDays !== undefined)
+      row.post_approval_issue_days = patch.postApprovalIssueDays;
 
     const { data } = await supabase.from('settings').select('id').limit(1).maybeSingle();
     if (data?.id) {

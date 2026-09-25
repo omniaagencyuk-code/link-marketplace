@@ -16,6 +16,10 @@ export const defaultSettings: BrandSettings = {
   marginPct: 22,
   // Ships empty on purpose: no invented prices. Set these in /admin/settings
   // and the public content page switches from "pricing on request" to a table.
+  // Two weeks to look at a delivered placement, then silence counts as
+  // consent. A month after approving to tell us a link has been pulled.
+  deliveryAutoApproveDays: 14,
+  postApprovalIssueDays: 30,
   contentPricing: {
     mode: 'tiered',
     perWordMinor: 0,

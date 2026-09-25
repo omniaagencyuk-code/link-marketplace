@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { orderService, settingsService, websiteService } from '@/lib/services';
 import { requireAdminSession } from '@/lib/auth/admin-access';
+import { deliveryService } from '@/lib/services/delivery-service';
 import { slugifyDomain } from '@/lib/utils/format';
 import {
   isAcceptedNicheSlug,
@@ -356,6 +357,34 @@ export async function setOrderStatusAction(id: string, status: OrderStatus) {
   await orderService.updateStatus(id, status);
   revalidatePath('/admin/orders');
   revalidatePath('/dashboard/orders');
+}
+
+/**
+ * Hand a finished placement back to the customer.
+ *
+ * Recording the URL and telling the customer are one action on purpose. A
+ * live URL saved quietly is one nobody is ever told about, which is exactly
+ * how this column came to exist for a year with nothing writing to it.
+ */
+export async function deliverItemAction(itemId: string, orderId: string, liveUrl: string) {
+  await requireAdminSession();
+
+  const result = await deliveryService.deliver(itemId, liveUrl);
+  revalidatePath(`/admin/orders/${orderId}`);
+  revalidatePath('/admin/orders');
+  revalidatePath('/dashboard/orders');
+  return result;
+}
+
+/** What we did about a complaint. Shown back to the customer in their words' place. */
+export async function resolveIssueAction(issueId: string, orderId: string, note: string) {
+  const session = await requireAdminSession();
+
+  const result = await deliveryService.resolveIssue(issueId, note, session.email);
+  revalidatePath(`/admin/orders/${orderId}`);
+  revalidatePath('/admin/orders');
+  revalidatePath('/dashboard/orders');
+  return result;
 }
 
 export async function saveSettingsAction(formData: FormData) {

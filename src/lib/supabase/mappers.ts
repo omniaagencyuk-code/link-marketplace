@@ -11,6 +11,7 @@ import type {
   NicheSlug,
   Order,
   OrderItem,
+  OrderItemIssue,
   PublisherContact,
   Service,
   UserProfile,
@@ -437,8 +438,24 @@ export interface OrderItemRow {
   article_file_size: number | null;
   live_url: string | null;
   status: Order['status'];
+  delivered_at: string | null;
+  approval: OrderItem['approval'] | null;
+  approved_at: string | null;
+  auto_approve_at: string | null;
+  auto_approved: boolean | null;
+  /** Admin-only for anyone else's order; RLS returns nothing to a stranger. */
+  order_item_issues?: OrderItemIssueRow[] | null;
   created_at: string;
   updated_at: string;
+}
+
+export interface OrderItemIssueRow {
+  id: string;
+  order_item_id: string;
+  message: string;
+  created_at: string;
+  resolved_at: string | null;
+  resolution_note: string | null;
 }
 
 export interface OrderRow {
@@ -457,6 +474,7 @@ export interface OrderRow {
   placed_at: string;
   updated_at: string;
   expected_live_at: string | null;
+  completed_at: string | null;
   order_items?: OrderItemRow[] | null;
 }
 
@@ -496,6 +514,17 @@ export function mapOrder(row: OrderRow): Order {
         articleFileSize: item.article_file_size ?? undefined,
         liveUrl: item.live_url ?? undefined,
         status: item.status,
+        deliveredAt: item.delivered_at ?? undefined,
+        // Defaulted rather than left undefined: every delivered item has an
+        // answer, and 'pending' is the honest one before they give it.
+        approval: item.approval ?? 'pending',
+        approvedAt: item.approved_at ?? undefined,
+        autoApproveAt: item.auto_approve_at ?? undefined,
+        autoApproved: item.auto_approved ?? false,
+        // Newest first: the last thing they said is the thing to read.
+        issues: (item.order_item_issues ?? [])
+          .map(mapOrderItemIssue)
+          .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt)),
         createdAt: item.created_at,
         updatedAt: item.updated_at,
       }),
@@ -503,6 +532,18 @@ export function mapOrder(row: OrderRow): Order {
     placedAt: row.placed_at,
     updatedAt: row.updated_at,
     expectedLiveAt: row.expected_live_at ?? undefined,
+    completedAt: row.completed_at ?? undefined,
+  };
+}
+
+export function mapOrderItemIssue(row: OrderItemIssueRow): OrderItemIssue {
+  return {
+    id: row.id,
+    orderItemId: row.order_item_id,
+    message: row.message,
+    createdAt: row.created_at,
+    resolvedAt: row.resolved_at ?? undefined,
+    resolutionNote: row.resolution_note ?? undefined,
   };
 }
 

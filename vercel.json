@@ -8,6 +8,10 @@
     {
       "path": "/api/cron/fx-rates",
       "schedule": "0 2 * * *"
+    },
+    {
+      "path": "/api/cron/auto-approve",
+      "schedule": "0 4 * * *"
     }
   ]
 }

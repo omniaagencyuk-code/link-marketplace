@@ -31,7 +31,21 @@ export function OrdersTable({ orders, limit }: { orders: Order[]; limit?: number
         <tbody>
           {rows.map(({ order, item }) => (
             <Tr key={item.id}>
-              <Td className="tabular text-[13px] font-medium text-ink">{order.reference}</Td>
+              <Td className="tabular text-[13px] font-medium">
+                <Link
+                  href={`/dashboard/orders/${order.id}`}
+                  className="text-ink hover:text-accent-700"
+                >
+                  {order.reference}
+                </Link>
+                {/* Where the customer has something to do, say so here: the
+                    table is the page they land on, not the detail view. */}
+                {item.deliveredAt && item.approval !== 'approved' ? (
+                  <span className="mt-0.5 block text-[11px] font-normal text-accent-700">
+                    {item.approval === 'issue-raised' ? 'Problem reported' : 'Check it over'}
+                  </span>
+                ) : null}
+              </Td>
               <Td>
                 <Link
                   href={`/websites/${item.websiteSlug}`}

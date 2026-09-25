@@ -5,6 +5,7 @@ import { PageTitle } from '@/components/dashboard/page-title';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { AdminOrderStatus } from '@/components/admin/admin-order-status';
+import { AdminItemDelivery } from '@/components/admin/admin-item-delivery';
 import { orderService, websiteService } from '@/lib/services';
 import { formatDateTime, formatPrice } from '@/lib/utils/format';
 import { linkTypeLabels, orderStatusLabels } from '@/lib/utils/labels';
@@ -208,8 +209,10 @@ export default async function AdminOrderPage({ params }: { params: Promise<{ id:
                       <Detail label="Article supplied" value={item.articleFileName} />
                     ) : null}
                     {item.notes ? <Detail label="Customer notes" value={item.notes} /> : null}
-                    {item.liveUrl ? <Detail label="Live URL" value={item.liveUrl} link /> : null}
                   </dl>
+
+                  {/* The one thing this page could not do: hand it back. */}
+                  <AdminItemDelivery item={item} orderId={order.id} />
                 </CardContent>
               </Card>
             );

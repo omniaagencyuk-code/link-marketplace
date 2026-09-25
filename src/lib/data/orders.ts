@@ -1,7 +1,7 @@
 import { websites } from './websites';
 import { users } from './users';
 import { placementPrice } from '@/lib/utils/pricing';
-import type { LinkTypeSlug, Order, OrderItem, OrderStatus } from '@/lib/types';
+import type { ItemApproval, LinkTypeSlug, Order, OrderItem, OrderStatus } from '@/lib/types';
 
 interface RawOrderItem {
   websiteSlug: string;
@@ -13,6 +13,16 @@ interface RawOrderItem {
   status?: OrderStatus;
   liveUrl?: string;
   notes?: string;
+  /**
+   * Days ago we handed it back, for the seed data only.
+   *
+   * Relative rather than a fixed date so the review countdown on the
+   * dashboard is always a live number: a seeded deadline in the past would
+   * make every demo order look overdue within a fortnight of being written.
+   */
+  deliveredDaysAgo?: number;
+  approval?: ItemApproval;
+  issueMessage?: string;
 }
 
 interface RawOrder {
@@ -40,6 +50,7 @@ const rawOrders: RawOrder[] = [
         anchorText: 'casino bonus guide',
         status: 'live',
         liveUrl: 'https://casinoguru.co.uk/features/choosing-a-bonus-that-pays',
+        deliveredDaysAgo: 3,
       },
       {
         websiteSlug: 'bettingedge-co-uk',
@@ -48,6 +59,9 @@ const rawOrders: RawOrder[] = [
         targetUrl: 'https://northboundmedia.co.uk/odds-explained',
         anchorText: 'how betting odds work',
         status: 'live',
+        deliveredDaysAgo: 5,
+        approval: 'issue-raised',
+        issueMessage: 'The link is nofollow - I paid for a dofollow placement.',
         liveUrl: 'https://bettingedge.co.uk/guides/value-betting-basics',
       },
     ],
@@ -248,6 +262,40 @@ const rawOrders: RawOrder[] = [
   },
 ];
 
+const DAY = 86_400_000;
+
+/** The seeded review state, worked out from now so the countdown is real. */
+function deliveryFor(
+  rawItem: RawOrderItem,
+  itemId: string,
+): Partial<OrderItem> {
+  if (rawItem.deliveredDaysAgo === undefined) return {};
+
+  const deliveredAt = new Date(Date.now() - rawItem.deliveredDaysAgo * DAY);
+  const approval = rawItem.approval ?? 'pending';
+
+  return {
+    deliveredAt: deliveredAt.toISOString(),
+    approval,
+    autoApproveAt: new Date(deliveredAt.getTime() + 14 * DAY).toISOString(),
+    ...(approval === 'approved'
+      ? { approvedAt: new Date(deliveredAt.getTime() + DAY).toISOString(), autoApproved: false }
+      : {}),
+    ...(rawItem.issueMessage
+      ? {
+          issues: [
+            {
+              id: `${itemId}_issue_1`,
+              orderItemId: itemId,
+              message: rawItem.issueMessage,
+              createdAt: new Date(deliveredAt.getTime() + DAY).toISOString(),
+            },
+          ],
+        }
+      : {}),
+  };
+}
+
 function buildOrders(): Order[] {
   return rawOrders.map((raw, orderIndex) => {
     const user = users.find((candidate) => candidate.id === raw.userId) ?? users[0]!;
@@ -276,6 +324,7 @@ function buildOrders(): Order[] {
         notes: rawItem.notes,
         liveUrl: rawItem.liveUrl,
         status: rawItem.status ?? raw.status,
+        ...deliveryFor(rawItem, `${id}_item_${itemIndex + 1}`),
         createdAt: raw.placedAt,
         updatedAt: raw.placedAt,
       } satisfies OrderItem;

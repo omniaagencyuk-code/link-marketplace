@@ -55,6 +55,9 @@ echo
 echo "--- the same write as the service role (must succeed) ---"
 run -f "$ROOT/supabase/tests/03_write_as_service_role.sql" 2>&1 | grep -v '^$'
 echo
+echo "--- delivering a placement and disputing it ---"
+run -f "$ROOT/supabase/tests/11_delivery_review.sql" 2>&1 | grep -v '^$'
+echo
 echo "--- auth rate limiting ---"
 run -f "$ROOT/supabase/tests/04_rate_limits.sql" 2>&1 | grep -v '^$'
 echo

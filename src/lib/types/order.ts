@@ -8,6 +8,19 @@ export type OrderStatus =
   | 'live'
   | 'cancelled';
 
+export type ItemApproval = 'pending' | 'approved' | 'issue-raised';
+
+/** Something the customer says is wrong with a placement, in their words. */
+export interface OrderItemIssue {
+  id: string;
+  orderItemId: string;
+  message: string;
+  createdAt: string;
+  resolvedAt?: string;
+  /** What we did about it, shown back to them. */
+  resolutionNote?: string;
+}
+
 export interface OrderItem {
   id: string;
   orderId: string;
@@ -40,6 +53,28 @@ export interface OrderItem {
   /** Populated once the placement goes live. */
   liveUrl?: string;
   status: OrderStatus;
+
+  /**
+   * When we handed the finished placement back, which starts the review
+   * clock. Undefined means it is still ours: not delivered is not the same
+   * as delivered and unanswered.
+   */
+  deliveredAt?: string;
+  /** What the customer made of it. Theirs to set, not ours. */
+  approval?: ItemApproval;
+  approvedAt?: string;
+  /** The date silence becomes consent, fixed when we delivered. */
+  autoApproveAt?: string;
+  /**
+   * Approved by the clock rather than by the customer.
+   *
+   * Kept apart from `approval` because "they were happy" and "they never
+   * replied" are different facts, and only one is worth anything if a
+   * placement is ever argued about.
+   */
+  autoApproved?: boolean;
+  /** Open first. Only ever populated for the customer's own order. */
+  issues?: OrderItemIssue[];
   createdAt: string;
   updatedAt: string;
 }
@@ -74,6 +109,14 @@ export interface Order {
   updatedAt: string;
   /** Expected go-live date, ISO string. */
   expectedLiveAt?: string;
+  /**
+   * When every placement on the order had been approved.
+   *
+   * A timestamp rather than a status value: an enum cannot have a value taken
+   * back out again, and every schema change here has to be reversible.
+   * "Complete" is rendered from this.
+   */
+  completedAt?: string;
 }
 
 /**

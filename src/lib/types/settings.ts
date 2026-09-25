@@ -24,5 +24,15 @@ export interface BrandSettings {
   marginPct: number;
   /** How content writing is priced. Ships empty until real prices are set. */
   contentPricing: ContentPricing;
+  /**
+   * How long a delivered placement waits before silence counts as consent.
+   *
+   * A setting because the fair length of it is a commercial promise, and one
+   * that will be argued about. Changing it never moves a deadline already
+   * shown to a customer: the date is fixed per item when we deliver.
+   */
+  deliveryAutoApproveDays: number;
+  /** How long after approving a customer may still report a problem. */
+  postApprovalIssueDays: number;
   updatedAt: string;
 }

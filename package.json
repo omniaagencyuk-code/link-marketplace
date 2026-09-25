@@ -16,7 +16,8 @@
     "verify:import": "tsx scripts/verify-import.mts",
     "verify:sourcing": "tsx scripts/verify-sourcing.mts",
     "verify:pricing": "tsx scripts/verify-pricing.mts",
-    "verify:sessions": "tsx scripts/verify-sessions.mts"
+    "verify:sessions": "tsx scripts/verify-sessions.mts",
+    "verify:delivery": "tsx scripts/verify-delivery.mts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.128.0",
