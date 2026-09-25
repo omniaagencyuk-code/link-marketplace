@@ -44,6 +44,32 @@ for migration in "$ROOT"/supabase/migrations/*.sql; do
   fi
 done
 echo "all migrations applied"
+
+# Run the recent migrations a second time.
+#
+# Migrations are applied by hand in the Supabase SQL editor, so one that half
+# applies and then refuses to be re-run leaves whoever is holding it with
+# nothing to do but edit it by hand. Most statements say "if not exists";
+# `create type` and `create policy` cannot, and have to be wrapped in a DO
+# block that swallows duplicate_object.
+#
+# Only from 0017. Everything before it was written before this check existed
+# and has long since been applied to the live database, so it will never be
+# run again - retrofitting those carries risk and buys nothing. Anything new
+# sorts above the threshold and is checked.
+RERUN_FROM="0017"
+rerun_failures=0
+for migration in "$ROOT"/supabase/migrations/*.sql; do
+  [[ "$(basename "$migration")" < "$RERUN_FROM" ]] && continue
+  if ! run -v ON_ERROR_STOP=1 -f "$migration" >/dev/null 2>&1; then
+    echo "NOT RE-RUNNABLE: $(basename "$migration")"
+    run -v ON_ERROR_STOP=1 -f "$migration" 2>&1 | grep ERROR | head -2
+    rerun_failures=$((rerun_failures + 1))
+  fi
+done
+if [ "$rerun_failures" -eq 0 ]; then
+  echo "and every migration from $RERUN_FROM survives being run twice"
+fi
 echo
 
 echo "--- reads by role ---"

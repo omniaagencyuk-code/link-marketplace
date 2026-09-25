@@ -14,16 +14,26 @@
 -- ---------------------------------------------------------------------------
 
 -- ---------------------------------------------------------------- approval --
-create type public.item_approval as enum (
-  -- Delivered and waiting on the customer. Also the state of everything not
-  -- delivered yet, which `delivered_at` distinguishes: an order not finished
-  -- is not an order awaiting approval.
-  'pending',
-  'approved',
-  -- They have told us something is wrong. The open row in
-  -- `order_item_issues` says what.
-  'issue-raised'
-);
+-- Wrapped because `create type` has no "if not exists", and it is the only
+-- statement in this file that cannot be run twice. A migration that half
+-- applies and then refuses to be re-run leaves whoever is holding it with
+-- nothing to do but edit it by hand.
+--
+-- 'pending'      delivered and waiting on the customer. Also the state of
+--                everything not delivered yet, which `delivered_at`
+--                distinguishes: work not finished is not work awaiting
+--                approval.
+-- 'approved'     they are happy, or the clock ran out. `auto_approved` says
+--                which.
+-- 'issue-raised' they have told us something is wrong. The open row in
+--                `order_item_issues` says what.
+do $$
+begin
+  create type public.item_approval as enum ('pending', 'approved', 'issue-raised');
+exception
+  when duplicate_object then null;
+end;
+$$;
 
 alter table public.order_items
   add column if not exists approval public.item_approval not null default 'pending';

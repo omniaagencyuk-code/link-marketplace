@@ -14,7 +14,7 @@
 -- marketplace entirely.
 -- ---------------------------------------------------------------------------
 
-create table public.website_contacts (
+create table if not exists public.website_contacts (
   website_id uuid primary key references public.websites (id) on delete cascade,
   -- The address placements are arranged through. Not validated beyond a shape
   -- check: publishers hand over all sorts, and refusing a working address for
@@ -29,7 +29,7 @@ create table public.website_contacts (
   updated_by text
 );
 
-create trigger website_contacts_set_updated_at
+create or replace trigger website_contacts_set_updated_at
   before update on public.website_contacts
   for each row execute function public.set_updated_at();
 
@@ -44,6 +44,12 @@ alter table public.website_contacts enable row level security;
 -- `websites` comes back empty rather than returning an address. A customer
 -- cannot read it through the REST API, through a crafted embed, or through a
 -- query the application forgot to filter.
-create policy "Admins manage website contacts"
-  on public.website_contacts for all
-  using (public.is_admin()) with check (public.is_admin());
+do $$
+begin
+  create policy "Admins manage website contacts"
+    on public.website_contacts for all
+    using (public.is_admin()) with check (public.is_admin());
+exception
+  when duplicate_object then null;
+end;
+$$;
