@@ -37,6 +37,9 @@ run() { $PSQL -d pp_rls_test -q "$@"; }
 run -v ON_ERROR_STOP=1 -f "$ROOT/supabase/tests/00_supabase_shim.sql" || exit 1
 
 for migration in "$ROOT"/supabase/migrations/*.sql; do
+  # The .paste.sql copies are the same statements, flattened for the SQL
+  # editor. Applying them here would run every migration twice.
+  case "$migration" in *.paste.sql) continue;; esac
   if ! run -v ON_ERROR_STOP=1 -f "$migration" >/dev/null 2>&1; then
     echo "MIGRATION FAILED: $(basename "$migration")"
     run -v ON_ERROR_STOP=1 -f "$migration" 2>&1 | grep ERROR | head -3
@@ -60,6 +63,7 @@ echo "all migrations applied"
 RERUN_FROM="0017"
 rerun_failures=0
 for migration in "$ROOT"/supabase/migrations/*.sql; do
+  case "$migration" in *.paste.sql) continue;; esac
   [[ "$(basename "$migration")" < "$RERUN_FROM" ]] && continue
   if ! run -v ON_ERROR_STOP=1 -f "$migration" >/dev/null 2>&1; then
     echo "NOT RE-RUNNABLE: $(basename "$migration")"
@@ -69,6 +73,22 @@ for migration in "$ROOT"/supabase/migrations/*.sql; do
 done
 if [ "$rerun_failures" -eq 0 ]; then
   echo "and every migration from $RERUN_FROM survives being run twice"
+fi
+
+# The flattened copies are generated. If one has drifted from its migration,
+# the stale copy is the one somebody pastes into the SQL editor.
+drift=0
+for paste in "$ROOT"/supabase/migrations/*.paste.sql; do
+  [ -e "$paste" ] || continue
+  source_file="${paste%.paste.sql}.sql"
+  node "$ROOT/scripts/flatten-migration.mjs" "$source_file" >/dev/null
+  if ! git -C "$ROOT" diff --quiet -- "$paste" 2>/dev/null; then
+    echo "STALE PASTE COPY: $(basename "$paste") - regenerate it"
+    drift=$((drift + 1))
+  fi
+done
+if [ "$drift" -eq 0 ]; then
+  echo "the flattened copies match their migrations"
 fi
 echo
 

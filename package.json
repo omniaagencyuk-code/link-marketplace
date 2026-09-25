@@ -17,7 +17,8 @@
     "verify:sourcing": "tsx scripts/verify-sourcing.mts",
     "verify:pricing": "tsx scripts/verify-pricing.mts",
     "verify:sessions": "tsx scripts/verify-sessions.mts",
-    "verify:delivery": "tsx scripts/verify-delivery.mts"
+    "verify:delivery": "tsx scripts/verify-delivery.mts",
+    "flatten": "node scripts/flatten-migration.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.128.0",
