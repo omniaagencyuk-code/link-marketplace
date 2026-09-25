@@ -23,6 +23,74 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { basename } from 'node:path';
 
 /**
+ * Remove every comment, respecting what is data and what is not.
+ *
+ * Applied to dollar-quoted bodies as well as to the top level, which it was
+ * not: a `do $$ ... $$` block was copied through whole and then had its
+ * whitespace collapsed, so the `--` comments inside it ended up on one line
+ * and swallowed the rest of the block. The result was a file that failed with
+ * "syntax error at end of input", which is what an unterminated statement
+ * looks like when half of it has been commented out.
+ *
+ * A comment inside a string literal is not a comment, so quotes are tracked
+ * here too.
+ */
+function stripComments(sql) {
+  let out = '';
+  let i = 0;
+
+  while (i < sql.length) {
+    const rest = sql.slice(i);
+
+    if (rest.startsWith('--')) {
+      const end = sql.indexOf('\n', i);
+      i = end === -1 ? sql.length : end;
+      // Left in place of the comment so the tokens either side stay apart.
+      out += ' ';
+      continue;
+    }
+
+    if (rest.startsWith('/*')) {
+      const end = sql.indexOf('*/', i + 2);
+      i = end === -1 ? sql.length : end + 2;
+      out += ' ';
+      continue;
+    }
+
+    const dollar = /^\$([A-Za-z_][A-Za-z0-9_]*)?\$/.exec(rest);
+    if (dollar) {
+      const tag = dollar[0];
+      const end = sql.indexOf(tag, i + tag.length);
+      if (end === -1) throw new Error(`Unterminated dollar quote ${tag}`);
+      // The body is code, so its comments go the same way. Recursing rather
+      // than copying through is the whole fix.
+      const body = sql.slice(i + tag.length, end);
+      out += tag + stripComments(body) + tag;
+      i = end + tag.length;
+      continue;
+    }
+
+    if (rest.startsWith("'")) {
+      let j = i + 1;
+      while (j < sql.length) {
+        if (sql[j] === "'" && sql[j + 1] === "'") j += 2;
+        else if (sql[j] === "'") break;
+        else j += 1;
+      }
+      if (j >= sql.length) throw new Error('Unterminated string literal');
+      out += sql.slice(i, j + 1);
+      i = j + 1;
+      continue;
+    }
+
+    out += sql[i];
+    i += 1;
+  }
+
+  return out;
+}
+
+/**
  * Split SQL into statements, respecting the two things that make naive
  * splitting wrong: single-quoted strings, and dollar-quoted blocks whose
  * bodies are full of semicolons.
@@ -34,20 +102,6 @@ function statements(sql) {
 
   while (i < sql.length) {
     const rest = sql.slice(i);
-
-    // A line comment runs to the end of the line and is dropped entirely.
-    if (rest.startsWith('--')) {
-      const end = sql.indexOf('\n', i);
-      i = end === -1 ? sql.length : end;
-      continue;
-    }
-
-    // A block comment is dropped too.
-    if (rest.startsWith('/*')) {
-      const end = sql.indexOf('*/', i + 2);
-      i = end === -1 ? sql.length : end + 2;
-      continue;
-    }
 
     // A dollar-quoted block is copied through whole, semicolons and all.
     const dollar = /^\$([A-Za-z_][A-Za-z0-9_]*)?\$/.exec(rest);
@@ -146,7 +200,7 @@ if (!source) {
   process.exit(1);
 }
 
-const sql = readFileSync(source, 'utf8');
+const sql = stripComments(readFileSync(source, 'utf8'));
 const flattened = statements(sql)
   .map(oneLine)
   .filter(Boolean)
@@ -166,6 +220,15 @@ writeFileSync(
     `no line comments, nothing to lose to a newline. The commentary lives ` +
     `in the migration itself. */\n${flattened}\n`,
 );
+
+// The invariant this file exists for: nothing on a second line, and no line
+// comment anywhere to swallow one. Checked rather than assumed, because the
+// failure mode is a file that looks fine and applies half of itself.
+for (const [index, line] of flattened.split('\n').entries()) {
+  if (line.includes('--')) {
+    throw new Error(`Line ${index + 1} still has a line comment: ${line.slice(0, 80)}`);
+  }
+}
 
 console.log(`${target}: ${flattened.split('\n').length} statements, longest line ${
   Math.max(...flattened.split('\n').map((l) => l.length))
