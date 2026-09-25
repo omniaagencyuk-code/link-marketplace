@@ -155,7 +155,12 @@ export function WebsiteServicesEditor({
                       name={`price_${entry.type}`}
                       type="number"
                       min={0}
-                      step={5}
+                      // Any amount, to the penny. It was a step of 5, which
+                      // the browser enforces as a validation rule: a publisher
+                      // quoting 109 could not be recorded, and neither could a
+                      // sell price ending in 9 - which our own rounding rules
+                      // produce on purpose.
+                      step="0.01"
                       defaultValue={majorUnits(existing?.priceMinor)}
                       placeholder="0"
                     />
@@ -182,7 +187,7 @@ export function WebsiteServicesEditor({
                       name={`cost_${entry.type}`}
                       type="number"
                       min={0}
-                      step={5}
+                      step="0.01"
                       defaultValue={majorUnits(existing?.costPriceMinor)}
                       placeholder="Not recorded"
                     />

@@ -82,7 +82,9 @@ export function WebsiteNichePricesEditor({
                         name={name}
                         type="number"
                         min={0}
-                        step={5}
+                        // To the penny: a publisher's rate is their number,
+                        // not one rounded to suit a form.
+                        step="0.01"
                         aria-label={`${acceptedNicheLabel(niche)} ${entry.label.toLowerCase()} price`}
                         defaultValue={typeof minor === 'number' ? String(minor / 100) : ''}
                         placeholder="Standard"

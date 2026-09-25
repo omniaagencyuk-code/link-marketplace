@@ -138,7 +138,7 @@ export function SourcingControls({
                 id="budget"
                 type="number"
                 min={0}
-                step={5}
+                step={1}
                 defaultValue={settings.monthlyBudgetUsd}
                 disabled={busy}
                 className="mt-1.5"
