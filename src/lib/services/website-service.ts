@@ -5,6 +5,7 @@ import { normaliseDomain } from '@/lib/import/normalise';
 import { newWebsiteDefaults, toWebsitePatch } from '@/lib/import/to-website';
 import { toPreviewRows, type MarketplacePreview } from './marketplace-preview';
 import { isSupabaseEnabled } from '@/lib/supabase/config';
+import { publishBlocker, publishBlockerMessage } from '@/lib/websites/publishing';
 import { supabaseWebsiteRepository } from './supabase/website-repository';
 import type { ImportPayloadRow, ImportBatchResult, DuplicateMode } from '@/lib/import/types';
 import type {
@@ -294,26 +295,12 @@ export const websiteService = {
     return updated;
   },
 
-  /**
-   * Publish or unpublish a listing.
-   *
-   * A listing cannot go active with nothing priced. Sourcing creates listings
-   * from publisher emails with a cost and no sell price, so the marketplace
-   * would otherwise be one careless click away from showing a domain at
-   * zero - which reads as free, and is the one pricing mistake a customer
-   * will act on immediately.
-   */
+  /** Publish or unpublish a listing. The rule lives in `publishing.ts`. */
   async setStatus(id: string, status: WebsiteStatus) {
     if (status === 'active') {
       const website = await websiteService.getById(id);
-      const priced = website?.services.some(
-        (service) => service.available && service.priceMinor > 0,
-      );
-      if (!priced) {
-        throw new Error(
-          'This listing has no sell price yet. Price it on the Pricing screen, or set one by hand, before publishing it.',
-        );
-      }
+      const blocker = website ? publishBlocker(website) : 'unpriced';
+      if (blocker) throw new Error(publishBlockerMessage(blocker));
     }
     return websiteService.update(id, { status });
   },

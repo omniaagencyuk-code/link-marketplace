@@ -476,6 +476,13 @@ export const pricingService = {
         .update({
           price_minor: service.price_minor,
           agency_price_minor: service.agency_price_minor,
+          // A service approved from the publisher inbox is created priced at
+          // zero and unavailable - "we know what it costs us, we do not know
+          // what we charge". This is the moment we know what we charge, so it
+          // becomes sellable. Without it a listing could be fully priced and
+          // still refuse to publish, which is exactly what happened: the
+          // table showed $195 and the guard said "no sell price yet".
+          available: true,
         })
         .eq('website_id', service.website_id)
         .eq('type', service.type)

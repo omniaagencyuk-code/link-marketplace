@@ -144,7 +144,9 @@ export async function setOverrideAction(input: {
       .update(
         input.priceMinor == null
           ? { price_override: false }
-          : { price_minor: input.priceMinor, price_override: true },
+          : // Sellable for the same reason a calculated price is: somebody
+            // has now said what this costs a customer.
+            { price_minor: input.priceMinor, price_override: true, available: true },
       )
       .eq('website_id', input.websiteId)
       .eq('type', input.linkType);

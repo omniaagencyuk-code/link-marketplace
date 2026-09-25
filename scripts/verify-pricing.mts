@@ -27,6 +27,7 @@ import {
 } from '../src/lib/utils/margin';
 import type { Service } from '../src/lib/types';
 import { placementPrice, tierFor } from '../src/lib/utils/pricing';
+import { publishBlocker, publishBlockerMessage } from '../src/lib/websites/publishing';
 
 let failed = 0;
 const ok = (l: string) => console.log(`  PASS  ${l}`);
@@ -531,6 +532,48 @@ console.log('\n--- the admin table, in our own money ---');
     'a hand-set price is measured against the real cost',
     websiteMarginConverted(overridden, { 'guest-post': 9313 })?.profitMinor,
     2687,
+  );
+}
+
+console.log('\n--- what stops a listing being published ---');
+{
+  const service = (patch: Record<string, unknown> = {}) => ({
+    id: 's', websiteId: 'w', type: 'guest-post' as const,
+    turnaroundMinDays: 1, turnaroundMaxDays: 5,
+    priceMinor: 19500, available: true, ...patch,
+  });
+
+  is('a priced, switched-on listing publishes', publishBlocker({ services: [service()] }), null);
+  is(
+    'no services at all is unpriced',
+    publishBlocker({ services: [] }),
+    'unpriced',
+  );
+  is(
+    'a service priced at zero is unpriced',
+    publishBlocker({ services: [service({ priceMinor: 0 })] }),
+    'unpriced',
+  );
+
+  // The one that cost an afternoon: sourcing creates services priced at zero
+  // and switched off, the engine wrote a price and left them switched off,
+  // and the guard said "no sell price" about a listing showing $195.
+  is(
+    'priced but switched off is its own answer, not "unpriced"',
+    publishBlocker({ services: [service({ available: false })] }),
+    'priced-but-off',
+  );
+  publishBlockerMessage('priced-but-off').includes('switched off')
+    ? ok('and the message says so rather than denying the price exists')
+    : bad('the message still claims there is no price');
+
+  // One sellable placement is enough, whatever the others are doing.
+  is(
+    'one good placement among dead ones is enough',
+    publishBlocker({
+      services: [service({ available: false }), service({ id: 'b', type: 'niche-edit' as const })],
+    }),
+    null,
   );
 }
 

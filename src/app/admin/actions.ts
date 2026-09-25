@@ -305,13 +305,19 @@ export async function bulkSetWebsiteStatusAction(
   let changed = 0;
 
   for (const id of wanted) {
+    // Read first, so a refusal names the domain rather than an opaque id.
+    // Fifty-seven uuids and a reason tells you nothing about which listing to
+    // go and fix; the delete path already did this and this one did not.
+    const existing = await websiteService.getById(id);
+    const label = existing?.domain ?? id;
+
     try {
       const updated = await websiteService.setStatus(id, status);
       if (updated) changed += 1;
-      else skipped.push({ domain: id, reason: 'No longer exists.' });
+      else skipped.push({ domain: label, reason: 'No longer exists.' });
     } catch (error) {
       skipped.push({
-        domain: id,
+        domain: label,
         reason: error instanceof Error ? error.message : 'Could not be updated.',
       });
     }
