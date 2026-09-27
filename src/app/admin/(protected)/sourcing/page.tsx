@@ -46,7 +46,10 @@ async function load() {
       .eq('status', 'pending')
       .order('low_confidence_count', { ascending: true })
       .limit(200),
-    supabase.from('inbound_emails').select('status'),
+    // batch_id too: an email in a running batch is still 'new', and counting
+    // it as waiting told the owner 50 were waiting while 25 were in flight -
+    // and put 50 on a button that would only ever send the unclaimed ones.
+    supabase.from('inbound_emails').select('status, batch_id'),
     supabase
       .from('inbound_emails')
       .select('id, from_address, subject, status, status_reason, sent_at')
@@ -66,9 +69,13 @@ async function load() {
     // Configured is about the key, not the schema - keep both reasons visible.
   }
 
-  const emailRows = (emails.data ?? []) as { status: string }[];
+  const emailRows = (emails.data ?? []) as { status: string; batch_id: string | null }[];
   const counts = emailRows.reduce<Record<string, number>>((all, row) => {
-    all[row.status] = (all[row.status] ?? 0) + 1;
+    // Unread but claimed is its own state, and the one worth showing: it is
+    // what somebody is waiting on, and it is not something to press the
+    // button about.
+    const key = row.status === 'new' && row.batch_id ? 'in-flight' : row.status;
+    all[key] = (all[key] ?? 0) + 1;
     return all;
   }, {});
 

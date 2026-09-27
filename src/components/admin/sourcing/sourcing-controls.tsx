@@ -260,9 +260,10 @@ export function SourcingControls({
             ) : null}
           </div>
 
-          <dl className="tabular grid grid-cols-4 gap-2 border-t border-line pt-3 text-center">
+          <dl className="tabular grid grid-cols-5 gap-2 border-t border-line pt-3 text-center">
             {[
               ['Waiting', counts.new ?? 0],
+              ['Being read', counts['in-flight'] ?? 0],
               ['Read', counts.extracted ?? 0],
               ['Nothing usable', counts.ignored ?? 0],
               ['Failed', counts.failed ?? 0],

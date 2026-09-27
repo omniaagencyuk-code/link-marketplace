@@ -178,3 +178,46 @@ reset role;
 reset request.jwt.claim.sub;
 
 delete from public.email_log;
+
+-- ------------------------------------------------- claiming emails to read --
+-- Extraction costs money per email. The app selects unread, unclaimed mail,
+-- then claims it with a conditional update. Both halves have to hold or a
+-- second click pays twice for work already in flight.
+insert into public.inbound_emails (message_id, from_address, subject, body_text)
+values ('<claim-1@test>', 'a@pub.example', 'Advertisements on a.com', '200 USD per post'),
+       ('<claim-2@test>', 'b@pub.example', 'Advertisements on b.com', '300 USD per post');
+
+insert into public.extraction_batches (mode, model, prompt_version, status, email_count)
+values ('batch', 'claude-opus-5', 'test', 'submitted', 2);
+
+-- The claim: conditional on still being unclaimed, and it reports what it won.
+with claimed as (
+  update public.inbound_emails
+     set batch_id = (select id from public.extraction_batches limit 1)
+   where status = 'new' and batch_id is null
+  returning id
+)
+select 'first run claimed: ' || count(*) from claimed;
+
+-- A second press selects the same way the app does. It must find nothing.
+select 'second run finds: ' || count(*)
+  from public.inbound_emails
+ where status = 'new' and batch_id is null;
+
+-- And a second claim wins nothing, so it sends nothing.
+with claimed_again as (
+  update public.inbound_emails
+     set batch_id = (select id from public.extraction_batches limit 1)
+   where status = 'new' and batch_id is null
+  returning id
+)
+select 'second run claimed: ' || count(*) from claimed_again;
+
+-- A failed submission releases them rather than stranding them unread.
+update public.inbound_emails set batch_id = null
+ where batch_id = (select id from public.extraction_batches limit 1);
+select 'released after a failure: ' || count(*)
+  from public.inbound_emails where status = 'new' and batch_id is null;
+
+delete from public.inbound_emails where message_id like '<claim-%';
+delete from public.extraction_batches where prompt_version = 'test';

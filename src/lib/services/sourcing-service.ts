@@ -228,10 +228,24 @@ export const sourcingService = {
     }
 
     const supabase = getAdminScopedClient();
+    /*
+      Unread AND unclaimed.
+
+      The claim below sets `batch_id`, and this query used to ignore it: an
+      email sitting in a running batch is still 'new', so pressing the button
+      a second time selected the same oldest twenty-five and sent them to the
+      model again - a second charge and a second set of drafts for work
+      already in flight. The claim was written; nothing read it.
+
+      There is no 'processing' status to move them to - the column's check
+      constraint allows four values and adding a fifth would need a migration
+      for something `batch_id` already records.
+    */
     const { data: rows } = await supabase
       .from('inbound_emails')
       .select('id, from_address, subject, body_text, asked_about_domain')
       .eq('status', 'new')
+      .is('batch_id', null)
       .order('sent_at', { ascending: true })
       .limit(limit);
 
@@ -271,16 +285,44 @@ export const sourcingService = {
 
     const batchId = String((batch as { id: string }).id);
 
-    // Claimed before the call. An email in flight is not 'new', so a second
-    // click cannot send the same email to the model twice.
-    await supabase
+    /*
+      Claim before sending, and send only what the claim actually won.
+
+      The update is conditional on the row still being unclaimed and returns
+      the rows it changed, so two clicks a second apart cannot both send the
+      same email: the first takes them, the second's update matches nothing
+      and it submits nothing. Selecting and then updating without the
+      condition leaves a gap between the two where both callers believe they
+      have the same twenty-five.
+    */
+    const { data: claimedRows } = await supabase
       .from('inbound_emails')
       .update({ batch_id: batchId })
-      .in('id', requests.map((request) => request.emailId));
+      .in('id', requests.map((request) => request.emailId))
+      .is('batch_id', null)
+      .select('id');
+
+    const claimed = new Set(((claimedRows ?? []) as { id: string }[]).map((row) => row.id));
+    const toSend = requests.filter((request) => claimed.has(request.emailId));
+
+    if (toSend.length === 0) {
+      await supabase.from('extraction_batches').delete().eq('id', batchId);
+      return {
+        ok: true,
+        message: 'Those emails are already being read. Collect the running batch instead.',
+      };
+    }
+
+    if (toSend.length !== requests.length) {
+      await supabase
+        .from('extraction_batches')
+        .update({ email_count: toSend.length })
+        .eq('id', batchId);
+    }
 
     if (settings.mode === 'batch') {
       try {
-        const providerBatchId = await submitBatch(requests, settings.model);
+        const providerBatchId = await submitBatch(toSend, settings.model);
         await supabase
           .from('extraction_batches')
           .update({ provider_batch_id: providerBatchId, status: 'running' })
@@ -288,7 +330,7 @@ export const sourcingService = {
         return {
           ok: true,
           batchId,
-          message: `Submitted ${requests.length} ${requests.length === 1 ? 'email' : 'emails'} to the Batch API at half price. Results usually arrive within the hour; collect them from this page.`,
+          message: `Submitted ${toSend.length} ${toSend.length === 1 ? 'email' : 'emails'} to the Batch API at half price. Results usually arrive within the hour; collect them from this page.`,
         };
       } catch (error) {
         await sourcingService.failBatch(batchId, error);
@@ -297,7 +339,7 @@ export const sourcingService = {
     }
 
     const outcomes: ExtractionOutcome[] = [];
-    for (const request of requests) {
+    for (const request of toSend) {
       outcomes.push(await extractNow(request, settings.model));
     }
 
@@ -308,8 +350,8 @@ export const sourcingService = {
     // which is exactly the trip this line exists to save.
     const summary =
       applied.failed > 0 && applied.firstError
-        ? `Read ${applied.extracted} of ${requests.length}. ${applied.failed} failed: ${applied.firstError}`
-        : `Read ${applied.extracted} of ${requests.length}. ${applied.draftsCreated} ${applied.draftsCreated === 1 ? 'draft' : 'drafts'} are waiting for review.`;
+        ? `Read ${applied.extracted} of ${toSend.length}. ${applied.failed} failed: ${applied.firstError}`
+        : `Read ${applied.extracted} of ${toSend.length}. ${applied.draftsCreated} ${applied.draftsCreated === 1 ? 'draft' : 'drafts'} are waiting for review.`;
 
     return { ok: applied.failed === 0, batchId, ...applied, message: summary };
   },
