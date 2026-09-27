@@ -14,6 +14,7 @@ import {
 } from '@/lib/sourcing/client';
 import { countLowConfidence, expandListings, flagsFor } from '@/lib/sourcing/review';
 import { asMap } from '@/lib/sourcing/schema';
+import { EXTRACTION_BATCH_LIMIT } from '@/lib/sourcing/limits';
 
 /**
  * Publisher sourcing: emails in, drafts out, nothing live without a human.
@@ -154,13 +155,20 @@ export const sourcingService = {
 
   // ------------------------------------------------------------ extraction
 
-  /** Emails waiting to be read. Only these ever cost anything. */
+  /**
+   * Emails waiting to be read. Only these ever cost anything.
+   *
+   * Claimed rows are excluded because this number is what the button offers to
+   * send, and `nextBatch` will not send a claimed row. Counting them said
+   * "read 50 waiting" when pressing it would read 25.
+   */
   async pendingCount(): Promise<number> {
     const supabase = getAdminScopedClient();
     const { count } = await supabase
       .from('inbound_emails')
       .select('id', { count: 'exact', head: true })
-      .eq('status', 'new');
+      .eq('status', 'new')
+      .is('batch_id', null);
     return count ?? 0;
   },
 
@@ -207,7 +215,7 @@ export const sourcingService = {
     wouldSend?: number;
   }> {
     const settings = await sourcingService.getSettings();
-    const limit = options.limit ?? 25;
+    const limit = options.limit ?? EXTRACTION_BATCH_LIMIT;
 
     if (!settings.enabled) {
       return { ok: false, message: 'Extraction is switched off. Turn it on in the settings above.' };

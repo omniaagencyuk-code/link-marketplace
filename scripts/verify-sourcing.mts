@@ -447,5 +447,30 @@ const shaky = blank({ guest_post_cost: 100, contact_email: 'a@b.example', confid
 is('a guessed draft counts its low fields', countLowConfidence(shaky), 2);
 is('and is never swept up in bulk', countLowConfidence(shaky) > 0 || flagsFor(shaky).length > 0, true);
 
+console.log('\n--- the claim is honoured everywhere ---');
+// Twice now a row has been claimed by writing `batch_id` and then handed out
+// again by a query that only looked at `status`. Once it double-spent the
+// extraction; once it only lied on a button. Both were the same omission, so
+// it is checked here rather than remembered: any statement selecting on
+// status 'new' must say something about batch_id too.
+{
+  const source = fs.readFileSync(
+    path.join(process.cwd(), 'src/lib/services/sourcing-service.ts'),
+    'utf8',
+  );
+  const statements = source
+    .split(".from('inbound_emails')")
+    .slice(1)
+    .map((chunk) => chunk.split(';')[0]);
+  const unclaimed = statements.filter(
+    (chunk) => chunk.includes("eq('status', 'new')") && !chunk.includes('batch_id'),
+  );
+  is(
+    'no query treats a claimed email as waiting',
+    unclaimed.length,
+    0,
+  );
+}
+
 console.log(failed ? `\n  ${failed} FAILED\n` : '\n  all passed\n');
 process.exit(failed ? 1 : 0);

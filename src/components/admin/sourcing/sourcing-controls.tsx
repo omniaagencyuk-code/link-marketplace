@@ -9,6 +9,7 @@ import { Label } from '@/components/ui/label';
 import { Select } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { splitForUpload } from '@/lib/sourcing/split-upload';
+import { EXTRACTION_BATCH_LIMIT } from '@/lib/sourcing/limits';
 import {
   collectBatchesAction,
   ingestMboxAction,
@@ -64,6 +65,10 @@ export function SourcingControls({
   const [pasted, setPasted] = useState('');
   const [progress, setProgress] = useState<string | null>(null);
   const [pastedFrom, setPastedFrom] = useState('');
+
+  // What the button will actually send, which is neither the number waiting
+  // (a run stops at the batch size) nor the batch size (there may be fewer).
+  const willSend = Math.min(pending, EXTRACTION_BATCH_LIMIT);
 
   const runningBatches = batches.filter(
     (batch) => batch.status === 'running' || batch.status === 'submitted',
@@ -195,7 +200,10 @@ export function SourcingControls({
               }
             >
               <Play className="h-3.5 w-3.5" aria-hidden="true" />
-              Read {pending} waiting
+              Read {willSend} waiting
+              {pending > willSend ? (
+                <span className="font-normal opacity-80">of {pending}</span>
+              ) : null}
             </Button>
             {(counts.failed ?? 0) > 0 ? (
               <Button
