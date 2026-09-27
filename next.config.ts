@@ -54,6 +54,16 @@ const nextConfig: NextConfig = {
   },
   experimental: {
     optimizePackageImports: ['lucide-react'],
+    /*
+      Uploading a mailbox.
+
+      The default is 1MB, which a Takeout export passes in the first second
+      and fails with a browser-level "page couldn't load" that names no cause.
+      Vercel refuses a request body over 4.5MB whatever this says, so this is
+      headroom rather than a solution: the admin splits an export into batches
+      under 3MB and uploads them one at a time.
+    */
+    serverActions: { bodySizeLimit: '4mb' },
   },
 };
 

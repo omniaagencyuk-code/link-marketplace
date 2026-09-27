@@ -8,6 +8,7 @@ import { Input, Textarea } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
+import { splitForUpload } from '@/lib/sourcing/split-upload';
 import {
   collectBatchesAction,
   ingestMboxAction,
@@ -35,6 +36,16 @@ interface Settings {
  * penny is spent. Uploading and parsing never cost anything, so they work
  * whether the switch is on or off.
  */
+/**
+ * How much of an export goes in one request.
+ *
+ * Next's Server Action body limit is set to 4mb in next.config, and Vercel
+ * refuses anything over 4.5mb whatever the config says. Three leaves room for
+ * the multipart wrapper and for an export whose subjects are full of accented
+ * characters, which are bigger on the wire than they look.
+ */
+const UPLOAD_BATCH_BYTES = 3 * 1024 * 1024;
+
 export function SourcingControls({
   settings,
   pending,
@@ -51,6 +62,7 @@ export function SourcingControls({
   const [busy, startTransition] = useTransition();
   const [message, setMessage] = useState<{ tone: 'ok' | 'bad'; text: string } | null>(null);
   const [pasted, setPasted] = useState('');
+  const [progress, setProgress] = useState<string | null>(null);
   const [pastedFrom, setPastedFrom] = useState('');
 
   const runningBatches = batches.filter(
@@ -273,12 +285,67 @@ export function SourcingControls({
           <form
             action={(form) =>
               startTransition(async () => {
-                const result = await ingestMboxAction(form);
-                if (!result.ok) return report(false, result.error ?? 'Upload failed.');
-                const { imported, duplicates, skipped } = result.result!;
+                const file = form.get('file');
+                if (!(file instanceof File) || file.size === 0) {
+                  return report(false, 'Choose an .mbox file to upload.');
+                }
+
+                /*
+                  Cut up here rather than sent whole.
+
+                  A Server Action's request body is capped well below the size
+                  of a year's mail, and the failure is a browser-level "page
+                  couldn't load" that says nothing about why. Each batch is a
+                  valid mbox, so the server reads it with exactly the same
+                  parser as a small export.
+                */
+                const { batches, messageCount, truncated } = splitForUpload(
+                  await file.text(),
+                  UPLOAD_BATCH_BYTES,
+                );
+
+                if (messageCount === 0) {
+                  return report(false, 'No emails found in that file. Is it really an .mbox?');
+                }
+
+                let imported = 0;
+                let duplicates = 0;
+                const skipped: { reason: string }[] = [];
+
+                for (const [index, batch] of batches.entries()) {
+                  setProgress(`Uploading ${index + 1} of ${batches.length}...`);
+
+                  const chunk = new FormData();
+                  chunk.set(
+                    'file',
+                    new File([batch], file.name, { type: 'application/mbox' }),
+                  );
+
+                  const result = await ingestMboxAction(chunk);
+                  if (!result.ok) {
+                    setProgress(null);
+                    // Named so a part-finished import is not a mystery: what
+                    // landed before the failure is already in, and uploading
+                    // the same file again will skip it.
+                    return report(
+                      false,
+                      `Part ${index + 1} of ${batches.length} failed: ${result.error ?? 'upload failed'}. ` +
+                        `${imported} emails were imported before that.`,
+                    );
+                  }
+
+                  imported += result.result!.imported;
+                  duplicates += result.result!.duplicates;
+                  skipped.push(...result.result!.skipped);
+                }
+
+                setProgress(null);
                 report(
                   true,
-                  `${imported} new. ${duplicates} already here. ${skipped.length} skipped (${summarise(skipped)}).`,
+                  `${imported} new. ${duplicates} already here. ${skipped.length} skipped (${summarise(skipped)}).` +
+                    (truncated.length
+                      ? ` ${truncated.length} very large ${truncated.length === 1 ? 'email was' : 'emails were'} shortened - their attachments were dropped, the text was kept.`
+                      : ''),
                 );
               })
             }
@@ -293,9 +360,13 @@ export function SourcingControls({
               className="mt-1.5 block w-full text-[13px] text-ink-soft file:mr-3 file:rounded-md file:border file:border-line-strong file:bg-white file:px-3 file:py-1.5 file:text-[13px] file:font-medium file:text-ink"
             />
             <p className="mt-1 text-[12px] text-muted">
-              Our own outreach and bounces are skipped. Re-uploading the same export imports
-              nothing, so it never costs anything.
+              Any size. It is split up here and uploaded in pieces, because a single request
+              cannot carry a whole export. Our own outreach and bounces are skipped, and
+              re-uploading the same export imports nothing, so it never costs anything.
             </p>
+            {progress ? (
+              <p className="mt-1 text-[12px] text-accent-700">{progress}</p>
+            ) : null}
             <Button type="submit" variant="outline" size="sm" className="mt-2" disabled={busy}>
               <CloudUpload className="h-3.5 w-3.5" aria-hidden="true" />
               Upload

@@ -38,10 +38,25 @@ export async function ingestMboxAction(form: FormData) {
   if (!(file instanceof File) || file.size === 0) {
     return { ok: false, error: 'Choose an .mbox file to upload.' };
   }
-  // Generous but finite: a year of one mailbox is a few tens of megabytes,
-  // and an unbounded read is how a server route runs out of memory.
-  if (file.size > 80 * 1024 * 1024) {
-    return { ok: false, error: `That file is ${(file.size / 1024 / 1024).toFixed(0)}MB. The limit is 80MB.` };
+  /*
+    This receives one batch, not a whole export.
+
+    The admin splits an export in the browser and posts it in pieces, because
+    a Server Action's request body is capped far below the size of a year's
+    mail - and when it is exceeded the browser reports "page couldn't load",
+    which names neither the limit nor the cause.
+
+    The guard here used to say 80MB, which was never reachable: the request
+    died at 1MB before this function ran. It now describes the real limit, so
+    a batch that somehow arrives too large says something true.
+  */
+  if (file.size > 4 * 1024 * 1024) {
+    return {
+      ok: false,
+      error:
+        `That upload is ${(file.size / 1024 / 1024).toFixed(1)}MB and the per-request limit is 4MB. ` +
+        'Exports are normally split automatically - if you are seeing this, tell us.',
+    };
   }
 
   try {

@@ -7,6 +7,7 @@
  */
 import fs from 'node:fs';
 import path from 'node:path';
+import { splitForUpload } from '../src/lib/sourcing/split-upload';
 import { readMbox, readPastedEmail, domainFromSubject, stripQuotedHistory } from '../src/lib/sourcing/mbox';
 import { extractionResultSchema, fromWire, wireResultSchema, type ExtractedListing } from '../src/lib/sourcing/schema';
 import { applyGeneralPriceToNiches, countLowConfidence, expandListings, flagsFor, sellableNiches } from '../src/lib/sourcing/review';
@@ -262,6 +263,63 @@ const withRefusal = applyGeneralPriceToNiches(
 );
 is('an explicit refusal survives the button', withRefusal.niches.adult!.accepted, 'no');
 is('and stays unpriced', withRefusal.niches.adult!.guest_post_cost, null);
+
+console.log('\n--- cutting an export into uploadable pieces ---');
+{
+  const message = (n: number, bodyKb = 1) =>
+    `From sender${n}@example.com Mon Sep 21 10:0${n} 2026\n` +
+    `From: Pub ${n} <p${n}@example.com>\n` +
+    `Message-ID: <m${n}@example.com>\n` +
+    `Subject: Advertisements on site${n}.com\n\n` +
+    `Our guest post price is 200 USD.\n` +
+    'x'.repeat(bodyKb * 1024);
+
+  const export4 = [1, 2, 3, 4].map((n) => message(n)).join('\n');
+  const split = splitForUpload(export4, 3 * 1024);
+
+  is('every message is found', split.messageCount, 4);
+  is('and they are spread over several batches', split.batches.length > 1, true);
+  is('nothing is truncated when each one fits', split.truncated.length, 0);
+
+  // The whole point: each batch has to parse as an mbox on its own, using the
+  // same reader the server uses. A batch the server cannot read is worse than
+  // a failed upload, because it fails silently.
+  const readBack = split.batches.flatMap((batch) => readMbox(batch).messages);
+  is('every message survives the round trip', readBack.length, 4);
+  is(
+    'and keeps its own Message-ID, so dedupe still works',
+    new Set(readBack.map((m) => m.messageId)).size,
+    4,
+  );
+  is('with the text intact', readBack[0]!.bodyText.includes('200 USD'), true);
+
+  // A single message larger than one request. Skipping it would lose the
+  // listing; keeping its front keeps the prices, which are never in the
+  // attachments at the end.
+  const huge = [message(1), message(2, 40), message(3)].join('\n');
+  const bigSplit = splitForUpload(huge, 10 * 1024);
+  is('an oversized message is truncated, not dropped', bigSplit.truncated.length, 1);
+  is('and it is the big one', bigSplit.truncated[0]!.at, 1);
+  const bigRead = bigSplit.batches.flatMap((batch) => readMbox(batch).messages);
+  is('all three still arrive', bigRead.length, 3);
+  is(
+    'and the truncated one kept its price',
+    bigRead.find((m) => m.messageId === '<m2@example.com>')!.bodyText.includes('200 USD'),
+    true,
+  );
+
+  // Windows line endings are what an export actually contains.
+  const crlf = export4.replace(/\n/g, '\r\n');
+  is('CRLF exports split the same way', splitForUpload(crlf, 3 * 1024).messageCount, 4);
+
+  // Junk before the first separator is not a message.
+  is(
+    'leading rubbish is not mistaken for mail',
+    splitForUpload(`nonsense\nmore nonsense\n${message(1)}`, 99999).messageCount,
+    1,
+  );
+  is('an empty file yields nothing', splitForUpload('', 1024).messageCount, 0);
+}
 
 console.log('\n--- a price with no currency ---');
 {
