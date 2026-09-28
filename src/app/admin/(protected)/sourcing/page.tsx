@@ -3,6 +3,7 @@ import { AlertCircle, Inbox } from 'lucide-react';
 import { PageTitle } from '@/components/dashboard/page-title';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { SourcingControls } from '@/components/admin/sourcing/sourcing-controls';
 import { DraftsTable } from '@/components/admin/sourcing/drafts-table';
 import { sourcingService } from '@/lib/services/sourcing-service';
@@ -175,7 +176,12 @@ export default async function SourcingPage() {
     <div className="space-y-5">
       <PageTitle
         title="Publisher inbox"
-        description="Paste a reply or upload a mailbox export, read it with Claude, then check every draft before it becomes a listing."
+        description="Import replies from Gmail, paste one, or upload an export. Read them with Claude, then check every draft before it becomes a listing."
+        action={
+          <Button asChild variant="outline">
+            <Link href="/admin/sourcing/gmail">Import from Gmail</Link>
+          </Button>
+        }
       />
 
       {schemaError ? (

@@ -1,6 +1,7 @@
 import { getAdminScopedClient } from '@/lib/supabase/server';
 import { isSupabaseEnabled } from '@/lib/supabase/config';
 import { readMbox, readPastedEmail, type ParsedMessage } from '@/lib/sourcing/mbox';
+import type { ReadThread } from '@/lib/gmail/thread';
 import {
   collectBatch,
   checkBatch,
@@ -35,6 +36,9 @@ export interface SourcingSettings {
   mode: 'realtime' | 'batch';
   model: string;
   monthlyBudgetUsd: number;
+  /** Clearing bodies is irreversible, so it is off until somebody says. */
+  purgeBodiesEnabled: boolean;
+  purgeBodiesAfterDays: number;
 }
 
 export interface IngestResult {
@@ -49,6 +53,8 @@ const DEFAULTS: SourcingSettings = {
   mode: 'realtime',
   model: 'claude-opus-5',
   monthlyBudgetUsd: 25,
+  purgeBodiesEnabled: false,
+  purgeBodiesAfterDays: 90,
 };
 
 export const sourcingService = {
@@ -77,6 +83,8 @@ export const sourcingService = {
       mode: (data.mode as SourcingSettings['mode']) ?? 'realtime',
       model: (data.model as string) ?? DEFAULTS.model,
       monthlyBudgetUsd: Number(data.monthly_budget_usd ?? DEFAULTS.monthlyBudgetUsd),
+      purgeBodiesEnabled: Boolean(data.purge_bodies_enabled),
+      purgeBodiesAfterDays: Number(data.purge_bodies_after_days ?? DEFAULTS.purgeBodiesAfterDays),
       configured,
     };
   },
@@ -92,6 +100,12 @@ export const sourcingService = {
         ...(patch.monthlyBudgetUsd === undefined
           ? {}
           : { monthly_budget_usd: patch.monthlyBudgetUsd }),
+        ...(patch.purgeBodiesEnabled === undefined
+          ? {}
+          : { purge_bodies_enabled: patch.purgeBodiesEnabled }),
+        ...(patch.purgeBodiesAfterDays === undefined
+          ? {}
+          : { purge_bodies_after_days: patch.purgeBodiesAfterDays }),
         updated_by: updatedBy ?? null,
       })
       .eq('id', 1);
@@ -151,6 +165,167 @@ export const sourcingService = {
     }
 
     return { imported: fresh.length, duplicates: messages.length - fresh.length, skipped };
+  },
+
+  /**
+   * One Gmail thread, as an ordinary inbound email.
+   *
+   * The join between the Gmail importer and everything that already exists.
+   * A thread becomes one row with status 'new', which is precisely what an
+   * uploaded message becomes, so extraction, review and approval need no
+   * idea which route it came by.
+   *
+   * Dedupe is three checks because the same mail can arrive twice by two
+   * different routes:
+   *
+   *   1. This mailbox and thread, imported before.
+   *   2. Any Message-ID in the thread already stored - which is how a thread
+   *      uploaded from Takeout as three separate messages is recognised here
+   *      as the same conversation, instead of being read and paid for again.
+   *   3. The thread's own key, for a plain repeat.
+   *
+   * A thread that has gained a reply since it was imported is updated rather
+   * than skipped, and put back to 'new' so the model reads the fuller
+   * conversation. That is the one case where re-reading is worth paying for.
+   */
+  async storeThread(
+    thread: ReadThread,
+    mailbox: string,
+  ): Promise<{ stored: 'created' | 'updated' | 'duplicate'; emailId?: string }> {
+    const supabase = getAdminScopedClient();
+
+    const { data: existingThread } = await supabase
+      .from('inbound_emails')
+      .select('id, gmail_thread_id, message_ids, status')
+      .eq('mailbox', mailbox)
+      .eq('gmail_thread_id', thread.threadId)
+      .maybeSingle();
+
+    const row = {
+      message_id: thread.messageId ?? `gmail-thread:${mailbox}:${thread.threadId}`,
+      from_address: thread.fromAddress,
+      from_name: thread.fromName ?? null,
+      to_address: thread.toAddress ?? null,
+      subject: thread.subject ?? null,
+      sent_at: thread.sentAt ?? null,
+      body_text: thread.bodyText,
+      body_raw: thread.bodyRaw,
+      asked_about_domain: thread.askedAboutDomain ?? null,
+      source: 'gmail',
+      mailbox,
+      gmail_thread_id: thread.threadId,
+      message_ids: thread.messageIds,
+      attachments: thread.attachments,
+      has_rate_card: thread.hasRateCard,
+    };
+
+    if (existingThread) {
+      const known = new Set(((existingThread as { message_ids: string[] }).message_ids ?? []));
+      const grown = thread.messageIds.some((id) => !known.has(id));
+      if (!grown) return { stored: 'duplicate', emailId: String((existingThread as { id: string }).id) };
+
+      // New replies since we last looked. Worth reading again.
+      await supabase
+        .from('inbound_emails')
+        .update({ ...row, status: 'new', batch_id: null, status_reason: null, extracted_at: null })
+        .eq('id', (existingThread as { id: string }).id);
+
+      return { stored: 'updated', emailId: String((existingThread as { id: string }).id) };
+    }
+
+    // The same conversation may already be here one message at a time, from
+    // an upload. Overlapping on any Message-ID is enough to say so.
+    //
+    // Two queries rather than one `.or()`: a Message-ID is arbitrary text
+    // from a header, and building a PostgREST filter string out of it means
+    // escaping commas, braces and quotes correctly every time. `in` and
+    // `overlaps` take the values as values.
+    if (thread.messageIds.length > 0) {
+      const [keyed, within] = await Promise.all([
+        supabase.from('inbound_emails').select('id').in('message_id', thread.messageIds).limit(1),
+        supabase.from('inbound_emails').select('id').overlaps('message_ids', thread.messageIds).limit(1),
+      ]);
+
+      const hit = ((keyed.data ?? [])[0] ?? (within.data ?? [])[0]) as { id: string } | undefined;
+      if (hit) {
+        // Recorded against the thread so a later run recognises it without
+        // asking Gmail again, but not re-read and not re-charged.
+        await supabase
+          .from('inbound_emails')
+          .update({ mailbox, gmail_thread_id: thread.threadId, message_ids: thread.messageIds })
+          .eq('id', hit.id);
+        return { stored: 'duplicate', emailId: String(hit.id) };
+      }
+    }
+
+    const { data: created, error } = await supabase
+      .from('inbound_emails')
+      .insert({ ...row, status: 'new' })
+      .select('id')
+      .single();
+
+    if (error) {
+      // A unique violation means another chunk stored it a moment ago, which
+      // is a duplicate rather than a failure.
+      if (error.code === '23505') return { stored: 'duplicate' };
+      throw new Error(`Could not store the thread: ${error.message}`);
+    }
+
+    return { stored: 'created', emailId: String((created as { id: string }).id) };
+  },
+
+  /**
+   * Clear the bodies of emails whose drafts have been dealt with.
+   *
+   * Off unless somebody switches it on. Deleting a body is irreversible and
+   * the email is the only record of what a publisher actually agreed to - so
+   * the default is to keep it, and turning this on is a decision taken
+   * deliberately rather than one inherited from a default.
+   *
+   * Only emails whose drafts are all settled are touched, and only ones old
+   * enough. The row itself stays: it is what stops the same mail being
+   * imported and paid for again, which is a job the body is not needed for.
+   */
+  async purgeReviewedBodies(): Promise<{ purged: number; enabled: boolean }> {
+    if (!isSupabaseEnabled()) return { purged: 0, enabled: false };
+
+    const settings = await sourcingService.getSettings();
+    if (!settings.purgeBodiesEnabled) return { purged: 0, enabled: false };
+
+    const supabase = getAdminScopedClient();
+    const cutoff = new Date();
+    cutoff.setUTCDate(cutoff.getUTCDate() - settings.purgeBodiesAfterDays);
+
+    // Anything still pending review keeps its body, however old it is: a
+    // draft somebody has not looked at yet is exactly when the original is
+    // needed.
+    const { data: pending } = await supabase
+      .from('listing_drafts')
+      .select('email_id')
+      .eq('status', 'pending');
+
+    const waiting = new Set(((pending ?? []) as { email_id: string }[]).map((row) => row.email_id));
+
+    const { data: candidates } = await supabase
+      .from('inbound_emails')
+      .select('id')
+      .in('status', ['extracted', 'ignored'])
+      .lt('extracted_at', cutoff.toISOString())
+      .neq('body_text', '')
+      .limit(500);
+
+    const ids = ((candidates ?? []) as { id: string }[])
+      .map((row) => row.id)
+      .filter((id) => !waiting.has(id));
+
+    if (ids.length === 0) return { purged: 0, enabled: true };
+
+    await supabase
+      .from('inbound_emails')
+      .update({ body_text: '', body_raw: '', status_reason: 'Body cleared by the retention setting.' })
+      .in('id', ids);
+
+    return { purged: ids.length, enabled: true };
   },
 
   // ------------------------------------------------------------ extraction

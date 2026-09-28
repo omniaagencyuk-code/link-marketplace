@@ -19,7 +19,8 @@
     "verify:sessions": "tsx scripts/verify-sessions.mts",
     "verify:delivery": "tsx scripts/verify-delivery.mts",
     "flatten": "node scripts/flatten-migration.mjs",
-    "verify:email": "tsx scripts/verify-email.mts"
+    "verify:email": "tsx scripts/verify-email.mts",
+    "verify:gmail": "tsx scripts/verify-gmail.mts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.128.0",
@@ -31,6 +32,7 @@
     "@tiptap/react": "^3.31.3",
     "@tiptap/starter-kit": "^3.31.3",
     "clsx": "^2.1.1",
+    "google-auth-library": "^11.1.0",
     "lucide-react": "^1.45.0",
     "next": "^16.3.4",
     "papaparse": "^5.7.0",

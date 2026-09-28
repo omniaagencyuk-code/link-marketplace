@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
-import { AlertTriangle, Check, Layers, Quote, Wand2, X } from 'lucide-react';
+import { AlertTriangle, Check, ExternalLink, Layers, Paperclip, Quote, Wand2, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input, Textarea } from '@/components/ui/input';
@@ -75,6 +75,11 @@ export function DraftReview({
     sentAt: string | null;
     body: string;
     askedAboutDomain: string | null;
+    /** Where it came from, when it came from Gmail rather than an upload. */
+    source: string;
+    gmailUrl: string | null;
+    attachments: { filename: string; mimeType: string; size: number }[];
+    hasRateCard: boolean;
   };
   extractedBy: string;
 }) {
@@ -114,6 +119,23 @@ export function DraftReview({
           <CardTitle>The reply</CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
+          {email.hasRateCard ? (
+            <p className="flex items-start gap-2 rounded-lg border border-line bg-warning/10 p-2.5 text-[12px] leading-relaxed text-ink">
+              <Paperclip className="mt-0.5 h-3.5 w-3.5 shrink-0 text-warning" aria-hidden="true" />
+              <span>
+                This thread has an attachment that may be a rate card - the terms below were read
+                from the words in the email only, and the file was not opened. Check it before
+                approving:{' '}
+                <strong className="font-medium">
+                  {email.attachments
+                    .map((file) => file.filename)
+                    .filter(Boolean)
+                    .join(', ')}
+                </strong>
+                .
+              </span>
+            </p>
+          ) : null}
           <dl className="space-y-1 text-[12px]">
             <div className="flex gap-2">
               <dt className="w-16 shrink-0 text-muted">From</dt>
@@ -132,6 +154,22 @@ export function DraftReview({
               <div className="flex gap-2">
                 <dt className="w-16 shrink-0 text-muted">Received</dt>
                 <dd className="tabular text-ink">{formatDateTime(email.sentAt)}</dd>
+              </div>
+            ) : null}
+            {email.gmailUrl ? (
+              <div className="flex gap-2">
+                <dt className="w-16 shrink-0 text-muted">Source</dt>
+                <dd className="text-ink">
+                  <a
+                    href={email.gmailUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center gap-1 underline"
+                  >
+                    Open the thread in Gmail
+                    <ExternalLink className="h-3 w-3" aria-hidden="true" />
+                  </a>
+                </dd>
               </div>
             ) : null}
             <div className="flex gap-2">

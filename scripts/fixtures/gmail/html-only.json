@@ -1,0 +1,34 @@
+{
+  "id": "m2",
+  "threadId": "t-html",
+  "internalDate": "1758800000000",
+  "payload": {
+    "mimeType": "text/html",
+    "headers": [
+      {
+        "name": "From",
+        "value": "\"Ops\" <ops@revue.example>"
+      },
+      {
+        "name": "To",
+        "value": "contact@omniaagency.uk"
+      },
+      {
+        "name": "Subject",
+        "value": "Tarifs"
+      },
+      {
+        "name": "Message-ID",
+        "value": "<html-1@revue.example>"
+      },
+      {
+        "name": "Content-Type",
+        "value": "text/html; charset=\"utf-8\""
+      }
+    ],
+    "body": {
+      "size": 300,
+      "data": "PGh0bWw-PGhlYWQ-PHN0eWxlPnB7Y29sb3I6cmVkfTwvc3R5bGU-PC9oZWFkPjxib2R5PjxzY3JpcHQ-dHJhY2soKTwvc2NyaXB0PjxwPkJvbmpvdXImbmJzcDshPC9wPjx0YWJsZT48dHI-PHRkPkd1ZXN0IHBvc3Q8L3RkPjx0ZD4mcG91bmQ7MjUwPC90ZD48L3RyPjx0cj48dGQ-TGluayBpbnNlcnRpb248L3RkPjx0ZD4mIzE2MzsxMjA8L3RkPjwvdHI-PC90YWJsZT48cD5FeGFtcGxlOiA8YSBocmVmPSJodHRwczovL3JldnVlLmV4YW1wbGUvcG9zdCI-b3VyIGJsb2c8L2E-PC9wPjxpbWcgc3JjPSJodHRwczovL3RyYWNrLmV4YW1wbGUvcC5naWYiIHdpZHRoPSIxIiBoZWlnaHQ9IjEiPjwvYm9keT48L2h0bWw-"
+    }
+  }
+}

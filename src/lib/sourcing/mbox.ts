@@ -12,12 +12,11 @@
  * against real exports without an API key.
  */
 
-/** Our own outreach. These are the sent side of every thread, never a reply. */
-const OUR_ADDRESSES = ['jack@omniamedia.uk'];
-
 /** Subject our outreach uses, with or without the domain named. */
 const OUTREACH_SUBJECT = /^\s*(?:re|fwd?|aw|sv|rv|antw)\s*:\s*|^\s*/i;
 const ADVERTISEMENTS_ON = /advertisements?\s+on\s+(.+?)\s*$/i;
+
+import { isOurs } from './outreach';
 
 export interface ParsedMessage {
   messageId: string;
@@ -335,7 +334,7 @@ export function stripQuotedHistory(body: string): string {
 // ------------------------------------------------------------ classification
 
 export function isOurOwnEmail(address: string): boolean {
-  return OUR_ADDRESSES.includes(address.toLowerCase());
+  return isOurs(address);
 }
 
 export function isBounce(address: string, subject?: string): boolean {

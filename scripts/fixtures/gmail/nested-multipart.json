@@ -1,0 +1,71 @@
+{
+  "id": "m1",
+  "threadId": "t-nested",
+  "internalDate": "1758700000000",
+  "payload": {
+    "mimeType": "multipart/mixed",
+    "headers": [
+      {
+        "name": "From",
+        "value": "Mette Holm <mette@holdsport.example>"
+      },
+      {
+        "name": "To",
+        "value": "info@omniaagency.uk"
+      },
+      {
+        "name": "Subject",
+        "value": "Re: Advertisements on holdsport.example"
+      },
+      {
+        "name": "Date",
+        "value": "Wed, 24 Sep 2026 17:37:00 +0200"
+      },
+      {
+        "name": "Message-ID",
+        "value": "<nested-1@holdsport.example>"
+      }
+    ],
+    "parts": [
+      {
+        "mimeType": "multipart/alternative",
+        "parts": [
+          {
+            "mimeType": "text/plain",
+            "headers": [
+              {
+                "name": "Content-Type",
+                "value": "text/plain; charset=\"utf-8\""
+              }
+            ],
+            "body": {
+              "size": 80,
+              "data": "SGVsbG8sCgpPdXIgcmF0ZSBpcyA1NTAgRVVSIHBlciBndWVzdCBwb3N0LgpHYW1ibGluZyBpcyA3MDAgRVVSLgoKTWV0dGU"
+            }
+          },
+          {
+            "mimeType": "text/html",
+            "headers": [
+              {
+                "name": "Content-Type",
+                "value": "text/html; charset=\"utf-8\""
+              }
+            ],
+            "body": {
+              "size": 90,
+              "data": "PHA-SGVsbG8sPC9wPjxwPk91ciByYXRlIGlzIDxiPjU1MCBFVVI8L2I-PC9wPg"
+            }
+          }
+        ]
+      },
+      {
+        "mimeType": "application/pdf",
+        "filename": "ratecard-2026.pdf",
+        "body": {
+          "size": 182000,
+          "attachmentId": "att1"
+        }
+      }
+    ]
+  }
+}

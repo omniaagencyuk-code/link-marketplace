@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { cronSecret } from '@/lib/ahrefs/config';
 import { deliveryService } from '@/lib/services/delivery-service';
+import { sourcingService } from '@/lib/services/sourcing-service';
 
 /**
  * Turn silence into consent, once a day.
@@ -47,11 +48,16 @@ export async function GET(request: NextRequest) {
   const { reminded } = await deliveryService.sendApprovalReminders();
   const { approved } = await deliveryService.autoApproveDue();
 
+  // Housekeeping shares the daily slot rather than owning a schedule of its
+  // own. It does nothing at all unless the retention setting is switched on.
+  const { purged } = await sourcingService.purgeReviewedBodies().catch(() => ({ purged: 0 }));
+
   console.log(
-    `[auto-approve] ${reminded} reminded, ${approved} approved by the clock in ${Date.now() - started}ms`,
+    `[auto-approve] ${reminded} reminded, ${approved} approved by the clock,` +
+      ` ${purged} bodies cleared in ${Date.now() - started}ms`,
   );
 
-  return NextResponse.json({ reminded, approved });
+  return NextResponse.json({ reminded, approved, purged });
 }
 
 /** Vercel Cron uses GET; POST is here so it can be triggered by hand. */

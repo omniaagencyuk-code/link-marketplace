@@ -6,6 +6,7 @@ import { DraftReview } from '@/components/admin/sourcing/draft-review';
 import { getAdminScopedClient } from '@/lib/supabase/server';
 import { isSupabaseEnabled } from '@/lib/supabase/config';
 import { extractedListingSchema } from '@/lib/sourcing/schema';
+import { gmailThreadUrl } from '@/lib/gmail/thread';
 import { websiteService } from '@/lib/services';
 import { sensitiveNicheSlugs } from '@/lib/config/accepted-niches';
 
@@ -55,7 +56,7 @@ export default async function DraftPage({ params }: { params: Promise<{ id: stri
   const { data } = await supabase
     .from('listing_drafts')
     .select(
-      'id, email_id, domain, status, flags, low_confidence_count, matched_website_id, proposed, confidence, evidence, extraction_model, prompt_version, reject_reason, inbound_emails (id, from_address, from_name, subject, sent_at, body_text, asked_about_domain)',
+      'id, email_id, domain, status, flags, low_confidence_count, matched_website_id, proposed, confidence, evidence, extraction_model, prompt_version, reject_reason, inbound_emails (id, from_address, from_name, subject, sent_at, body_text, asked_about_domain, source, mailbox, gmail_thread_id, attachments, has_rate_card)',
     )
     .eq('id', id)
     .maybeSingle();
@@ -127,6 +128,18 @@ export default async function DraftPage({ params }: { params: Promise<{ id: stri
           sentAt: (email?.sent_at as string | null) ?? null,
           body: String(email?.body_text ?? ''),
           askedAboutDomain: (email?.asked_about_domain as string | null) ?? null,
+          source: String(email?.source ?? 'upload'),
+          // Built here rather than stored: it is derived from two columns we
+          // already have, and a link stored at import time would outlive any
+          // change to how Gmail addresses a thread.
+          gmailUrl:
+            email?.mailbox && email?.gmail_thread_id
+              ? gmailThreadUrl(String(email.mailbox), String(email.gmail_thread_id))
+              : null,
+          attachments: (email?.attachments as
+            | { filename: string; mimeType: string; size: number }[]
+            | null) ?? [],
+          hasRateCard: Boolean(email?.has_rate_card),
         }}
         siblingCount={siblings ?? 0}
         extractedBy={`${draft.extraction_model ?? 'unknown model'} · rules ${draft.prompt_version ?? 'unknown'}`}

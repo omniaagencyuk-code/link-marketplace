@@ -120,6 +120,9 @@ echo
 echo "--- publisher contacts ---"
 run -f "$ROOT/supabase/tests/09_publisher_contacts.sql" 2>&1 | grep -v '^$'
 echo
+echo "--- gmail import: the allowlist and who can read the mail ---"
+run -f "$ROOT/supabase/tests/13_gmail_import.sql" 2>&1 | grep -v '^$'
+echo
 echo "--- an unmentioned topic costs what sensitive content costs ---"
 run -f "$ROOT/supabase/tests/12_assumed_niche_rates.sql" 2>&1 | grep -v '^$'
 echo

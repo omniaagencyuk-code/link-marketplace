@@ -1,0 +1,52 @@
+{
+  "id": "m4",
+  "threadId": "t-forward",
+  "internalDate": "1759000000000",
+  "payload": {
+    "mimeType": "multipart/mixed",
+    "headers": [
+      {
+        "name": "From",
+        "value": "jack@omniamedia.uk"
+      },
+      {
+        "name": "To",
+        "value": "info@omniaagency.uk"
+      },
+      {
+        "name": "Subject",
+        "value": "Fwd: Re: Advertisements on lemonde.example"
+      },
+      {
+        "name": "Message-ID",
+        "value": "<fwd-1@omniamedia.uk>"
+      }
+    ],
+    "parts": [
+      {
+        "mimeType": "text/plain",
+        "body": {
+          "size": 30,
+          "data": "Rm9yd2FyZGluZyB0aGVpciByZXBseSBiZWxvdy4K"
+        }
+      },
+      {
+        "mimeType": "message/rfc822",
+        "parts": [
+          {
+            "mimeType": "multipart/alternative",
+            "parts": [
+              {
+                "mimeType": "text/plain",
+                "body": {
+                  "size": 60,
+                  "data": "V2UgY2hhcmdlIDQwMCBFVVIuCgpPbiBUdWUsIDIzIFNlcCAyMDI2LCBKYWNrIHdyb3RlOgo-IFdoYXQgYXJlIHlvdXIgcmF0ZXM_Cj4gVGhhbmtzCg"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

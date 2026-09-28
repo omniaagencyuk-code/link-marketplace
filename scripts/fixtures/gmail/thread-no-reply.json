@@ -1,0 +1,36 @@
+{
+  "id": "t-silent",
+  "historyId": "99002",
+  "messages": [
+    {
+      "id": "c",
+      "threadId": "t-silent",
+      "internalDate": "1758600000000",
+      "payload": {
+        "mimeType": "text/plain",
+        "headers": [
+          {
+            "name": "From",
+            "value": "info@omniaagency.uk"
+          },
+          {
+            "name": "To",
+            "value": "nobody@quiet.example"
+          },
+          {
+            "name": "Subject",
+            "value": "Advertisements on quiet.example"
+          },
+          {
+            "name": "Message-ID",
+            "value": "<out-2@omniaagency.uk>"
+          }
+        ],
+        "body": {
+          "size": 20,
+          "data": "QW55IGludGVyZXN0Pwo"
+        }
+      }
+    }
+  ]
+}

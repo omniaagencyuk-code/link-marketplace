@@ -1,0 +1,79 @@
+{
+  "id": "t-thread-1",
+  "historyId": "99001",
+  "messages": [
+    {
+      "id": "a",
+      "threadId": "t-thread-1",
+      "internalDate": "1758600000000",
+      "payload": {
+        "mimeType": "text/plain",
+        "headers": [
+          {
+            "name": "From",
+            "value": "Jack <jack@omniamedia.uk>"
+          },
+          {
+            "name": "To",
+            "value": "hello@nomadbento.example"
+          },
+          {
+            "name": "Subject",
+            "value": "Advertisements on nomadbento.example"
+          },
+          {
+            "name": "Message-ID",
+            "value": "<out-1@omniamedia.uk>"
+          }
+        ],
+        "body": {
+          "size": 40,
+          "data": "SGksIGRvIHlvdSBhY2NlcHQgc3BvbnNvcmVkIHBvc3RzPwo"
+        }
+      }
+    },
+    {
+      "id": "b",
+      "threadId": "t-thread-1",
+      "internalDate": "1758700000000",
+      "payload": {
+        "mimeType": "multipart/mixed",
+        "headers": [
+          {
+            "name": "From",
+            "value": "Ana <hello@nomadbento.example>"
+          },
+          {
+            "name": "To",
+            "value": "jack@omniamedia.uk"
+          },
+          {
+            "name": "Subject",
+            "value": "Re: Advertisements on nomadbento.example"
+          },
+          {
+            "name": "Message-ID",
+            "value": "<in-1@nomadbento.example>"
+          }
+        ],
+        "parts": [
+          {
+            "mimeType": "text/plain",
+            "body": {
+              "size": 120,
+              "data": "WWVzIC0gNTUwIEVVUiBwZXIgcG9zdCwgNzAwIEVVUiBmb3IgY2FzaW5vLgoKT24gTW9uLCAyMiBTZXAgMjAyNiwgSmFjayB3cm90ZToKPiBIaSwgZG8geW91IGFjY2VwdCBzcG9uc29yZWQgcG9zdHM_Cg"
+            }
+          },
+          {
+            "mimeType": "text/csv",
+            "filename": "rates.csv",
+            "body": {
+              "size": 900,
+              "attachmentId": "att9"
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

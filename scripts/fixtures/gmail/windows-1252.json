@@ -1,0 +1,34 @@
+{
+  "id": "m3",
+  "threadId": "t-charset",
+  "internalDate": "1758900000000",
+  "payload": {
+    "mimeType": "text/plain",
+    "headers": [
+      {
+        "name": "From",
+        "value": "=?windows-1252?Q?Jean=2DBeno=EEt?= <jb@moingt.example>"
+      },
+      {
+        "name": "To",
+        "value": "info@omnia-marketing.co.uk"
+      },
+      {
+        "name": "Subject",
+        "value": "=?windows-1252?Q?Tarifs_pour_votre_soci=E9t=E9?="
+      },
+      {
+        "name": "Message-ID",
+        "value": "<charset-1@moingt.example>"
+      },
+      {
+        "name": "Content-Type",
+        "value": "text/plain; charset=\"windows-1252\""
+      }
+    ],
+    "body": {
+      "size": 80,
+      "data": "Qm9uam91ciwKCk5vdHJlIHRhcmlmIGVzdCBkZSA1NTCAIHBhciBhcnRpY2xlLiBDYWbpIGNvbXByaXMuCg"
+    }
+  }
+}
