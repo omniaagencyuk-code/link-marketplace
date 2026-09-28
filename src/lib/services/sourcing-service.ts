@@ -788,10 +788,18 @@ export const sourcingService = {
   async releaseStuckBatches(): Promise<{ batches: number; emails: number; message: string }> {
     const supabase = getAdminScopedClient();
 
+    /*
+      Real-time runs count too.
+
+      A real-time batch is only ever 'running' while the request that owns it
+      is alive. If that request was killed - and eleven sequential calls to
+      the model will kill it - the row stays 'running' for ever and its
+      emails stay claimed. Filtering on mode 'batch' here meant the one way
+      out did not cover the way in that strands them fastest.
+    */
     const { data } = await supabase
       .from('extraction_batches')
       .select('id, email_count')
-      .eq('mode', 'batch')
       .in('status', ['submitted', 'running']);
 
     const stuck = (data ?? []) as { id: string; email_count: number }[];

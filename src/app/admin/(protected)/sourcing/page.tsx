@@ -12,6 +12,14 @@ import { isSupabaseEnabled } from '@/lib/supabase/config';
 
 export const dynamic = 'force-dynamic';
 
+/*
+  Real-time extraction runs inside a server action on this route, one model
+  call after another. Eleven threads came back comfortably, but the default
+  function ceiling is nowhere near what a longer run needs, and a run killed
+  half way leaves its emails claimed by a batch nobody is waiting for.
+*/
+export const maxDuration = 300;
+
 /**
  * The publisher inbox.
  *
