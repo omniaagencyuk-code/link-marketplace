@@ -5,17 +5,20 @@ import { Button } from '@/components/ui/button';
 import { useFavourites } from '@/lib/providers/favourites-provider';
 import { useOrderDraft } from '@/lib/providers/order-draft-provider';
 import { formatPrice } from '@/lib/utils/format';
-import type { WebsiteListItem } from '@/lib/types';
+import type { AcceptedNicheSlug, WebsiteListItem } from '@/lib/types';
 
 /** Bulk actions for rows selected in the marketplace table. */
 export function SelectionBar({
   count,
   onClear,
   websites,
+  topic,
 }: {
   count: number;
   onClear: () => void;
   websites: WebsiteListItem[];
+  /** What the buyer said they were buying for, carried onto every line. */
+  topic?: AcceptedNicheSlug;
 }) {
   const { toggle } = useFavourites();
   const { add } = useOrderDraft();
@@ -31,7 +34,16 @@ export function SelectionBar({
         websiteSlug: website.slug,
         websiteDomain: website.domain,
         serviceType: service.type,
-        priceMinor: service.priceMinor,
+        /*
+          The headline price, not the service's own.
+
+          Where a topic is set, the listing has already been priced for it,
+          so this is what the card said. Using the service's general price
+          here is how a basket comes to disagree with the marketplace it was
+          built from.
+        */
+        priceMinor: website.headlinePriceMinor,
+        topic,
         targetUrl: '',
         anchorText: '',
       });

@@ -92,6 +92,7 @@ const gatewayPoints = [
  */
 const CARRIED_PARAMS = [
   'q',
+  'topic',
   'niche',
   'country',
   'lang',
