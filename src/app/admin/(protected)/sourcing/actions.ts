@@ -534,3 +534,26 @@ export async function spreadGeneralPriceAction(values: unknown): Promise<{
   if (!parsed.success) return { ok: false, error: 'Those values are not valid.' };
   return { ok: true, values: applyGeneralPriceToNiches(parsed.data) };
 }
+
+/**
+ * The rate-card worklist.
+ *
+ * Both actions are ordinary admin actions on an email that already exists.
+ * Neither fetches a URL and neither downloads an attachment: the only thing
+ * that crosses into the system here is text a human pasted after reading the
+ * rate card themselves.
+ */
+export async function addRateCardAction(input: { emailId: string; text: string }) {
+  const by = await reviewer();
+  const result = await sourcingService.addRateCard(input.emailId, input.text, by);
+  revalidatePath('/admin/sourcing/rate-cards');
+  revalidatePath('/admin/sourcing');
+  return result;
+}
+
+export async function dismissRateCardAction(emailId: string) {
+  await requireAdminSession();
+  await sourcingService.dismissRateCard(emailId);
+  revalidatePath('/admin/sourcing/rate-cards');
+  return { ok: true };
+}

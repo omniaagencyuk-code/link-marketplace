@@ -37,10 +37,11 @@ async function load() {
 
   const supabase = getAdminScopedClient();
 
-  const [settings, pending, spent, drafts, emails, problems, batches] = await Promise.all([
+  const [settings, pending, spent, rateCards, drafts, emails, problems, batches] = await Promise.all([
     sourcingService.getSettings(),
     sourcingService.pendingCount().catch(() => 0),
     sourcingService.spentThisMonthUsd().catch(() => 0),
+    sourcingService.rateCardLeads(100).catch(() => []),
     supabase
       .from('listing_drafts')
       .select('id, domain, matched_website_id, low_confidence_count, flags, created_at, inbound_emails (from_address, sent_at)')
@@ -100,6 +101,7 @@ async function load() {
     settings,
     pending,
     spent,
+    rateCardCount: rateCards.length,
     counts,
     drafts: draftRows,
     problems: (problems.data ?? []) as Record<string, unknown>[],
@@ -178,9 +180,18 @@ export default async function SourcingPage() {
         title="Publisher inbox"
         description="Import replies from Gmail, paste one, or upload an export. Read them with Claude, then check every draft before it becomes a listing."
         action={
-          <Button asChild variant="outline">
-            <Link href="/admin/sourcing/gmail">Import from Gmail</Link>
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            {state.rateCardCount > 0 ? (
+              <Button asChild variant="outline">
+                <Link href="/admin/sourcing/rate-cards">
+                  {state.rateCardCount} rate {state.rateCardCount === 1 ? 'card' : 'cards'} to read
+                </Link>
+              </Button>
+            ) : null}
+            <Button asChild variant="outline">
+              <Link href="/admin/sourcing/gmail">Import from Gmail</Link>
+            </Button>
+          </div>
         }
       />
 

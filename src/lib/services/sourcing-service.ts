@@ -1,7 +1,8 @@
 import { getAdminScopedClient } from '@/lib/supabase/server';
 import { isSupabaseEnabled } from '@/lib/supabase/config';
 import { readMbox, readPastedEmail, type ParsedMessage } from '@/lib/sourcing/mbox';
-import type { ReadThread } from '@/lib/gmail/thread';
+import { gmailThreadUrl, type ReadThread } from '@/lib/gmail/thread';
+import { extractLinks, type FoundLink } from '@/lib/sourcing/links';
 import {
   collectBatch,
   checkBatch,
@@ -39,6 +40,21 @@ export interface SourcingSettings {
   /** Clearing bodies is irreversible, so it is off until somebody says. */
   purgeBodiesEnabled: boolean;
   purgeBodiesAfterDays: number;
+}
+
+export interface RateCardLead {
+  id: string;
+  fromAddress: string;
+  fromName: string | null;
+  subject: string | null;
+  sentAt: string | null;
+  askedAboutDomain: string | null;
+  /** Why extraction produced no draft. Usually names the missing rate card. */
+  reason: string | null;
+  attachments: { filename: string; mimeType: string; size: number }[];
+  hasRateCard: boolean;
+  links: FoundLink[];
+  gmailUrl: string | null;
 }
 
 export interface IngestResult {
@@ -326,6 +342,123 @@ export const sourcingService = {
       .in('id', ids);
 
     return { purged: ids.length, enabled: true };
+  },
+
+  // ------------------------------------------------------- rate card leads
+
+  /**
+   * Replies that sent a rate card instead of a price.
+   *
+   * Ignored emails carrying an attachment or a link out. They produced no
+   * draft and the reason was accurate - the prices are in a PDF or a Google
+   * Sheet we never opened - but a publisher who sends a full rate card is the
+   * opposite of a dead lead, and until now they landed in a list with no
+   * actions on it.
+   *
+   * Dismissed ones are gone from here for good; that is what dismissing is.
+   */
+  async rateCardLeads(limit = 100): Promise<RateCardLead[]> {
+    if (!isSupabaseEnabled()) return [];
+    const supabase = getAdminScopedClient();
+
+    const { data } = await supabase
+      .from('inbound_emails')
+      .select(
+        'id, from_address, from_name, subject, sent_at, body_text, status_reason, asked_about_domain, source, mailbox, gmail_thread_id, attachments, has_rate_card',
+      )
+      .eq('status', 'ignored')
+      .is('rate_card_dismissed_at', null)
+      .order('sent_at', { ascending: false })
+      .limit(limit * 3);
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const rows = (data ?? []) as any[];
+
+    return rows
+      .map((row) => ({
+        id: String(row.id),
+        fromAddress: String(row.from_address ?? ''),
+        fromName: (row.from_name as string | null) ?? null,
+        subject: (row.subject as string | null) ?? null,
+        sentAt: (row.sent_at as string | null) ?? null,
+        askedAboutDomain: (row.asked_about_domain as string | null) ?? null,
+        reason: (row.status_reason as string | null) ?? null,
+        attachments: (row.attachments as RateCardLead['attachments']) ?? [],
+        hasRateCard: Boolean(row.has_rate_card),
+        links: extractLinks(String(row.body_text ?? '')),
+        gmailUrl:
+          row.mailbox && row.gmail_thread_id
+            ? gmailThreadUrl(String(row.mailbox), String(row.gmail_thread_id))
+            : null,
+      }))
+      // The filter is applied after mapping because "has a link" is only
+      // knowable once the body has been read for links, and doing that in the
+      // query would mean storing them - a second copy that can go stale.
+      .filter((lead) => lead.hasRateCard || lead.attachments.length > 0 || lead.links.length > 0)
+      .slice(0, limit);
+  },
+
+  /**
+   * Put the rate card's contents into the email and queue it to be read.
+   *
+   * The whole point of the worklist. Somebody opens the sheet, copies the
+   * rates, pastes them here - and from that moment it is an ordinary email
+   * waiting to be read, with no new extraction path and no new rules.
+   *
+   * The pasted text is marked in the body. When a listing is argued about
+   * later, "the model read this from their reply" and "a person typed this
+   * after reading their spreadsheet" are different claims, and the body is
+   * where anybody will look to tell them apart.
+   */
+  async addRateCard(
+    emailId: string,
+    text: string,
+    by?: string,
+  ): Promise<{ ok: boolean; message: string }> {
+    const contents = text.trim();
+    if (contents.length < 10) {
+      return { ok: false, message: 'Paste the rates from the rate card first.' };
+    }
+
+    const supabase = getAdminScopedClient();
+    const { data: existing } = await supabase
+      .from('inbound_emails')
+      .select('id, body_text, body_raw')
+      .eq('id', emailId)
+      .maybeSingle();
+
+    if (!existing) return { ok: false, message: 'That email no longer exists.' };
+    const row = existing as { body_text: string; body_raw: string };
+
+    const stamp = new Date().toISOString().slice(0, 10);
+    const marked = `\n\n--- Rate card contents, added by ${by ?? 'an admin'} on ${stamp} ---\n${contents}`;
+
+    const { error } = await supabase
+      .from('inbound_emails')
+      .update({
+        body_text: `${row.body_text ?? ''}${marked}`,
+        body_raw: `${row.body_raw ?? ''}${marked}`,
+        // Back in the queue, exactly as if it had just arrived.
+        status: 'new',
+        status_reason: null,
+        batch_id: null,
+        extracted_at: null,
+        rate_card_added_at: new Date().toISOString(),
+        rate_card_added_by: by ?? null,
+      })
+      .eq('id', emailId);
+
+    if (error) return { ok: false, message: 'That could not be saved.' };
+    return { ok: true, message: 'Added. Press Read on the publisher inbox to extract it.' };
+  },
+
+  /** Not a rate card after all. It drops off the worklist for good. */
+  async dismissRateCard(emailId: string): Promise<void> {
+    const supabase = getAdminScopedClient();
+    await supabase
+      .from('inbound_emails')
+      .update({ rate_card_dismissed_at: new Date().toISOString() })
+      .eq('id', emailId);
   },
 
   // ------------------------------------------------------------ extraction

@@ -12,6 +12,7 @@ import { readMbox, readPastedEmail, domainFromSubject, stripQuotedHistory } from
 import { extractionResultSchema, fromWire, wireResultSchema, type ExtractedListing } from '../src/lib/sourcing/schema';
 import { applyGeneralPriceToNiches, assumedNicheCosts, countLowConfidence, expandListings, flagsFor, sellableNiches, sensitiveRate } from '../src/lib/sourcing/review';
 import { sensitiveNicheSlugs } from '../src/lib/config/accepted-niches';
+import { extractLinks, looksLikeRateCardLead } from '../src/lib/sourcing/links';
 import { zodOutputFormat } from '@anthropic-ai/sdk/helpers/zod';
 
 let failed = 0;
@@ -508,6 +509,58 @@ console.log('\n--- what an unmentioned topic costs ---');
   is('a lone price yields no sensitive rate', sensitiveRate(lone, 'guest-post'), null);
   is('and nothing is assumed from it', assumedNicheCosts(lone).length, 0);
   is('it is still flagged for a human', flagsFor(lone).includes('single-price-confirm-niches'), true);
+}
+
+console.log('\n--- links a publisher sent instead of a price ---');
+{
+  const body = [
+    'Hi Jack,',
+    '',
+    'Our full rate card is here: https://docs.google.com/spreadsheets/d/abc123/edit?usp=sharing',
+    'There is also a PDF: https://example.com/media/rates-2026.pdf.',
+    'Our blog: https://example.com',
+    '',
+    'Best, Ana',
+    '<https://example.com/unsubscribe?id=99>',
+    'https://track.example.com/pixel.gif',
+    'https://www.linkedin.com/in/ana',
+  ].join('\n');
+
+  const links = extractLinks(body);
+  is('the sheet is found', links.some((l) => l.kind === 'sheet'), true);
+  is('and ranked first, because that is where the prices are', links[0]?.kind, 'sheet');
+  is('a pdf is recognised as a file', links.some((l) => l.kind === 'file'), true);
+  is(
+    'a full stop after a url is punctuation, not path',
+    links.find((l) => l.kind === 'file')?.url.endsWith('.pdf'),
+    true,
+  );
+  is('an unsubscribe link is not a rate card', links.some((l) => l.url.includes('unsubscribe')), false);
+  is('nor is a tracking pixel', links.some((l) => l.url.includes('pixel.gif')), false);
+  is('nor a signature social link', links.some((l) => l.url.includes('linkedin')), false);
+  is('their own site is kept, it is often the domain in question', links.some((l) => l.url === 'https://example.com'), true);
+  is('nothing is listed twice', new Set(links.map((l) => l.url)).size, links.length);
+}
+
+{
+  is('an empty body has no links', extractLinks('').length, 0);
+  is('and prose with no urls has none either', extractLinks('We will get back to you.').length, 0);
+  const wrapped = extractLinks('See (https://docs.google.com/spreadsheets/d/x/edit) for rates');
+  is('a bracketed url loses the bracket', wrapped[0]?.url.endsWith(')'), false);
+}
+
+{
+  // What puts an email on the worklist at all. A reply with neither an
+  // attachment nor a link failed for some other reason, and burying the
+  // real leads under it is how a worklist stops being read.
+  is(
+    'an attachment is enough',
+    looksLikeRateCardLead({ attachments: [{ filename: 'r.pdf', mimeType: 'application/pdf', size: 1 }] }),
+    true,
+  );
+  is('so is a link', looksLikeRateCardLead({ bodyText: 'see https://docs.google.com/spreadsheets/d/x/edit' }), true);
+  is('a bare refusal is not a lead', looksLikeRateCardLead({ bodyText: 'No thank you.' }), false);
+  is('nor is an empty one', looksLikeRateCardLead({}), false);
 }
 
 console.log('\n--- the claim is honoured everywhere ---');

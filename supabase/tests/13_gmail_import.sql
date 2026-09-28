@@ -116,3 +116,29 @@ reset role;
 -- Purging is off until somebody turns it on.
 select 'body purging is off by default: ' || purge_bodies_enabled from public.sourcing_settings where id = 1;
 select 'and defaults to 90 days: ' || purge_bodies_after_days from public.sourcing_settings where id = 1;
+
+-- ------------------------------------------------ the rate card worklist
+-- A reply that sent a spreadsheet instead of a price. It produced no draft,
+-- which is correct, and the columns below are what let a human act on it
+-- rather than scroll past it.
+insert into public.inbound_emails (message_id, from_address, body_text, status, status_reason)
+values ('sheet@publisher.example', 'ana@publisher.example',
+        'Our rates are here: https://docs.google.com/spreadsheets/d/abc/edit',
+        'ignored', 'Reply only links to an external rate-card spreadsheet.');
+
+select 'a new lead is not dismissed: ' || coalesce(rate_card_dismissed_at::text, 'null')
+  from public.inbound_emails where message_id = 'sheet@publisher.example';
+select 'and nobody has added rates yet: ' || coalesce(rate_card_added_at::text, 'null')
+  from public.inbound_emails where message_id = 'sheet@publisher.example';
+
+-- Dismissing takes it off the list without touching the email.
+update public.inbound_emails set rate_card_dismissed_at = timezone('utc', now())
+  where message_id = 'sheet@publisher.example';
+select 'the email survives being dismissed: ' || length(body_text)
+  from public.inbound_emails where message_id = 'sheet@publisher.example';
+
+set role authenticated;
+set request.jwt.claim.sub = '22222222-2222-2222-2222-222222222222';
+select 'customer reads rate card leads: ' || count(*)
+  from public.inbound_emails where status = 'ignored';
+reset role;
