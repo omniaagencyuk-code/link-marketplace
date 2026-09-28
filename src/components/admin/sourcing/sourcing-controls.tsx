@@ -9,7 +9,7 @@ import { Label } from '@/components/ui/label';
 import { Select } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { splitForUpload } from '@/lib/sourcing/split-upload';
-import { EXTRACTION_BATCH_LIMIT } from '@/lib/sourcing/limits';
+import { extractionLimit } from '@/lib/sourcing/limits';
 import { progressMessage, runProgress, type BatchRow } from '@/lib/sourcing/batch-health';
 import {
   collectBatchesAction,
@@ -69,8 +69,10 @@ export function SourcingControls({
   const [pastedFrom, setPastedFrom] = useState('');
 
   // What the button will actually send, which is neither the number waiting
-  // (a run stops at the batch size) nor the batch size (there may be fewer).
-  const willSend = Math.min(pending, EXTRACTION_BATCH_LIMIT);
+  // (a run stops at the limit) nor the limit (there may be fewer). The limit
+  // depends on the mode: batch hands everything over at once, real time makes
+  // one blocking call per email and cannot do many.
+  const willSend = Math.min(pending, extractionLimit(settings.mode));
 
   const runningBatches = batches.filter(
     (batch) => batch.status === 'running' || batch.status === 'submitted',

@@ -21,7 +21,7 @@ import {
 } from '@/lib/sourcing/client';
 import { countLowConfidence, expandListings, flagsFor } from '@/lib/sourcing/review';
 import { asMap } from '@/lib/sourcing/schema';
-import { EXTRACTION_BATCH_LIMIT } from '@/lib/sourcing/limits';
+import { extractionLimit } from '@/lib/sourcing/limits';
 
 /**
  * Publisher sourcing: emails in, drafts out, nothing live without a human.
@@ -591,7 +591,7 @@ export const sourcingService = {
     wouldSend?: number;
   }> {
     const settings = await sourcingService.getSettings();
-    const limit = options.limit ?? EXTRACTION_BATCH_LIMIT;
+    const limit = options.limit ?? extractionLimit(settings.mode);
 
     if (!settings.enabled) {
       return { ok: false, message: 'Extraction is switched off. Turn it on in the settings above.' };

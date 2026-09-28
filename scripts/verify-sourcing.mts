@@ -15,6 +15,7 @@ import { sensitiveNicheSlugs } from '../src/lib/config/accepted-niches';
 import { extractLinks, looksLikeRateCardLead } from '../src/lib/sourcing/links';
 import { healthOf, progressMessage, runProgress, type BatchRow } from '../src/lib/sourcing/batch-health';
 import { describeSkip, nightlySkipReason, type NightlyState } from '../src/lib/sourcing/schedule';
+import { extractionLimit } from '../src/lib/sourcing/limits';
 import { zodOutputFormat } from '@anthropic-ai/sdk/helpers/zod';
 
 let failed = 0;
@@ -640,6 +641,18 @@ console.log('\n--- is tonight run due ---');
 
   has('every reason says why', describeSkip('already-ran'), 'already ran');
   has('including the unfinished one', describeSkip('still-running'), 'not finished');
+}
+
+console.log('\n--- how many one press sends ---');
+{
+  // Real time makes one blocking call per email inside a single request, so
+  // its ceiling is how long a function may live. Batch hands everything over
+  // in one call and collects later, so it has no such problem - and applying
+  // the real-time number to it turned a backlog of eight hundred into
+  // thirty-two presses.
+  is('real time stays small', extractionLimit('realtime'), 25);
+  is('batch sends far more', extractionLimit('batch'), 500);
+  is('and batch is the larger of the two', extractionLimit('batch') > extractionLimit('realtime'), true);
 }
 
 console.log('\n--- the claim is honoured everywhere ---');
