@@ -60,7 +60,7 @@ async function load() {
       .limit(20),
     supabase
       .from('extraction_batches')
-      .select('id, mode, status, email_count, succeeded_count, failed_count, created_at')
+      .select('id, mode, status, email_count, succeeded_count, failed_count, created_at, provider_batch_id, status_reason')
       .order('created_at', { ascending: false })
       .limit(5),
   ]);

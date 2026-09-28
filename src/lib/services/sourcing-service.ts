@@ -4,6 +4,11 @@ import { readMbox, readPastedEmail, type ParsedMessage } from '@/lib/sourcing/mb
 import { gmailSearchUrl, gmailThreadUrl, type ReadThread } from '@/lib/gmail/thread';
 import { extractLinks, type FoundLink } from '@/lib/sourcing/links';
 import {
+  ABANDON_AFTER_MINUTES,
+  NEVER_SUBMITTED_AFTER_MINUTES,
+  minutesSince,
+} from '@/lib/sourcing/batch-health';
+import {
   collectBatch,
   checkBatch,
   estimateCostUsd,
@@ -681,17 +686,51 @@ export const sourcingService = {
     const supabase = getAdminScopedClient();
     const { data } = await supabase
       .from('extraction_batches')
-      .select('id, provider_batch_id, model')
+      .select('id, provider_batch_id, model, created_at, status')
       .eq('mode', 'batch')
       .in('status', ['submitted', 'running']);
 
-    const running = (data ?? []) as { id: string; provider_batch_id: string | null; model: string }[];
+    const running = (data ?? []) as {
+      id: string;
+      provider_batch_id: string | null;
+      model: string;
+      created_at: string;
+      status: string;
+    }[];
     let collected = 0;
     let draftsCreated = 0;
     let stillRunning = 0;
+    let released = 0;
 
     for (const batch of running) {
-      if (!batch.provider_batch_id) continue;
+      const age = minutesSince(batch.created_at);
+
+      /*
+        A batch with no provider id was never handed over.
+
+        The emails are claimed before the submission so two clicks cannot send
+        the same one twice; if the process dies in between, the claim stands
+        and there is nothing to collect. This used to `continue`, which left
+        those emails claimed for ever - counted as "being read" by a batch
+        that did not exist, with nothing in the system able to notice.
+      */
+      if (!batch.provider_batch_id) {
+        if (age >= NEVER_SUBMITTED_AFTER_MINUTES) {
+          await sourcingService.failBatch(batch.id, new Error('Never reached the API. The emails were put back.'));
+          released += 1;
+        } else {
+          stillRunning += 1;
+        }
+        continue;
+      }
+
+      // Past Anthropic's own ceiling, results are not coming.
+      if (age >= ABANDON_AFTER_MINUTES) {
+        await sourcingService.failBatch(batch.id, new Error('No results after 24 hours. The emails were put back.'));
+        released += 1;
+        continue;
+      }
+
       try {
         const state = await checkBatch(batch.provider_batch_id);
         if (state === 'running') {
@@ -716,17 +755,77 @@ export const sourcingService = {
     }
 
     if (running.length === 0) return { collected: 0, draftsCreated: 0, message: 'No batches are running.' };
+
+    const put = released > 0
+      ? ` ${released} ${released === 1 ? 'batch was' : 'batches were'} stuck; those emails are back in the queue.`
+      : '';
+
     if (collected === 0) {
       return {
         collected: 0,
         draftsCreated: 0,
-        message: `${stillRunning} ${stillRunning === 1 ? 'batch is' : 'batches are'} still running. Check again shortly.`,
+        message: stillRunning > 0
+          ? `${stillRunning} ${stillRunning === 1 ? 'batch is' : 'batches are'} still running. Check again shortly.${put}`
+          : put.trim() || 'Nothing to collect.',
       };
     }
     return {
       collected,
       draftsCreated,
-      message: `Collected ${collected} ${collected === 1 ? 'batch' : 'batches'}. ${draftsCreated} ${draftsCreated === 1 ? 'draft is' : 'drafts are'} waiting for review.`,
+      message: `Collected ${collected} ${collected === 1 ? 'batch' : 'batches'}. ${draftsCreated} ${draftsCreated === 1 ? 'draft is' : 'drafts are'} waiting for review.${put}`,
+    };
+  },
+
+  /**
+   * Give up on everything outstanding and put the emails back.
+   *
+   * The escape hatch for a run that is not coming back, pressed by a human
+   * who has decided waiting is over. Nothing is lost: the emails return to
+   * 'new' exactly as they arrived, and reading them again costs what reading
+   * them cost the first time - which is nothing, since the first attempt
+   * produced no result to pay for.
+   */
+  async releaseStuckBatches(): Promise<{ batches: number; emails: number; message: string }> {
+    const supabase = getAdminScopedClient();
+
+    const { data } = await supabase
+      .from('extraction_batches')
+      .select('id, email_count')
+      .eq('mode', 'batch')
+      .in('status', ['submitted', 'running']);
+
+    const stuck = (data ?? []) as { id: string; email_count: number }[];
+    if (stuck.length === 0) {
+      return { batches: 0, emails: 0, message: 'Nothing is outstanding.' };
+    }
+
+    let emails = 0;
+    for (const batch of stuck) {
+      // Count what was actually released rather than what the batch claimed:
+      // some of its emails may have been collected already.
+      const { data: freed } = await supabase
+        .from('inbound_emails')
+        .update({ batch_id: null })
+        .eq('batch_id', batch.id)
+        .eq('status', 'new')
+        .select('id');
+
+      emails += (freed ?? []).length;
+
+      await supabase
+        .from('extraction_batches')
+        .update({
+          status: 'failed',
+          status_reason: 'Given up on by an admin. The emails were put back in the queue.',
+          completed_at: new Date().toISOString(),
+        })
+        .eq('id', batch.id);
+    }
+
+    return {
+      batches: stuck.length,
+      emails,
+      message: `${emails} ${emails === 1 ? 'email is' : 'emails are'} back in the queue. Press Read to send them again.`,
     };
   },
 

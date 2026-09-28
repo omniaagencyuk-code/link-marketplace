@@ -13,6 +13,7 @@ import { extractionResultSchema, fromWire, wireResultSchema, type ExtractedListi
 import { applyGeneralPriceToNiches, assumedNicheCosts, countLowConfidence, expandListings, flagsFor, sellableNiches, sensitiveRate } from '../src/lib/sourcing/review';
 import { sensitiveNicheSlugs } from '../src/lib/config/accepted-niches';
 import { extractLinks, looksLikeRateCardLead } from '../src/lib/sourcing/links';
+import { healthOf, progressMessage, runProgress, type BatchRow } from '../src/lib/sourcing/batch-health';
 import { zodOutputFormat } from '@anthropic-ai/sdk/helpers/zod';
 
 let failed = 0;
@@ -23,6 +24,8 @@ const bad = (label: string, detail?: string) => {
 };
 const is = (label: string, actual: unknown, expected: unknown) =>
   actual === expected ? ok(label) : bad(label, `expected ${String(expected)}, got ${String(actual)}`);
+const has = (label: string, haystack: string, needle: string) =>
+  haystack.includes(needle) ? ok(label) : bad(label, `missing ${JSON.stringify(needle)} in ${JSON.stringify(haystack)}`);
 
 const raw = fs.readFileSync(path.join(process.cwd(), 'scripts/fixtures/sourcing-synthetic.mbox'), 'utf8');
 const { messages, skipped } = readMbox(raw);
@@ -561,6 +564,52 @@ console.log('\n--- links a publisher sent instead of a price ---');
   is('so is a link', looksLikeRateCardLead({ bodyText: 'see https://docs.google.com/spreadsheets/d/x/edit' }), true);
   is('a bare refusal is not a lead', looksLikeRateCardLead({ bodyText: 'No thank you.' }), false);
   is('nor is an empty one', looksLikeRateCardLead({}), false);
+}
+
+console.log('\n--- is a run progressing or stuck ---');
+{
+  const at = (minutesAgo: number) => new Date(Date.now() - minutesAgo * 60000).toISOString();
+  const batch = (over: Partial<BatchRow>): BatchRow => ({
+    id: 'b', status: 'running', mode: 'batch', createdAt: at(5),
+    providerBatchId: 'msgbatch_1', emailCount: 10, ...over,
+  });
+
+  is('a fresh batch is working', healthOf(batch({})), 'working');
+  is('an hour and a half is slow', healthOf(batch({ createdAt: at(95) })), 'slow');
+  is('a day and a bit is abandoned', healthOf(batch({ createdAt: at(27 * 60) })), 'abandoned');
+
+  // The one that stranded eleven emails: claimed, never handed over, and
+  // skipped by the collector for ever because there was nothing to collect.
+  is(
+    'no provider id and old means it never reached the API',
+    healthOf(batch({ providerBatchId: null, createdAt: at(10) })),
+    'never-submitted',
+  );
+  is(
+    'but a moment after submitting, that is just the gap between two writes',
+    healthOf(batch({ providerBatchId: null, createdAt: at(1) })),
+    'working',
+  );
+
+  const done = runProgress([batch({ status: 'completed' })]);
+  is('a collected batch is not outstanding', done.running, 0);
+  is('and nothing is stuck', done.stuck, false);
+
+  const mixed = runProgress([
+    batch({ id: 'a', createdAt: at(2) }),
+    batch({ id: 'b', createdAt: at(200), providerBatchId: null }),
+  ]);
+  is('two batches are counted', mixed.running, 2);
+  is('their emails are added up', mixed.emails, 20);
+  is('the age is the oldest, not the newest', mixed.oldestMinutes, 200);
+  is('and the worst state wins', mixed.worst, 'never-submitted');
+  is('which is something to act on', mixed.stuck, true);
+
+  // The message has to say what to do, because a number nobody can
+  // interpret is what left somebody refreshing a page for an hour.
+  has('a working run says results arrive on their own', progressMessage(runProgress([batch({})])), 'arrive on their own');
+  has('a stuck one says to put them back', progressMessage(mixed), 'Put them back');
+  has('and a slow one says it is longer than usual', progressMessage(runProgress([batch({ createdAt: at(95) })])), 'longer than usual');
 }
 
 console.log('\n--- the claim is honoured everywhere ---');

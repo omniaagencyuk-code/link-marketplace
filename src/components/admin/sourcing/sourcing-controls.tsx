@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useTransition } from 'react';
-import { AlertCircle, Check, CloudUpload, FlaskConical, Play, RefreshCw, RotateCcw } from 'lucide-react';
+import { AlertCircle, Check, CloudUpload, FlaskConical, Loader2, Play, RefreshCw, RotateCcw, Undo2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input, Textarea } from '@/components/ui/input';
@@ -10,12 +10,14 @@ import { Select } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { splitForUpload } from '@/lib/sourcing/split-upload';
 import { EXTRACTION_BATCH_LIMIT } from '@/lib/sourcing/limits';
+import { progressMessage, runProgress, type BatchRow } from '@/lib/sourcing/batch-health';
 import {
   collectBatchesAction,
   ingestMboxAction,
   retryFailedAction,
   rereadAllAction,
   ingestPastedAction,
+  releaseStuckAction,
   runExtractionAction,
   updateSourcingSettingsAction,
 } from '@/app/admin/(protected)/sourcing/actions';
@@ -73,6 +75,26 @@ export function SourcingControls({
   const runningBatches = batches.filter(
     (batch) => batch.status === 'running' || batch.status === 'submitted',
   ).length;
+
+  /*
+    Progress from rows, not from a timer.
+
+    The figures below are what the database says, so a refresh cannot lose
+    them and a message cannot outlive the thing it describes. That was the
+    complaint: a run in progress looked identical to nothing happening, and
+    a slow batch looked identical to a dead one.
+  */
+  const runState = runProgress(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    batches.map((batch: any): BatchRow => ({
+      id: String(batch.id),
+      status: String(batch.status),
+      mode: String(batch.mode),
+      createdAt: String(batch.created_at),
+      providerBatchId: (batch.provider_batch_id as string | null) ?? null,
+      emailCount: Number(batch.email_count ?? 0),
+    })),
+  );
 
   function report(ok: boolean, text: string) {
     setMessage({ tone: ok ? 'ok' : 'bad', text });
@@ -289,12 +311,80 @@ export function SourcingControls({
               </div>
             ))}
           </dl>
-          {(counts['in-flight'] ?? 0) > 0 ? (
-            <p className="text-center text-[11px] text-muted">
-              {runningBatches > 0
-                ? 'Collected automatically within ten minutes. Press Collect if you would rather not wait.'
-                : 'Sent but not collected. Press Collect to bring back whatever is ready.'}
-            </p>
+          {/*
+            The panel that does not go away.
+
+            Rendered from rows, so a refresh redraws it rather than losing it,
+            and it says how long the run has been out - which is the one fact
+            that tells a slow batch from a dead one. When it is dead it says
+            so and offers the way out, instead of leaving somebody pressing
+            Collect at a number that will never move.
+          */}
+          {runState.running > 0 ? (
+            <div
+              className={`rounded-lg border p-3 ${
+                runState.stuck
+                  ? 'border-negative/30 bg-red-50'
+                  : runState.worst === 'slow'
+                    ? 'border-warning/30 bg-amber-50'
+                    : 'border-accent-600/30 bg-accent-50'
+              }`}
+            >
+              <div className="flex items-start gap-2">
+                {runState.stuck ? (
+                  <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-negative" aria-hidden="true" />
+                ) : (
+                  <Loader2
+                    className="mt-0.5 h-4 w-4 shrink-0 animate-spin text-accent-700"
+                    aria-hidden="true"
+                  />
+                )}
+                <div className="min-w-0 flex-1">
+                  <p className="text-[13px] font-medium text-ink">
+                    {runState.stuck ? 'This run is not coming back' : 'A read is in progress'}
+                  </p>
+                  <p className="mt-0.5 text-[12px] leading-relaxed text-ink-soft">
+                    {progressMessage(runState)}
+                  </p>
+                  {!runState.stuck ? (
+                    <p className="mt-0.5 text-[12px] text-muted">
+                      Drafts appear under Waiting for review as soon as they are collected. You can
+                      close this page - it carries on without you.
+                    </p>
+                  ) : null}
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={busy}
+                      onClick={() =>
+                        startTransition(async () => {
+                          const result = await collectBatchesAction();
+                          report(true, result.message);
+                        })
+                      }
+                    >
+                      <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" />
+                      Check now
+                    </Button>
+                    <Button
+                      variant={runState.stuck ? 'accent' : 'ghost'}
+                      size="sm"
+                      disabled={busy}
+                      onClick={() =>
+                        startTransition(async () => {
+                          const result = await releaseStuckAction();
+                          report(true, result.message);
+                        })
+                      }
+                    >
+                      <Undo2 className="h-3.5 w-3.5" aria-hidden="true" />
+                      Give up and put them back
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            </div>
           ) : null}
         </CardContent>
       </Card>

@@ -557,3 +557,18 @@ export async function dismissRateCardAction(emailId: string) {
   revalidatePath('/admin/sourcing/rate-cards');
   return { ok: true };
 }
+
+/**
+ * Give up on outstanding batches and put their emails back.
+ *
+ * Destructive only of a claim, never of an email: the rows return to 'new'
+ * exactly as they arrived. Offered because a batch that is never coming back
+ * is otherwise indistinguishable from one that is nearly done, and waiting
+ * for ever is not a state anybody should be stuck in.
+ */
+export async function releaseStuckAction() {
+  await requireAdminSession();
+  const result = await sourcingService.releaseStuckBatches();
+  revalidatePath('/admin/sourcing');
+  return result;
+}
