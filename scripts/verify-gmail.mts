@@ -20,7 +20,7 @@ import {
   parseMessage,
   type GmailMessage,
 } from '../src/lib/gmail/mime';
-import { gmailThreadUrl, readThread, type GmailThread } from '../src/lib/gmail/thread';
+import { gmailSearchUrl, gmailThreadUrl, readThread, type GmailThread } from '../src/lib/gmail/thread';
 import { isOurs, outreachAddresses } from '../src/lib/sourcing/outreach';
 import { planQueue } from '../src/lib/gmail/queueing';
 
@@ -196,6 +196,24 @@ console.log('\n--- what a run decides to fetch ---');
 {
   const nothing = planQueue([], []);
   is('an empty search queues nothing', nothing.insert.length + nothing.requeue.length, 0);
+}
+
+console.log('\n--- finding an email by its Message-ID ---');
+{
+  // Uploaded emails have no thread id, and those are the rows on the rate
+  // card list that point at an attachment nobody can reach.
+  const url = gmailSearchUrl('<CAF=abc+123@mail.gmail.com>');
+  has('the brackets the mbox reader keeps are stripped', url ?? '', 'rfc822msgid%3ACAF');
+  hasNot('and no bracket survives into the url', url ?? '', '%3C');
+  has('it is a search, not a thread', url ?? '', '#search/');
+
+  const withMailbox = gmailSearchUrl('abc@example.com', 'info@omniaagency.uk');
+  has('a known mailbox picks the right account', withMailbox ?? '', 'authuser=info%40omniaagency.uk');
+
+  // A link that always finds nothing is worse than no link.
+  is('a pasted reply has no real message id', gmailSearchUrl('pasted:9f2c'), null);
+  is('nor does a thread we could not read one from', gmailSearchUrl('gmail-thread:a:b'), null);
+  is('and an empty id gives nothing', gmailSearchUrl(''), null);
 }
 
 console.log('\n--- the link back to Gmail ---');

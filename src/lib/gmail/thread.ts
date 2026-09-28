@@ -210,3 +210,32 @@ export function readThread(
 export function gmailThreadUrl(mailbox: string, threadId: string): string {
   return `https://mail.google.com/mail/u/?authuser=${encodeURIComponent(mailbox)}#all/${encodeURIComponent(threadId)}`;
 }
+
+/*
+  Synthetic keys, which are not Message-IDs and will find nothing.
+
+  A pasted reply and a Gmail thread with no readable Message-ID both get a
+  made-up key so the row has something unique. Searching Gmail for one would
+  return no results, and a link that always fails is worse than no link.
+*/
+const NOT_A_MESSAGE_ID = /^(pasted:|gmail-thread:)/;
+
+/**
+ * Find an email in Gmail by its Message-ID.
+ *
+ * The thread link needs a mailbox and a thread id, which only emails imported
+ * through the Gmail route have. Everything uploaded from a Takeout export has
+ * neither - and those are exactly the rows on the rate card worklist that say
+ * "refers to attached rate cards" with no way to go and look at them.
+ *
+ * Every email has a Message-ID whichever route it came by, and Gmail can find
+ * a message by one. The brackets are stripped because the mbox reader keeps
+ * them and the Gmail reader does not, and `rfc822msgid:` wants neither.
+ */
+export function gmailSearchUrl(messageId: string, mailbox?: string | null): string | null {
+  const bare = messageId.trim().replace(/^<|>$/g, '');
+  if (!bare || NOT_A_MESSAGE_ID.test(bare)) return null;
+
+  const account = mailbox ? `?authuser=${encodeURIComponent(mailbox)}` : '0/';
+  return `https://mail.google.com/mail/u/${account}#search/${encodeURIComponent(`rfc822msgid:${bare}`)}`;
+}

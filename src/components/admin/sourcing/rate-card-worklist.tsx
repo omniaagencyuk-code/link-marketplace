@@ -153,10 +153,21 @@ export function RateCardWorklist({ leads }: { leads: RateCardLead[] }) {
                 </div>
               ) : (
                 <div className="flex flex-wrap items-center gap-2">
-                  {lead.gmailUrl ? (
+                  {/*
+                    The thread when we have it, a search by Message-ID when we
+                    do not. Emails uploaded from a Takeout export have no
+                    thread id, and those are exactly the rows that say "refers
+                    to attached rate cards" - the attachment is in the real
+                    email, so the one thing the row must do is get you there.
+                  */}
+                  {lead.gmailUrl || lead.findUrl ? (
                     <Button asChild variant="outline" size="sm">
-                      <a href={lead.gmailUrl} target="_blank" rel="noreferrer noopener">
-                        Open in Gmail
+                      <a
+                        href={(lead.gmailUrl ?? lead.findUrl)!}
+                        target="_blank"
+                        rel="noreferrer noopener"
+                      >
+                        {lead.gmailUrl ? 'Open in Gmail' : 'Find in Gmail'}
                         <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
                       </a>
                     </Button>

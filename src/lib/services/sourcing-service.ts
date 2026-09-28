@@ -1,7 +1,7 @@
 import { getAdminScopedClient } from '@/lib/supabase/server';
 import { isSupabaseEnabled } from '@/lib/supabase/config';
 import { readMbox, readPastedEmail, type ParsedMessage } from '@/lib/sourcing/mbox';
-import { gmailThreadUrl, type ReadThread } from '@/lib/gmail/thread';
+import { gmailSearchUrl, gmailThreadUrl, type ReadThread } from '@/lib/gmail/thread';
 import { extractLinks, type FoundLink } from '@/lib/sourcing/links';
 import {
   collectBatch,
@@ -54,7 +54,10 @@ export interface RateCardLead {
   attachments: { filename: string; mimeType: string; size: number }[];
   hasRateCard: boolean;
   links: FoundLink[];
+  /** The thread itself, for emails that came in through Gmail. */
   gmailUrl: string | null;
+  /** A search by Message-ID, which works for uploaded emails too. */
+  findUrl: string | null;
 }
 
 export interface IngestResult {
@@ -364,7 +367,7 @@ export const sourcingService = {
     const { data } = await supabase
       .from('inbound_emails')
       .select(
-        'id, from_address, from_name, subject, sent_at, body_text, status_reason, asked_about_domain, source, mailbox, gmail_thread_id, attachments, has_rate_card',
+        'id, message_id, from_address, from_name, subject, sent_at, body_text, status_reason, asked_about_domain, source, mailbox, gmail_thread_id, attachments, has_rate_card',
       )
       .eq('status', 'ignored')
       .is('rate_card_dismissed_at', null)
@@ -390,6 +393,7 @@ export const sourcingService = {
           row.mailbox && row.gmail_thread_id
             ? gmailThreadUrl(String(row.mailbox), String(row.gmail_thread_id))
             : null,
+        findUrl: gmailSearchUrl(String(row.message_id ?? ''), row.mailbox as string | null),
       }))
       // The filter is applied after mapping because "has a link" is only
       // knowable once the body has been read for links, and doing that in the
