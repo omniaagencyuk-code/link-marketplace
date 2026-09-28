@@ -41,6 +41,26 @@ is('the date is an ISO timestamp', network?.sentAt?.slice(0, 10), '2026-09-22');
 console.log('\n--- the domain we asked about ---');
 is('recovered from the subject', network?.askedAboutDomain, 'holdsport.example');
 is('a Re: prefix does not hide it', domainFromSubject('Re: Advertisements on foo.example'), 'foo.example');
+// The four subjects the Hunter campaigns actually went out under, typo and
+// all. Matching the shape rather than the wording is what makes this list a
+// record of what happened rather than a list to maintain.
+is('"quick one about"', domainFromSubject('Re: quick one about foo.example'), 'foo.example');
+is('"advertisements on"', domainFromSubject('advertisements on foo.example'), 'foo.example');
+is(
+  '"ad services and prices on"',
+  domainFromSubject('Re: ad services and prices on foo.example'),
+  'foo.example',
+);
+is(
+  'and the one with the typo in it',
+  domainFromSubject('quick on about ads on foo.example'),
+  'foo.example',
+);
+is('a subject nobody has written yet', domainFromSubject('Re: rates for foo.example'), 'foo.example');
+is('a merge tag that rendered a url', domainFromSubject('quick one about https://foo.example/blog'), 'foo.example');
+is('trailing punctuation is not part of it', domainFromSubject('quick one about foo.example?'), 'foo.example');
+is('a subject with no domain at all', domainFromSubject('Re: your invoice'), undefined);
+is('nor a sentence that merely ends in a word', domainFromSubject('Following up on this'), undefined);
 is('a German AW: prefix does not either', domainFromSubject('AW: Advertisements on foo.example'), 'foo.example');
 is('"your website" is not a domain', domainFromSubject('Re: Advertisements on your website'), undefined);
 is('www is stripped', domainFromSubject('Advertisements on www.foo.example'), 'foo.example');

@@ -14,7 +14,23 @@
 
 /** Subject our outreach uses, with or without the domain named. */
 const OUTREACH_SUBJECT = /^\s*(?:re|fwd?|aw|sv|rv|antw)\s*:\s*|^\s*/i;
-const ADVERTISEMENTS_ON = /advertisements?\s+on\s+(.+?)\s*$/i;
+
+/*
+  The domain sits at the end of the subject, after a preposition.
+
+  Our outreach has been sent under several subjects and will be sent under
+  more - "Advertisements on x", "quick one about x", "ad services and prices
+  on x", and a campaign that went out with "quick on about ads on x". Matching
+  the marketing copy would mean editing this file every time somebody writes a
+  new one, and the edit that never happens is the campaign whose replies all
+  arrive with no domain attached.
+
+  So this matches the shape they have in common instead: something, a
+  preposition, then the domain, then the end. What follows the preposition
+  still has to look like a domain, which is what keeps "advertisements on your
+  website" from becoming a listing for a site called "website".
+*/
+const SUBJECT_DOMAIN = /\b(?:about|on|for|re)\s+(\S+)\s*$/i;
 
 import { isOurs } from './outreach';
 
@@ -356,12 +372,25 @@ export function isBounce(address: string, subject?: string): boolean {
 export function domainFromSubject(subject?: string): string | undefined {
   if (!subject) return undefined;
   const withoutPrefix = subject.replace(OUTREACH_SUBJECT, '');
-  const match = ADVERTISEMENTS_ON.exec(withoutPrefix);
+  const match = SUBJECT_DOMAIN.exec(withoutPrefix);
   if (!match) return undefined;
 
-  const candidate = match[1]!.trim().toLowerCase();
-  if (/^(your|our|the)\s+(website|site|blog)$/.test(candidate)) return undefined;
+  const candidate = match[1]!
+    .trim()
+    .toLowerCase()
+    // A mail merge that rendered a full URL, and the punctuation a human adds
+    // after it: "quick one about https://foo.example?" is still about foo.
+    .replace(/^<|>$/g, '')
+    .replace(/^["'(\[]+|["')\].,!?;:]+$/g, '')
+    .replace(/^https?:\/\//, '')
+    .replace(/\/.*$/, '');
+
   if (!/^[a-z0-9.-]+\.[a-z]{2,}$/.test(candidate)) return undefined;
+  // A sentence that happens to end in something dot-separated is not a
+  // domain. Two letters is the shortest real TLD; "etc.co" would pass the
+  // shape check above and this is the cheap guard against the rest.
+  if (/^(www|mail|email|e|i|u)\.[a-z]{2,4}$/.test(candidate)) return undefined;
+
   return candidate.replace(/^www\./, '');
 }
 
