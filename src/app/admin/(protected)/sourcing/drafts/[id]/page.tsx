@@ -9,6 +9,8 @@ import { extractedListingSchema } from '@/lib/sourcing/schema';
 import { gmailThreadUrl } from '@/lib/gmail/thread';
 import { websiteService } from '@/lib/services';
 import { sensitiveNicheSlugs } from '@/lib/config/accepted-niches';
+import { sourcingService } from '@/lib/services/sourcing-service';
+import { CompetingOffers } from '@/components/admin/sourcing/competing-offers';
 
 export const dynamic = 'force-dynamic';
 
@@ -83,6 +85,13 @@ export default async function DraftPage({ params }: { params: Promise<{ id: stri
     ? await currentValues(String(draft.matched_website_id))
     : null;
 
+  // Anyone else offering this same domain. Read before Approve, because
+  // approving updates the website by domain and the loser's price is then
+  // only in the table, not on any screen.
+  const competing = await sourcingService
+    .competingOffers(String(draft.domain), String(draft.id))
+    .catch(() => []);
+
   // Other domains from the same reply still waiting. A network answer
   // produces dozens, and checking one usually settles the lot.
   const { count: siblings } = await supabase
@@ -101,6 +110,8 @@ export default async function DraftPage({ params }: { params: Promise<{ id: stri
         <ArrowLeft className="h-3.5 w-3.5" aria-hidden="true" />
         Publisher inbox
       </Link>
+
+      <CompetingOffers offers={competing} />
 
       <PageTitle
         title={String(draft.domain)}

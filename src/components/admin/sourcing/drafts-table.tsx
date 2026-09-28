@@ -24,6 +24,7 @@ const FLAG_LABELS: Record<string, string> = {
   'price-without-currency': 'Price with no currency',
   'terms-from-network': 'Terms from the network reply',
   'replied-again': 'They replied again - re-read',
+  'competing-offer': 'Someone else offers this site',
 };
 
 export function DraftsTable({ drafts }: { drafts: DraftRow[] }) {

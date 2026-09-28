@@ -3,6 +3,8 @@ import { isSupabaseEnabled } from '@/lib/supabase/config';
 import { readMbox, readPastedEmail, type ParsedMessage } from '@/lib/sourcing/mbox';
 import { gmailSearchUrl, gmailThreadUrl, type ReadThread } from '@/lib/gmail/thread';
 import { extractLinks, type FoundLink } from '@/lib/sourcing/links';
+import { rankOffers, type Offer, type RankedOffer } from '@/lib/sourcing/offers';
+import { fxService } from './fx-service';
 import {
   ABANDON_AFTER_MINUTES,
   NEVER_SUBMITTED_AFTER_MINUTES,
@@ -395,6 +397,71 @@ export const sourcingService = {
       .in('id', ids);
 
     return { purged: ids.length, enabled: true };
+  },
+
+  /**
+   * Everyone else offering this domain.
+   *
+   * Drafts already hold every offer with its sender, price and currency,
+   * whatever became of them - so a rejected offer is still a contact and a
+   * price, and the one that lost is exactly the one worth having when the
+   * winner stops replying. Nothing new is stored; this reads what is there.
+   */
+  async competingOffers(domain: string, exceptDraftId: string): Promise<RankedOffer[]> {
+    if (!isSupabaseEnabled()) return [];
+    const supabase = getAdminScopedClient();
+
+    const { data } = await supabase
+      .from('listing_drafts')
+      .select('id, domain, status, proposed, inbound_emails (from_address, sent_at)')
+      .eq('domain', domain)
+      .neq('id', exceptDraftId)
+      .limit(20);
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const rows = (data ?? []) as any[];
+    if (rows.length === 0) return [];
+
+    const offers: Offer[] = rows.map((row) => {
+      const email = Array.isArray(row.inbound_emails) ? row.inbound_emails[0] : row.inbound_emails;
+      const proposed = (row.proposed ?? {}) as Record<string, unknown>;
+      return {
+        draftId: String(row.id),
+        domain: String(row.domain),
+        fromAddress: String(email?.from_address ?? ''),
+        cost: typeof proposed.guest_post_cost === 'number' ? proposed.guest_post_cost : null,
+        currency: typeof proposed.currency === 'string' ? proposed.currency : null,
+        sentAt: (email?.sent_at as string | null) ?? null,
+        status: String(row.status),
+      };
+    });
+
+    return rankOffers(offers, await fxService.rateMap());
+  },
+
+  /**
+   * Domains that more than one reply offers.
+   *
+   * Computed rather than stored on the draft, because the second offer
+   * usually arrives after the first was read - a flag written at extraction
+   * would be right about the newer draft and wrong about the older one.
+   */
+  async domainsWithCompetingOffers(): Promise<Set<string>> {
+    if (!isSupabaseEnabled()) return new Set();
+    const supabase = getAdminScopedClient();
+
+    const { data } = await supabase
+      .from('listing_drafts')
+      .select('domain')
+      .in('status', ['pending', 'approved'])
+      .limit(5000);
+
+    const seen = new Map<string, number>();
+    for (const row of (data ?? []) as { domain: string }[]) {
+      seen.set(row.domain, (seen.get(row.domain) ?? 0) + 1);
+    }
+
+    return new Set([...seen].filter(([, count]) => count > 1).map(([domain]) => domain));
   },
 
   // --------------------------------------------------------- no-draft work

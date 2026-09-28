@@ -13,6 +13,7 @@ import { extractionResultSchema, fromWire, wireResultSchema, type ExtractedListi
 import { applyGeneralPriceToNiches, assumedNicheCosts, countLowConfidence, expandListings, fillGeneralFromNiches, flagsFor, sellableNiches, sensitiveRate } from '../src/lib/sourcing/review';
 import { sensitiveNicheSlugs } from '../src/lib/config/accepted-niches';
 import { extractLinks, looksLikeRateCardLead } from '../src/lib/sourcing/links';
+import { offersNote, rankOffers, senderSignal } from '../src/lib/sourcing/offers';
 import { healthOf, progressMessage, runProgress, type BatchRow } from '../src/lib/sourcing/batch-health';
 import { describeSkip, nightlySkipReason, type NightlyState } from '../src/lib/sourcing/schedule';
 import { extractionLimit } from '../src/lib/sourcing/limits';
@@ -696,6 +697,58 @@ console.log('\n--- how many one press sends ---');
   is('real time stays small', extractionLimit('realtime'), 25);
   is('batch sends far more', extractionLimit('batch'), 500);
   is('and batch is the larger of the two', extractionLimit('batch') > extractionLimit('realtime'), true);
+}
+
+console.log('\n--- two people offering the same site ---');
+{
+  is('a reply from the site itself is the owner', senderSignal('hello@modalova.com', 'modalova.com'), 'owner-match');
+  is('www does not change that', senderSignal('hello@modalova.com', 'www.modalova.com'), 'owner-match');
+  // The person who runs the domain runs its subdomains.
+  is('nor does a subdomain', senderSignal('hello@modalova.com', 'us.modalova.com'), 'owner-match');
+  is('or the other way round', senderSignal('hello@us.modalova.com', 'modalova.com'), 'owner-match');
+  is('a gmail address is flagged as free', senderSignal('mediagroup.links.swe@gmail.com', 'leedsunited.se'), 'free-email');
+  is('a business address elsewhere is neither', senderSignal('ana@someagency.co.uk', 'leedsunited.se'), 'third-party');
+  // A near-miss must not read as ownership.
+  is('a lookalike domain is not a match', senderSignal('hello@modalova-media.com', 'modalova.com'), 'third-party');
+  is('and a malformed address is not either', senderSignal('nonsense', 'modalova.com'), 'third-party');
+}
+
+{
+  const rates = new Map([['EUR', 1.14], ['GBP', 1.33], ['USD', 1]]);
+  const ranked = rankOffers([
+    { draftId: 'a', domain: 'modalova.com', fromAddress: 'hello@modalova.com', cost: 400, currency: 'EUR', sentAt: null, status: 'pending' },
+    { draftId: 'b', domain: 'modalova.com', fromAddress: 'broker@gmail.com', cost: 300, currency: 'GBP', sentAt: null, status: 'pending' },
+    { draftId: 'c', domain: 'modalova.com', fromAddress: 'x@agency.com', cost: 250, currency: null, sentAt: null, status: 'pending' },
+  ], rates);
+
+  // 400 EUR = 456, 300 GBP = 399. The pound offer is cheaper despite the
+  // smaller number, which is the whole reason this converts before sorting.
+  is('the cheapest is by converted cost, not by the number', ranked[0]?.draftId, 'b');
+  is('and it is marked', ranked[0]?.cheapest, true);
+  is('the owner offer is second', ranked[1]?.draftId, 'a');
+  // A price with no currency is unknown, not cheap. It sorts last.
+  is('a price with no currency cannot be compared', ranked[2]?.draftId, 'c');
+  is('so it is not the cheapest', ranked[2]?.cheapest, false);
+  is('only one is marked cheapest', ranked.filter((o) => o.cheapest).length, 1);
+
+  has('the note names the disagreement', offersNote(ranked) ?? '', 'not the one writing from');
+}
+
+{
+  const rates = new Map([['USD', 1]]);
+  const agreeing = rankOffers([
+    { draftId: 'a', domain: 'x.com', fromAddress: 'hi@x.com', cost: 100, currency: 'USD', sentAt: null, status: 'pending' },
+    { draftId: 'b', domain: 'x.com', fromAddress: 'b@gmail.com', cost: 200, currency: 'USD', sentAt: null, status: 'pending' },
+  ], rates);
+  has('when they agree the note says so', offersNote(agreeing) ?? '', 'also the one writing from');
+
+  is('one offer is not worth a note', offersNote(agreeing.slice(0, 1)), null);
+
+  const unconvertible = rankOffers([
+    { draftId: 'a', domain: 'x.com', fromAddress: 'hi@x.com', cost: 100, currency: 'RUB', sentAt: null, status: 'pending' },
+    { draftId: 'b', domain: 'x.com', fromAddress: 'b@gmail.com', cost: 200, currency: 'RUB', sentAt: null, status: 'pending' },
+  ], rates);
+  has('and two unconvertible ones say they cannot be compared', offersNote(unconvertible) ?? '', 'cannot be compared');
 }
 
 console.log('\n--- the claim is honoured everywhere ---');

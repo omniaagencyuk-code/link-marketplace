@@ -45,11 +45,12 @@ async function load() {
 
   const supabase = getAdminScopedClient();
 
-  const [settings, pending, spent, noDrafts, drafts, emails, problems, batches] = await Promise.all([
+  const [settings, pending, spent, noDrafts, contested, drafts, emails, problems, batches] = await Promise.all([
     sourcingService.getSettings(),
     sourcingService.pendingCount().catch(() => 0),
     sourcingService.spentThisMonthUsd().catch(() => 0),
     sourcingService.noDraftEmails(200).catch(() => []),
+    sourcingService.domainsWithCompetingOffers().catch(() => new Set<string>()),
     supabase
       .from('listing_drafts')
       .select('id, domain, matched_website_id, low_confidence_count, flags, created_at, inbound_emails (from_address, sent_at)')
@@ -99,7 +100,18 @@ async function load() {
       sentAt: email?.sent_at ?? null,
       matched: Boolean(row.matched_website_id),
       lowConfidenceCount: row.low_confidence_count ?? 0,
-      flags: row.flags ?? [],
+      /*
+        The competing-offer flag is added here rather than stored on the
+        draft, because the second offer usually arrives after the first was
+        read: a flag written at extraction would be right about the newer
+        draft and wrong about the older one. Added to `flags` so it also
+        keeps the draft out of bulk approve, which is the path that would
+        overwrite the other offer without anybody seeing it.
+      */
+      flags: [
+        ...(row.flags ?? []),
+        ...(contested.has(row.domain) ? ['competing-offer'] : []),
+      ],
     };
   });
   /* eslint-enable @typescript-eslint/no-explicit-any */
