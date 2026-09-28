@@ -96,7 +96,17 @@ function getClient(): Anthropic {
 function requestBody(request: ExtractionRequest, model: string) {
   return {
     model,
-    max_tokens: 8000,
+    /*
+      Room for the answer, not a guess at it.
+
+      A thread read whole is a longer input than a single message, and a
+      network reply expands into one listing per domain - thirty-odd fields
+      each. At 8000 the JSON was being cut off mid-object, which arrives as
+      unparseable text rather than as an error, and the reply is charged for
+      either way. Batch billing is on tokens actually produced, so a higher
+      ceiling costs nothing until it is needed.
+    */
+    max_tokens: 16000,
     system: [
       {
         type: 'text' as const,
@@ -211,13 +221,35 @@ export async function collectBatch(providerBatchId: string): Promise<ExtractionO
       .map((block) => block.text)
       .join('');
 
-    const parsed = wireResultSchema.safeParse(safeJson(text));
+    /*
+      Two different failures, told apart.
+
+      `safeJson` returns null when the text is not JSON at all, and a null
+      root fails the schema with "expected object, received null" and an empty
+      path. Reported as a schema mismatch it sends whoever reads it to look at
+      the schema, which is fine - the actual cause is usually that the model
+      ran out of output tokens half way through an object, and `stop_reason`
+      has been saying so all along.
+    */
+    const json = safeJson(text);
+    if (json === null) {
+      const truncated = message.stop_reason === 'max_tokens';
+      outcomes.push({
+        emailId,
+        error: truncated
+          ? 'The model ran out of room before finishing its JSON. This reply needs a higher output limit, or it lists more domains than one response can hold.'
+          : `The model did not return JSON (stop reason: ${message.stop_reason ?? 'unknown'}). It produced ${text.trim().length} characters.`,
+      });
+      continue;
+    }
+
+    const parsed = wireResultSchema.safeParse(json);
     if (!parsed.success) {
       outcomes.push({
         emailId,
         error: `The model's JSON did not match the schema: ${parsed.error.issues
           .slice(0, 3)
-          .map((issue) => `${issue.path.join('.')} ${issue.message}`)
+          .map((issue) => `${issue.path.length > 0 ? issue.path.join('.') : 'the result'} ${issue.message}`)
           .join('; ')}`,
       });
       continue;
