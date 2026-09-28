@@ -28,6 +28,7 @@ import {
 import type { Service } from '../src/lib/types';
 import { placementPrice, tierFor } from '../src/lib/utils/pricing';
 import { publishBlocker, publishBlockerMessage } from '../src/lib/websites/publishing';
+import { displayRate, staleRates } from '../src/lib/pricing/rates';
 
 let failed = 0;
 const ok = (l: string) => console.log(`  PASS  ${l}`);
@@ -575,6 +576,36 @@ console.log('\n--- what stops a listing being published ---');
     }),
     null,
   );
+}
+
+console.log('\n--- what the rates panel should say ---');
+{
+  // Three screens have now been written that treated GBP as the base after
+  // the base became USD. The engine was never wrong - the rate in the table
+  // was right every time - but the screen said the pound and the dollar were
+  // worth the same, which reads as a rate rather than as a bug.
+  const rateFor = new Map<string, number | null>([
+    ['GBP', 1.3263],
+    ['EUR', 1.1378],
+    ['RUB', null],
+  ]);
+
+  is('the base is one against itself', displayRate('USD', rateFor, 'USD'), 1);
+  is('and the pound is not the base any more', displayRate('GBP', rateFor, 'USD'), 1.3263);
+  is('a currency with no rate says so', displayRate('RUB', rateFor, 'USD'), null);
+  is('and one nobody has heard of does too', displayRate('XYZ', rateFor, 'USD'), null);
+  // The rule is about the base, not about a particular currency: if we ever
+  // sell in pounds again, this keeps working without an edit.
+  is('whatever the base happens to be', displayRate('GBP', rateFor, 'GBP'), 1);
+
+  const rates = [
+    { currency: 'USD', rateToBase: 1, ageDays: 40 },
+    { currency: 'EUR', rateToBase: 1.1378, ageDays: 0.1 },
+    { currency: 'PLN', rateToBase: 0.25, ageDays: 9 },
+  ];
+  is('the base is never stale, it is never fetched', staleRates(rates, 3, 'USD').join(), 'PLN');
+  is('a fresh rate is not counted', staleRates(rates, 3, 'USD').includes('EUR'), false);
+  is('and nothing old means nothing to warn about', staleRates([rates[1]!], 3, 'USD').length, 0);
 }
 
 console.log(failed ? `\n  ${failed} FAILED\n` : '\n  all passed\n');

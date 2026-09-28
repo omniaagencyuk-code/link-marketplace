@@ -7,6 +7,7 @@ import { pricingService } from '@/lib/services/pricing-service';
 import { fxService } from '@/lib/services/fx-service';
 import { isSupabaseEnabled } from '@/lib/supabase/config';
 import { formatPrice } from '@/lib/utils/format';
+import { staleRates } from '@/lib/pricing/rates';
 
 export const dynamic = 'force-dynamic';
 
@@ -58,9 +59,11 @@ export default async function PricingPage() {
   const totalMargin = priced.reduce((sum, row) => sum + row.breakdown.marginMinor, 0);
 
   // The age comes from the service, which may read a clock. A render may not.
-  const staleRateCount = rates.filter(
-    (rate) => rate.currency !== 'GBP' && rate.ageDays > 3,
-  ).length;
+  //
+  // The base is excluded because it is never fetched - its row is written
+  // once and stays. Excluding GBP instead, from when GBP was the base, meant
+  // this warning counted USD and was therefore permanently on.
+  const staleRateCount = staleRates(rates).length;
 
   return (
     <div className="space-y-5">

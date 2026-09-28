@@ -13,6 +13,8 @@ import {
   saveBandsAction,
   saveRulesAction,
 } from '@/app/admin/(protected)/pricing/actions';
+import { brand } from '@/lib/config/brand';
+import { displayRate } from '@/lib/pricing/rates';
 import { currencySymbol, formatPrice } from '@/lib/utils/format';
 import type { PricingSettings } from '@/lib/services/pricing-service';
 import type { PricingRules } from '@/lib/pricing/engine';
@@ -49,17 +51,23 @@ export function PricingRulesEditor({
   const [bands, setBands] = useState(settings.bands);
   const bandsEdited = JSON.stringify(bands) !== JSON.stringify(settings.bands);
 
-  // GBP is in the table as a fixed 1 and is not a conversion anyone needs to
-  // read, but a publisher who charges in it is still worth counting.
+  /*
+    The base is fixed at 1 against itself; everything else has a real rate.
+
+    This said GBP rather than the base, written while GBP was the base. After
+    the move to USD it went on showing GBP as 1.0000 - the pound and the
+    dollar worth the same - while the engine priced off the real 1.3263 in
+    the table. Nothing was mispriced, but the screen said it was.
+  */
   const rateFor = new Map(rates.map((rate) => [rate.currency, rate.rateToBase]));
   const inUse = currenciesInUse.map((entry) => ({
     ...entry,
-    rateToBase: entry.currency === 'GBP' ? 1 : (rateFor.get(entry.currency) ?? null),
+    rateToBase: displayRate(entry.currency, rateFor),
   }));
   const missingInUse = inUse.filter((entry) => entry.rateToBase == null).map((e) => e.currency);
   const usedCodes = new Set(currenciesInUse.map((entry) => entry.currency));
   const otherRates = rates.filter(
-    (rate) => rate.currency !== 'GBP' && !usedCodes.has(rate.currency),
+    (rate) => rate.currency !== brand.currency && !usedCodes.has(rate.currency),
   );
 
   const edited = JSON.stringify(draft) !== JSON.stringify(settings.rules);
