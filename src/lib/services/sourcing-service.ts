@@ -47,14 +47,19 @@ export interface SourcingSettings {
   purgeBodiesAfterDays: number;
 }
 
-export interface RateCardLead {
+export interface NoDraftEmail {
   id: string;
+  /** Who replied. Often not the address we wrote to. */
   fromAddress: string;
   fromName: string | null;
+  /** The mailbox of ours the reply came into, so you know where to look. */
+  mailbox: string | null;
+  /** The address our outreach went to, where the headers recorded one. */
+  toAddress: string | null;
   subject: string | null;
   sentAt: string | null;
   askedAboutDomain: string | null;
-  /** Why extraction produced no draft. Usually names the missing rate card. */
+  /** Why extraction produced no draft, in the model's own words. */
   reason: string | null;
   attachments: { filename: string; mimeType: string; size: number }[];
   hasRateCard: boolean;
@@ -352,67 +357,74 @@ export const sourcingService = {
     return { purged: ids.length, enabled: true };
   },
 
-  // ------------------------------------------------------- rate card leads
+  // --------------------------------------------------------- no-draft work
 
   /**
-   * Replies that sent a rate card instead of a price.
+   * Every reply that produced no draft, as a list somebody can work through.
    *
-   * Ignored emails carrying an attachment or a link out. They produced no
-   * draft and the reason was accurate - the prices are in a PDF or a Google
-   * Sheet we never opened - but a publisher who sends a full rate card is the
-   * opposite of a dead lead, and until now they landed in a list with no
-   * actions on it.
+   * Extraction marks an email 'ignored' when it finds nothing usable, and the
+   * reason is almost always accurate - the prices are in a PDF, or the reply
+   * is prose we could not read, or nobody could tell which site it was about.
+   * Accurate is not the same as finished: a publisher who answered at all is
+   * worth a minute of somebody's time, and until now these landed in a grey
+   * box with no actions on it.
    *
-   * Dismissed ones are gone from here for good; that is what dismissing is.
+   * Replies carrying a rate card come first, because those are the ones with
+   * a price on the other end of a link. Handled and dismissed rows are gone:
+   * that is what those two words mean.
    */
-  async rateCardLeads(limit = 100): Promise<RateCardLead[]> {
+  async noDraftEmails(limit = 200): Promise<NoDraftEmail[]> {
     if (!isSupabaseEnabled()) return [];
     const supabase = getAdminScopedClient();
 
     const { data } = await supabase
       .from('inbound_emails')
       .select(
-        'id, message_id, from_address, from_name, subject, sent_at, body_text, status_reason, asked_about_domain, source, mailbox, gmail_thread_id, attachments, has_rate_card',
+        'id, message_id, from_address, from_name, to_address, subject, sent_at, body_text, status_reason, asked_about_domain, source, mailbox, gmail_thread_id, attachments, has_rate_card',
       )
       .eq('status', 'ignored')
-      .is('rate_card_dismissed_at', null)
+      .is('no_draft_dismissed_at', null)
+      .is('no_draft_handled_at', null)
       .order('sent_at', { ascending: false })
-      .limit(limit * 3);
+      .limit(limit);
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const rows = (data ?? []) as any[];
 
-    return rows
-      .map((row) => ({
+    const emails: NoDraftEmail[] = rows.map((row) => {
+      const attachments = (row.attachments as NoDraftEmail['attachments']) ?? [];
+      const links = extractLinks(String(row.body_text ?? ''));
+      return {
         id: String(row.id),
         fromAddress: String(row.from_address ?? ''),
         fromName: (row.from_name as string | null) ?? null,
+        mailbox: (row.mailbox as string | null) ?? null,
+        toAddress: (row.to_address as string | null) ?? null,
         subject: (row.subject as string | null) ?? null,
         sentAt: (row.sent_at as string | null) ?? null,
         askedAboutDomain: (row.asked_about_domain as string | null) ?? null,
         reason: (row.status_reason as string | null) ?? null,
-        attachments: (row.attachments as RateCardLead['attachments']) ?? [],
-        hasRateCard: Boolean(row.has_rate_card),
-        links: extractLinks(String(row.body_text ?? '')),
+        attachments,
+        hasRateCard: Boolean(row.has_rate_card) || attachments.length > 0 || links.length > 0,
+        links,
         gmailUrl:
           row.mailbox && row.gmail_thread_id
             ? gmailThreadUrl(String(row.mailbox), String(row.gmail_thread_id))
             : null,
         findUrl: gmailSearchUrl(String(row.message_id ?? ''), row.mailbox as string | null),
-      }))
-      // The filter is applied after mapping because "has a link" is only
-      // knowable once the body has been read for links, and doing that in the
-      // query would mean storing them - a second copy that can go stale.
-      .filter((lead) => lead.hasRateCard || lead.attachments.length > 0 || lead.links.length > 0)
-      .slice(0, limit);
+      };
+    });
+
+    // A rate card is a price behind a link. Everything else needs reading.
+    return emails.sort((a, b) => Number(b.hasRateCard) - Number(a.hasRateCard));
   },
 
   /**
    * Put the rate card's contents into the email and queue it to be read.
    *
-   * The whole point of the worklist. Somebody opens the sheet, copies the
-   * rates, pastes them here - and from that moment it is an ordinary email
-   * waiting to be read, with no new extraction path and no new rules.
+   * Somebody opens the sheet, copies the rates, pastes them here - and from
+   * that moment it is an ordinary email waiting to be read, with no new
+   * extraction path and no new rules.
    *
    * The pasted text is marked in the body. When a listing is argued about
    * later, "the model read this from their reply" and "a person typed this
@@ -461,12 +473,28 @@ export const sourcingService = {
     return { ok: true, message: 'Added. Press Read on the publisher inbox to extract it.' };
   },
 
-  /** Not a rate card after all. It drops off the worklist for good. */
-  async dismissRateCard(emailId: string): Promise<void> {
+  /**
+   * Dealt with by hand: the listing was added from this reply.
+   *
+   * Recorded rather than deleted. A listing that exists because somebody read
+   * an email and typed it in is a different kind of fact from one the model
+   * extracted, and six months from now the only place that will be written
+   * down is here.
+   */
+  async markNoDraftHandled(emailId: string, by?: string): Promise<void> {
     const supabase = getAdminScopedClient();
     await supabase
       .from('inbound_emails')
-      .update({ rate_card_dismissed_at: new Date().toISOString() })
+      .update({ no_draft_handled_at: new Date().toISOString(), no_draft_handled_by: by ?? null })
+      .eq('id', emailId);
+  },
+
+  /** Nothing worth having. It leaves the list and does not come back. */
+  async dismissNoDraft(emailId: string): Promise<void> {
+    const supabase = getAdminScopedClient();
+    await supabase
+      .from('inbound_emails')
+      .update({ no_draft_dismissed_at: new Date().toISOString() })
       .eq('id', emailId);
   },
 

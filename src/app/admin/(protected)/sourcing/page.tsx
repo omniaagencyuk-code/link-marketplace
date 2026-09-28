@@ -45,11 +45,11 @@ async function load() {
 
   const supabase = getAdminScopedClient();
 
-  const [settings, pending, spent, rateCards, drafts, emails, problems, batches] = await Promise.all([
+  const [settings, pending, spent, noDrafts, drafts, emails, problems, batches] = await Promise.all([
     sourcingService.getSettings(),
     sourcingService.pendingCount().catch(() => 0),
     sourcingService.spentThisMonthUsd().catch(() => 0),
-    sourcingService.rateCardLeads(100).catch(() => []),
+    sourcingService.noDraftEmails(200).catch(() => []),
     supabase
       .from('listing_drafts')
       .select('id, domain, matched_website_id, low_confidence_count, flags, created_at, inbound_emails (from_address, sent_at)')
@@ -109,7 +109,7 @@ async function load() {
     settings,
     pending,
     spent,
-    rateCardCount: rateCards.length,
+    noDraftCount: noDrafts.length,
     counts,
     drafts: draftRows,
     problems: (problems.data ?? []) as Record<string, unknown>[],
@@ -118,9 +118,14 @@ async function load() {
   };
 }
 
-function ProblemEmails({ rows }: { rows: Record<string, unknown>[] }) {
+function ProblemEmails({
+  rows,
+  noDraftCount,
+}: {
+  rows: Record<string, unknown>[];
+  noDraftCount: number;
+}) {
   const failed = rows.filter((row) => row.status === 'failed');
-  const ignored = rows.filter((row) => row.status === 'ignored');
 
   return (
     <Card>
@@ -146,19 +151,21 @@ function ProblemEmails({ rows }: { rows: Record<string, unknown>[] }) {
           </div>
         ) : null}
 
-        {ignored.length > 0 ? (
+        {/*
+          The ones with nothing usable used to be listed here, unactionably.
+          They have a worklist of their own now, and listing them twice means
+          somebody works through one copy while the other still shows them.
+        */}
+        {noDraftCount > 0 ? (
           <div className={failed.length > 0 ? 'border-t border-line pt-3' : ''}>
-            <p className="mb-1.5 text-[12px] font-medium text-muted">
-              Nothing usable in them - this is a normal outcome, not an error
+            <p className="text-[12px] leading-relaxed text-muted">
+              {noDraftCount} {noDraftCount === 1 ? 'reply' : 'replies'} produced no draft - a normal
+              outcome, not an error. They answered, so they are worth a look:{' '}
+              <Link href="/admin/sourcing/no-drafts" className="text-accent-700 underline">
+                work through them
+              </Link>
+              .
             </p>
-            <ul className="space-y-1">
-              {ignored.map((row) => (
-                <li key={String(row.id)} className="text-[12px] text-muted">
-                  <span className="text-ink-soft">{String(row.from_address)}</span> -{' '}
-                  {String(row.status_reason ?? 'no reason recorded')}
-                </li>
-              ))}
-            </ul>
           </div>
         ) : null}
       </CardContent>
@@ -189,10 +196,10 @@ export default async function SourcingPage() {
         description="Import replies from Gmail, paste one, or upload an export. Read them with Claude, then check every draft before it becomes a listing."
         action={
           <div className="flex flex-wrap gap-2">
-            {state.rateCardCount > 0 ? (
+            {state.noDraftCount > 0 ? (
               <Button asChild variant="outline">
-                <Link href="/admin/sourcing/rate-cards">
-                  {state.rateCardCount} rate {state.rateCardCount === 1 ? 'card' : 'cards'} to read
+                <Link href="/admin/sourcing/no-drafts">
+                  {state.noDraftCount} to follow up
                 </Link>
               </Button>
             ) : null}
@@ -229,7 +236,9 @@ export default async function SourcingPage() {
         in a column only a database query would show. A count of failures
         with no reason attached is the one thing worse than the failure.
       */}
-      {state.problems.length > 0 ? <ProblemEmails rows={state.problems} /> : null}
+      {state.problems.length > 0 || state.noDraftCount > 0 ? (
+        <ProblemEmails rows={state.problems} noDraftCount={state.noDraftCount} />
+      ) : null}
 
       <Card>
         <CardHeader className="flex flex-wrap items-center justify-between gap-2">

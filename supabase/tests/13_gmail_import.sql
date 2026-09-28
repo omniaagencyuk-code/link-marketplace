@@ -126,15 +126,25 @@ values ('sheet@publisher.example', 'ana@publisher.example',
         'Our rates are here: https://docs.google.com/spreadsheets/d/abc/edit',
         'ignored', 'Reply only links to an external rate-card spreadsheet.');
 
-select 'a new lead is not dismissed: ' || coalesce(rate_card_dismissed_at::text, 'null')
+select 'a new lead is not dismissed: ' || coalesce(no_draft_dismissed_at::text, 'null')
+  from public.inbound_emails where message_id = 'sheet@publisher.example';
+select 'nor handled: ' || coalesce(no_draft_handled_at::text, 'null')
   from public.inbound_emails where message_id = 'sheet@publisher.example';
 select 'and nobody has added rates yet: ' || coalesce(rate_card_added_at::text, 'null')
   from public.inbound_emails where message_id = 'sheet@publisher.example';
 
 -- Dismissing takes it off the list without touching the email.
-update public.inbound_emails set rate_card_dismissed_at = timezone('utc', now())
+-- Ticked off: a listing exists because somebody read this email. Recorded,
+-- not deleted, because that is a different fact from "nothing worth having".
+update public.inbound_emails
+  set no_draft_handled_at = timezone('utc', now()), no_draft_handled_by = 'admin@pressparrot.com'
   where message_id = 'sheet@publisher.example';
-select 'the email survives being dismissed: ' || length(body_text)
+select 'who added it by hand is recorded: ' || no_draft_handled_by
+  from public.inbound_emails where message_id = 'sheet@publisher.example';
+
+update public.inbound_emails set no_draft_dismissed_at = timezone('utc', now())
+  where message_id = 'sheet@publisher.example';
+select 'the email survives both: ' || length(body_text)
   from public.inbound_emails where message_id = 'sheet@publisher.example';
 
 set role authenticated;

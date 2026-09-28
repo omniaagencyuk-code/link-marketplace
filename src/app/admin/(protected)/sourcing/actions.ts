@@ -546,15 +546,26 @@ export async function spreadGeneralPriceAction(values: unknown): Promise<{
 export async function addRateCardAction(input: { emailId: string; text: string }) {
   const by = await reviewer();
   const result = await sourcingService.addRateCard(input.emailId, input.text, by);
-  revalidatePath('/admin/sourcing/rate-cards');
+  revalidatePath('/admin/sourcing/no-drafts');
   revalidatePath('/admin/sourcing');
   return result;
 }
 
-export async function dismissRateCardAction(emailId: string) {
+/** Added to the marketplace by hand, and recorded as such. */
+export async function markHandledAction(emailId: string) {
+  const by = await reviewer();
+  await sourcingService.markNoDraftHandled(emailId, by);
+  revalidatePath('/admin/sourcing/no-drafts');
+  revalidatePath('/admin/sourcing');
+  return { ok: true };
+}
+
+/** Nothing worth having. It leaves the list. */
+export async function dismissNoDraftAction(emailId: string) {
   await requireAdminSession();
-  await sourcingService.dismissRateCard(emailId);
-  revalidatePath('/admin/sourcing/rate-cards');
+  await sourcingService.dismissNoDraft(emailId);
+  revalidatePath('/admin/sourcing/no-drafts');
+  revalidatePath('/admin/sourcing');
   return { ok: true };
 }
 

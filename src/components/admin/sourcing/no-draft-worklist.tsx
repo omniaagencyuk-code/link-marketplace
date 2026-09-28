@@ -2,28 +2,48 @@
 
 import { useRouter } from 'next/navigation';
 import { useState, useTransition } from 'react';
-import { ExternalLink, FileSpreadsheet, FileText, Link2, Paperclip, X } from 'lucide-react';
+import {
+  Check,
+  ExternalLink,
+  FileSpreadsheet,
+  FileText,
+  Link2,
+  Paperclip,
+  X,
+} from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Textarea } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import {
   addRateCardAction,
-  dismissRateCardAction,
+  dismissNoDraftAction,
+  markHandledAction,
 } from '@/app/admin/(protected)/sourcing/actions';
 import { formatDateTime } from '@/lib/utils/format';
-import type { RateCardLead } from '@/lib/services/sourcing-service';
+import type { NoDraftEmail } from '@/lib/services/sourcing-service';
 import type { LinkKind } from '@/lib/sourcing/links';
 
 /**
- * One publisher at a time: what they sent, and a box to put the prices in.
+ * The replies that produced no draft, one at a time.
  *
- * The links open in a new tab and the attachment is opened from Gmail. We
- * never fetch either - the only thing that enters the system here is text a
- * human pasted after reading the rate card themselves, which is also why
- * this is worth a person's time rather than a job.
+ * Each row carries the two addresses that matter - the mailbox of ours it
+ * came into, and who actually replied, which is often not who we wrote to -
+ * plus a way into the original in Gmail. From there it is a human job: read
+ * it, add the site by hand if it is worth having, and tick it off.
+ *
+ * Ticking and removing are different. Ticked means a listing exists because
+ * somebody read this email; removed means there was nothing worth having.
+ * Six months from now the difference is the only record of where a hand-typed
+ * listing came from.
  */
-export function RateCardWorklist({ leads }: { leads: RateCardLead[] }) {
+export function NoDraftWorklist({
+  emails,
+  withRateCard,
+}: {
+  emails: NoDraftEmail[];
+  withRateCard: number;
+}) {
   const router = useRouter();
   const [busy, startTransition] = useTransition();
   const [open, setOpen] = useState<string | null>(null);
@@ -34,59 +54,90 @@ export function RateCardWorklist({ leads }: { leads: RateCardLead[] }) {
 
   return (
     <div className="space-y-3">
-      <p className="text-[12px] text-muted">
-        {leads.length} {leads.length === 1 ? 'reply' : 'replies'} with a file or a link and no
-        prices in the email itself. Nothing here has been read by Claude, and nothing is downloaded
-        or fetched by us - open it yourself, copy the rates, and it goes back in the queue.
+      <p className="text-[12px] leading-relaxed text-muted">
+        {emails.length} {emails.length === 1 ? 'reply' : 'replies'} with nothing priceable in the
+        email itself
+        {withRateCard > 0 ? (
+          <>
+            {' '}
+            &mdash; <strong className="font-medium text-ink">{withRateCard}</strong> of them point
+            at a file or a link, and those are listed first
+          </>
+        ) : null}
+        . Nothing here is downloaded or fetched by us: open the original yourself, and either paste
+        the rates in or add the site by hand and tick it off.
       </p>
 
-      {leads.map((lead) => {
-        const editing = open === lead.id;
+      {emails.map((email) => {
+        const editing = open === email.id;
 
         return (
-          <Card key={lead.id}>
+          <Card key={email.id}>
             <CardContent className="space-y-3 py-4">
               <div className="flex flex-wrap items-baseline justify-between gap-2">
-                <div>
+                <div className="min-w-0">
                   <p className="text-[13px] font-medium text-ink">
-                    {lead.askedAboutDomain ?? lead.fromAddress}
-                    {lead.askedAboutDomain ? (
-                      <span className="ml-1.5 font-normal text-muted">{lead.fromAddress}</span>
+                    {email.askedAboutDomain ?? email.fromAddress}
+                    {email.hasRateCard ? (
+                      <Badge tone="warning" className="ml-1.5">
+                        has a file or link
+                      </Badge>
                     ) : null}
                   </p>
-                  {lead.subject ? (
-                    <p className="mt-0.5 text-[12px] text-muted">{lead.subject}</p>
+                  {email.subject ? (
+                    <p className="mt-0.5 text-[12px] text-muted">{email.subject}</p>
                   ) : null}
                 </div>
                 <p className="tabular text-[12px] text-muted">
-                  {lead.sentAt ? formatDateTime(lead.sentAt) : 'date unknown'}
+                  {email.sentAt ? formatDateTime(email.sentAt) : 'date unknown'}
                 </p>
               </div>
 
-              {lead.reason ? (
+              {/*
+                Both addresses, because they are often not the same. We write
+                to info@ and a person replies from their own account, and
+                searching Gmail for the wrong one of the two finds nothing.
+              */}
+              <dl className="grid gap-x-4 gap-y-0.5 text-[12px] sm:grid-cols-2">
+                <div className="flex gap-2">
+                  <dt className="w-20 shrink-0 text-muted">Replied from</dt>
+                  <dd className="min-w-0 break-all text-ink">
+                    {email.fromName ? `${email.fromName} · ` : ''}
+                    {email.fromAddress || 'unknown'}
+                  </dd>
+                </div>
+                <div className="flex gap-2">
+                  <dt className="w-20 shrink-0 text-muted">Into</dt>
+                  <dd className="min-w-0 break-all text-ink">
+                    {email.mailbox ?? email.toAddress ?? 'not recorded'}
+                  </dd>
+                </div>
+              </dl>
+
+              {email.reason ? (
                 <p className="rounded-lg border border-line bg-surface-sunken px-2.5 py-2 text-[12px] text-ink-soft">
-                  {lead.reason}
+                  {email.reason}
                 </p>
               ) : null}
 
-              {lead.attachments.length > 0 ? (
+              {email.attachments.length > 0 ? (
                 <div className="flex flex-wrap items-center gap-1.5">
                   <Paperclip className="h-3.5 w-3.5 text-muted" aria-hidden="true" />
-                  {lead.attachments.map((file) => (
+                  {email.attachments.map((file) => (
                     <Badge key={file.filename} tone="warning">
                       {file.filename}
                       <span className="ml-1 font-normal opacity-70">{sizeOf(file.size)}</span>
                     </Badge>
                   ))}
                   <span className="text-[11px] text-muted">
-                    open from Gmail - we never download attachments
+                    open from Gmail &mdash; we never download attachments
                   </span>
                 </div>
               ) : null}
 
-              {lead.links.length > 0 ? (
+              {email.links.length > 0 ? (
                 <ul className="space-y-1">
-                  {lead.links.map((link) => (
+                  {email.links.map((link) => (
                     <li key={link.url} className="flex items-start gap-1.5 text-[12px]">
                       <span className="mt-0.5 shrink-0 text-muted">{iconFor(link.kind)}</span>
                       <a
@@ -108,9 +159,9 @@ export function RateCardWorklist({ leads }: { leads: RateCardLead[] }) {
                     value={text}
                     rows={8}
                     autoFocus
-                    aria-label="Rate card contents"
+                    aria-label="Rates from the reply"
                     placeholder={
-                      'Paste the rates from the file or the sheet.\n\nAnything readable works - a copied table, a few lines, the whole thing. It is read exactly like the reply itself, so include the currency and say which topics each price covers.'
+                      'Paste the rates from the file, the sheet, or the email itself.\n\nAnything readable works - a copied table, a few lines, the whole thing. It is read exactly like the reply itself, so include the currency and say which topics each price covers.'
                     }
                     onChange={(event) => setText(event.target.value)}
                     className="text-[13px]"
@@ -122,9 +173,9 @@ export function RateCardWorklist({ leads }: { leads: RateCardLead[] }) {
                       disabled={busy || text.trim().length < 10}
                       onClick={() =>
                         startTransition(async () => {
-                          const result = await addRateCardAction({ emailId: lead.id, text });
+                          const result = await addRateCardAction({ emailId: email.id, text });
                           setMessage({
-                            id: lead.id,
+                            id: email.id,
                             tone: result.ok ? 'ok' : 'bad',
                             text: result.message,
                           });
@@ -153,31 +204,24 @@ export function RateCardWorklist({ leads }: { leads: RateCardLead[] }) {
                 </div>
               ) : (
                 <div className="flex flex-wrap items-center gap-2">
-                  {/*
-                    The thread when we have it, a search by Message-ID when we
-                    do not. Emails uploaded from a Takeout export have no
-                    thread id, and those are exactly the rows that say "refers
-                    to attached rate cards" - the attachment is in the real
-                    email, so the one thing the row must do is get you there.
-                  */}
-                  {lead.gmailUrl || lead.findUrl ? (
+                  {email.gmailUrl || email.findUrl ? (
                     <Button asChild variant="outline" size="sm">
                       <a
-                        href={(lead.gmailUrl ?? lead.findUrl)!}
+                        href={(email.gmailUrl ?? email.findUrl)!}
                         target="_blank"
                         rel="noreferrer noopener"
                       >
-                        {lead.gmailUrl ? 'Open in Gmail' : 'Find in Gmail'}
+                        {email.gmailUrl ? 'Open in Gmail' : 'Find in Gmail'}
                         <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
                       </a>
                     </Button>
                   ) : null}
                   <Button
-                    variant="accent"
+                    variant="outline"
                     size="sm"
                     disabled={busy}
                     onClick={() => {
-                      setOpen(lead.id);
+                      setOpen(email.id);
                       setText('');
                       setMessage(null);
                     }}
@@ -185,23 +229,37 @@ export function RateCardWorklist({ leads }: { leads: RateCardLead[] }) {
                     Paste the rates
                   </Button>
                   <Button
+                    variant="accent"
+                    size="sm"
+                    disabled={busy}
+                    onClick={() =>
+                      startTransition(async () => {
+                        await markHandledAction(email.id);
+                        router.refresh();
+                      })
+                    }
+                  >
+                    <Check className="h-3.5 w-3.5" aria-hidden="true" />
+                    Added by hand
+                  </Button>
+                  <Button
                     variant="ghost"
                     size="sm"
                     disabled={busy}
                     onClick={() =>
                       startTransition(async () => {
-                        await dismissRateCardAction(lead.id);
+                        await dismissNoDraftAction(email.id);
                         router.refresh();
                       })
                     }
                   >
                     <X className="h-3.5 w-3.5" aria-hidden="true" />
-                    Not a rate card
+                    Nothing here
                   </Button>
                 </div>
               )}
 
-              {message?.id === lead.id ? (
+              {message?.id === email.id ? (
                 <p
                   className={`text-[12px] ${message.tone === 'ok' ? 'text-positive' : 'text-negative'}`}
                 >
@@ -218,7 +276,8 @@ export function RateCardWorklist({ leads }: { leads: RateCardLead[] }) {
 
 function iconFor(kind: LinkKind) {
   if (kind === 'sheet') return <FileSpreadsheet className="h-3.5 w-3.5" aria-hidden="true" />;
-  if (kind === 'file' || kind === 'doc') return <FileText className="h-3.5 w-3.5" aria-hidden="true" />;
+  if (kind === 'file' || kind === 'doc')
+    return <FileText className="h-3.5 w-3.5" aria-hidden="true" />;
   return <Link2 className="h-3.5 w-3.5" aria-hidden="true" />;
 }
 
