@@ -88,7 +88,11 @@ function bareMessageId(value?: string): string | undefined {
  * imported can arrive out of it, and a transcript that reads answer-then-
  * question is worse than useless to the model.
  */
-export function readMessages(thread: GmailThread, mailbox: string): ThreadMessage[] {
+export function readMessages(
+  thread: GmailThread,
+  mailbox: string,
+  alsoOurs: string[] = [],
+): ThreadMessage[] {
   const messages = (thread.messages ?? []).map((message) => {
     const parsed = parseMessage(message);
     const fromAddress = addressOf(parsed.headers.from);
@@ -101,7 +105,7 @@ export function readMessages(thread: GmailThread, mailbox: string): ThreadMessag
       subject: parsed.headers.subject,
       sentAt: sentAtOf(message, parsed.headers.date),
       text: parsed.text,
-      ours: isOurs(fromAddress, [mailbox]),
+      ours: isOurs(fromAddress, [mailbox, ...alsoOurs]),
       attachments: parsed.attachments,
     };
   });
@@ -154,8 +158,18 @@ function askedAbout(messages: ThreadMessage[]): string | undefined {
 export function readThread(
   thread: GmailThread,
   mailbox: string,
+  /**
+   * Other addresses of ours, beyond the mailbox being read.
+   *
+   * The importer passes the whole allowlist. Without it, a thread pulled from
+   * one mailbox that also carries a message from another of our addresses
+   * would read that message as a publisher's - and whatever we wrote would
+   * become their terms. Every outreach address is on the static list too, but
+   * this is what means adding a mailbox in the admin is enough on its own.
+   */
+  alsoOurs: string[] = [],
 ): { thread: ReadThread } | { skip: ThreadSkipReason } {
-  const messages = readMessages(thread, mailbox);
+  const messages = readMessages(thread, mailbox, alsoOurs);
   if (messages.length === 0) return { skip: 'no-messages' };
 
   const replies = messages.filter((message) => !message.ours);

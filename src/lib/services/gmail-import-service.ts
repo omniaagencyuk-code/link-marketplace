@@ -465,6 +465,12 @@ export const gmailImportService = {
       return gmailImportService.finish(jobId);
     }
 
+    // Every allowlisted address counts as ours, not just the one being read.
+    // A thread pulled from contact@ that also carries a message from info@ is
+    // two of our own addresses talking to a publisher, and reading the second
+    // as the publisher would turn our own words into their terms.
+    const ourAddresses = (await gmailImportService.mailboxes()).map((box) => box.address);
+
     let fetched = 0;
     let skipped = 0;
     let failed = 0;
@@ -511,7 +517,7 @@ export const gmailImportService = {
           continue;
         }
 
-        const read = readThread(raw, mailbox);
+        const read = readThread(raw, mailbox, ourAddresses);
 
         if ('skip' in read) {
           await supabase

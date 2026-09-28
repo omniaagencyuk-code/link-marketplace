@@ -95,11 +95,42 @@ is('an unknown entity is left alone', htmlToText('&weird;'), '&weird;');
 is('a decoded word with no encoding is untouched', decodeEncodedWords('plain subject'), 'plain subject');
 
 console.log('\n--- our own addresses ---');
-is('all five outreach addresses are known', outreachAddresses().length, 5);
+is('all six outreach addresses are known', outreachAddresses().length, 6);
+is('the newest one is among them', isOurs('info@inovamarketing.co.uk'), true);
 is('one of them is ours', isOurs('INFO@omniaagency.uk'), true);
 is('case and spacing do not matter', isOurs('  contact@omnia-marketing.co.uk '), true);
 is('a publisher is not', isOurs('mette@holdsport.example'), false);
 is('but the mailbox being read always is', isOurs('shared@omnia.example', ['shared@omnia.example']), true);
+
+// The case this exists for: a thread carrying a message from another of our
+// mailboxes, one that is not on the static list. Read as a publisher, our own
+// words would become their terms - so the allowlist is passed in as ours.
+//
+// The address below is deliberately NOT in outreach.ts. Using one that is
+// would make this pass whether or not the allowlist is plumbed through, which
+// is a test that proves nothing.
+{
+  const raw = JSON.parse(
+    fs.readFileSync(path.join(dir, 'thread-with-reply.json'), 'utf8'),
+  ) as GmailThread;
+  for (const header of raw.messages?.[0]?.payload?.headers ?? []) {
+    if (header.name === 'From') header.value = 'Shared <shared@omnia.example>';
+  }
+
+  const known = readThread(raw, 'contact@omniaagency.uk', ['shared@omnia.example']);
+  const unknown = readThread(raw, 'contact@omniaagency.uk', []);
+
+  if ('skip' in known || 'skip' in unknown) {
+    bad('both readings keep the thread');
+  } else {
+    has('an allowlisted address is labelled as us', known.thread.bodyText, '--- Us (shared@omnia.example)');
+    has(
+      'and without the allowlist it would read as a publisher',
+      unknown.thread.bodyText,
+      '--- Publisher (shared@omnia.example)',
+    );
+  }
+}
 
 console.log('\n--- a whole thread ---');
 {

@@ -21,6 +21,7 @@ const OUTREACH_ADDRESSES = [
   'info@omnia-marketing.co.uk',
   'contact@omniaagency.uk',
   'contact@omnia-marketing.co.uk',
+  'info@inovamarketing.co.uk',
 ];
 
 /** Our outreach addresses, lowercased. */
