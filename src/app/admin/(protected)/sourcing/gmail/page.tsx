@@ -5,7 +5,9 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge, type BadgeTone } from '@/components/ui/badge';
 import { MailboxAllowlist } from '@/components/admin/sourcing/gmail/mailbox-allowlist';
 import { ImportControls } from '@/components/admin/sourcing/gmail/import-controls';
+import { NightlySchedule } from '@/components/admin/sourcing/gmail/nightly-schedule';
 import { gmailImportService, QUERY_PRESETS } from '@/lib/services/gmail-import-service';
+import { sourcingService } from '@/lib/services/sourcing-service';
 import { isSupabaseEnabled } from '@/lib/supabase/config';
 
 export const dynamic = 'force-dynamic';
@@ -26,10 +28,11 @@ export default async function GmailImportPage() {
     );
   }
 
-  const [mailboxes, jobs, config] = await Promise.all([
+  const [mailboxes, jobs, config, settings] = await Promise.all([
     gmailImportService.mailboxes(),
     gmailImportService.recentJobs(10),
     Promise.resolve(gmailImportService.configured()),
+    sourcingService.getSettings(),
   ]);
 
   const running = jobs.find((job) => job.status === 'fetching' || job.status === 'listing') ?? null;
@@ -52,6 +55,15 @@ export default async function GmailImportPage() {
           presets={QUERY_PRESETS}
           configured={config.configured}
           running={running}
+        />
+
+        <NightlySchedule
+          enabled={settings.nightlyImportEnabled}
+          query={settings.nightlyImportQuery}
+          cap={settings.nightlyImportCap}
+          reads={settings.nightlyImportReads}
+          lastRunAt={settings.nightlyImportLastRunAt}
+          lastResult={settings.nightlyImportLastResult}
         />
 
         <MailboxAllowlist mailboxes={mailboxes} />

@@ -16,6 +16,10 @@
     {
       "path": "/api/cron/sourcing",
       "schedule": "*/10 * * * *"
+    },
+    {
+      "path": "/api/cron/gmail-nightly",
+      "schedule": "17 5 * * *"
     }
   ]
 }

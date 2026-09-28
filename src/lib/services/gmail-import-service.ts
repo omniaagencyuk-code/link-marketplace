@@ -5,6 +5,7 @@ import { GmailError, getThread, inParallel, listThreads } from '@/lib/gmail/clie
 import { readThread } from '@/lib/gmail/thread';
 import { planQueue, type SeenThread } from '@/lib/gmail/queueing';
 import { sourcingService } from './sourcing-service';
+import { describeSkip, nightlySkipReason } from '@/lib/sourcing/schedule';
 
 /**
  * Importing publisher replies straight from Gmail.
@@ -676,6 +677,97 @@ export const gmailImportService = {
       .order('created_at', { ascending: true })
       .limit(limit);
     return ((data ?? []) as { id: string }[]).map((row) => row.id);
+  },
+
+  /**
+   * Tonight's import, if it is due.
+   *
+   * Free by design: listing and fetching cost nothing, and a thread already
+   * imported is skipped, so leaving the schedule on does not accumulate a
+   * bill. Reading is separate and off unless somebody turned it on, and when
+   * they have, the monthly budget still applies because `runExtraction`
+   * checks it before submitting anything.
+   *
+   * The mailboxes come from the allowlist rather than from a second list
+   * kept here: adding one to the allowlist puts it in tonight's run, with
+   * nowhere else to remember.
+   */
+  async runNightly(): Promise<{ ran: boolean; message: string }> {
+    const settings = await sourcingService.getSettings();
+
+    const { data: inFlight } = await getAdminScopedClient()
+      .from('gmail_import_jobs')
+      .select('id')
+      .in('status', ['listing', 'fetching'])
+      .limit(1);
+
+    const skip = nightlySkipReason({
+      enabled: settings.nightlyImportEnabled,
+      lastRunAt: settings.nightlyImportLastRunAt,
+      jobInFlight: (inFlight ?? []).length > 0,
+    });
+
+    if (skip) return { ran: false, message: describeSkip(skip) };
+
+    if (!isGmailConfigured()) {
+      await gmailImportService.recordNightly('The service account key is not set on this deployment.');
+      return { ran: false, message: 'Gmail is not configured.' };
+    }
+
+    const mailboxes = (await gmailImportService.mailboxes())
+      .filter((box) => box.enabled)
+      .map((box) => box.address);
+
+    if (mailboxes.length === 0) {
+      await gmailImportService.recordNightly('No mailboxes are enabled in the allowlist.');
+      return { ran: false, message: 'No mailboxes are enabled.' };
+    }
+
+    const created = await gmailImportService.createJob({
+      mailboxes,
+      query: settings.nightlyImportQuery,
+      maxThreads: settings.nightlyImportCap,
+      startedBy: 'nightly schedule',
+    });
+
+    if (!created.ok || !created.jobId) {
+      await gmailImportService.recordNightly(created.message);
+      return { ran: true, message: created.message };
+    }
+
+    // Drain what we can now; the ten-minute cron finishes the rest.
+    const drained = await gmailImportService.drain(created.jobId, 10);
+    const job = await gmailImportService.getJob(created.jobId);
+
+    let outcome = job
+      ? `${job.emailsCreated} new ${job.emailsCreated === 1 ? 'email' : 'emails'} from ${job.threadsFound} ${job.threadsFound === 1 ? 'thread' : 'threads'}.`
+      : created.message;
+
+    if (!drained.done) outcome += ' Still fetching.';
+
+    /*
+      Reading is the part that costs money, so it happens only when somebody
+      switched it on - and even then `runExtraction` refuses once the month's
+      budget is gone, which is the guard that makes leaving this on safe.
+    */
+    if (settings.nightlyImportReads && drained.done) {
+      const read = await sourcingService.runExtraction({ submittedBy: 'nightly schedule' });
+      outcome += ` ${read.message}`;
+    }
+
+    await gmailImportService.recordNightly(outcome);
+    return { ran: true, message: outcome };
+  },
+
+  /** What the last scheduled run did, so a broken schedule is visible. */
+  async recordNightly(result: string): Promise<void> {
+    await getAdminScopedClient()
+      .from('sourcing_settings')
+      .update({
+        nightly_import_last_run_at: new Date().toISOString(),
+        nightly_import_last_result: result.slice(0, 500),
+      })
+      .eq('id', 1);
   },
 
   /** A run of chunks, for the cron. Bounded so the invocation ends. */

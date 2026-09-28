@@ -14,6 +14,7 @@ import { applyGeneralPriceToNiches, assumedNicheCosts, countLowConfidence, expan
 import { sensitiveNicheSlugs } from '../src/lib/config/accepted-niches';
 import { extractLinks, looksLikeRateCardLead } from '../src/lib/sourcing/links';
 import { healthOf, progressMessage, runProgress, type BatchRow } from '../src/lib/sourcing/batch-health';
+import { describeSkip, nightlySkipReason, type NightlyState } from '../src/lib/sourcing/schedule';
 import { zodOutputFormat } from '@anthropic-ai/sdk/helpers/zod';
 
 let failed = 0;
@@ -610,6 +611,35 @@ console.log('\n--- is a run progressing or stuck ---');
   has('a working run says results arrive on their own', progressMessage(runProgress([batch({})])), 'arrive on their own');
   has('a stuck one says to put them back', progressMessage(mixed), 'Put them back');
   has('and a slow one says it is longer than usual', progressMessage(runProgress([batch({ createdAt: at(95) })])), 'longer than usual');
+}
+
+console.log('\n--- is tonight run due ---');
+{
+  const ago = (minutes: number) => new Date(Date.now() - minutes * 60000).toISOString();
+  const state = (over: Partial<NightlyState>): NightlyState => ({
+    enabled: true, lastRunAt: null, jobInFlight: false, ...over,
+  });
+
+  is('off means off', nightlySkipReason(state({ enabled: false })), 'off');
+  is('never run and switched on is due', nightlySkipReason(state({})), null);
+  is('a full day later it is due again', nightlySkipReason(state({ lastRunAt: ago(25 * 60) })), null);
+
+  // Running twice costs a second read of everything it finds.
+  is('an hour later it is not', nightlySkipReason(state({ lastRunAt: ago(60) })), 'already-ran');
+  is('nor nineteen hours later', nightlySkipReason(state({ lastRunAt: ago(19 * 60) })), 'already-ran');
+  // Cron fires on a wall clock and runs take minutes, so consecutive nights
+  // are never exactly 24 hours apart.
+  is('but twenty-one hours counts as the next night', nightlySkipReason(state({ lastRunAt: ago(21 * 60) })), null);
+
+  is(
+    'last night still fetching means wait',
+    nightlySkipReason(state({ jobInFlight: true, lastRunAt: ago(25 * 60) })),
+    'still-running',
+  );
+  is('and off beats everything', nightlySkipReason(state({ enabled: false, jobInFlight: true })), 'off');
+
+  has('every reason says why', describeSkip('already-ran'), 'already ran');
+  has('including the unfinished one', describeSkip('still-running'), 'not finished');
 }
 
 console.log('\n--- the claim is honoured everywhere ---');

@@ -152,3 +152,25 @@ set request.jwt.claim.sub = '22222222-2222-2222-2222-222222222222';
 select 'customer reads rate card leads: ' || count(*)
   from public.inbound_emails where status = 'ignored';
 reset role;
+
+-- ---------------------------------------------------- the nightly schedule
+-- Off, and not reading, until somebody says otherwise. Importing is free;
+-- reading is not, and a schedule that spends money unattended is a decision
+-- rather than something inherited from a default.
+select 'the nightly import is off by default: ' || nightly_import_enabled
+  from public.sourcing_settings where id = 1;
+select 'and does not read by default: ' || nightly_import_reads
+  from public.sourcing_settings where id = 1;
+select 'it has never run: ' || coalesce(nightly_import_last_run_at::text, 'null')
+  from public.sourcing_settings where id = 1;
+
+-- The cap is bounded on both sides: zero would be a schedule that does
+-- nothing while looking switched on.
+do $$
+begin
+  update public.sourcing_settings set nightly_import_cap = 0 where id = 1;
+  raise notice 'a cap of zero was accepted: false';
+exception
+  when check_violation then raise notice 'a cap of zero is refused: true';
+end;
+$$;

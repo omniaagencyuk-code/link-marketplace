@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache';
 import { requireAdminSession } from '@/lib/auth/admin-access';
 import { gmailImportService } from '@/lib/services/gmail-import-service';
+import { sourcingService } from '@/lib/services/sourcing-service';
 
 /**
  * The Gmail importer, behind an admin session.
@@ -91,4 +92,31 @@ export async function cancelImportAction(jobId: string) {
   await gmailImportService.cancelJob(jobId);
   revalidatePath('/admin/sourcing/gmail');
   return { ok: true };
+}
+
+/**
+ * The nightly schedule's settings.
+ *
+ * Importing is free, so leaving it on costs nothing. Reading what it finds
+ * is the switch that spends money, and it stays a separate decision.
+ */
+export async function updateNightlyAction(patch: {
+  nightlyImportEnabled?: boolean;
+  nightlyImportQuery?: string;
+  nightlyImportCap?: number;
+  nightlyImportReads?: boolean;
+}) {
+  const by = await adminEmail();
+  await sourcingService.updateSettings(patch, by);
+  revalidatePath('/admin/sourcing/gmail');
+  return { ok: true };
+}
+
+/** Run tonight's import now, without waiting for the schedule. */
+export async function runNightlyNowAction() {
+  await requireAdminSession();
+  const result = await gmailImportService.runNightly();
+  revalidatePath('/admin/sourcing/gmail');
+  revalidatePath('/admin/sourcing');
+  return result;
 }

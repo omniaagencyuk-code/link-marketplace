@@ -45,6 +45,13 @@ export interface SourcingSettings {
   /** Clearing bodies is irreversible, so it is off until somebody says. */
   purgeBodiesEnabled: boolean;
   purgeBodiesAfterDays: number;
+  /** Importing nightly is free. Reading what it finds is not. */
+  nightlyImportEnabled: boolean;
+  nightlyImportQuery: string;
+  nightlyImportCap: number;
+  nightlyImportReads: boolean;
+  nightlyImportLastRunAt: string | null;
+  nightlyImportLastResult: string | null;
 }
 
 export interface NoDraftEmail {
@@ -84,6 +91,12 @@ const DEFAULTS: SourcingSettings = {
   monthlyBudgetUsd: 25,
   purgeBodiesEnabled: false,
   purgeBodiesAfterDays: 90,
+  nightlyImportEnabled: false,
+  nightlyImportQuery: '-from:me newer_than:14d (price OR rates OR "guest post" OR sponsored OR advertising)',
+  nightlyImportCap: 200,
+  nightlyImportReads: false,
+  nightlyImportLastRunAt: null,
+  nightlyImportLastResult: null,
 };
 
 export const sourcingService = {
@@ -114,6 +127,12 @@ export const sourcingService = {
       monthlyBudgetUsd: Number(data.monthly_budget_usd ?? DEFAULTS.monthlyBudgetUsd),
       purgeBodiesEnabled: Boolean(data.purge_bodies_enabled),
       purgeBodiesAfterDays: Number(data.purge_bodies_after_days ?? DEFAULTS.purgeBodiesAfterDays),
+      nightlyImportEnabled: Boolean(data.nightly_import_enabled),
+      nightlyImportQuery: (data.nightly_import_query as string) ?? DEFAULTS.nightlyImportQuery,
+      nightlyImportCap: Number(data.nightly_import_cap ?? DEFAULTS.nightlyImportCap),
+      nightlyImportReads: Boolean(data.nightly_import_reads),
+      nightlyImportLastRunAt: (data.nightly_import_last_run_at as string | null) ?? null,
+      nightlyImportLastResult: (data.nightly_import_last_result as string | null) ?? null,
       configured,
     };
   },
@@ -135,6 +154,18 @@ export const sourcingService = {
         ...(patch.purgeBodiesAfterDays === undefined
           ? {}
           : { purge_bodies_after_days: patch.purgeBodiesAfterDays }),
+        ...(patch.nightlyImportEnabled === undefined
+          ? {}
+          : { nightly_import_enabled: patch.nightlyImportEnabled }),
+        ...(patch.nightlyImportQuery === undefined
+          ? {}
+          : { nightly_import_query: patch.nightlyImportQuery }),
+        ...(patch.nightlyImportCap === undefined
+          ? {}
+          : { nightly_import_cap: patch.nightlyImportCap }),
+        ...(patch.nightlyImportReads === undefined
+          ? {}
+          : { nightly_import_reads: patch.nightlyImportReads }),
         updated_by: updatedBy ?? null,
       })
       .eq('id', 1);
