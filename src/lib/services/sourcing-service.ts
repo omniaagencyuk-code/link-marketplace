@@ -284,10 +284,19 @@ export const sourcingService = {
       const grown = thread.messageIds.some((id) => !known.has(id));
       if (!grown) return { stored: 'duplicate', emailId: String((existingThread as { id: string }).id) };
 
-      // New replies since we last looked. Worth reading again.
+      // New replies since we last looked. Worth reading again - and worth
+      // saying so on the draft, because an approved draft reverting to
+      // pending looks exactly like work somebody has already done.
       await supabase
         .from('inbound_emails')
-        .update({ ...row, status: 'new', batch_id: null, status_reason: null, extracted_at: null })
+        .update({
+          ...row,
+          status: 'new',
+          batch_id: null,
+          status_reason: null,
+          extracted_at: null,
+          reply_since_last_read: true,
+        })
         .eq('id', (existingThread as { id: string }).id);
 
       return { stored: 'updated', emailId: String((existingThread as { id: string }).id) };
@@ -978,6 +987,20 @@ export const sourcingService = {
         ((matches ?? []) as { id: string; domain: string }[]).map((row) => [row.domain, row.id]),
       );
 
+      /*
+        Did this reading follow a new reply?
+
+        Read now rather than passed down from the import: the two happen in
+        different requests, and the only thing that connects them is the row.
+      */
+      const { data: emailRow } = await supabase
+        .from('inbound_emails')
+        .select('reply_since_last_read')
+        .eq('id', outcome.emailId)
+        .maybeSingle();
+
+      const repliedAgain = Boolean((emailRow as { reply_since_last_read?: boolean } | null)?.reply_since_last_read);
+
       const drafts = expanded.map((entry) => ({
         email_id: outcome.emailId,
         domain: entry.domain,
@@ -989,9 +1012,11 @@ export const sourcingService = {
         confidence: asMap(entry.listing.confidence, (item) => item.level),
         evidence: asMap(entry.listing.evidence, (item) => item.quote),
         low_confidence_count: countLowConfidence(entry.listing),
-        flags: entry.inheritedFrom
-          ? [...flagsFor(entry.listing), 'terms-from-network']
-          : flagsFor(entry.listing),
+        flags: [
+          ...flagsFor(entry.listing),
+          ...(entry.inheritedFrom ? ['terms-from-network'] : []),
+          ...(repliedAgain ? ['replied-again'] : []),
+        ],
         status: 'pending',
         extraction_model: model,
         prompt_version: PROMPT_VERSION,
@@ -1008,7 +1033,14 @@ export const sourcingService = {
       extracted += 1;
       await supabase
         .from('inbound_emails')
-        .update({ status: 'extracted', status_reason: null, extracted_at: new Date().toISOString() })
+        .update({
+          status: 'extracted',
+          status_reason: null,
+          extracted_at: new Date().toISOString(),
+          // Cleared here so the flag marks the one reading that followed the
+          // new reply, rather than every reading from now on.
+          reply_since_last_read: false,
+        })
         .eq('id', outcome.emailId);
     }
 

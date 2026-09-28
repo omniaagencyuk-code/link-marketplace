@@ -23,6 +23,7 @@ const FLAG_LABELS: Record<string, string> = {
   'no-contact-email': 'No contact email',
   'price-without-currency': 'Price with no currency',
   'terms-from-network': 'Terms from the network reply',
+  'replied-again': 'They replied again - re-read',
 };
 
 export function DraftsTable({ drafts }: { drafts: DraftRow[] }) {

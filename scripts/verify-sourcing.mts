@@ -10,7 +10,7 @@ import path from 'node:path';
 import { splitForUpload } from '../src/lib/sourcing/split-upload';
 import { readMbox, readPastedEmail, domainFromSubject, stripQuotedHistory } from '../src/lib/sourcing/mbox';
 import { extractionResultSchema, fromWire, wireResultSchema, type ExtractedListing } from '../src/lib/sourcing/schema';
-import { applyGeneralPriceToNiches, assumedNicheCosts, countLowConfidence, expandListings, flagsFor, sellableNiches, sensitiveRate } from '../src/lib/sourcing/review';
+import { applyGeneralPriceToNiches, assumedNicheCosts, countLowConfidence, expandListings, fillGeneralFromNiches, flagsFor, sellableNiches, sensitiveRate } from '../src/lib/sourcing/review';
 import { sensitiveNicheSlugs } from '../src/lib/config/accepted-niches';
 import { extractLinks, looksLikeRateCardLead } from '../src/lib/sourcing/links';
 import { healthOf, progressMessage, runProgress, type BatchRow } from '../src/lib/sourcing/batch-health';
@@ -472,6 +472,49 @@ const shaky = blank({ guest_post_cost: 100, contact_email: 'a@b.example', confid
 ] });
 is('a guessed draft counts its low fields', countLowConfidence(shaky), 2);
 is('and is never swept up in bulk', countLowConfidence(shaky) > 0 || flagsFor(shaky).length > 0, true);
+
+console.log('\n--- a reply that priced only the sensitive topics ---');
+{
+  // The shape that put a listing on the marketplace at zero: they answered
+  // "what for gambling?" with one number and never stated a standard rate.
+  const onlyNiches = blank({
+    currency: 'EUR',
+    niches: {
+      ...blank().niches,
+      gambling: { accepted: 'yes', guest_post_cost: 499, link_insertion_cost: 300 },
+      cbd: { accepted: 'yes', guest_post_cost: 650, link_insertion_cost: null },
+    },
+  });
+
+  const filled = fillGeneralFromNiches(onlyNiches);
+  is('the general price is the cheapest they quoted', filled.guest_post_cost, 499);
+  is('and not the dearest', filled.guest_post_cost === 650, false);
+  is('link insertions are filled separately', filled.link_insertion_cost, 300);
+  is('the niches themselves are untouched', filled.niches.gambling?.guest_post_cost, 499);
+
+  // A stated general price is a fact. It is never replaced by an assumption,
+  // even when a niche rate is lower.
+  const stated = blank({
+    guest_post_cost: 550,
+    niches: { ...blank().niches, gambling: { accepted: 'yes', guest_post_cost: 400, link_insertion_cost: null } },
+  });
+  is('a quoted general price wins', fillGeneralFromNiches(stated).guest_post_cost, 550);
+
+  // Nothing is invented from nothing.
+  const silent = blank({});
+  is('a reply with no prices gains none', fillGeneralFromNiches(silent).guest_post_cost, null);
+  is('and comes back as it went in', fillGeneralFromNiches(silent), silent);
+
+  // A refusal is not a price, even if a number was left beside it.
+  const refused = blank({
+    niches: {
+      ...blank().niches,
+      adult: { accepted: 'no', guest_post_cost: 100, link_insertion_cost: null },
+      gambling: { accepted: 'yes', guest_post_cost: 700, link_insertion_cost: null },
+    },
+  });
+  is('a refused topic does not set the general price', fillGeneralFromNiches(refused).guest_post_cost, 700);
+}
 
 console.log('\n--- what an unmentioned topic costs ---');
 // The real reply this came from: 550 EUR generally, 700 EUR for

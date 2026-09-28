@@ -1,7 +1,7 @@
 import { getAdminScopedClient } from '@/lib/supabase/server';
 import { websiteService } from './website-service';
 import { sensitiveNicheSlugs, legacyAcceptanceFlags } from '@/lib/config/accepted-niches';
-import { assumedNicheCosts, sellableNiches } from '@/lib/sourcing/review';
+import { assumedNicheCosts, fillGeneralFromNiches, sellableNiches } from '@/lib/sourcing/review';
 import { pricingService } from './pricing-service';
 import type { ExtractedListing } from '@/lib/sourcing/schema';
 import type { Website } from '@/lib/types';
@@ -220,10 +220,21 @@ export async function approveDraft(
  */
 async function writeCosts(
   websiteId: string,
-  listing: ExtractedListing,
+  extracted: ExtractedListing,
   reviewer?: string,
 ): Promise<void> {
   const supabase = getAdminScopedClient();
+
+  /*
+    A publisher who only quoted a sensitive rate still needs a general one.
+
+    Otherwise the engine has no general cost, the ordinary guest post prices
+    at zero, and zero does not read as "not priced yet" to a buyer - it reads
+    as free. The cheapest quoted niche rate is the assumption, because a
+    sensitive topic is what a publisher charges more for: their standard rate
+    is at most the lowest of those.
+  */
+  const listing = fillGeneralFromNiches(extracted);
 
   const wanted: { type: 'guest-post' | 'niche-edit'; cost: number | null; publisherWritten: number | null }[] = [
     {

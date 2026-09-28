@@ -219,6 +219,47 @@ export function assumedNicheCosts(listing: ExtractedListing): AssumedNicheCost[]
   });
 }
 
+/**
+ * A general price, when the publisher only quoted sensitive ones.
+ *
+ * Some replies never state a standard rate. They answer the question that was
+ * asked - "what for gambling?" - and quote one number, and the listing ends
+ * up with a price for gambling and nothing for an ordinary guest post. The
+ * engine has no general cost to work from, so the general placement prices at
+ * zero, and a zero price is not "unpriced" to a buyer: it is free, and it is
+ * the one pricing mistake somebody acts on immediately.
+ *
+ * The cheapest of the quoted niche rates is the assumption, because a
+ * sensitive topic is what a publisher charges *more* for. Their standard rate
+ * is at most the lowest of those, so using it cannot invent a price below
+ * anything they actually said - it can only be conservative.
+ *
+ * Nothing is invented from nothing: a reply that quotes no prices at all
+ * comes back unchanged.
+ */
+export function fillGeneralFromNiches(listing: ExtractedListing): ExtractedListing {
+  const cheapest = (pick: (terms: NonNullable<ExtractedListing['niches'][string]>) => number | null) => {
+    const quoted = sensitiveNicheSlugs
+      .map((slug) => {
+        const terms = listing.niches[slug];
+        if (!terms || terms.accepted === 'no') return null;
+        return pick(terms);
+      })
+      .filter((cost): cost is number => typeof cost === 'number' && cost > 0);
+
+    return quoted.length > 0 ? Math.min(...quoted) : null;
+  };
+
+  const guestPost = listing.guest_post_cost ?? cheapest((terms) => terms.guest_post_cost);
+  const linkInsertion = listing.link_insertion_cost ?? cheapest((terms) => terms.link_insertion_cost);
+
+  if (guestPost === listing.guest_post_cost && linkInsertion === listing.link_insertion_cost) {
+    return listing;
+  }
+
+  return { ...listing, guest_post_cost: guestPost, link_insertion_cost: linkInsertion };
+}
+
 export function countLowConfidence(listing: ExtractedListing): number {
   return listing.confidence.filter((entry) => entry.level === 'low').length;
 }

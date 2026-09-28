@@ -81,3 +81,57 @@ delete from public.website_niche_costs where assumed;
 select 'quoted rows surviving the rollback: ' || count(*)
   from public.website_niche_costs c join public.websites w on w.id = c.website_id
   where w.slug = 'premium-example';
+
+-- ------------------------------------ nothing buyable at nothing (0032) --
+-- The shape that reached the marketplace at US$0: a publisher who priced
+-- gambling and never stated a standard rate, so the general placement had no
+-- cost and priced at zero.
+
+insert into public.websites (slug, domain, title, country_code, status, accepted_niches)
+values ('niche-only-example', 'niche-only.example', 'Niche Only', 'GB', 'active', '{gambling,cbd}');
+
+insert into public.services (website_id, type, price_minor, available)
+select id, 'guest-post', 0, true from public.websites where slug = 'niche-only-example';
+
+insert into public.website_niche_costs (website_id, niche, link_type, cost_minor)
+select id, 'gambling', 'guest-post', 49900 from public.websites where slug = 'niche-only-example';
+insert into public.website_niche_costs (website_id, niche, link_type, cost_minor)
+select id, 'cbd', 'guest-post', 65000 from public.websites where slug = 'niche-only-example';
+
+\ir ../migrations/0032_general_price_from_niches.sql
+
+select 'the general cost is the cheapest niche rate: ' || cost_price_minor
+  from public.service_costs cost
+  join public.services service on service.id = cost.service_id
+  join public.websites site on site.id = service.website_id
+  where site.slug = 'niche-only-example';
+
+select 'a placement priced at zero is switched off: ' || available
+  from public.services service
+  join public.websites site on site.id = service.website_id
+  where site.slug = 'niche-only-example';
+
+select 'and a listing that sells nothing is not active: ' || status
+  from public.websites where slug = 'niche-only-example';
+
+-- A cost somebody already recorded is never overwritten by the assumption.
+insert into public.websites (slug, domain, title, country_code, status)
+values ('priced-example', 'priced.example', 'Priced', 'GB', 'active');
+insert into public.services (website_id, type, price_minor, available)
+select id, 'guest-post', 30000, true from public.websites where slug = 'priced-example';
+insert into public.service_costs (service_id, cost_price_minor)
+select service.id, 12000 from public.services service
+  join public.websites site on site.id = service.website_id
+  where site.slug = 'priced-example';
+insert into public.website_niche_costs (website_id, niche, link_type, cost_minor)
+select id, 'gambling', 'guest-post', 20000 from public.websites where slug = 'priced-example';
+
+\ir ../migrations/0032_general_price_from_niches.sql
+
+select 'a recorded cost is left alone: ' || cost_price_minor
+  from public.service_costs cost
+  join public.services service on service.id = cost.service_id
+  join public.websites site on site.id = service.website_id
+  where site.slug = 'priced-example';
+select 'and a priced listing stays active: ' || status
+  from public.websites where slug = 'priced-example';
