@@ -120,5 +120,8 @@ echo
 echo "--- publisher contacts ---"
 run -f "$ROOT/supabase/tests/09_publisher_contacts.sql" 2>&1 | grep -v '^$'
 echo
+echo "--- an unmentioned topic costs what sensitive content costs ---"
+run -f "$ROOT/supabase/tests/12_assumed_niche_rates.sql" 2>&1 | grep -v '^$'
+echo
 echo "--- order items follow their order ---"
 run -f "$ROOT/supabase/tests/10_order_item_status.sql" 2>&1 | grep -v '^$'

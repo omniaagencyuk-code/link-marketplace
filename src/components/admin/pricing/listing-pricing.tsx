@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useState, useTransition } from 'react';
-import { Lock, RotateCcw } from 'lucide-react';
+import { HelpCircle, Lock, RotateCcw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -21,6 +21,8 @@ export interface ListingPrice {
   /** What the listing actually charges, which differs when it is an override. */
   currentMinor: number;
   isOverride: boolean;
+  /** The publisher never mentioned this topic; the cost is their sensitive rate. */
+  assumedCost: boolean;
   steps: { label: string; value: string }[];
   marginMinor: number | null;
   belowMinimum: boolean;
@@ -105,6 +107,15 @@ export function ListingPricing({
                     <span className="ml-1.5 inline-flex items-center gap-0.5 rounded bg-surface-sunken px-1.5 py-0.5 text-[10px] font-normal text-muted">
                       <Lock className="h-2.5 w-2.5" aria-hidden="true" />
                       set by hand
+                    </span>
+                  ) : null}
+                  {price.assumedCost ? (
+                    <span
+                      className="ml-1.5 inline-flex items-center gap-0.5 rounded bg-surface-sunken px-1.5 py-0.5 text-[10px] font-normal text-muted"
+                      title="The publisher never mentioned this topic. The cost below is the sensitive rate they quoted for the topics they did mention, not a price for this one."
+                    >
+                      <HelpCircle className="h-2.5 w-2.5" aria-hidden="true" />
+                      rate assumed
                     </span>
                   ) : null}
                 </p>

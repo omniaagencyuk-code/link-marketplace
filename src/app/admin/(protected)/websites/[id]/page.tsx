@@ -42,6 +42,7 @@ export default async function EditWebsitePage({ params }: { params: Promise<{ id
       agencyMinor: row.isOverride ? null : b.agencyMinor,
       currentMinor: charged,
       isOverride: row.isOverride,
+      assumedCost: row.assumedCost,
       steps: breakdownSteps(b),
       marginMinor,
       belowMinimum: marginMinor < minMarginMinor,

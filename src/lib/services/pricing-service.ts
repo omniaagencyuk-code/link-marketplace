@@ -37,6 +37,12 @@ export interface PriceRow {
   /** What the listing currently sells at, before this run. */
   currentMinor: number | null;
   isOverride: boolean;
+  /**
+   * The cost is this publisher's sensitive rate applied to a topic they never
+   * mentioned, not a price they quoted. It prices defensively, but a human
+   * should be able to see which it is.
+   */
+  assumedCost: boolean;
 }
 
 const DEFAULT_RULES: PricingRules = {
@@ -276,7 +282,7 @@ export const pricingService = {
     const [websiteRows, serviceRows, nicheCostRows, nichePriceRows] = await Promise.all([
       websiteQuery,
       supabase.from('services').select('id, website_id, type, price_minor, price_override, service_costs (cost_price_minor)'),
-      supabase.from('website_niche_costs').select('website_id, niche, link_type, cost_minor'),
+      supabase.from('website_niche_costs').select('website_id, niche, link_type, cost_minor, assumed'),
       supabase.from('website_niche_prices').select('website_id, niche, link_type, price_minor, price_override'),
     ]);
 
@@ -315,6 +321,7 @@ export const pricingService = {
       niche: string,
       costMinor: number,
       current: { priceMinor: number; isOverride: boolean } | null,
+      assumedCost = false,
     ) => {
       if (!costMinor || costMinor <= 0) return;
 
@@ -345,6 +352,7 @@ export const pricingService = {
         niche,
         currentMinor: current?.priceMinor ?? null,
         isOverride: current?.isOverride ?? false,
+        assumedCost,
         breakdown: computePrice(
           {
             costMinor,
@@ -392,6 +400,7 @@ export const pricingService = {
         overrideNichePrice.get(
           `${nicheCost.website_id}:${nicheCost.niche}:${nicheCost.link_type}`,
         ) ?? null,
+        Boolean(nicheCost.assumed),
       );
     }
 

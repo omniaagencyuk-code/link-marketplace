@@ -18,7 +18,7 @@ import {
   spreadGeneralPriceAction,
 } from '@/app/admin/(protected)/sourcing/actions';
 import { acceptedNicheLabel, sensitiveNicheSlugs } from '@/lib/config/accepted-niches';
-import { assumedNiches } from '@/lib/sourcing/review';
+import { assumedNiches, sensitiveRate } from '@/lib/sourcing/review';
 import { formatDateTime } from '@/lib/utils/format';
 import { cn } from '@/lib/utils/cn';
 import type { ExtractedListing } from '@/lib/sourcing/schema';
@@ -100,6 +100,9 @@ export function DraftReview({
 
   const singlePrice = flags.includes('single-price-confirm-niches');
   const assumed = assumedNiches(draft);
+  // What an assumed topic will actually cost us, which is the publisher's own
+  // sensitive rate where they quoted one - not the general rate.
+  const assumedRate = sensitiveRate(draft, 'guest-post');
   const edited = JSON.stringify(draft) !== JSON.stringify(values);
   const [spreadEdits, setSpreadEdits] = useState(true);
 
@@ -322,8 +325,19 @@ export function DraftReview({
                 <strong className="font-medium text-ink">
                   {assumed.map((slug) => acceptedNicheLabel(slug)).join(', ')}
                 </strong>
-                . They will be sold as accepted at the standard rate. Set any of them to Refused if
-                you know otherwise, or ask the publisher before pricing them.
+                . They will be sold as accepted, and costed at{' '}
+                {assumedRate == null ? (
+                  <>the general rate, because this reply quotes no sensitive rate to go on</>
+                ) : (
+                  <>
+                    <strong className="font-medium text-ink">
+                      {assumedRate} {draft.currency ?? ''}
+                    </strong>
+                    , the highest sensitive rate this reply quotes
+                  </>
+                )}
+                . Set any of them to Refused if you know otherwise, or ask the publisher before
+                pricing them.
               </p>
             ) : null}
             {sensitiveNicheSlugs.map((slug) => {
@@ -339,7 +353,7 @@ export function DraftReview({
                     {acceptedNicheLabel(slug)}
                     {terms.accepted === 'unknown' ? (
                       <span
-                        title="The email does not mention this topic. It will be sold as accepted."
+                        title="The email does not mention this topic. It will be sold as accepted, costed at the sensitive rate this reply quotes."
                         className="ml-1.5 rounded bg-warning/10 px-1.5 py-0.5 text-[10px] font-medium text-warning"
                       >
                         assumed
@@ -394,7 +408,8 @@ export function DraftReview({
               );
             })}
             <p className="pt-1 text-[11px] text-muted">
-              A topic the email never mentions is sold as accepted. Only mark one{' '}
+              A topic the email never mentions is sold as accepted, priced off the sensitive rate
+              rather than the general one. Only mark one{' '}
               <strong className="font-medium text-ink-soft">Refused</strong> when the publisher
               actually said no - that is the one setting here that stops a sale.
             </p>

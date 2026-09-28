@@ -10,7 +10,7 @@ import path from 'node:path';
 import { splitForUpload } from '../src/lib/sourcing/split-upload';
 import { readMbox, readPastedEmail, domainFromSubject, stripQuotedHistory } from '../src/lib/sourcing/mbox';
 import { extractionResultSchema, fromWire, wireResultSchema, type ExtractedListing } from '../src/lib/sourcing/schema';
-import { applyGeneralPriceToNiches, countLowConfidence, expandListings, flagsFor, sellableNiches } from '../src/lib/sourcing/review';
+import { applyGeneralPriceToNiches, assumedNicheCosts, countLowConfidence, expandListings, flagsFor, sellableNiches, sensitiveRate } from '../src/lib/sourcing/review';
 import { sensitiveNicheSlugs } from '../src/lib/config/accepted-niches';
 import { zodOutputFormat } from '@anthropic-ai/sdk/helpers/zod';
 
@@ -446,6 +446,49 @@ const shaky = blank({ guest_post_cost: 100, contact_email: 'a@b.example', confid
 ] });
 is('a guessed draft counts its low fields', countLowConfidence(shaky), 2);
 is('and is never swept up in bulk', countLowConfidence(shaky) > 0 || flagsFor(shaky).length > 0, true);
+
+console.log('\n--- what an unmentioned topic costs ---');
+// The real reply this came from: 550 EUR generally, 700 EUR for
+// "casino / CBD / poker / gambling", adult refused, silence on the rest.
+{
+  const quoted = blank({
+    guest_post_cost: 550,
+    currency: 'EUR',
+    niches: {
+      ...blank().niches,
+      gambling: { accepted: 'yes', guest_post_cost: 700, link_insertion_cost: 400 },
+      cbd: { accepted: 'yes', guest_post_cost: 650, link_insertion_cost: null },
+      adult: { accepted: 'no', guest_post_cost: null, link_insertion_cost: null },
+    },
+  });
+
+  is('the sensitive rate is the highest they quoted', sensitiveRate(quoted, 'guest-post'), 700);
+  is('per placement type, not shared', sensitiveRate(quoted, 'niche-edit'), 400);
+
+  const costs = assumedNicheCosts(quoted);
+  const guestPost = costs.filter((c) => c.linkType === 'guest-post');
+  is(
+    'an unmentioned topic costs the sensitive rate, not the general one',
+    guestPost.find((c) => c.niche === 'crypto')?.cost,
+    700,
+  );
+  is('a topic they refused is never costed', costs.some((c) => c.niche === 'adult'), false);
+  is('nor is one they priced themselves', costs.some((c) => c.niche === 'gambling'), false);
+  // cbd was accepted and priced for guest posts but not for link insertions.
+  // Nothing is assumed for it at all, because this rule is about topics
+  // nobody mentioned - and cbd was mentioned. The insertion side of it still
+  // falls through to the general rate, which is a separate gap.
+  is('a topic they accepted is left alone entirely', costs.some((c) => c.niche === 'cbd'), false);
+  is('the four nobody mentioned are all costed', guestPost.length, 4);
+}
+
+{
+  // The case the rules forbid inventing anything for: one number, no topics.
+  const lone = blank({ guest_post_cost: 550, currency: 'EUR' });
+  is('a lone price yields no sensitive rate', sensitiveRate(lone, 'guest-post'), null);
+  is('and nothing is assumed from it', assumedNicheCosts(lone).length, 0);
+  is('it is still flagged for a human', flagsFor(lone).includes('single-price-confirm-niches'), true);
+}
 
 console.log('\n--- the claim is honoured everywhere ---');
 // Twice now a row has been claimed by writing `batch_id` and then handed out

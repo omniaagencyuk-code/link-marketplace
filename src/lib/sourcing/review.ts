@@ -152,6 +152,73 @@ export function assumedNiches(listing: ExtractedListing): string[] {
   return sensitiveNicheSlugs.filter((slug) => listing.niches[slug]?.accepted === 'unknown');
 }
 
+/**
+ * The rate this publisher charges for sensitive content, if they named one.
+ *
+ * Publishers who take regulated topics almost always price them above the
+ * standard rate - this reply quoted 550 EUR generally and 700 EUR for
+ * "casino / CBD / poker / gambling". The highest of the rates they actually
+ * quoted is the defensive reading: we are guessing, and guessing low is the
+ * guess that loses money silently.
+ *
+ * Null when they quoted no sensitive rate at all. A lone general price is not
+ * a sensitive-topic price and nothing here will turn it into one.
+ */
+export function sensitiveRate(
+  listing: ExtractedListing,
+  linkType: 'guest-post' | 'niche-edit',
+): number | null {
+  const quoted = sensitiveNicheSlugs
+    .map((slug) => {
+      const terms = listing.niches[slug];
+      if (!terms || terms.accepted === 'no') return null;
+      return linkType === 'guest-post' ? terms.guest_post_cost : terms.link_insertion_cost;
+    })
+    .filter((cost): cost is number => typeof cost === 'number' && cost > 0);
+
+  return quoted.length > 0 ? Math.max(...quoted) : null;
+}
+
+export interface AssumedNicheCost {
+  niche: string;
+  linkType: 'guest-post' | 'niche-edit';
+  cost: number;
+}
+
+/**
+ * What an assumed niche should cost us.
+ *
+ * `sellableNiches` already sells a topic nobody mentioned. The cost of that
+ * topic used to fall through to the general rate, so a listing quoting 550
+ * generally and 700 for sensitive content sold crypto priced off 550 - and if
+ * the publisher then charged their sensitive rate, the margin was gone and
+ * nothing said so, because every figure downstream agreed the cost was 550.
+ *
+ * Assuming acceptance and assuming the cheapest rate are two assumptions. This
+ * keeps the first and drops the second. Only the niches nobody mentioned are
+ * touched: a niche with its own quoted price already has a real cost, and one
+ * the publisher refused is not sold at all.
+ */
+export function assumedNicheCosts(listing: ExtractedListing): AssumedNicheCost[] {
+  const linkTypes: AssumedNicheCost['linkType'][] = ['guest-post', 'niche-edit'];
+  const rates = new Map(linkTypes.map((linkType) => [linkType, sensitiveRate(listing, linkType)]));
+
+  return sensitiveNicheSlugs.flatMap((niche) => {
+    const terms = listing.niches[niche];
+    if (!terms || terms.accepted !== 'unknown') return [];
+
+    return linkTypes.flatMap((linkType) => {
+      const rate = rates.get(linkType);
+      if (rate == null) return [];
+      // A price they actually quoted for this niche wins over the assumption,
+      // even when it is lower than their other sensitive rates.
+      const quoted = linkType === 'guest-post' ? terms.guest_post_cost : terms.link_insertion_cost;
+      if (quoted != null) return [];
+      return [{ niche, linkType, cost: rate }];
+    });
+  });
+}
+
 export function countLowConfidence(listing: ExtractedListing): number {
   return listing.confidence.filter((entry) => entry.level === 'low').length;
 }

@@ -1,7 +1,7 @@
 import { getAdminScopedClient } from '@/lib/supabase/server';
 import { websiteService } from './website-service';
 import { sensitiveNicheSlugs, legacyAcceptanceFlags } from '@/lib/config/accepted-niches';
-import { sellableNiches } from '@/lib/sourcing/review';
+import { assumedNicheCosts, sellableNiches } from '@/lib/sourcing/review';
 import { pricingService } from './pricing-service';
 import type { ExtractedListing } from '@/lib/sourcing/schema';
 import type { Website } from '@/lib/types';
@@ -303,7 +303,51 @@ async function writeCosts(
   if (nicheCosts.length > 0) {
     await supabase
       .from('website_niche_costs')
-      .upsert(nicheCosts, { onConflict: 'website_id,niche,link_type' });
+      .upsert(
+        nicheCosts.map((row) => ({ ...row, assumed: false })),
+        { onConflict: 'website_id,niche,link_type' },
+      );
+  }
+
+  /*
+    The topics nobody mentioned, priced at what this publisher charges for the
+    topics they did mention.
+
+    Read back first: a second reply that goes quiet about a niche must not
+    downgrade a price the first one quoted. The upsert cannot express "only if
+    it is not already real", so the check is a query - the rows are few and
+    the alternative is losing a known cost to an assumption.
+  */
+  const assumed = assumedNicheCosts(listing);
+  if (assumed.length > 0) {
+    const { data: existing } = await supabase
+      .from('website_niche_costs')
+      .select('niche, link_type, assumed')
+      .eq('website_id', websiteId)
+      .eq('assumed', false);
+
+    const quoted = new Set(
+      ((existing ?? []) as { niche: string; link_type: string }[]).map(
+        (row) => `${row.niche}:${row.link_type}`,
+      ),
+    );
+
+    const rows = assumed
+      .filter((entry) => !quoted.has(`${entry.niche}:${entry.linkType}`))
+      .map((entry) => ({
+        website_id: websiteId,
+        niche: entry.niche,
+        link_type: entry.linkType,
+        cost_minor: toMinor(entry.cost),
+        assumed: true,
+        updated_by: reviewer ?? null,
+      }));
+
+    if (rows.length > 0) {
+      await supabase
+        .from('website_niche_costs')
+        .upsert(rows, { onConflict: 'website_id,niche,link_type' });
+    }
   }
 }
 
