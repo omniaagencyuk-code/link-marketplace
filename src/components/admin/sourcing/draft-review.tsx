@@ -240,7 +240,9 @@ export function DraftReview({
                     .filter((flag) => flag !== 'single-price-confirm-niches')
                     .map((flag) => (
                       <li key={flag}>
-                        {flag === 'replied-again'
+                        {flag === 'competing-offer'
+                          ? 'Another reply offers this same site. The panel above compares them - approving this one replaces whatever the listing holds now, including its cost and contact.'
+                          : flag === 'replied-again'
                           ? 'The publisher wrote again after this was first read, so it was read once more and this draft replaced the earlier one. If you had already approved it, the listing is untouched - but the terms below may differ from the ones you approved.'
                           : flag === 'terms-from-network'
                           ? 'These terms were quoted for the publisher\u2019s network as a whole, not for this domain by name. The prices are the network rate.'
