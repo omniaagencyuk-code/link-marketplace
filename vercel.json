@@ -14,7 +14,7 @@
       "schedule": "0 4 * * *"
     },
     {
-      "path": "/api/cron/gmail-import",
+      "path": "/api/cron/sourcing",
       "schedule": "*/10 * * * *"
     }
   ]

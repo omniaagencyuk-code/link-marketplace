@@ -2,9 +2,10 @@ import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { cronSecret } from '@/lib/ahrefs/config';
 import { gmailImportService } from '@/lib/services/gmail-import-service';
+import { sourcingService } from '@/lib/services/sourcing-service';
 
 /**
- * Finishing imports nobody is watching.
+ * Finishing the work nobody is watching.
  *
  * The admin page drives its own job chunk by chunk while it is open. This is
  * what happens when it is not: a job still fetching, with nobody holding its
@@ -14,6 +15,13 @@ import { gmailImportService } from '@/lib/services/gmail-import-service';
  * It fetches mail, so it refuses to run without the shared cron secret - the
  * same rule the Ahrefs refresh follows, and for the same reason: an open URL
  * that reads mailboxes is not something to leave to obscurity.
+ *
+ * It also collects finished extraction batches. Nothing did, until now: a
+ * batch sat at "being read" until somebody pressed Collect, so results that
+ * had been ready for an hour looked like work still in progress, and the
+ * button was not a convenience but the only way anything ever completed.
+ * Collecting costs nothing when there is nothing to collect - it asks the
+ * API whether each running batch has finished, and stops there if not.
  *
  * Bounded on purpose. Three jobs, ten chunks each, so the invocation ends
  * well inside its limit and the next run picks up whatever is left.
@@ -51,13 +59,24 @@ export async function GET(request: NextRequest) {
     }
   }
 
+  // Finished batches, brought back without anybody pressing anything.
+  const collected = await sourcingService
+    .collectBatches()
+    .catch(() => ({ collected: 0, draftsCreated: 0, message: 'Collection failed.' }));
+
   // Counts only. No addresses, no subjects, no bodies.
   console.log(
-    `[gmail-import] jobs=${results.length} finished=${results.filter((r) => r.done).length}` +
+    `[sourcing] jobs=${results.length} finished=${results.filter((r) => r.done).length}` +
+      ` batches=${collected.collected} drafts=${collected.draftsCreated}` +
       ` in ${Date.now() - started}ms`,
   );
 
-  return NextResponse.json({ jobs: results.length, results });
+  return NextResponse.json({
+    jobs: results.length,
+    results,
+    batchesCollected: collected.collected,
+    draftsCreated: collected.draftsCreated,
+  });
 }
 
 /** Vercel Cron uses GET; POST is here so a job can be pushed along by hand. */

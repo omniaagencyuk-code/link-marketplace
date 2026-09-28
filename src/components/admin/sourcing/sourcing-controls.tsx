@@ -268,10 +268,17 @@ export function SourcingControls({
             ) : null}
           </div>
 
+          {/*
+            "Sent" rather than "being read", because that is what the number
+            is: the last thing we wrote down, not live status. A batch that
+            finished an hour ago still shows here until it is collected, and a
+            label implying otherwise had somebody refreshing the page waiting
+            for a figure that refreshing cannot change.
+          */}
           <dl className="tabular grid grid-cols-5 gap-2 border-t border-line pt-3 text-center">
             {[
               ['Waiting', counts.new ?? 0],
-              ['Being read', counts['in-flight'] ?? 0],
+              ['Sent to be read', counts['in-flight'] ?? 0],
               ['Read', counts.extracted ?? 0],
               ['Nothing usable', counts.ignored ?? 0],
               ['Failed', counts.failed ?? 0],
@@ -282,6 +289,13 @@ export function SourcingControls({
               </div>
             ))}
           </dl>
+          {(counts['in-flight'] ?? 0) > 0 ? (
+            <p className="text-center text-[11px] text-muted">
+              {runningBatches > 0
+                ? 'Collected automatically within ten minutes. Press Collect if you would rather not wait.'
+                : 'Sent but not collected. Press Collect to bring back whatever is ready.'}
+            </p>
+          ) : null}
         </CardContent>
       </Card>
 
