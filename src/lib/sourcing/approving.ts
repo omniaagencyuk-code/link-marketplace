@@ -1,6 +1,10 @@
 /**
  * Approving a lot of drafts at once, in pieces small enough to come back.
  *
+ * The breaking up itself is `@/lib/utils/chunk`, shared with the other bulk
+ * actions in the admin. What is here is how many go in one request and what
+ * the page says while it works.
+ *
  * Two hundred approvals in one server action is two thousand database round
  * trips, made one after another. The request runs past the function ceiling,
  * the browser is left holding a promise that never settles, and the page
@@ -27,12 +31,7 @@
  */
 export const APPROVE_CHUNK_SIZE = 20;
 
-export function chunk<T>(items: readonly T[], size: number = APPROVE_CHUNK_SIZE): T[][] {
-  if (size < 1) throw new Error('A chunk has to hold at least one draft.');
-  const chunks: T[][] = [];
-  for (let at = 0; at < items.length; at += size) chunks.push(items.slice(at, at + size));
-  return chunks;
-}
+export { chunk } from '@/lib/utils/chunk';
 
 export interface ApproveProgress {
   /** Drafts sent so far, whether they were approved or not. */

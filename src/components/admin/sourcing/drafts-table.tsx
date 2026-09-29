@@ -15,6 +15,7 @@ import {
 } from '@/app/admin/(protected)/sourcing/actions';
 import { formatDate } from '@/lib/utils/format';
 import { APPROVE_CHUNK_SIZE, chunk, progressText } from '@/lib/sourcing/approving';
+import { ProgressBar } from '@/components/ui/progress-bar';
 import type { DraftRow } from '@/app/admin/(protected)/sourcing/page';
 
 /** Reviewer prompts, in the words a reviewer needs rather than the slug. */
@@ -33,6 +34,8 @@ export function DraftsTable({ drafts }: { drafts: DraftRow[] }) {
   const [busy, startTransition] = useTransition();
   const [result, setResult] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  /** How far through a run is, so the bar moves on real counts. */
+  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
 
   /**
    * Approve these, a chunk at a time, and show the page the outcome.
@@ -60,6 +63,7 @@ export function DraftsTable({ drafts }: { drafts: DraftRow[] }) {
       const failures: string[] = [];
 
       for (const part of chunks) {
+        setProgress({ done, total: ids.length });
         setResult(
           progressText({ done, total: ids.length, approved, failures, skipped, finished: false }),
         );
@@ -78,6 +82,7 @@ export function DraftsTable({ drafts }: { drafts: DraftRow[] }) {
       }
 
       setSelected(new Set());
+      setProgress(null);
       setResult(
         progressText({ done, total: ids.length, approved, failures, skipped, finished: true }),
       );
@@ -194,7 +199,14 @@ export function DraftsTable({ drafts }: { drafts: DraftRow[] }) {
         </div>
       ) : null}
 
-      {result ? (
+      {progress ? (
+        <ProgressBar
+          done={progress.done}
+          total={progress.total}
+          label={result ?? ''}
+          className="rounded-lg border border-line bg-surface-sunken px-3 py-2.5"
+        />
+      ) : result ? (
         <p role="status" className="text-[13px] text-ink-soft">
           {result}
         </p>

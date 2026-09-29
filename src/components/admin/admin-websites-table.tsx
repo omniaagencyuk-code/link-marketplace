@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { useMemo, useState, useTransition } from 'react';
+import { useRouter } from 'next/navigation';
 import { Archive, Copy, MoreHorizontal, Pencil, Search, Eye, Trash2, X } from 'lucide-react';
 import { Dropdown, DropdownItem } from '@/components/ui/dropdown';
 import { Button } from '@/components/ui/button';
@@ -17,6 +18,14 @@ import {
   setWebsiteStatusAction,
   type BulkResult,
 } from '@/app/admin/actions';
+import { ProgressBar } from '@/components/ui/progress-bar';
+import { chunk } from '@/lib/utils/chunk';
+import {
+  BULK_CHUNK_SIZE,
+  bulkProgressText,
+  groupSkipped,
+  type BulkProgress,
+} from '@/lib/admin/bulk';
 import { nicheName } from '@/lib/data/categories';
 import { countryShortName } from '@/lib/data/countries';
 import { formatCompactNumber, formatPrice, formatTurnaround } from '@/lib/utils/format';
@@ -48,9 +57,12 @@ export function AdminWebsitesTable({
    */
   trueCosts?: Record<string, Record<string, number>>;
 }) {
+  const router = useRouter();
   const [term, setTerm] = useState('');
   const [status, setStatus] = useState<WebsiteStatus | 'all'>('all');
   const [pending, startTransition] = useTransition();
+  /** Live counts while a bulk action is running, so the bar means something. */
+  const [progress, setProgress] = useState<BulkProgress | null>(null);
 
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [confirmingDelete, setConfirmingDelete] = useState(false);
@@ -105,29 +117,79 @@ export function AdminWebsitesTable({
     setResult(null);
   }
 
-  function runBulk(action: () => Promise<BulkResult>, verb: string) {
+  /**
+   * Run a bulk action over the selection, a chunk at a time.
+   *
+   * Three hundred listings in one request is close to a thousand database
+   * round trips made one after another - it runs past the function ceiling
+   * and answers nothing, so the page sits there looking broken while the work
+   * actually happens. In pieces, every request returns, the bar moves on real
+   * counts rather than an animation, and a run that dies half way has still
+   * done exactly what it says it has.
+   *
+   * The refresh at the end is what the manual reload used to be: the table
+   * re-reads from the database so the statuses on screen are the ones in it.
+   */
+  function runBulk(action: (ids: string[]) => Promise<BulkResult>, verb: string) {
+    const ids = [...selected];
+    if (ids.length === 0) return;
+
     setResult(null);
+    setConfirmingDelete(false);
+
     startTransition(async () => {
-      const outcome = await action();
-      setResult({ ...outcome, verb });
-      setConfirmingDelete(false);
+      const chunks = chunk(ids, BULK_CHUNK_SIZE);
+      let changed = 0;
+      let done = 0;
+      const skipped: BulkResult['skipped'] = [];
+      let error: string | undefined;
+
+      for (const part of chunks) {
+        setProgress({ done, total: ids.length, changed, skipped, verb, finished: false });
+        try {
+          const outcome = await action(part);
+          changed += outcome.changed;
+          skipped.push(...outcome.skipped);
+          // A refusal of the whole request - "nothing selected", an unknown
+          // status - is about the action rather than the rows, so it stops
+          // the run instead of being repeated thirteen times.
+          if (outcome.error) {
+            error = outcome.error;
+            done += part.length;
+            break;
+          }
+        } catch {
+          // A chunk that never answered is not a chunk that did nothing, so
+          // its rows are not claimed as skipped. The refresh below shows
+          // which of them actually changed.
+          skipped.push({
+            domain: `${part.length} in one batch`,
+            reason: 'That request did not answer. Check the statuses below before retrying.',
+          });
+        }
+        done += part.length;
+      }
+
+      setProgress(null);
+      setResult({ changed, skipped, error, verb });
+
       // Rows that were skipped stay selected, so the admin can see which ones
       // still need a decision rather than losing them from the selection.
-      if (outcome.changed > 0) {
-        const stillSkipped = new Set(outcome.skipped.map((entry) => entry.domain));
+      if (changed > 0) {
+        const stillSkipped = new Set(skipped.map((entry) => entry.domain));
         setSelected(
           new Set(
-            [...selected].filter((id) => {
+            ids.filter((id) => {
               const row = websites.find((website) => website.id === id);
               return row ? stillSkipped.has(row.domain) || stillSkipped.has(id) : false;
             }),
           ),
         );
       }
+
+      router.refresh();
     });
   }
-
-  const selectedIds = [...selected];
 
   /**
    * Our position on a listing.
@@ -274,7 +336,7 @@ export function AdminWebsitesTable({
                   size="sm"
                   variant="danger"
                   disabled={pending}
-                  onClick={() => runBulk(() => bulkDeleteWebsitesAction(selectedIds), 'deleted')}
+                  onClick={() => runBulk((ids) => bulkDeleteWebsitesAction(ids), 'deleted')}
                 >
                   {pending ? 'Deleting...' : 'Yes, delete'}
                 </Button>
@@ -288,7 +350,7 @@ export function AdminWebsitesTable({
                   size="sm"
                   variant="accent"
                   disabled={pending}
-                  onClick={() => runBulk(() => bulkSetWebsiteStatusAction(selectedIds, 'active'), 'published')}
+                  onClick={() => runBulk((ids) => bulkSetWebsiteStatusAction(ids, 'active'), 'published')}
                 >
                   Publish
                 </Button>
@@ -296,7 +358,7 @@ export function AdminWebsitesTable({
                   size="sm"
                   variant="outline"
                   disabled={pending}
-                  onClick={() => runBulk(() => bulkSetWebsiteStatusAction(selectedIds, 'draft'), 'moved to draft')}
+                  onClick={() => runBulk((ids) => bulkSetWebsiteStatusAction(ids, 'draft'), 'moved to draft')}
                 >
                   Draft
                 </Button>
@@ -304,7 +366,7 @@ export function AdminWebsitesTable({
                   size="sm"
                   variant="outline"
                   disabled={pending}
-                  onClick={() => runBulk(() => bulkSetWebsiteStatusAction(selectedIds, 'paused'), 'paused')}
+                  onClick={() => runBulk((ids) => bulkSetWebsiteStatusAction(ids, 'paused'), 'paused')}
                 >
                   Pause
                 </Button>
@@ -312,7 +374,7 @@ export function AdminWebsitesTable({
                   size="sm"
                   variant="outline"
                   disabled={pending}
-                  onClick={() => runBulk(() => bulkSetWebsiteStatusAction(selectedIds, 'archived'), 'archived')}
+                  onClick={() => runBulk((ids) => bulkSetWebsiteStatusAction(ids, 'archived'), 'archived')}
                 >
                   <Archive className="h-3.5 w-3.5" aria-hidden="true" />
                   Archive
@@ -339,6 +401,16 @@ export function AdminWebsitesTable({
         </div>
       ) : null}
 
+      {progress ? (
+        <div className="rounded-[var(--radius-card)] border border-line bg-surface px-4 py-3">
+          <ProgressBar
+            done={progress.done}
+            total={progress.total}
+            label={bulkProgressText(progress)}
+          />
+        </div>
+      ) : null}
+
       {result ? (
         <div
           role="status"
@@ -353,14 +425,45 @@ export function AdminWebsitesTable({
             </p>
           )}
 
+          {/*
+            Grouped by reason. Publishing a page of drafts usually fails the
+            same way for all of them - approving a publisher's email records
+            what they charge us and deliberately not what we charge - and
+            three hundred identical sentences is a wall nobody reads, with
+            the one row that failed differently lost in the middle of it.
+          */}
           {result.skipped.length > 0 ? (
-            <ul className="mt-2 space-y-1 text-muted">
-              {result.skipped.map((entry) => (
-                <li key={entry.domain}>
-                  <span className="font-medium text-ink">{entry.domain}</span> - {entry.reason}
+            <ul className="mt-2 space-y-1.5 text-muted">
+              {groupSkipped(result.skipped).map((group) => (
+                <li key={group.reason}>
+                  <span className="font-medium text-ink">
+                    {group.count} {group.count === 1 ? 'website' : 'websites'}
+                  </span>{' '}
+                  - {group.reason}
+                  <span className="block text-[12px] text-muted">
+                    {group.domains.join(', ')}
+                    {group.count > group.domains.length
+                      ? ` and ${group.count - group.domains.length} more`
+                      : ''}
+                  </span>
                 </li>
               ))}
             </ul>
+          ) : null}
+
+          {/*
+            The way out of the commonest refusal. Every listing sourced from
+            an email arrives unpriced on purpose, so the first bulk publish
+            after a batch of approvals skips all of them, and the fix is one
+            screen away rather than on each listing.
+          */}
+          {result.skipped.some((entry) => entry.reason.includes('no sell price')) ? (
+            <p className="mt-2 text-[13px]">
+              <Link href="/admin/pricing" className="font-medium text-accent-700 hover:underline">
+                Price them on the Pricing screen
+              </Link>{' '}
+              and publish again.
+            </p>
           ) : null}
         </div>
       ) : null}
