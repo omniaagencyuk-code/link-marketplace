@@ -15,6 +15,7 @@ import {
 } from '@/app/admin/(protected)/pricing/actions';
 import { brand } from '@/lib/config/brand';
 import { displayRate } from '@/lib/pricing/rates';
+import { applySummary } from '@/lib/pricing/outcome';
 import { currencySymbol, formatPrice } from '@/lib/utils/format';
 import type { PricingSettings } from '@/lib/services/pricing-service';
 import type { PricingRules } from '@/lib/pricing/engine';
@@ -149,9 +150,7 @@ export function PricingRulesEditor({
             onClick={() =>
               startTransition(async () => {
                 const result = await recalculateAction();
-                setMessage(
-                  `Repriced ${result.priced}. ${result.skippedOverrides} left alone as overrides.`,
-                );
+                setMessage(applySummary(result));
               })
             }
           >
@@ -483,9 +482,7 @@ export function PricingRulesEditor({
               startTransition(async () => {
                 const result = await saveRulesAction(draft);
                 setPreview(null);
-                setMessage(
-                  `Saved and repriced ${result.priced}. ${result.skippedOverrides} left alone as overrides.`,
-                );
+                setMessage(applySummary(result, 'Saved and repriced'));
               })
             }
           >

@@ -34,6 +34,7 @@ import type { Service } from '../src/lib/types';
 import { placementPrice, tierFor } from '../src/lib/utils/pricing';
 import { publishBlocker, publishBlockerMessage } from '../src/lib/websites/publishing';
 import { displayRate, staleRates } from '../src/lib/pricing/rates';
+import { applySummary } from '../src/lib/pricing/outcome';
 
 let failed = 0;
 const ok = (l: string) => console.log(`  PASS  ${l}`);
@@ -43,6 +44,8 @@ const bad = (l: string, d?: string) => {
 };
 const is = (l: string, actual: unknown, expected: unknown) =>
   actual === expected ? ok(l) : bad(l, `expected ${String(expected)}, got ${String(actual)}`);
+const has = (l: string, haystack: string, needle: string) =>
+  haystack.includes(needle) ? ok(l) : bad(l, `missing ${JSON.stringify(needle)} in ${JSON.stringify(haystack)}`);
 
 /*
   Abstract figures, not the shipped ones.
@@ -759,6 +762,38 @@ console.log('\n--- what stops a listing being published ---');
   publishBlockerMessage('below-cost').includes('below what we pay')
     ? ok('and the message names the problem')
     : bad('the below-cost message does not say what is wrong');
+}
+
+console.log('\n--- a pricing run says why it skipped things ---');
+{
+  // The run already works out why a listing could not be priced and used to
+  // throw both reasons away. The screen said "Repriced 2,431" and stopped,
+  // which is no help at all to somebody looking at a page of listings priced
+  // at zero.
+  const clean = applySummary({ priced: 2431, skippedOverrides: 0, missingRates: [], noCurrency: [] });
+  is('a clean run says only what it did', clean, 'Repriced 2431 placements.');
+
+  const messy = applySummary({
+    priced: 2400,
+    skippedOverrides: 12,
+    missingRates: ['AUD', 'BRL'],
+    noCurrency: ['a.com', 'b.com', 'c.com', 'd.com', 'e.com', 'f.com'],
+  });
+  has('overrides are named as left alone, not as failures', messy, '12 left alone as overrides');
+  has('listings with no currency are counted', messy, '6 listings have no cost currency');
+  has('and a few are named', messy, 'a.com, b.com, c.com, d.com and 2 more');
+  has('missing rates are named by currency', messy, 'No exchange rate for AUD, BRL');
+
+  // "Placements", because a listing has two or three of them and a count
+  // larger than the inventory reads as a bug rather than as arithmetic.
+  has('the unit is stated', clean, 'placements');
+  has('and it is singular when it should be',
+    applySummary({ priced: 1, skippedOverrides: 0, missingRates: [], noCurrency: [] }),
+    '1 placement.');
+
+  has('the verb can be changed for the save-and-reprice button',
+    applySummary({ priced: 5, skippedOverrides: 0, missingRates: [], noCurrency: [] }, 'Saved and repriced'),
+    'Saved and repriced 5');
 }
 
 console.log('\n--- no pricing read is allowed to come back half full ---');
