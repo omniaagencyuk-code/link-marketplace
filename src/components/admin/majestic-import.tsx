@@ -1,5 +1,6 @@
 'use client';
 
+import { useRouter } from 'next/navigation';
 import { useState, useTransition } from 'react';
 import { Upload } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -23,6 +24,7 @@ const CHUNK = 100;
  * before anything is written.
  */
 export function MajesticImport() {
+  const router = useRouter();
   const [busy, startTransition] = useTransition();
   const [readings, setReadings] = useState<MajesticReading[]>([]);
   const [unusable, setUnusable] = useState<string[]>([]);
@@ -85,6 +87,13 @@ export function MajesticImport() {
       );
       setReadings([]);
       setFileName(null);
+
+      /*
+        The suggestions below are server-rendered, so without this they stay
+        as they were when the page loaded - which after a first import means
+        "nothing to suggest" sitting under "925 listings updated".
+      */
+      router.refresh();
     });
   }
 

@@ -133,78 +133,116 @@ export const majesticService = {
    * this is the difference between a category and none at all - but it is
    * still a suggestion, and approving it is a person's decision.
    */
-  async suggestions(): Promise<MajesticSuggestion[]> {
-    if (!isSupabaseEnabled()) return [];
+  async suggestions(): Promise<{ rows: MajesticSuggestion[]; error?: string }> {
+    if (!isSupabaseEnabled()) return { rows: [] };
     const supabase = getAdminScopedClient();
 
     /*
-      Read in pages, and read all of them.
+      Four plain reads rather than one nested embed.
 
-      This took a row limit of three times the number of listings it meant to
-      return, on the reasoning that a listing has at most three topics. Nine
-      hundred listings is two and three-quarter thousand topic rows, so the
-      limit cut it at five hundred listings - and because the order is stable,
-      the same five hundred came back every time. The other four hundred were
-      not "not suggested yet"; they were unreachable, and nothing said so.
+      This was a single query that reached from `website_topics` through
+      `websites` into `website_categories` and then into `categories` - three
+      joins deep, with a foreign key that needed naming. It came back empty,
+      the loop below treated the error as the end of the pages, and the page
+      above turned the empty result into "nothing to suggest". Two layers of
+      silence over a query that never ran.
 
-      There is no cap on the result any more either. A cap is a silent
-      truncation with a friendlier name, and the table renders nine hundred
-      rows elsewhere in this admin without complaint.
+      Read separately, each one is keyed to the rows it is for or walked in
+      pages, each one can fail loudly, and none of them depends on getting a
+      join hint right.
     */
     const PAGE = 1000;
-    const rows: Record<string, unknown>[] = [];
+
+    const topicRows: { website_id: string; position: number; topic: string; value: number }[] = [];
     for (let from = 0; ; from += PAGE) {
-      const { data: page, error } = await supabase
+      const { data, error } = await supabase
         .from('website_topics')
-        .select(
-          'website_id, position, topic, value, websites (id, domain, categories:primary_category_id (slug), website_categories (is_primary, categories (slug)))',
-        )
+        .select('website_id, position, topic, value')
         .order('website_id')
         .order('position')
         .range(from, from + PAGE - 1);
-      if (error) break;
-      const batch = (page ?? []) as Record<string, unknown>[];
-      rows.push(...batch);
+
+      // Reported rather than swallowed. An empty list and a failed read look
+      // identical on screen, and only one of them is somebody's fault.
+      if (error) return { rows: [], error: `Could not read the topics: ${error.message}` };
+
+      const batch = (data ?? []) as typeof topicRows;
+      topicRows.push(...batch);
       if (batch.length < PAGE) break;
     }
 
-    const data = rows;
+    if (topicRows.length === 0) return { rows: [] };
 
-    interface Gathered {
-      domain: string;
-      current: NicheSlug | null;
-      secondary: NicheSlug[];
-      topics: { topic: string; value: number; position: number }[];
+    const websiteIds = [...new Set(topicRows.map((row) => row.website_id))];
+
+    // The category list is small enough to read whole - fewer than twenty.
+    const { data: categoryRows, error: categoryError } = await supabase
+      .from('categories')
+      .select('id, slug');
+    if (categoryError) {
+      return { rows: [], error: `Could not read the categories: ${categoryError.message}` };
+    }
+    const slugFor = new Map(
+      ((categoryRows ?? []) as { id: string; slug: string }[]).map((row) => [row.id, row.slug]),
+    );
+
+    const siteRows: { id: string; domain: string; primary_category_id: string | null }[] = [];
+    const joinRows: { website_id: string; category_id: string; is_primary: boolean }[] = [];
+
+    for (const group of chunk(websiteIds, WRITE_CHUNK)) {
+      const [sites, joins] = await Promise.all([
+        supabase.from('websites').select('id, domain, primary_category_id').in('id', group),
+        supabase
+          .from('website_categories')
+          .select('website_id, category_id, is_primary')
+          .in('website_id', group),
+      ]);
+
+      if (sites.error) {
+        return { rows: [], error: `Could not read the listings: ${sites.error.message}` };
+      }
+      if (joins.error) {
+        return { rows: [], error: `Could not read the categories on each listing: ${joins.error.message}` };
+      }
+
+      siteRows.push(...((sites.data ?? []) as typeof siteRows));
+      joinRows.push(...((joins.data ?? []) as typeof joinRows));
     }
 
-    /* eslint-disable @typescript-eslint/no-explicit-any */
-    const byWebsite = new Map<string, Gathered>();
-    for (const row of (data ?? []) as any[]) {
-      const site = Array.isArray(row.websites) ? row.websites[0] : row.websites;
-      if (!site) continue;
-      const current =
-        (Array.isArray(site.categories) ? site.categories[0]?.slug : site.categories?.slug) ?? null;
+    const siteFor = new Map(siteRows.map((row) => [row.id, row]));
 
-      const entry: Gathered = byWebsite.get(String(row.website_id)) ?? {
-        domain: String(site.domain),
-        current,
-        // The primary is filtered out: it is already `current`, and a
-        // category listed as both is one a reviewer has to read twice.
-        secondary: ((site.website_categories ?? []) as any[])
-          .filter((join) => !join.is_primary)
-          .map((join) => (Array.isArray(join.categories) ? join.categories[0]?.slug : join.categories?.slug))
-          .filter((slug: string | undefined): slug is NicheSlug => Boolean(slug) && slug !== current),
-        topics: [],
-      };
-      entry.topics.push({ topic: String(row.topic), value: Number(row.value), position: Number(row.position) });
-      byWebsite.set(String(row.website_id), entry);
+    const secondaryFor = new Map<string, NicheSlug[]>();
+    for (const join of joinRows) {
+      if (join.is_primary) continue;
+      const slug = slugFor.get(join.category_id);
+      if (!slug) continue;
+      const existing = secondaryFor.get(join.website_id) ?? [];
+      existing.push(slug as NicheSlug);
+      secondaryFor.set(join.website_id, existing);
     }
-    /* eslint-enable @typescript-eslint/no-explicit-any */
+
+    const topicsFor = new Map<string, { topic: string; value: number; position: number }[]>();
+    for (const row of topicRows) {
+      const existing = topicsFor.get(row.website_id) ?? [];
+      existing.push({ topic: row.topic, value: Number(row.value), position: Number(row.position) });
+      topicsFor.set(row.website_id, existing);
+    }
 
     const out: MajesticSuggestion[] = [];
 
-    for (const [websiteId, entry] of byWebsite) {
-      const topics = entry.topics.sort((a, b) => a.position - b.position);
+    for (const [websiteId, unsorted] of topicsFor) {
+      const site = siteFor.get(websiteId);
+      if (!site) continue;
+
+      const current = (site.primary_category_id
+        ? (slugFor.get(site.primary_category_id) ?? null)
+        : null) as NicheSlug | null;
+      // The primary never appears in its own secondary list.
+      const existingSecondary = (secondaryFor.get(websiteId) ?? []).filter(
+        (slug) => slug !== current,
+      );
+
+      const topics = [...unsorted].sort((a, b) => a.position - b.position);
       const suggestion = suggestNiches(topics);
       if (!suggestion) continue;
 
@@ -217,22 +255,20 @@ export const majesticService = {
         under one category when its own backlinks named two more.
       */
       const missingSecondary = suggestion.secondary.filter(
-        (slug) => !entry.secondary.includes(slug),
+        (slug) => !existingSecondary.includes(slug),
       );
-      if (suggestion.primary === entry.current && missingSecondary.length === 0) continue;
+      if (suggestion.primary === current && missingSecondary.length === 0) continue;
 
       out.push({
         websiteId,
-        domain: entry.domain,
-        current: entry.current,
-        currentName: entry.current ? nicheName(entry.current) : null,
+        domain: site.domain,
+        current,
+        currentName: current ? nicheName(current) : null,
         suggested: suggestion.primary,
         suggestedName: nicheName(suggestion.primary),
-        // Only the ones it does not already have. Accepting must add to a
-        // listing's secondary niches, never replace what somebody set.
         secondary: missingSecondary,
         secondaryNames: missingSecondary.map(nicheName),
-        existingSecondary: entry.secondary,
+        existingSecondary,
         from: suggestion.from.topic,
         value: suggestion.from.value,
         topics: topics.map((topic) => ({ topic: topic.topic, value: topic.value })),
@@ -241,7 +277,7 @@ export const majesticService = {
 
     // Strongest evidence first: a suggestion backed by a trust flow of 40
     // deserves a look before one backed by 4.
-    return out.sort((a, b) => b.value - a.value);
+    return { rows: out.sort((a, b) => b.value - a.value) };
   },
 
   /**

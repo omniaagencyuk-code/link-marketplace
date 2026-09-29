@@ -23,7 +23,13 @@ import type { MajesticSuggestion } from '@/lib/services/majestic-service';
  * The evidence sits in the row - the topic and its value - so accepting one is
  * a judgement rather than a leap of faith.
  */
-export function MajesticSuggestions({ suggestions }: { suggestions: MajesticSuggestion[] }) {
+export function MajesticSuggestions({
+  suggestions,
+  error,
+}: {
+  suggestions: MajesticSuggestion[];
+  error?: string;
+}) {
   const [busy, startTransition] = useTransition();
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [message, setMessage] = useState<string | null>(null);
@@ -71,6 +77,21 @@ export function MajesticSuggestions({ suggestions }: { suggestions: MajesticSugg
       setSelected(new Set());
       setMessage(`${changed} ${changed === 1 ? 'listing' : 'listings'} recategorised.`);
     });
+  }
+
+  if (error) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>Category suggestions</CardTitle>
+        </CardHeader>
+        <CardContent className="py-6 text-[13px] text-coral-700">
+          {/* Not "nothing to suggest". That sentence is about the data, and
+              this is about the code. */}
+          The suggestions could not be worked out. {error}
+        </CardContent>
+      </Card>
+    );
   }
 
   if (rows.length === 0) {

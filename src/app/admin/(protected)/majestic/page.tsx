@@ -20,7 +20,20 @@ export const maxDuration = 300;
  * dollars a month for three numbers and three labels per domain.
  */
 export default async function MajesticPage() {
-  const suggestions = await majesticService.suggestions().catch(() => []);
+  /*
+    The failure is shown, not swallowed.
+
+    This was `.catch(() => [])`, and underneath it a read loop treated a query
+    error as the end of its pages. So a query that never ran came out the
+    other end as "nothing to suggest" - which is a sentence about the data
+    when it was really a sentence about the code.
+  */
+  const suggestions = await majesticService
+    .suggestions()
+    .catch((error: unknown) => ({
+      rows: [],
+      error: error instanceof Error ? error.message : 'The suggestions could not be read.',
+    }));
 
   return (
     <div className="space-y-5">
@@ -29,7 +42,7 @@ export default async function MajesticPage() {
         description="Trust flow, citation flow and topical trust flow, from a Bulk Backlink Checker export."
       />
       <MajesticImport />
-      <MajesticSuggestions suggestions={suggestions} />
+      <MajesticSuggestions suggestions={suggestions.rows} error={suggestions.error} />
     </div>
   );
 }

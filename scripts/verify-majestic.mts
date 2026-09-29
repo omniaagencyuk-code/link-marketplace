@@ -348,8 +348,41 @@ console.log('\n--- no read here is allowed to come back half full ---');
     return found.filter((query) => query.includes('.select('));
   };
 
+  /*
+    A nested embed is its own hazard, separately from paging.
+
+    The suggestions read once reached from website_topics through websites
+    into website_categories and then into categories - three joins deep, with
+    a foreign key that needed naming. It came back empty, the paging loop
+    treated the error as the end of the rows, and the screen turned that into
+    "nothing to suggest": a sentence about the data when it was one about the
+    code. Plain reads joined in memory cannot fail that way.
+  */
+  const selectArgument = (query: string) => {
+    const at = query.indexOf('.select(');
+    if (at === -1) return '';
+    const rest = query.slice(at + '.select('.length);
+    const close = rest.indexOf(')');
+    return close === -1 ? rest : rest.slice(0, close);
+  };
+
+  // An embed is a column list in brackets: `websites (id, domain)`. A select
+  // with none of them is reading one table and joining in memory.
+  const embedded = queries('website_topics').filter((query) =>
+    selectArgument(query).includes('('),
+  );
+  is('the topics are read on their own, not through three joins', embedded.length, 0);
+
+  /*
+    `categories` is left out of the rule below on purpose.
+
+    The rule is about tables that grow with the inventory - one row per
+    listing, or three. There are sixteen categories and there will be
+    sixteen-ish forever, so reading the lot is a fixed cost rather than a
+    truncation waiting to happen.
+  */
   const unbounded: string[] = [];
-  for (const table of ['website_topics', 'websites', 'categories']) {
+  for (const table of ['website_topics', 'websites', 'website_categories']) {
     for (const query of queries(table)) {
       // Either keyed to the rows it is for, or walked in pages. A bare limit
       // is neither: it is a truncation with a friendlier name.
