@@ -47,11 +47,18 @@ export const definition: PageDef = {
         text('microcopy', 'Reassurance line', { maxLength: 120 }),
         image('mascot', 'Mascot artwork', {
           help:
+            'Shown on phones and tablets, and on desktop only when there is no hero banner. ' +
             'Drop the file at /public/images/parrots/gambling-parrot.webp and it appears here. ' +
             'Until then the drawn parrot is used, so the page is never broken.',
         }),
+        image('banner', 'Hero banner', {
+          help:
+            'Wide artwork behind the whole first screen on desktop, replacing the mascot there. ' +
+            'Draw it about 2000x700 with the subject on the right and the left kept clear, ' +
+            'because the headline sits over that half. Clear this field to go back to the mascot.',
+        }),
       ],
-      'The first screen: headline, buttons and the mascot beside them.',
+      'The first screen: headline, buttons, and either a mascot beside them or a banner behind them.',
     ),
 
     section(
@@ -221,6 +228,10 @@ export const defaults: PageValues = {
     mascot: {
       src: '/images/parrots/gambling-parrot.webp',
       alt: 'The Press Parrot macaw in sunglasses, holding a hand of playing cards',
+    },
+    banner: {
+      src: '/images/parrots/gambling-hero.webp',
+      alt: 'The Press Parrot macaw at a casino table, holding four aces beside a stack of chips',
     },
   },
 

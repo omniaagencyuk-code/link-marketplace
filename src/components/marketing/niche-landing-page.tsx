@@ -7,10 +7,12 @@ import { Faq, type FaqItem } from '@/components/shared/faq';
 import { RedactedPreview } from '@/components/marketplace/redacted-preview';
 import { MonsteraLeaf } from '@/components/shared/foliage';
 import { NicheMascot } from './niche-mascot';
+import { NicheBanner } from './niche-banner';
 import { RichText, type RichTextValue } from '@/lib/cms/rich-text-render';
 import { journeySteps } from '@/lib/config/how-it-works';
 import { siteUrl } from '@/lib/config/brand';
 import { formatNumber } from '@/lib/utils/format';
+import { cn } from '@/lib/utils/cn';
 import type { ContentAccessors } from '@/lib/cms/resolve';
 import type { PreviewRow } from '@/lib/services/marketplace-preview';
 
@@ -112,6 +114,14 @@ export function NicheLandingPage({
     .map((entry) => ({ question: entry.question, answer: entry.answer }));
 
   const mascot = content.image('hero', 'mascot');
+  /*
+    Wide artwork behind the whole first screen, when the page has any. It
+    replaces the mascot column on a desktop rather than joining it - two
+    parrots on one screen is one parrot too many - but only from `lg` up,
+    which is where a 2.8:1 picture has room to be itself.
+  */
+  const banner = content.image('hero', 'banner');
+  const hasBanner = Boolean(banner.src);
   const primaryCta = content.link('hero', 'primaryCta');
   const secondaryCta = content.link('hero', 'secondaryCta');
   const previewCta = content.link('preview', 'cta');
@@ -168,7 +178,11 @@ export function NicheLandingPage({
 
       {/* ----------------------------------------------------------- hero */}
       <section className="tropical-wash relative overflow-hidden border-b border-line bg-white">
-        <MonsteraLeaf className="pointer-events-none absolute -top-20 -right-24 hidden w-80 rotate-[18deg] opacity-20 lg:block" />
+        {hasBanner ? (
+          <NicheBanner src={banner.src} />
+        ) : (
+          <MonsteraLeaf className="pointer-events-none absolute -top-20 -right-24 hidden w-80 rotate-[18deg] opacity-20 lg:block" />
+        )}
         <Container size="wide" className="relative py-12 lg:py-16">
           <nav aria-label="Breadcrumb" className="mb-6">
             <ol className="flex flex-wrap items-center gap-2 text-[12px] text-muted">
@@ -192,8 +206,17 @@ export function NicheLandingPage({
             </ol>
           </nav>
 
-          <div className="grid items-center gap-10 lg:grid-cols-[minmax(0,1.05fr)_minmax(0,0.75fr)] lg:gap-14">
-            <div className="min-w-0">
+          <div
+            className={cn(
+              'grid items-center gap-10 lg:gap-14',
+              hasBanner
+                ? 'lg:grid-cols-1'
+                : 'lg:grid-cols-[minmax(0,1.05fr)_minmax(0,0.75fr)]',
+            )}
+          >
+            {/* Held well clear of the artwork's right-hand third, so the
+                headline never lands on the parrot at any desktop width. */}
+            <div className={cn('min-w-0', hasBanner && 'lg:max-w-xl xl:max-w-2xl')}>
               <p className="text-[11px] font-semibold tracking-[0.12em] text-accent-700 uppercase">
                 {content.text('hero', 'eyebrow')}
               </p>
@@ -236,7 +259,7 @@ export function NicheLandingPage({
             {/* After the copy in the source, which is where it belongs on a
                 phone: the headline is what a visitor from Google came for,
                 and on desktop the grid puts this column on the right anyway. */}
-            <div className="min-w-0">
+            <div className={cn('min-w-0', hasBanner && 'lg:hidden')}>
               {/* Capped: left to fill the column the artwork sets the height
                   of the whole hero and opens a hole above the headline. */}
               <NicheMascot src={mascot.src} alt={mascot.alt} className="lg:max-w-sm lg:ml-auto" />
