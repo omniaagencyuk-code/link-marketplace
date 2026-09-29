@@ -1,9 +1,20 @@
 'use client';
 
 import Link from 'next/link';
-import { useMemo, useState, useTransition } from 'react';
+import { Fragment, useMemo, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
-import { AlertTriangle, Archive, Copy, MoreHorizontal, Pencil, Search, Eye, Trash2, X } from 'lucide-react';
+import {
+  AlertTriangle,
+  Archive,
+  ChevronDown,
+  Copy,
+  MoreHorizontal,
+  Pencil,
+  Search,
+  Eye,
+  Trash2,
+  X,
+} from 'lucide-react';
 import { Dropdown, DropdownItem } from '@/components/ui/dropdown';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -11,6 +22,7 @@ import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import { Table, TableWrap, Td, Th, Tr } from '@/components/ui/table';
 import { WebsiteStatusBadge } from '@/components/shared/status-badge';
+import { WebsiteRateCard } from '@/components/admin/website-rate-card';
 import {
   bulkDeleteWebsitesAction,
   bulkSetWebsiteStatusAction,
@@ -49,6 +61,9 @@ const statusFilters: { value: WebsiteStatus | 'all'; label: string }[] = [
   { value: 'archived', label: 'Archived' },
 ];
 
+/** How many columns the header has, for the full-width rate card row. */
+const COLUMNS = 13;
+
 export function AdminWebsitesTable({
   websites,
   trueCosts = {},
@@ -69,6 +84,23 @@ export function AdminWebsitesTable({
   /** Live counts while a bulk action is running, so the bar means something. */
   const [progress, setProgress] = useState<BulkProgress | null>(null);
   const [onlyLosing, setOnlyLosing] = useState(false);
+  /**
+   * Listings whose full rate card is open.
+   *
+   * By id rather than a single open row: comparing two publishers' gambling
+   * rates means having both on screen, and closing one to open the other is
+   * how somebody ends up comparing a number with their memory of a number.
+   */
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+
+  function toggleExpanded(id: string) {
+    setExpanded((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
 
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [confirmingDelete, setConfirmingDelete] = useState(false);
@@ -284,6 +316,24 @@ export function AdminWebsitesTable({
           </span>
         )}
       </>
+    );
+  }
+
+  /**
+   * Is there anything the row does not already show?
+   *
+   * A topic the publisher prices differently, or a placement without a column
+   * of its own. Everywhere else the two price cells and the margin are the
+   * whole story, and an expander would open on a repeat of them.
+   */
+  function hasMoreToShow(website: WebsiteListItem): boolean {
+    if (website.nichePrices.some((price) => price.priceMinor > 0)) return true;
+    // A topic that costs differently with no price of its own - the state a
+    // listing is in between approving a publisher's email and the next
+    // pricing run, and the one most worth opening.
+    if (Object.keys(trueCosts[website.id] ?? {}).some((niche) => niche !== '')) return true;
+    return website.services.some(
+      (service) => service.type !== 'guest-post' && service.type !== 'niche-edit',
     );
   }
 
@@ -558,6 +608,9 @@ export function AdminWebsitesTable({
           <caption className="sr-only">Website database</caption>
           <thead>
             <tr>
+              {/* Counted in COLUMNS below, which the expanded rate card row
+                  spans. A header added without touching that constant leaves
+                  a gap down the side of the panel. */}
               <Th className="w-10">
                 <label className="flex items-center justify-center">
                   <span className="sr-only">
@@ -596,7 +649,8 @@ export function AdminWebsitesTable({
           </thead>
           <tbody>
             {rows.map((website) => (
-              <Tr key={website.id}>
+              <Fragment key={website.id}>
+              <Tr>
                 <Td>
                   <label className="flex items-center justify-center">
                     <span className="sr-only">Select {website.domain}</span>
@@ -632,7 +686,33 @@ export function AdminWebsitesTable({
                 <Td className="tabular text-right text-[13px] whitespace-nowrap">
                   {placementCell(website, 'niche-edit')}
                 </Td>
-                <Td className="tabular text-right text-[13px]">{marginCell(website)}</Td>
+                <Td className="tabular text-right text-[13px]">
+                  {/*
+                    A toggle only where there is more than the row already
+                    shows - a topic rate, or a placement beyond the two with
+                    columns of their own. A chevron on every row that reveals
+                    nothing new is noise in three hundred of them.
+                  */}
+                  {hasMoreToShow(website) ? (
+                    <button
+                      type="button"
+                      onClick={() => toggleExpanded(website.id)}
+                      aria-expanded={expanded.has(website.id)}
+                      className="inline-flex items-center gap-1 rounded hover:bg-surface-sunken"
+                      title="Every rate this publisher charges, and what each one leaves"
+                    >
+                      {marginCell(website)}
+                      <ChevronDown
+                        className={`h-3.5 w-3.5 shrink-0 text-muted transition-transform ${
+                          expanded.has(website.id) ? 'rotate-180' : ''
+                        }`}
+                        aria-hidden="true"
+                      />
+                    </button>
+                  ) : (
+                    marginCell(website)
+                  )}
+                </Td>
                 <Td className="tabular text-[13px] whitespace-nowrap text-ink-soft">
                   {website.headlineService
                     ? formatTurnaround(
@@ -697,6 +777,15 @@ export function AdminWebsitesTable({
                   </Dropdown>
                 </Td>
               </Tr>
+
+              {expanded.has(website.id) ? (
+                <tr>
+                  <td colSpan={COLUMNS} className="border-b border-line bg-surface-sunken p-3">
+                    <WebsiteRateCard website={website} costs={trueCosts[website.id]} />
+                  </td>
+                </tr>
+              ) : null}
+              </Fragment>
             ))}
           </tbody>
         </Table>

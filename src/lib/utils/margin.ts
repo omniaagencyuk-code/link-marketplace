@@ -173,20 +173,41 @@ export function placementMargins(
   }
 
   /*
-    The rate card, one line per topic the publisher prices differently.
+    The rate card, one line per topic that differs from the general rate.
 
-    Only topics with a sell price of their own: where there is no override the
-    general rate applies, and it has already been measured above. Measuring it
-    again per topic would report the same margin a dozen times and drown the
-    one that differs.
+    Drawn from both sides, because either can differ on its own:
+
+    - a topic we price differently, which is the ordinary case; and
+    - a topic that *costs* differently with no price of its own, which is the
+      dangerous one. Approving a publisher's email writes their sensitive rate
+      into `website_niche_costs` immediately, and the sell price only appears
+      when the engine next runs - so between those two moments the site is on
+      sale for gambling at its general price while gambling costs half as much
+      again.
+
+    A topic whose price and cost both match the general rate gets no line. It
+    would repeat the general margin under a dozen headings and drown the one
+    that differs.
   */
-  for (const price of website.nichePrices) {
-    if (price.priceMinor <= 0) continue;
-    const service = website.services.find((candidate) => candidate.type === price.linkType);
-    if (!service) continue;
+  const niches = new Set<string>([
+    ...website.nichePrices.filter((price) => price.priceMinor > 0).map((price) => price.niche),
+    ...Object.keys(costs ?? {}).filter((niche) => niche !== ''),
+  ]);
 
-    const margin = entry(service, price.niche, price.priceMinor);
-    if (margin) margins.push(margin);
+  for (const niche of niches) {
+    for (const service of website.services) {
+      const override = website.nichePrices.find(
+        (price) =>
+          price.niche === niche && price.linkType === service.type && price.priceMinor > 0,
+      );
+
+      const nicheCost = costs?.[niche]?.[service.type];
+      const differs = Boolean(override) || (nicheCost != null && nicheCost !== general?.[service.type]);
+      if (!differs) continue;
+
+      const margin = entry(service, niche, override?.priceMinor ?? service.priceMinor);
+      if (margin) margins.push(margin);
+    }
   }
 
   return margins;

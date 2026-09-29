@@ -624,11 +624,29 @@ console.log('\n--- gambling has its own cost, and its own margin ---');
   is('though it is still the thinner of the two', worstPlacement(placementMargins(priced, costs))?.niche, 'gambling');
   is('and both are now in profit', losingPlacements(placementMargins(priced, costs)).length, 0);
 
-  // A topic the publisher never priced separately costs what everything else
-  // costs. Measuring it again would repeat the general margin under a dozen
-  // headings and drown the one that differs.
+  // The dangerous case, and the reason topic lines come from both sides.
+  // Approving a publisher's email writes their gambling cost immediately; the
+  // gambling sell price only appears when the engine next runs. In between,
+  // the site is on sale for gambling at its general price while gambling
+  // costs 700 - and until this looked at the cost as well as the price, no
+  // screen said so.
   const noOverride = { ...site, nichePrices: [] };
-  is('a topic with no rate of its own is not a second line', placementMargins(noOverride, costs).length, 1);
+  const exposed = placementMargins(noOverride, costs);
+  is('a dearer cost makes a line of its own without a price', exposed.length, 2);
+  is('priced at the general rate', exposed[1]?.priceMinor, 55000);
+  is('against the gambling cost', exposed[1]?.costMinor, 70000);
+  is('which is a loss nobody had declared', losingPlacements(exposed).length, 1);
+  is('and publishing it is refused', publishBlocker(noOverride, costs), 'below-cost');
+
+  // A topic that costs the general rate and sells at it is not a second line.
+  // It would repeat the general margin under a dozen headings and drown the
+  // one that differs.
+  const sameAsGeneral = { '': { 'guest-post': 40000 }, gambling: { 'guest-post': 40000 } };
+  is(
+    'a topic that matches the general rate on both sides is not a line',
+    placementMargins(noOverride, sameAsGeneral).length,
+    1,
+  );
 
   // A topic rate on a placement nobody can buy is not a loss.
   const withdrawn = {
