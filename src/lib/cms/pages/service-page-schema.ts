@@ -28,6 +28,13 @@ export function serviceSections(): SectionDef[] {
           maxLength: 120,
           help: 'The small print under the buttons, e.g. "Free account, no subscription".',
         }),
+        image('banner', 'Hero banner', {
+          help:
+            'Wide artwork behind the whole first screen, on desktop only. ' +
+            'Draw or upload it about 2000x700 with the subject on the right and the left ' +
+            'kept clear, because the headline sits over that half. ' +
+            'Leave this empty for the plain hero.',
+        }),
       ],
       'The first screen. Changing the headline here changes what the page is about, so it is worth a moment.',
     ),

@@ -2,6 +2,17 @@ import Image from 'next/image';
 import { artworkSize, findArtwork, isUploaded } from '@/lib/cms/artwork';
 
 /**
+ * The shape a banner is drawn in, for artwork that cannot be measured.
+ *
+ * An uploaded file lives in storage rather than in `public`, so there is no
+ * file here to read the header of - but the shape is only used to place the
+ * fade at the top of the picture, and the field help asks for roughly this.
+ * Being a few percent out moves that fade by a few pixels; refusing to render
+ * loses the banner entirely, which is what used to happen.
+ */
+const DRAWN_SHAPE = { width: 2000, height: 700 };
+
+/**
  * Wide artwork behind a landing page's first screen.
  *
  * The mascot beside the headline is a picture in a column. This is the whole
@@ -22,11 +33,11 @@ import { artworkSize, findArtwork, isUploaded } from '@/lib/cms/artwork';
  */
 export function NicheBanner({ src }: { src: string }) {
   const artwork = findArtwork(src);
-  // An uploaded banner lives on another host, so there is no file to measure -
-  // and without its shape the fade below would land in the wrong place.
-  if (!artwork || isUploaded(artwork)) return null;
+  if (!artwork) return null;
 
-  const { width, height } = artworkSize(artwork);
+  // An uploaded banner is on another host, so there is no file to measure and
+  // the shape it was asked for stands in.
+  const { width, height } = isUploaded(artwork) ? DRAWN_SHAPE : artworkSize(artwork);
 
   return (
     <div aria-hidden="true" className="pointer-events-none absolute inset-0 hidden lg:block">

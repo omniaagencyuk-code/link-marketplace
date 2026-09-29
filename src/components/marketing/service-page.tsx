@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Faq, type FaqItem } from '@/components/shared/faq';
 import { RedactedPreview } from '@/components/marketplace/redacted-preview';
 import { MonsteraLeaf } from '@/components/shared/foliage';
+import { NicheBanner } from './niche-banner';
 import { RichText, type RichTextValue } from '@/lib/cms/rich-text-render';
 import { siteUrl } from '@/lib/config/brand';
 import type { ContentAccessors } from '@/lib/cms/resolve';
@@ -67,6 +68,7 @@ export function ServicePage({
     .filter((entry) => entry.question && entry.answer)
     .map((entry) => ({ question: entry.question, answer: entry.answer }));
 
+  const banner = content.image('hero', 'banner');
   const primaryCta = content.link('hero', 'primaryCta');
   const secondaryCta = content.link('hero', 'secondaryCta');
   const ctaPrimary = content.link('cta', 'primaryCta');
@@ -107,7 +109,17 @@ export function ServicePage({
       ) : null}
 
       <section className="tropical-wash relative overflow-hidden border-b border-line bg-white">
-        <MonsteraLeaf className="pointer-events-none absolute -top-16 -right-16 hidden w-72 rotate-[18deg] opacity-25 lg:block" />
+        {/*
+          Artwork behind the whole first screen when the page has any, and the
+          drawn leaf when it does not. Either way the copy column is unchanged
+          and the section is the height the copy makes it - a banner is a
+          backdrop here, not a thing the layout has to accommodate.
+        */}
+        {banner.src ? (
+          <NicheBanner src={banner.src} />
+        ) : (
+          <MonsteraLeaf className="pointer-events-none absolute -top-16 -right-16 hidden w-72 rotate-[18deg] opacity-25 lg:block" />
+        )}
         <Container size="wide" className="relative py-12 lg:py-20">
           <nav aria-label="Breadcrumb" className="mb-6">
             <ol className="flex items-center gap-2 text-[12px] text-muted">
