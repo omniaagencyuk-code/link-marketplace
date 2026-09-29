@@ -2,7 +2,7 @@ import { getAdminScopedClient } from '@/lib/supabase/server';
 import { isSupabaseEnabled } from '@/lib/supabase/config';
 import { chunk } from '@/lib/utils/chunk';
 import { nicheName } from '@/lib/data/categories';
-import { suggestNiche } from '@/lib/majestic/topics';
+import { suggestNiches } from '@/lib/majestic/topics';
 import type { MajesticReading } from '@/lib/majestic/parse';
 import type { NicheSlug } from '@/lib/types';
 
@@ -156,7 +156,9 @@ export const majesticService = {
     for (let from = 0; ; from += PAGE) {
       const { data: page, error } = await supabase
         .from('website_topics')
-        .select('website_id, position, topic, value, websites (id, domain, primary_category_id, categories:primary_category_id (slug))')
+        .select(
+          'website_id, position, topic, value, websites (id, domain, categories:primary_category_id (slug), website_categories (is_primary, categories (slug)))',
+        )
         .order('website_id')
         .order('position')
         .range(from, from + PAGE - 1);
@@ -171,6 +173,7 @@ export const majesticService = {
     interface Gathered {
       domain: string;
       current: NicheSlug | null;
+      secondary: NicheSlug[];
       topics: { topic: string; value: number; position: number }[];
     }
 
@@ -179,9 +182,18 @@ export const majesticService = {
     for (const row of (data ?? []) as any[]) {
       const site = Array.isArray(row.websites) ? row.websites[0] : row.websites;
       if (!site) continue;
+      const current =
+        (Array.isArray(site.categories) ? site.categories[0]?.slug : site.categories?.slug) ?? null;
+
       const entry: Gathered = byWebsite.get(String(row.website_id)) ?? {
         domain: String(site.domain),
-        current: (Array.isArray(site.categories) ? site.categories[0]?.slug : site.categories?.slug) ?? null,
+        current,
+        // The primary is filtered out: it is already `current`, and a
+        // category listed as both is one a reviewer has to read twice.
+        secondary: ((site.website_categories ?? []) as any[])
+          .filter((join) => !join.is_primary)
+          .map((join) => (Array.isArray(join.categories) ? join.categories[0]?.slug : join.categories?.slug))
+          .filter((slug: string | undefined): slug is NicheSlug => Boolean(slug) && slug !== current),
         topics: [],
       };
       entry.topics.push({ topic: String(row.topic), value: Number(row.value), position: Number(row.position) });
@@ -193,17 +205,34 @@ export const majesticService = {
 
     for (const [websiteId, entry] of byWebsite) {
       const topics = entry.topics.sort((a, b) => a.position - b.position);
-      const suggestion = suggestNiche(topics);
+      const suggestion = suggestNiches(topics);
       if (!suggestion) continue;
-      if (suggestion.niche === entry.current) continue;
+
+      /*
+        Worth showing when either half differs.
+
+        A listing already in the right category but with no secondary niches
+        is exactly the case this was missing: the second and third topics were
+        read, mapped, and then thrown away, so a Swedish football site sat
+        under one category when its own backlinks named two more.
+      */
+      const missingSecondary = suggestion.secondary.filter(
+        (slug) => !entry.secondary.includes(slug),
+      );
+      if (suggestion.primary === entry.current && missingSecondary.length === 0) continue;
 
       out.push({
         websiteId,
         domain: entry.domain,
         current: entry.current,
         currentName: entry.current ? nicheName(entry.current) : null,
-        suggested: suggestion.niche,
-        suggestedName: nicheName(suggestion.niche),
+        suggested: suggestion.primary,
+        suggestedName: nicheName(suggestion.primary),
+        // Only the ones it does not already have. Accepting must add to a
+        // listing's secondary niches, never replace what somebody set.
+        secondary: missingSecondary,
+        secondaryNames: missingSecondary.map(nicheName),
+        existingSecondary: entry.secondary,
         from: suggestion.from.topic,
         value: suggestion.from.value,
         topics: topics.map((topic) => ({ topic: topic.topic, value: topic.value })),
@@ -215,27 +244,62 @@ export const majesticService = {
     return out.sort((a, b) => b.value - a.value);
   },
 
-  /** Set the primary category on listings whose suggestion was accepted. */
-  async acceptSuggestions(websiteIds: string[], niches: Record<string, NicheSlug>) {
-    if (!isSupabaseEnabled() || websiteIds.length === 0) return { changed: 0 };
+  /**
+   * Apply accepted suggestions: the category, and the secondary niches.
+   *
+   * The secondary niches are added to whatever a listing already has rather
+   * than replacing them. Most of these have none, but the ones that do had
+   * them set by a person, and a bulk action that quietly overwrote that would
+   * be the worst kind of helpful.
+   */
+  async acceptSuggestions(accepted: AcceptedSuggestion[]) {
+    if (!isSupabaseEnabled() || accepted.length === 0) return { changed: 0 };
     const supabase = getAdminScopedClient();
 
-    const wanted = [...new Set(Object.values(niches))];
-    const { data: categories } = await supabase.from('categories').select('id, slug').in('slug', wanted);
+    const wanted = [
+      ...new Set(accepted.flatMap((entry) => [entry.niche, ...entry.secondary, ...entry.existingSecondary])),
+    ];
+    const { data: categories } = await supabase
+      .from('categories')
+      .select('id, slug')
+      .in('slug', wanted);
     const idFor = new Map(
       ((categories ?? []) as { id: string; slug: string }[]).map((row) => [row.slug, row.id]),
     );
 
     let changed = 0;
-    for (const group of chunk(websiteIds, WRITE_CHUNK)) {
+    for (const group of chunk(accepted, WRITE_CHUNK)) {
       await Promise.all(
-        group.map(async (websiteId) => {
-          const categoryId = idFor.get(niches[websiteId]);
-          if (!categoryId) return;
+        group.map(async (entry) => {
+          const primaryId = idFor.get(entry.niche);
+          if (!primaryId) return;
+
           await supabase
             .from('websites')
-            .update({ primary_category_id: categoryId })
-            .eq('id', websiteId);
+            .update({ primary_category_id: primaryId })
+            .eq('id', entry.websiteId);
+
+          /*
+            The join table is replaced wholesale, which is what the website
+            repository does for the same rows and for the same reason: it is
+            a handful of rows and a diff would be more code than it is worth.
+            What must not be lost is the listing's existing secondary niches,
+            so they are unioned in rather than dropped.
+          */
+          const secondary = [
+            ...new Set([...entry.existingSecondary, ...entry.secondary]),
+          ].filter((slug) => slug !== entry.niche && idFor.has(slug));
+
+          await supabase.from('website_categories').delete().eq('website_id', entry.websiteId);
+          await supabase.from('website_categories').insert([
+            { website_id: entry.websiteId, category_id: primaryId, is_primary: true },
+            ...secondary.map((slug) => ({
+              website_id: entry.websiteId,
+              category_id: idFor.get(slug) as string,
+              is_primary: false,
+            })),
+          ]);
+
           changed += 1;
         }),
       );
@@ -245,6 +309,15 @@ export const majesticService = {
   },
 };
 
+export interface AcceptedSuggestion {
+  websiteId: string;
+  niche: NicheSlug;
+  /** The ones the topics point at that it does not already have. */
+  secondary: NicheSlug[];
+  /** What it already has, so accepting adds rather than replaces. */
+  existingSecondary: NicheSlug[];
+}
+
 export interface MajesticSuggestion {
   websiteId: string;
   domain: string;
@@ -252,6 +325,11 @@ export interface MajesticSuggestion {
   currentName: string | null;
   suggested: NicheSlug;
   suggestedName: string;
+  /** Secondary niches the topics point at that the listing does not have. */
+  secondary: NicheSlug[];
+  secondaryNames: string[];
+  /** What it already has, so accepting adds rather than replaces. */
+  existingSecondary: NicheSlug[];
   /** The topic the suggestion came from, so a reviewer can judge it. */
   from: string;
   value: number;

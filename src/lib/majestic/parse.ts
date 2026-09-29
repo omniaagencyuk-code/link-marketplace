@@ -1,5 +1,5 @@
 import { normaliseDomain } from '@/lib/import/normalise';
-import { suggestNiche, type TopicReading } from './topics';
+import { suggestNiches, type TopicReading } from './topics';
 import type { NicheSlug } from '@/lib/types';
 
 /**
@@ -27,6 +27,8 @@ export interface MajesticReading {
   referringDomains: number | null;
   /** Our category, suggested from the topics. Null when none of them maps. */
   suggestedNiche: NicheSlug | null;
+  /** The other categories the topics point at, for the secondary niches. */
+  suggestedSecondary: NicheSlug[];
   /** The topic the suggestion came from, so a reviewer can judge it. */
   suggestedFrom: TopicReading | null;
 }
@@ -131,7 +133,7 @@ export function readRow(row: Record<string, string>): MajesticReading | null {
   // and overwriting a listing's metrics with it would lose real data.
   if (trustFlow == null && citationFlow == null && topics.length === 0) return null;
 
-  const suggestion = suggestNiche(topics);
+  const suggestion = suggestNiches(topics);
 
   return {
     domain,
@@ -140,7 +142,8 @@ export function readRow(row: Record<string, string>): MajesticReading | null {
     citationFlow,
     topics,
     referringDomains: count(pick(row, COLUMNS.referringDomains)),
-    suggestedNiche: suggestion?.niche ?? null,
+    suggestedNiche: suggestion?.primary ?? null,
+    suggestedSecondary: suggestion?.secondary ?? [],
     suggestedFrom: suggestion?.from ?? null,
   };
 }

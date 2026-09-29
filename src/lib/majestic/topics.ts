@@ -114,23 +114,82 @@ export interface TopicReading {
 }
 
 /**
+ * Below this, a topic is noise rather than a signal.
+ *
+ * chelseafotboll.se is the case that set it. A site entirely about Chelsea
+ * Football Club, and Majestic's reading of it was: Arts 1, Motorcycles 1,
+ * Environment 1, Autos 1. Trust flow of 1 overall - there is barely a
+ * backlink profile to describe, so the topics are the rounding error on
+ * nothing. It was labelled Entertainment, from `Arts` with a value of one.
+ *
+ * Across a real export of 910 domains the median topic value is 25 and only
+ * 73 fall below five, so this throws away very little and stops the thing it
+ * throws away from being confidently wrong. A site Majestic knows nothing
+ * about should come back as "no suggestion", which is true, rather than as a
+ * category somebody has to notice is nonsense.
+ */
+export const MIN_TOPIC_VALUE = 5;
+
+export interface NicheSuggestion {
+  /** What the site is about, as far as its backlinks can say. */
+  primary: NicheSlug;
+  /** The other categories its topics point at, strongest first. */
+  secondary: NicheSlug[];
+  /** The topic the primary came from, so a reviewer can judge it. */
+  from: TopicReading;
+}
+
+/**
  * What to suggest for a listing, given its top topics.
  *
- * The strongest topic that maps to anything, rather than strictly the first:
- * a site whose leading topic is `Regional/Europe` and whose second is
- * `Recreation/Travel` is a travel site, and refusing to look past the first
- * would leave it uncategorised.
+ * All three topics are used, not just the first. The second and third are
+ * what the secondary niche field on a listing is for - a Swedish football
+ * site whose links come from sports and news is both, and a buyer filtering
+ * for either should find it. Discarding them, which this did at first, threw
+ * away a category for six hundred of nine hundred listings.
  *
- * `null` when none of them maps, which is the honest outcome for a domain
- * whose whole profile is geography.
+ * The strongest mappable topic is the primary rather than strictly the first:
+ * a site leading with `Regional/Europe` and following with `Recreation/Travel`
+ * is a travel site, and refusing to look past the first would leave it
+ * uncategorised.
+ *
+ * `null` when nothing clears the noise floor, which is the honest outcome for
+ * a domain with no backlink profile to speak of.
+ */
+export function suggestNiches(topics: readonly TopicReading[]): NicheSuggestion | null {
+  const usable = topics.filter((reading) => reading.value >= MIN_TOPIC_VALUE);
+
+  let primary: NicheSlug | null = null;
+  let from: TopicReading | null = null;
+  const secondary: NicheSlug[] = [];
+
+  for (const reading of usable) {
+    const niche = nicheFromTopic(reading.topic);
+    if (!niche) continue;
+
+    if (!primary) {
+      primary = niche;
+      from = reading;
+      continue;
+    }
+    // A topic that maps to the primary again adds nothing, and the same
+    // category twice in the secondary list is noise of a different kind.
+    if (niche !== primary && !secondary.includes(niche)) secondary.push(niche);
+  }
+
+  return primary && from ? { primary, secondary, from } : null;
+}
+
+/**
+ * The primary alone.
+ *
+ * Kept because a caller that only wants the category should not have to know
+ * about the rest, and because it is what the older callers ask for.
  */
 export function suggestNiche(topics: readonly TopicReading[]): {
   niche: NicheSlug;
   from: TopicReading;
 } | null {
-  for (const reading of topics) {
-    const niche = nicheFromTopic(reading.topic);
-    if (niche) return { niche, from: reading };
-  }
-  return null;
+  const suggestion = suggestNiches(topics);
+  return suggestion ? { niche: suggestion.primary, from: suggestion.from } : null;
 }

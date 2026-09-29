@@ -59,7 +59,12 @@ export function MajesticSuggestions({ suggestions }: { suggestions: MajesticSugg
       let changed = 0;
       for (const part of chunk(chosen, 100)) {
         const outcome = await acceptSuggestionsAction(
-          part.map((row) => ({ websiteId: row.websiteId, niche: row.suggested })),
+          part.map((row) => ({
+            websiteId: row.websiteId,
+            niche: row.suggested,
+            secondary: row.secondary,
+            existingSecondary: row.existingSecondary,
+          })),
         );
         changed += outcome.changed;
       }
@@ -142,7 +147,21 @@ export function MajesticSuggestions({ suggestions }: { suggestions: MajesticSugg
                   </Td>
                   <Td className="text-[13px] font-medium text-ink">{row.domain}</Td>
                   <Td className="text-[13px] text-muted">{row.currentName ?? 'None'}</Td>
-                  <Td className="text-[13px] text-ink">{row.suggestedName}</Td>
+                  <Td className="text-[13px] text-ink">
+                    {/* Unchanged where it is already right: the row is here
+                        for its secondary niches, and saying so beats printing
+                        the same category twice. */}
+                    {row.suggested === row.current ? (
+                      <span className="text-muted">unchanged</span>
+                    ) : (
+                      row.suggestedName
+                    )}
+                    {row.secondaryNames.length > 0 ? (
+                      <span className="block text-[11px] text-muted">
+                        + {row.secondaryNames.join(', ')}
+                      </span>
+                    ) : null}
+                  </Td>
                   <Td className="text-[12px] text-muted">
                     {row.from}
                     <span className="tabular ml-1.5 text-ink-soft">{row.value}</span>

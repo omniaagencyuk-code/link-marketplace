@@ -3,8 +3,8 @@
 import { revalidatePath } from 'next/cache';
 import { requireAdminSession } from '@/lib/auth/admin-access';
 import { majesticService } from '@/lib/services/majestic-service';
+import type { AcceptedSuggestion } from '@/lib/services/majestic-service';
 import type { MajesticReading } from '@/lib/majestic/parse';
-import type { NicheSlug } from '@/lib/types';
 
 /**
  * Applying a Majestic export, behind an admin session.
@@ -25,20 +25,11 @@ export async function applyMajesticAction(readings: MajesticReading[], unusable:
   return result;
 }
 
-export async function acceptSuggestionsAction(
-  accepted: { websiteId: string; niche: NicheSlug }[],
-) {
+export async function acceptSuggestionsAction(accepted: AcceptedSuggestion[]) {
   await requireAdminSession();
   if (accepted.length === 0) return { changed: 0 };
 
-  const niches = Object.fromEntries(
-    accepted.map((entry) => [entry.websiteId, entry.niche]),
-  ) as Record<string, NicheSlug>;
-
-  const result = await majesticService.acceptSuggestions(
-    accepted.map((entry) => entry.websiteId),
-    niches,
-  );
+  const result = await majesticService.acceptSuggestions(accepted);
 
   revalidatePath('/admin/majestic');
   revalidatePath('/admin/websites');

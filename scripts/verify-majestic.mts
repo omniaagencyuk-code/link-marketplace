@@ -12,7 +12,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import Papa from 'papaparse';
-import { nicheFromTopic, suggestNiche } from '../src/lib/majestic/topics';
+import { MIN_TOPIC_VALUE, nicheFromTopic, suggestNiches } from '../src/lib/majestic/topics';
 import { readMajesticCsv, readRow, TOPICS_KEPT } from '../src/lib/majestic/parse';
 import { categoryBySlug } from '../src/lib/data/categories';
 import { acceptedOrEmpty, describeUnusableFile } from '../src/lib/majestic/summary';
@@ -77,15 +77,88 @@ console.log('\n--- a suggestion looks past a topic it cannot use ---');
 {
   // A site whose leading topic is geography and whose second is travel is a
   // travel site. Refusing to look past the first would leave it unlabelled.
-  const suggestion = suggestNiche([
+  const suggestion = suggestNiches([
     { topic: 'Regional/Europe', value: 30 },
     { topic: 'Recreation/Travel', value: 24 },
   ]);
-  is('it takes the strongest topic that maps', suggestion?.niche, 'travel');
+  is('it takes the strongest topic that maps', suggestion?.primary, 'travel');
   is('and says which one it came from', suggestion?.from.topic, 'Recreation/Travel');
 
-  is('nothing mappable suggests nothing', suggestNiche([{ topic: 'Regional/Europe', value: 30 }]), null);
-  is('and no topics at all suggests nothing', suggestNiche([]), null);
+  is('nothing mappable suggests nothing', suggestNiches([{ topic: 'Regional/Europe', value: 30 }]), null);
+  is('and no topics at all suggests nothing', suggestNiches([]), null);
+}
+
+console.log('\n--- the second and third topics are the secondary niches ---');
+{
+  /*
+    A Swedish football site whose links come from sports and news is both, and
+    a buyer filtering for either should find it. Reading only the first topic
+    threw a category away for six hundred of nine hundred listings.
+  */
+  const swedish = suggestNiches([
+    { topic: 'Sports/Soccer', value: 34 },
+    { topic: 'News/Media Industry', value: 26 },
+    { topic: 'Arts/Music', value: 18 },
+  ]);
+  is('the strongest is the category', swedish?.primary, 'sports');
+  is('the rest become secondary niches', swedish?.secondary.join(','), 'news-media,entertainment');
+
+  // The same category twice is noise of its own kind.
+  const repeated = suggestNiches([
+    { topic: 'Computers/Security', value: 30 },
+    { topic: 'Computers/Internet', value: 28 },
+    { topic: 'Sports/Soccer', value: 20 },
+  ]);
+  is('a topic that repeats the primary adds nothing', repeated?.secondary.join(','), 'sports');
+  is('and the primary is not in its own secondary list', repeated?.secondary.includes('technology'), false);
+
+  // Unmappable topics are skipped rather than ending the list.
+  const mixed = suggestNiches([
+    { topic: 'Recreation/Travel', value: 30 },
+    { topic: 'Regional/Europe', value: 25 },
+    { topic: 'Business/Financial Services', value: 20 },
+  ]);
+  is('geography between two mappable topics is stepped over', mixed?.secondary.join(','), 'finance');
+}
+
+console.log('\n--- a topic nobody can hear is not a signal ---');
+{
+  /*
+    chelseafotboll.se, and the reason the floor exists.
+
+    A site entirely about Chelsea Football Club. Majestic's reading: Arts 1,
+    Motorcycles 1, Environment 1, Autos 1 - a trust flow of 1 overall, so
+    there is barely a backlink profile to describe and the topics are the
+    rounding error on nothing. It was labelled Entertainment, from `Arts`
+    with a value of one.
+  */
+  const chelsea = suggestNiches([
+    { topic: 'Arts', value: 1 },
+    { topic: 'Recreation/Motorcycles', value: 1 },
+    { topic: 'Science/Environment', value: 1 },
+  ]);
+  is('a site with no backlink profile suggests nothing', chelsea, null);
+
+  is('the floor is where it says it is', MIN_TOPIC_VALUE, 5);
+  is(
+    'just below it is still nothing',
+    suggestNiches([{ topic: 'Sports/Soccer', value: MIN_TOPIC_VALUE - 1 }]),
+    null,
+  );
+  is(
+    'and at it the signal counts',
+    suggestNiches([{ topic: 'Sports/Soccer', value: MIN_TOPIC_VALUE }])?.primary,
+    'sports',
+  );
+  // A weak second topic must not become a secondary niche either.
+  is(
+    'a weak topic is no more a secondary niche than a primary one',
+    suggestNiches([
+      { topic: 'Sports/Soccer', value: 30 },
+      { topic: 'News/Media Industry', value: 2 },
+    ])?.secondary.length,
+    0,
+  );
 }
 
 console.log('\n--- the export reads back ---');
@@ -226,11 +299,18 @@ console.log('\n--- the mapping earns its keep on a real export ---');
   const share = Math.round((suggested / file.readings.length) * 100);
   is(`at least half the fixture is categorised (got ${share}%)`, share >= 50, true);
 
-  // And the ones it declines are the ones it should: geography and adult.
+  /*
+    The ones it declines are the ones it should: geography, adult, and topics
+    too weak to mean anything. Nothing is declined that has a mappable topic
+    at or above the noise floor - that would be a rule quietly failing to
+    fire rather than a rule choosing not to.
+  */
   const declined = file.readings.filter((r) => !r.suggestedNiche);
   is(
-    'nothing is declined that has a mappable topic',
-    declined.every((r) => r.topics.every((t) => nicheFromTopic(t.topic) === null)),
+    'nothing is declined that has a usable mappable topic',
+    declined.every((r) =>
+      r.topics.every((t) => t.value < MIN_TOPIC_VALUE || nicheFromTopic(t.topic) === null),
+    ),
     true,
   );
 }
