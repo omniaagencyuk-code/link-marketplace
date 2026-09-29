@@ -160,6 +160,15 @@ function mapRun(row: any): RefreshRun {
 }
 /* eslint-enable @typescript-eslint/no-explicit-any */
 
+/**
+ * After this, a row still saying "running" is a run that died.
+ *
+ * A refresh of the whole inventory is ten batches and a few minutes. Half an
+ * hour is generous enough that a slow run is never called dead, and short
+ * enough that a dead one stops pretending.
+ */
+const STALE_RUN_MINUTES = 30;
+
 /** Why the last settings read came back empty, for the admin page to show. */
 let settingsError: string | null = null;
 
@@ -255,6 +264,44 @@ export const refreshService = {
   },
 
   /** Everything the admin page and the status endpoint need, in one read. */
+  /**
+   * The run in progress, if there is one.
+   *
+   * A run older than the stale window is not reported as live: a process
+   * killed half way leaves its row saying "running" for ever, and a progress
+   * bar that never moves is worse than none.
+   */
+  async liveRun(): Promise<LiveRun | null> {
+    if (!isSupabaseEnabled()) return null;
+    const supabase = getAdminScopedClient();
+
+    const { data } = await supabase
+      .from('refresh_runs')
+      .select('id, started_at, domains_total, domains_refreshed, domains_failed, batches, units_spent, dry_run')
+      .eq('status', 'running')
+      .order('started_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (!data) return null;
+    const row = data as Record<string, unknown>;
+
+    const startedAt = String(row.started_at);
+    const ageMinutes = (Date.now() - new Date(startedAt).getTime()) / 60_000;
+    if (ageMinutes > STALE_RUN_MINUTES) return null;
+
+    return {
+      id: String(row.id),
+      startedAt,
+      total: typeof row.domains_total === 'number' ? row.domains_total : null,
+      refreshed: Number(row.domains_refreshed ?? 0),
+      failed: Number(row.domains_failed ?? 0),
+      batches: Number(row.batches ?? 0),
+      unitsSpent: Number(row.units_spent ?? 0),
+      dryRun: Boolean(row.dry_run),
+    };
+  },
+
   async getStatus(): Promise<RefreshStatus> {
     const base: RefreshStatus = {
       settings: null,
@@ -324,6 +371,25 @@ export const refreshService = {
     };
   },
 };
+
+/**
+ * A run that is happening right now, for a screen to follow.
+ *
+ * Read from the row rather than held anywhere, so it is the same answer for
+ * the person who started it, the person who reloaded the page, and the
+ * scheduled run nobody started at all.
+ */
+export interface LiveRun {
+  id: string;
+  startedAt: string;
+  /** Null on runs recorded before the denominator was tracked. */
+  total: number | null;
+  refreshed: number;
+  failed: number;
+  batches: number;
+  unitsSpent: number;
+  dryRun: boolean;
+}
 
 export interface RunOutcome {
   status: 'completed' | 'skipped' | 'failed';
@@ -519,6 +585,20 @@ export async function runRefresh(): Promise<RunOutcome> {
     let estimated = 0;
     const now = new Date().toISOString();
 
+    /*
+      The denominator, written before the first batch.
+
+      The row this run lives in used to be touched twice - once at the start
+      and once at the end - so for the whole of the middle it said "running"
+      and nothing else. Nine hundred and fifty domains is ten batches and
+      several minutes of that, and somebody watching had the same information
+      as somebody who had closed the tab.
+    */
+    await supabase
+      .from('refresh_runs')
+      .update({ domains_total: domains.length })
+      .eq('id', id);
+
     for (let offset = 0; offset < domains.length; offset += batchSize) {
       const slice = domains.slice(offset, offset + batchSize);
       const expected = Math.ceil(slice.length * unitCost);
@@ -580,6 +660,25 @@ export async function runRefresh(): Promise<RunOutcome> {
         if (error) failed += 1;
         else refreshed += 1;
       }
+
+      /*
+        Progress, after each batch rather than at the end.
+
+        One write per hundred domains, which is nothing beside the hundred
+        updates just made - and it is what lets a screen say "400 of 950"
+        instead of a spinner. It survives a reload too, because it is in the
+        row rather than in a component's state: the run is the same run
+        whether or not anybody is looking at it.
+      */
+      await supabase
+        .from('refresh_runs')
+        .update({
+          domains_refreshed: refreshed,
+          domains_failed: failed,
+          batches,
+          units_spent: units,
+        })
+        .eq('id', id);
     }
 
     const reason = `Refreshed ${refreshed} of ${domains.length} due`;

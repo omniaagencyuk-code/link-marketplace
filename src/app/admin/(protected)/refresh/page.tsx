@@ -4,6 +4,7 @@ import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableWrap, Td, Th, Tr } from '@/components/ui/table';
 import { RefreshControls } from '@/components/admin/refresh-controls';
+import { RefreshProgress } from '@/components/admin/refresh-progress';
 import { refreshService } from '@/lib/services/refresh-service';
 import { formatDateTime, formatNumber } from '@/lib/utils/format';
 
@@ -16,7 +17,12 @@ const TIER_LABELS: Record<number, string> = {
 };
 
 export default async function RefreshPage() {
-  const status = await refreshService.getStatus();
+  const [status, live] = await Promise.all([
+    refreshService.getStatus(),
+    // Read on the server too, so a page opened mid-run shows the bar on the
+    // first paint rather than three seconds later.
+    refreshService.liveRun().catch(() => null),
+  ]);
   const { settings } = status;
 
   // The budget the guard will actually use. Ahrefs' own limit wins over the
@@ -64,6 +70,10 @@ export default async function RefreshPage() {
             dryRun={settings.dryRun}
             ahrefsConfigured={status.ahrefsConfigured}
           />
+
+          {/* Nothing at all when nothing is running, so the page is exactly
+              as it was the rest of the time. */}
+          <RefreshProgress initial={live} />
 
           {/* ------------------------------------------- spend projection */}
           {projectionWarning ? (

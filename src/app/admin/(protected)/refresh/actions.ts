@@ -124,3 +124,15 @@ export async function runNowAction(): Promise<RefreshActionResult> {
     return { ok: false, error: error instanceof Error ? error.message : 'The run failed.' };
   }
 }
+
+/**
+ * How far through the current run is, for the screen to poll.
+ *
+ * Deliberately not part of `runNowAction`: a run started by the cron, or by
+ * somebody else, or before this page was opened, is followed the same way.
+ * It reads one row and never writes.
+ */
+export async function refreshProgressAction() {
+  await requireAdminSession();
+  return refreshService.liveRun();
+}
