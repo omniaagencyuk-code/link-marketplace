@@ -9,6 +9,12 @@ import { chunk } from '../src/lib/utils/chunk';
 import { csvCell, csvFilename, toCsv } from '../src/lib/admin/export-csv';
 import { pageWindow, paginate } from '../src/lib/admin/paging';
 import {
+  MIN_TABLE_HEIGHT,
+  TABLE_BOTTOM_GAP,
+  clampTableHeight,
+  fitTableHeight,
+} from '../src/lib/admin/table-height';
+import {
   BULK_CHUNK_SIZE,
   bulkProgressPercent,
   bulkProgressText,
@@ -24,6 +30,8 @@ const bad = (label: string, detail?: string) => {
 };
 const is = (label: string, actual: unknown, expected: unknown) =>
   actual === expected ? ok(label) : bad(label, `expected ${String(expected)}, got ${String(actual)}`);
+const yes = (label: string, actual: boolean) =>
+  actual ? ok(label) : bad(label, 'expected it to hold, and it did not');
 const has = (label: string, haystack: string, needle: string) =>
   haystack.includes(needle) ? ok(label) : bad(label, `missing ${JSON.stringify(needle)} in ${JSON.stringify(haystack)}`);
 
@@ -204,6 +212,57 @@ console.log('\n--- the page numbers somebody can actually use ---');
 
   // An ellipsis standing in for one page is wider than the page it hides.
   is('a single skipped page is printed, not hidden', pageWindow(4, 6).join(','), '1,2,3,4,5,6');
+}
+
+console.log('\n--- how tall the table is allowed to get ---');
+{
+  // The default suits a laptop and wastes most of a large screen, so the
+  // bottom edge is draggable and where it was put is remembered. What is
+  // remembered is a pixel count, and the screen it comes back on is not
+  // necessarily the screen it was set on.
+  const laptop = 800;
+
+  is('a height that fits is left alone', clampTableHeight(600, laptop), 600);
+  is(
+    'one saved on a bigger screen comes back fitting this one',
+    clampTableHeight(1400, laptop),
+    laptop - TABLE_BOTTOM_GAP,
+  );
+  is('dragged up past the top, it stops at a few rows', clampTableHeight(40, laptop), MIN_TABLE_HEIGHT);
+  is('and a negative drag is the same', clampTableHeight(-500, laptop), MIN_TABLE_HEIGHT);
+
+  // A box taller than the screen scrolls the page to show its bottom edge,
+  // which puts the sticky header off the top - the table loses the thing the
+  // extra height was for.
+  yes('never taller than the screen it is on', clampTableHeight(5000, laptop) <= laptop);
+
+  // Nonsense out of localStorage is a height, not a crash.
+  is('a stored nonsense height falls back', clampTableHeight(Number.NaN, laptop), MIN_TABLE_HEIGHT);
+
+  // A screen too short for the minimum still gets the minimum. Rendering a
+  // box of no height is not the better answer.
+  is('a tiny viewport gets the minimum anyway', clampTableHeight(400, 150), MIN_TABLE_HEIGHT);
+}
+
+console.log('\n--- double-clicking the grip fills the screen ---');
+{
+  const laptop = 900;
+
+  is('from 300px down the page', fitTableHeight(300, laptop), 900 - 300 - TABLE_BOTTOM_GAP);
+  yes(
+    'the bottom edge lands on the bottom of the screen',
+    fitTableHeight(300, laptop) + 300 + TABLE_BOTTOM_GAP === laptop,
+  );
+
+  // Scrolled past the top of the table, its top is negative. That is a
+  // position, and what comes back has to be a height.
+  yes(
+    'scrolled past the top, it still fits the screen',
+    fitTableHeight(-400, laptop) <= laptop - TABLE_BOTTOM_GAP,
+  );
+
+  // Scrolled so far that the table is off the bottom, there is no room left.
+  is('no room left still gives a usable box', fitTableHeight(laptop, laptop), MIN_TABLE_HEIGHT);
 }
 
 console.log(failed ? `\n  ${failed} FAILED\n` : '\n  all passed\n');

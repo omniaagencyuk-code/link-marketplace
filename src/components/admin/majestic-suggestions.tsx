@@ -143,7 +143,7 @@ export function MajesticSuggestions({
           </p>
         ) : null}
 
-        <TableScroll>
+        <TableScroll storageKey="admin.majestic.height" label="suggestion list">
           <Table>
             <caption className="sr-only">Suggested categories from Majestic topics</caption>
             <thead>

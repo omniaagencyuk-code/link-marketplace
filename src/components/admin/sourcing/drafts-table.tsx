@@ -225,7 +225,7 @@ export function DraftsTable({ drafts }: { drafts: DraftRow[] }) {
         </p>
       ) : null}
 
-      <TableScroll>
+      <TableScroll storageKey="admin.drafts.height" label="draft list">
         <Table>
           <caption className="sr-only">Listing drafts awaiting review</caption>
           <thead>

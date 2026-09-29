@@ -731,7 +731,7 @@ export function AdminWebsitesTable({
         </div>
       ) : null}
 
-      <TableScroll>
+      <TableScroll storageKey="admin.websites.height" label="website list">
         <Table>
           <caption className="sr-only">Website database</caption>
           <thead>
