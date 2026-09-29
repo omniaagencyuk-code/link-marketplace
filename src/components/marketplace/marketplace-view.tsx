@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Sheet } from '@/components/ui/sheet';
 import { CategoryPills } from './category-pills';
+import { TopicPicker } from './topic-picker';
 import { FilterSidebar } from './filter-sidebar';
 import { Pagination } from './pagination';
 import { ResultsToolbar } from './results-toolbar';
@@ -18,6 +19,7 @@ import {
   type MarketplaceFilters,
 } from '@/lib/hooks/use-marketplace-filters';
 import { runQuery } from '@/lib/services/query-engine';
+import { forTopic } from '@/lib/marketplace/topic';
 import type { LanguageCode, NicheSlug, WebsiteListItem } from '@/lib/types';
 
 /**
@@ -60,9 +62,19 @@ export function MarketplaceView({
   const toggleExpanded = (id: string) =>
     setExpandedId((current) => (current === id ? null : id));
 
+  /*
+    The topic is applied before the query, not inside it.
+
+    Narrowing to publishers who accept it and rewriting their prices to what
+    they charge for it means everything downstream - the sort, the price
+    range, the number on the card - agrees without a single one of them
+    having to know a topic exists.
+  */
+  const forSale = useMemo(() => forTopic(websites, filters.topic), [websites, filters.topic]);
+
   const result = useMemo(
-    () => runQuery(websites, toWebsiteQuery(filters, sort, page, pageSize)),
-    [websites, filters, sort, page, pageSize],
+    () => runQuery(forSale, toWebsiteQuery(filters, sort, page, pageSize)),
+    [forSale, filters, sort, page, pageSize],
   );
 
   const nicheCounts = useMemo(() => {
@@ -102,6 +114,12 @@ export function MarketplaceView({
 
   return (
     <div className="space-y-5">
+      <TopicPicker
+        topic={filters.topic}
+        matching={forSale.length}
+        onChange={(topic) => patchFilters({ topic })}
+      />
+
       <CategoryPills
         selected={filters.niches}
         onToggle={toggleNiche}
@@ -132,6 +150,7 @@ export function MarketplaceView({
               count={selected.length}
               onClear={() => setSelected([])}
               websites={result.items.filter((item) => selected.includes(item.id))}
+              topic={filters.topic}
             />
           ) : null}
 

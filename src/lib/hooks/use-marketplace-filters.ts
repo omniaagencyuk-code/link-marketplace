@@ -10,12 +10,22 @@ import type {
   NicheSlug,
   SortKey,
   WebsiteQuery,
+  AcceptedNicheSlug,
 } from '@/lib/types';
 
 export type MarketplaceView = 'table' | 'grid';
 
 export interface MarketplaceFilters {
   search: string;
+  /**
+   * What the buyer is buying for.
+   *
+   * Not a filter like the others: it is the campaign's subject, set once, and
+   * it decides both which publishers appear and what they cost. Kept in the
+   * URL like everything else so a shortlist can be shared or bookmarked with
+   * the topic it was built for.
+   */
+  topic?: AcceptedNicheSlug;
   niches: NicheSlug[];
   countries: CountryCode[];
   languages: LanguageCode[];
@@ -56,6 +66,7 @@ function num(value: string | null): number | undefined {
 function parseFilters(params: URLSearchParams): MarketplaceFilters {
   return {
     search: params.get('q') ?? '',
+    topic: (params.get('topic') as AcceptedNicheSlug | null) ?? undefined,
     niches: csv(params.get('niche')) as NicheSlug[],
     countries: csv(params.get('country')) as CountryCode[],
     languages: csv(params.get('lang')) as LanguageCode[],
@@ -88,6 +99,7 @@ function serialise(
   };
 
   set('q', filters.search.trim());
+  if (filters.topic) set('topic', filters.topic);
   if (filters.niches.length) set('niche', filters.niches.join(','));
   if (filters.countries.length) set('country', filters.countries.join(','));
   if (filters.languages.length) set('lang', filters.languages.join(','));
@@ -115,6 +127,9 @@ function serialise(
 export function countActiveFilters(filters: MarketplaceFilters) {
   let count = 0;
   if (filters.search.trim()) count += 1;
+  // The topic is not counted as a filter. It is the question being asked,
+  // not a narrowing of the answer, and showing "1 filter" beside it invites
+  // somebody to clear it without noticing what it was doing.
   count += filters.niches.length;
   count += filters.countries.length;
   count += filters.languages.length;

@@ -20,7 +20,8 @@
     "verify:delivery": "tsx scripts/verify-delivery.mts",
     "flatten": "node scripts/flatten-migration.mjs",
     "verify:email": "tsx scripts/verify-email.mts",
-    "verify:gmail": "tsx scripts/verify-gmail.mts"
+    "verify:gmail": "tsx scripts/verify-gmail.mts",
+    "verify:marketplace": "tsx scripts/verify-marketplace.mts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.128.0",
