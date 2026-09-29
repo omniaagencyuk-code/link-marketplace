@@ -133,6 +133,50 @@ export const categories: Category[] = [
     createdAt: now,
     updatedAt: now,
   },
+  /*
+    The three below came from the inventory, not from a brainstorm.
+
+    Mapping nine hundred domains' Majestic topics onto the first thirteen
+    left two hundred and twenty-seven unplaced, and they clustered: fifty-three
+    in news and media, forty-seven in science and the environment,
+    thirty-seven in education and reference. Without a home each would have
+    landed under whichever existing category was least wrong, which is how a
+    filter stops meaning anything.
+
+    Geography did not get one. Seventy-two domains lead with a Regional topic,
+    and "Europe" is not something anybody shops for - those keep whatever
+    category a human gives them.
+  */
+  {
+    id: 'cat-news-media',
+    slug: 'news-media',
+    name: 'News & Media',
+    description: 'Newspapers, magazines, broadcasters and the media industry.',
+    position: 14,
+    featured: false,
+    createdAt: now,
+    updatedAt: now,
+  },
+  {
+    id: 'cat-science-environment',
+    slug: 'science-environment',
+    name: 'Science & Environment',
+    description: 'Research, climate, energy, agriculture and the natural world.',
+    position: 15,
+    featured: false,
+    createdAt: now,
+    updatedAt: now,
+  },
+  {
+    id: 'cat-education',
+    slug: 'education',
+    name: 'Education & Reference',
+    description: 'Schools, universities, courses, libraries and archives.',
+    position: 16,
+    featured: false,
+    createdAt: now,
+    updatedAt: now,
+  },
 ];
 
 export const categoryBySlug = new Map<NicheSlug, Category>(

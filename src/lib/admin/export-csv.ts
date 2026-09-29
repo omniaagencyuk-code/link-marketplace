@@ -20,12 +20,21 @@
 /** Characters a spreadsheet will try to evaluate when they lead a cell. */
 const FORMULA_LEAD = /^[=+\-@\t\r]/;
 
+/**
+ * Make a cell a spreadsheet will not evaluate.
+ *
+ * Exported on its own because the CSV importer writes files too, and two
+ * copies of this is how the rule gets fixed in one place and not the other.
+ */
+export function defuseFormula(text: string): string {
+  return FORMULA_LEAD.test(text) ? `'${text}` : text;
+}
+
 export function csvCell(value: unknown): string {
   if (value == null) return '';
 
-  let text = String(value);
   // Defused before quoting, so the apostrophe ends up inside the quotes.
-  if (FORMULA_LEAD.test(text)) text = `'${text}`;
+  const text = defuseFormula(String(value));
 
   // A cell needs quoting if it contains the delimiter, a quote or a newline.
   // Quoting more than necessary is harmless; quoting less corrupts the file.

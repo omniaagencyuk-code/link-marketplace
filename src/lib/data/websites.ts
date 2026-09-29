@@ -287,6 +287,8 @@ function buildWebsite(raw: RawWebsite, index: number): Website {
     metrics,
     services,
     nichePrices: buildNichePrices(services, rules.acceptedNiches, random),
+    // Seed data carries no Majestic reading: it is imported, never invented.
+    topics: [],
     rules,
     verified: random() > 0.12,
     status,

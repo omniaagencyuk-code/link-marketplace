@@ -11,7 +11,18 @@ export type NicheSlug =
   | 'entertainment'
   | 'automotive'
   | 'food'
-  | 'home-garden';
+  | 'home-garden'
+  /*
+    Added from the inventory rather than invented.
+
+    Nine hundred domains' Majestic topics cluster in three places the first
+    thirteen had no home for: news and media, environment and science, and
+    education and reference. Without them a tenth of the marketplace would
+    sit under whichever existing category was least wrong.
+  */
+  | 'news-media'
+  | 'science-environment'
+  | 'education';
 
 export interface Category {
   id: string;

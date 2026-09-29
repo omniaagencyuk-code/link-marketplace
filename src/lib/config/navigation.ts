@@ -10,6 +10,7 @@ import {
   Globe,
   Inbox,
   LayoutDashboard,
+  Network,
   Newspaper,
   Package,
   PenLine,
@@ -103,6 +104,7 @@ export const adminNav: NavItem[] = [
   { label: 'Publisher inbox', href: '/admin/sourcing', icon: Inbox },
   { label: 'Pricing', href: '/admin/pricing', icon: Calculator },
   { label: 'Ahrefs refresh', href: '/admin/refresh', icon: RefreshCw },
+  { label: 'Majestic', href: '/admin/majestic', icon: Network },
   { label: 'Settings', href: '/admin/settings', icon: Settings },
 ];
 

@@ -44,6 +44,20 @@ export function WebsiteMetrics({ website }: { website: Website }) {
             : undefined
         }
       />
+      {/* Only where Majestic has been over this listing. An unmeasured site
+          showing "0" would be a claim we have not made, and 0 is a real and
+          terrible reading - the two must not look the same. */}
+      {typeof metrics.trustFlow === 'number' ? (
+        <Cell
+          label="Trust Flow"
+          value={String(metrics.trustFlow)}
+          hint={
+            typeof metrics.citationFlow === 'number'
+              ? `Citation Flow ${metrics.citationFlow}`
+              : 'Majestic, 0-100'
+          }
+        />
+      ) : null}
       <div className="bg-white px-4 py-4">
         <dt className="text-[11px] font-medium tracking-wide text-muted uppercase">
           Traffic Trend

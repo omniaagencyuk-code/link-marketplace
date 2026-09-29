@@ -1,4 +1,6 @@
 import Papa from 'papaparse';
+import { defuseFormula } from '@/lib/admin/export-csv';
+import { downloadTextFile } from '@/lib/admin/download';
 import { templateExampleRow, templateHeaders } from './fields';
 
 /** Upload limits, surfaced in the UI so they are never a surprise. */
@@ -43,38 +45,26 @@ export function parseCsvFile(file: File): Promise<ParsedCsv> {
 }
 
 /**
- * Neutralise spreadsheet formula injection.
+ * The same escaping and the same download as the website export uses.
  *
- * A cell beginning =, +, - or @ is executed by Excel and Sheets when the file
- * is opened, so prefix those with a single quote before writing any CSV.
+ * There were two copies of both for a while, which is how a rule about
+ * leading = and + comes to be fixed in one file and not the other. Papa Parse
+ * still does the quoting here, because it is already the reader above's
+ * dependency; only the formula guard is shared, that one being a security
+ * rule rather than a formatting choice.
  */
-function escapeCsvCell(value: string): string {
-  const text = String(value ?? '');
-  return /^[=+\-@\t\r]/.test(text) ? `'${text}` : text;
-}
-
 export function toCsv(headers: string[], rows: (string | number)[][]): string {
   return Papa.unparse(
     {
       fields: headers,
-      data: rows.map((row) => row.map((cell) => escapeCsvCell(String(cell)))),
+      data: rows.map((row) => row.map((cell) => defuseFormula(String(cell)))),
     },
     { quotes: true },
   );
 }
 
-/** Trigger a download in the browser without needing a server round trip. */
 export function downloadCsv(fileName: string, contents: string) {
-  // The BOM keeps Excel happy with UTF-8 accents.
-  const blob = new Blob([`﻿${contents}`], { type: 'text/csv;charset=utf-8;' });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = fileName;
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-  URL.revokeObjectURL(url);
+  downloadTextFile(fileName, contents);
 }
 
 /** The downloadable template: headers plus one example row. */

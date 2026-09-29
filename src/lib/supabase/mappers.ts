@@ -47,6 +47,10 @@ export interface WebsiteRow {
   rating: number | string | null;
   completed_orders: number | null;
   domain_rating: number | null;
+  trust_flow?: number | null;
+  citation_flow?: number | null;
+  majestic_updated_at?: string | null;
+  website_topics?: { position: number; topic: string; value: number }[] | null;
   organic_traffic: number | null;
   referring_domains: number | null;
   traffic_trend: number[] | null;
@@ -119,7 +123,8 @@ export const WEBSITE_SELECT = `
   primary_category:categories!websites_primary_category_id_fkey (slug),
   website_categories (categories (slug)),
   services (*),
-  website_niche_prices (niche, link_type, price_minor, agency_price_minor)
+  website_niche_prices (niche, link_type, price_minor, agency_price_minor),
+  website_topics (position, topic, value)
 `;
 
 /**
@@ -137,6 +142,7 @@ export const WEBSITE_SELECT_ADMIN = `
   website_categories (categories (slug)),
   services (*, service_costs (cost_price_minor)),
   website_niche_prices (niche, link_type, price_minor, agency_price_minor),
+  website_topics (position, topic, value),
   website_contacts (email, contact_name, notes),
   website_commercials (cost_currency)
 `;
@@ -252,6 +258,10 @@ export function mapWebsite(row: WebsiteRow): Website {
       domainRating: toNumber(row.domain_rating),
       organicTraffic: toNumber(row.organic_traffic),
       referringDomains: toNumber(row.referring_domains),
+      // Optional, not defaulted: an unmeasured trust flow is a gap, and a
+      // card must not print it as a zero.
+      ...(typeof row.trust_flow === 'number' ? { trustFlow: row.trust_flow } : {}),
+      ...(typeof row.citation_flow === 'number' ? { citationFlow: row.citation_flow } : {}),
       trafficTrend: row.traffic_trend ?? [],
       trafficChangePct: toOptionalNumber(row.traffic_change_pct),
       topCountryShare: toOptionalNumber(row.top_country_share),
@@ -278,6 +288,13 @@ export function mapWebsite(row: WebsiteRow): Website {
       }))
       .filter((entry) => entry.priceMinor > 0)
       .sort((a, b) => b.priceMinor - a.priceMinor),
+    // In Majestic's own order rather than re-sorted by value: the position is
+    // part of the measurement, and a row set can come back from the database
+    // in any order at all.
+    topics: [...(row.website_topics ?? [])]
+      .sort((a, b) => a.position - b.position)
+      .map((entry) => ({ topic: entry.topic, value: toNumber(entry.value) })),
+    ...(row.majestic_updated_at ? { majesticUpdatedAt: row.majestic_updated_at } : {}),
     rules: {
       minWordCount: toNumber(row.min_word_count, 800),
       maxWordCount: toNumber(row.max_word_count, 2000),

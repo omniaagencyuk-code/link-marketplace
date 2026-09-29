@@ -140,6 +140,33 @@ export interface WebsiteMetrics {
   audienceSplit: { country: CountryCode; share: number; traffic?: number }[];
   /** Undefined means not measured. Zero is a real - and good - reading. */
   spamScore?: number;
+  /**
+   * Majestic Trust Flow, 0-100.
+   *
+   * Undefined means nobody has measured it, which is not the same as zero and
+   * is why this is optional where the three at the top are not. A card
+   * printing "TF 0" for an unmeasured site makes a claim we have not made -
+   * the same distinction the costs already keep.
+   */
+  trustFlow?: number;
+  /** Majestic Citation Flow, 0-100. Undefined means unmeasured. */
+  citationFlow?: number;
+}
+
+/**
+ * What links to a site, in Majestic's words.
+ *
+ * Deliberately not a category. A Topical Trust Flow topic describes the
+ * backlink profile, not what the site publishes: of 910 domains measured, 38
+ * led with a gambling topic, against the hundreds whose publishers have said
+ * in writing that they will run gambling content. It is shown to a buyer as
+ * evidence and it suggests a category to an admin; it never sets one.
+ */
+export interface WebsiteTopic {
+  /** Majestic's own path, e.g. "Recreation/Travel". */
+  topic: string;
+  /** Trust flow attributed to that topic, 0-100. */
+  value: number;
 }
 
 /**
@@ -174,6 +201,10 @@ export interface Website {
   services: Service[];
   /** Price overrides per niche. Empty means the service prices stand. */
   nichePrices: NichePrice[];
+  /** Up to three Majestic topics, strongest first. Empty when unmeasured. */
+  topics: WebsiteTopic[];
+  /** When a Majestic export last wrote to this listing. */
+  majesticUpdatedAt?: string;
   /**
    * Publisher contact details, for admin surfaces only.
    *

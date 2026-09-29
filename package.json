@@ -22,7 +22,8 @@
     "verify:email": "tsx scripts/verify-email.mts",
     "verify:gmail": "tsx scripts/verify-gmail.mts",
     "verify:marketplace": "tsx scripts/verify-marketplace.mts",
-    "verify:admin": "tsx scripts/verify-admin.mts"
+    "verify:admin": "tsx scripts/verify-admin.mts",
+    "verify:majestic": "tsx scripts/verify-majestic.mts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.128.0",

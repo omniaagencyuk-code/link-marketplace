@@ -8,6 +8,7 @@ import { FavouriteButton } from './favourite-button';
 import { AddToOrderButton } from './add-to-order-button';
 import { WebsiteSnippet } from './website-snippet';
 import { nicheName } from '@/lib/data/categories';
+import { FlowMetrics, TopicChips } from './majestic-badges';
 import { countryShortName } from '@/lib/data/countries';
 import { formatCompactNumber, formatPrice, formatTurnaround } from '@/lib/utils/format';
 import { linkTypeLabels } from '@/lib/utils/labels';
@@ -100,7 +101,19 @@ export function WebsiteCard({
         <span aria-hidden="true">&middot;</span>
         <span>{countryShortName(website.country)}</span>
         <LinkTypeList types={website.availableLinkTypes} />
+        {/* Nothing renders where nothing has been measured, so a card without
+            a Majestic reading looks exactly as it did before. */}
+        <FlowMetrics
+          trustFlow={website.metrics.trustFlow}
+          citationFlow={website.metrics.citationFlow}
+        />
       </div>
+
+      {website.topics.length > 0 ? (
+        <div className="mt-2">
+          <TopicChips topics={website.topics} />
+        </div>
+      ) : null}
 
       <div className="mt-4 flex items-center justify-between gap-3">
         <div>

@@ -6,6 +6,7 @@ import { rateCard } from '@/lib/utils/pricing';
 import { formatDate, formatNumber, formatPrice, formatTurnaround } from '@/lib/utils/format';
 import { languageLabels, linkTypeLabels, sponsoredTagLabels } from '@/lib/utils/labels';
 import { journeySteps } from '@/lib/config/how-it-works';
+import { TopicChips } from '@/components/marketplace/majestic-badges';
 import type { Website } from '@/lib/types';
 
 export function WebsiteSections({ website }: { website: Website }) {
@@ -57,8 +58,35 @@ export function WebsiteSections({ website }: { website: Website }) {
               value={`${metrics.trafficChangePct > 0 ? '+' : ''}${metrics.trafficChangePct}%`}
             />
           ) : null}
+          {typeof metrics.trustFlow === 'number' ? (
+            <Row label="Trust Flow" value={String(metrics.trustFlow)} />
+          ) : null}
+          {typeof metrics.citationFlow === 'number' ? (
+            <Row label="Citation Flow" value={String(metrics.citationFlow)} />
+          ) : null}
           <Row label="Language" value={languageLabels[website.language] ?? website.language} />
         </dl>
+
+        {/*
+          What links here, as its own statement rather than mixed in with the
+          numbers above. It describes the backlink profile and not what the
+          site publishes, and saying so is the difference between a useful
+          signal and a misleading one: this site's category is on the page
+          already, and the two disagreeing is normal.
+        */}
+        {website.topics.length > 0 ? (
+          <div className="mt-5 border-t border-line pt-4">
+            <p className="text-[12px] font-medium text-ink">What links here</p>
+            <div className="mt-2">
+              <TopicChips topics={website.topics} />
+            </div>
+            <p className="mt-2 text-[12px] leading-relaxed text-muted">
+              Majestic&rsquo;s Topical Trust Flow: the subjects the sites linking here write about.
+              It describes the backlink profile rather than what this publisher covers.
+            </p>
+          </div>
+        ) : null}
+
         <p className="mt-4 text-[12px] text-muted">
           Metrics are refreshed monthly from third party SEO data providers and verified against the
           publisher&rsquo;s analytics during vetting.
