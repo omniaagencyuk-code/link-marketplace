@@ -19,11 +19,12 @@ import { ratesFromSource, RATE_MOVE_THRESHOLD_PCT } from '../src/lib/services/fx
 import { breakdownSteps } from '../src/lib/pricing/steps';
 import { formatPrice } from '../src/lib/utils/format';
 import {
+  losingPlacements,
   marginBlock,
+  placementMargins,
   serviceMargin,
   servicesInForeignCurrency,
-  websiteMargin,
-  websiteMarginConverted,
+  worstPlacement,
 } from '../src/lib/utils/margin';
 import type { Service } from '../src/lib/types';
 import { placementPrice, tierFor } from '../src/lib/utils/pricing';
@@ -484,21 +485,23 @@ console.log('\n--- a cost is never subtracted from a price in other money ---');
   is('and is not reported as a missing cost', marginBlock(unstated, 'GBP'), 'foreign-currency');
   is('a missing cost still reads as one', marginBlock(noCost, 'GBP'), 'no-cost');
 
-  // The site total must drop the foreign row rather than adding it in at
-  // face value, which would understate the margin on every mixed listing.
+  // A foreign cost is dropped rather than added in at face value, which
+  // would understate the margin on every mixed listing.
   const site = { services: [pounds, { ...dollars, type: 'niche-edit' as const }] };
-  is('the site total counts only what it can compare', websiteMargin(site, 'GBP')?.costMinor, 10900);
+  is('only what can be compared gets a margin', placementMargins(site, undefined, 'GBP').length, 1);
   is('and counts the foreign one so it can be explained', servicesInForeignCurrency(site, 'GBP'), 1);
 
   // Selling in dollars one day would make the dollar cost the comparable one.
   is('the comparison follows what we sell in', serviceMargin(dollars, 'USD')?.profitMinor, 3600);
 }
 
-console.log('\n--- the admin table, in our own money ---');
+console.log('\n--- the admin table, per placement and in our own money ---');
 {
-  // "in FX" is honest and useless. Once the engine has converted the cost,
-  // the table can show both sides in GBP - and must show the true cost, not
-  // the raw conversion, or the profit is one we do not make.
+  // The row used to sum both placements: both prices added together, both
+  // costs added together, one profit underneath. It described a sale nobody
+  // makes - a customer buys a guest post or a niche edit, never both - and it
+  // hid the thing the table exists to show, because a fat guest post margin
+  // covers a niche edit sold below cost and the total still reads healthy.
   const base = {
     websiteId: 'w1', turnaroundMinDays: 1, turnaroundMaxDays: 5, available: true,
   };
@@ -510,19 +513,54 @@ console.log('\n--- the admin table, in our own money ---');
   };
 
   const trueCosts = { 'guest-post': 9313, 'niche-edit': 4300 };
-  const converted = websiteMarginConverted(site, trueCosts);
-  is('the dollar cost becomes a sterling one', converted?.costMinor, 13613);
-  is('and the profit is the difference in sterling', converted?.profitMinor, 25000 - 13613);
-  is('with a margin percentage of the sell price', converted?.marginPct, 45.5);
+  const margins = placementMargins(site, trueCosts);
 
-  // A placement the engine has not priced is left out of both sides, not
-  // counted as free - the same rule the native version follows.
-  const partial = websiteMarginConverted(site, { 'guest-post': 9313 });
-  is('an unpriced placement is left out of the cost', partial?.costMinor, 9313);
-  is('and out of the price it is compared against', partial?.priceMinor, 15500);
+  is('one line per placement, not one for the site', margins.length, 2);
+  is('the engine\u2019s converted cost is the one used', margins[0]?.costMinor, 9313);
+  is('and the profit is that placement alone', margins[0]?.profitMinor, 15500 - 9313);
+  is('as a percentage of its own price', margins[0]?.marginPct, 39.9);
+  is('the other stands on its own too', margins[1]?.profitMinor, 9500 - 4300);
+  is('and is marked as the engine\u2019s figure', margins[0]?.converted, true);
 
-  is('a site the engine has never seen yields nothing', websiteMarginConverted(site, undefined), null);
-  is('and so does an empty calculation set', websiteMarginConverted(site, {}), null);
+  // The whole point: the thinnest margin, because the best case is never the
+  // one losing money.
+  is('the worst placement is the one reported', worstPlacement(margins)?.type, 'guest-post');
+
+  const hidden = placementMargins(site, { 'guest-post': 9313, 'niche-edit': 11000 });
+  // Summed, this listing shows 25000 - 20313 = a healthy 18.7%. Per
+  // placement, the niche edit is 1500 in the red and cannot hide.
+  is('a losing placement is not hidden by a winning one', losingPlacements(hidden).length, 1);
+  is('and it is the one reported as worst', worstPlacement(hidden)?.type, 'niche-edit');
+  is('with the loss stated', worstPlacement(hidden)?.profitMinor, -1500);
+
+  // We sell in dollars, so a dollar cost needs no engine to be comparable.
+  // A placement the engine has not reached falls back to the publisher's own
+  // number rather than vanishing from the table.
+  const halfPriced = placementMargins(site, { 'guest-post': 9313 });
+  is('the engine\u2019s figure wins where there is one', halfPriced[0]?.costMinor, 9313);
+  is('and the other falls back to the raw cost', halfPriced[1]?.costMinor, 5000);
+  is('which is marked as not the engine\u2019s', halfPriced[1]?.converted, false);
+  is('a site the engine has never seen still shows both', placementMargins(site, undefined).length, 2);
+
+  // A cost in a currency we do not sell in is left out entirely rather than
+  // subtracted anyway. Subtracting 109 pounds from 155 dollars produces a
+  // number, and the number is nonsense.
+  const foreign = {
+    services: [{ ...base, id: 'a', type: 'guest-post' as const, priceMinor: 15500, costPriceMinor: 10900, costCurrency: 'GBP' }],
+  };
+  is('a cost we cannot compare is left out', placementMargins(foreign, undefined).length, 0);
+  is('until the engine converts it', placementMargins(foreign, { 'guest-post': 9313 }).length, 1);
+
+  // No sell price is not a loss. Every listing sourced from an email arrives
+  // at zero on purpose, and calling three hundred of those "below cost" would
+  // bury the handful that really are.
+  const draft = {
+    services: [{ ...base, id: 'a', type: 'guest-post' as const, priceMinor: 0, costPriceMinor: 10900, costCurrency: 'USD' }],
+  };
+  const draftMargins = placementMargins(draft);
+  is('an unpriced placement says so', draftMargins[0]?.unpriced, true);
+  is('and is not counted as losing money', losingPlacements(draftMargins).length, 0);
+  is('nor offered as the worst margin', worstPlacement(draftMargins), null);
 
   // The sell price comes from the listing, not the calculation, so a price
   // set by hand shows the margin actually being earned on it.
@@ -531,7 +569,7 @@ console.log('\n--- the admin table, in our own money ---');
   };
   is(
     'a hand-set price is measured against the real cost',
-    websiteMarginConverted(overridden, { 'guest-post': 9313 })?.profitMinor,
+    placementMargins(overridden, { 'guest-post': 9313 })[0]?.profitMinor,
     2687,
   );
 }
@@ -576,6 +614,48 @@ console.log('\n--- what stops a listing being published ---');
     }),
     null,
   );
+
+  // A placement on sale for less than we pay for it. The engine cannot make
+  // one - it lifts every markup to the minimum margin and rounds up - so this
+  // is a hand-set price, or a publisher who raised theirs after we priced
+  // them, which moves the cost and leaves the sell price exactly where it was.
+  is(
+    'selling below cost blocks publishing',
+    publishBlocker({ services: [service({ priceMinor: 9000, costPriceMinor: 10900, costCurrency: 'USD' })] }),
+    'below-cost',
+  );
+  is(
+    'and so does selling at exactly cost',
+    publishBlocker({ services: [service({ priceMinor: 10900, costPriceMinor: 10900, costCurrency: 'USD' })] }),
+    'below-cost',
+  );
+  is(
+    'a cent of margin is enough to publish',
+    publishBlocker({ services: [service({ priceMinor: 10901, costPriceMinor: 10900, costCurrency: 'USD' })] }),
+    null,
+  );
+  // A cost in a currency we do not sell in needs the rate, the buffer and the
+  // fee before it means anything against our price, and none of that is on
+  // the service row. Comparing it here would refuse listings that are fine.
+  is(
+    'a foreign cost is left alone rather than compared badly',
+    publishBlocker({ services: [service({ priceMinor: 9000, costPriceMinor: 10900, costCurrency: 'GBP' })] }),
+    null,
+  );
+  // A loss on a placement nobody can buy is not a loss.
+  is(
+    'a switched-off placement below cost does not block a good one',
+    publishBlocker({
+      services: [
+        service({ available: false, priceMinor: 9000, costPriceMinor: 10900, costCurrency: 'USD' }),
+        service({ id: 'b', type: 'niche-edit' as const }),
+      ],
+    }),
+    null,
+  );
+  publishBlockerMessage('below-cost').includes('below what we pay')
+    ? ok('and the message names the problem')
+    : bad('the below-cost message does not say what is wrong');
 }
 
 console.log('\n--- what the rates panel should say ---');

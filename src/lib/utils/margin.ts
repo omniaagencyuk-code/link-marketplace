@@ -65,30 +65,107 @@ export function marginBlock(service: Service, currency = brand.currency): Margin
 }
 
 /**
- * The whole site's position, across the services whose cost we can actually
- * compare.
+ * What each placement makes us, one line per placement.
  *
- * Services with no cost, or a cost in another currency, are left out of both
- * sides of the sum rather than counted as free or counted at face value, so
- * the percentage describes only what is genuinely known.
+ * The site used to be summed: both placements' prices added together, both
+ * their costs added together, one profit underneath. It produced a row like
+ * "guest post 159, niche edit 159, cost 195.28, profit 122.72" - describing
+ * a sale nobody has ever made, because a customer buys one placement or the
+ * other and never both.
+ *
+ * Worse than meaningless, it hid things. A fat margin on a guest post covers
+ * a niche edit sold below cost, and the total still reads healthy. The
+ * question this table exists to answer is whether every placement makes
+ * money, and a sum cannot answer it.
+ *
+ * The engine's converted cost wins where there is one, for every listing and
+ * not only the foreign ones - otherwise a site would change which arithmetic
+ * it was shown with depending on where its publisher banks. A placement with
+ * no usable cost is left out entirely rather than counted as free.
  */
-export function websiteMargin(
+export interface PlacementMargin {
+  type: string;
+  priceMinor: number;
+  costMinor: number;
+  profitMinor: number;
+  /** Profit as a percentage of price, rounded to one decimal. */
+  marginPct: number;
+  /** The engine's converted cost was used rather than the publisher's number. */
+  converted: boolean;
+  /**
+   * No sell price set.
+   *
+   * Not the same as losing money, and the difference matters: every listing
+   * sourced from a publisher's email arrives priced at zero on purpose, and
+   * calling three hundred of those "below cost" would bury the handful that
+   * really are.
+   */
+  unpriced: boolean;
+}
+
+export function placementMargins(
   website: Pick<Website, 'services'>,
+  trueCostByType?: Record<string, number>,
   currency = brand.currency,
-): Margin | null {
-  const priced = website.services.filter((service) => comparable(service, currency));
+): PlacementMargin[] {
+  const margins: PlacementMargin[] = [];
+
+  for (const service of website.services) {
+    const engineCost = trueCostByType?.[service.type];
+    const usable =
+      typeof engineCost === 'number'
+        ? { costMinor: engineCost, converted: true }
+        : comparable(service, currency)
+          ? { costMinor: service.costPriceMinor as number, converted: false }
+          : null;
+
+    if (!usable) continue;
+
+    const priceMinor = service.priceMinor;
+    const profitMinor = priceMinor - usable.costMinor;
+
+    margins.push({
+      type: service.type,
+      priceMinor,
+      costMinor: usable.costMinor,
+      profitMinor,
+      marginPct: priceMinor > 0 ? Math.round((profitMinor / priceMinor) * 1000) / 10 : 0,
+      converted: usable.converted,
+      unpriced: priceMinor <= 0,
+    });
+  }
+
+  return margins;
+}
+
+/**
+ * The thinnest margin on the listing.
+ *
+ * What belongs in a column somebody scans three hundred rows of: the worst
+ * case is the one worth knowing, because the best case is never the one that
+ * loses money. Unpriced placements are not candidates - there is no margin on
+ * something nobody can buy.
+ */
+export function worstPlacement(margins: PlacementMargin[]): PlacementMargin | null {
+  const priced = margins.filter((margin) => !margin.unpriced);
   if (priced.length === 0) return null;
 
-  const priceMinor = priced.reduce((total, service) => total + service.priceMinor, 0);
-  const costMinor = priced.reduce((total, service) => total + (service.costPriceMinor ?? 0), 0);
-  const profitMinor = priceMinor - costMinor;
+  return priced.reduce((worst, margin) =>
+    margin.marginPct < worst.marginPct ? margin : worst,
+  );
+}
 
-  return {
-    priceMinor,
-    costMinor,
-    profitMinor,
-    marginPct: priceMinor > 0 ? Math.round((profitMinor / priceMinor) * 1000) / 10 : 0,
-  };
+/**
+ * Placements sold at or below what they cost us.
+ *
+ * The engine cannot produce one: it adds the band's markup, lifts it to the
+ * minimum margin and rounds the price up. So these come from a price set by
+ * hand, or - the one that matters - from a publisher raising their price
+ * after we priced them, which moves the cost and leaves the sell price where
+ * it was. Nothing shouts when that happens, which is why it is counted.
+ */
+export function losingPlacements(margins: PlacementMargin[]): PlacementMargin[] {
+  return margins.filter((margin) => !margin.unpriced && margin.profitMinor <= 0);
 }
 
 /** How many of a site's services still have no cost recorded. */
@@ -111,40 +188,4 @@ export function servicesInForeignCurrency(
     (service) =>
       typeof service.costPriceMinor === 'number' && !comparable(service, currency),
   ).length;
-}
-
-/**
- * The site's position in our own money, whatever the publisher charges in.
- *
- * `trueCostByType` comes from `price_calculations`: the publisher's price
- * converted at the stored rate, with the buffer, the payment fee and any VAT
- * they add. It is what the placement actually costs us, so it is the only
- * figure a sterling profit can honestly be worked out against.
- *
- * Only placements with both a sell price and a calculated cost are counted.
- * A service the engine has not priced is left out of both sides rather than
- * counted as free - the same rule the native-currency version follows, for
- * the same reason.
- */
-export function websiteMarginConverted(
-  website: Pick<Website, 'services'>,
-  trueCostByType: Record<string, number> | undefined,
-): Margin | null {
-  if (!trueCostByType) return null;
-
-  const counted = website.services.filter(
-    (service) => typeof trueCostByType[service.type] === 'number',
-  );
-  if (counted.length === 0) return null;
-
-  const priceMinor = counted.reduce((total, service) => total + service.priceMinor, 0);
-  const costMinor = counted.reduce((total, service) => total + trueCostByType[service.type], 0);
-  const profitMinor = priceMinor - costMinor;
-
-  return {
-    priceMinor,
-    costMinor,
-    profitMinor,
-    marginPct: priceMinor > 0 ? Math.round((profitMinor / priceMinor) * 1000) / 10 : 0,
-  };
 }

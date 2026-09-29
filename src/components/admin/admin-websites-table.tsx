@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useMemo, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
-import { Archive, Copy, MoreHorizontal, Pencil, Search, Eye, Trash2, X } from 'lucide-react';
+import { AlertTriangle, Archive, Copy, MoreHorizontal, Pencil, Search, Eye, Trash2, X } from 'lucide-react';
 import { Dropdown, DropdownItem } from '@/components/ui/dropdown';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -30,10 +30,11 @@ import { nicheName } from '@/lib/data/categories';
 import { countryShortName } from '@/lib/data/countries';
 import { formatCompactNumber, formatPrice, formatTurnaround } from '@/lib/utils/format';
 import {
+  losingPlacements,
+  placementMargins,
   servicesInForeignCurrency,
-  servicesMissingCost,
-  websiteMargin,
-  websiteMarginConverted,
+  worstPlacement,
+  type PlacementMargin,
 } from '@/lib/utils/margin';
 import type { WebsiteListItem, WebsiteStatus } from '@/lib/types';
 
@@ -63,6 +64,7 @@ export function AdminWebsitesTable({
   const [pending, startTransition] = useTransition();
   /** Live counts while a bulk action is running, so the bar means something. */
   const [progress, setProgress] = useState<BulkProgress | null>(null);
+  const [onlyLosing, setOnlyLosing] = useState(false);
 
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [confirmingDelete, setConfirmingDelete] = useState(false);
@@ -70,14 +72,36 @@ export function AdminWebsitesTable({
   // delete, and quietly misreports what just happened to the data.
   const [result, setResult] = useState<(BulkResult & { verb: string }) | null>(null);
 
+  /**
+   * Listings selling a placement at or below what it costs us.
+   *
+   * The engine cannot produce one - it adds the band's markup, lifts it to
+   * the minimum margin and rounds up - so these come from a price set by
+   * hand, or from a publisher raising their price after we priced them, which
+   * moves the cost and leaves the sell price where it was. Nothing shouts
+   * when that happens, so it is counted here and the count is a filter.
+   */
+  const losing = useMemo(
+    () =>
+      new Set(
+        websites
+          .filter(
+            (website) => losingPlacements(placementMargins(website, trueCosts[website.id])).length > 0,
+          )
+          .map((website) => website.id),
+      ),
+    [websites, trueCosts],
+  );
+
   const rows = useMemo(() => {
     const needle = term.trim().toLowerCase();
     return websites.filter((website) => {
+      if (onlyLosing && !losing.has(website.id)) return false;
       if (status !== 'all' && website.status !== status) return false;
       if (!needle) return true;
       return `${website.domain} ${website.title} ${website.niche}`.toLowerCase().includes(needle);
     });
-  }, [websites, term, status]);
+  }, [websites, term, status, onlyLosing, losing]);
 
   // Select-all applies to what is on screen, not to the whole database.
   // Filtering to "draft" and ticking the header should publish those drafts,
@@ -192,63 +216,92 @@ export function AdminWebsitesTable({
   }
 
   /**
-   * Our position on a listing.
+   * What each placement on this listing makes us.
    *
-   * A dash means no cost has been recorded, which is not the same as breaking
-   * even - showing a zero there would read as "this costs us nothing" and
-   * quietly overstate the margin on every site nobody has priced yet.
-   *
-   * It also means a cost we cannot subtract here: a publisher quoting in
-   * dollars needs the rate, the buffer and the payment fee applied before
-   * their number means anything against a sterling price, and all three live
-   * in the pricing engine. The dash is honest; the figure this used to print
-   * was not.
+   * Per placement, never summed. The row used to add both prices together and
+   * both costs together and print one profit underneath, which describes a
+   * sale nobody makes: a customer buys a guest post or a niche edit, not
+   * both. It also hid the thing this table exists to show - a fat guest post
+   * margin covers a niche edit sold below cost, and the total still reads
+   * healthy.
    */
-  /**
-   * The converted figure where the engine has one, the native one otherwise.
-   *
-   * A publisher quoting in dollars has no sterling cost until the engine has
-   * converted it, so the engine's answer is preferred for every listing, not
-   * only the foreign ones - otherwise a site would change which arithmetic it
-   * was displayed with depending on where its publisher banks.
-   */
-  function marginOf(website: WebsiteListItem) {
-    const converted = websiteMarginConverted(website, trueCosts[website.id]);
-    if (converted) return { margin: converted, converted: true };
-
-    const native = websiteMargin(website);
-    return native ? { margin: native, converted: false } : null;
+  function marginsFor(website: WebsiteListItem): PlacementMargin[] {
+    return placementMargins(website, trueCosts[website.id]);
   }
 
-  function costOf(website: WebsiteListItem) {
-    const result = marginOf(website);
-    if (!result) return <span className="text-muted">&mdash;</span>;
+  /**
+   * One placement's price, with what it costs us and what it leaves.
+   *
+   * The cost sits under the price it belongs to rather than in a column of
+   * its own, because there is no single cost for a listing - only a cost per
+   * thing somebody can buy.
+   */
+  function placementCell(website: WebsiteListItem, type: string) {
+    const service = website.services.find((candidate) => candidate.type === type);
+    if (!service) return <span className="text-muted">&mdash;</span>;
+
+    const margin = marginsFor(website).find((entry) => entry.type === type);
 
     return (
-      <span
-        title={
-          result.converted
-            ? 'What the placement costs us in GBP: the publisher\u2019s price converted at the stored rate, plus the FX buffer, the payment fee and any VAT they add.'
-            : 'What we pay the publisher.'
-        }
-      >
-        {formatPrice(result.margin.costMinor)}
-      </span>
+      <>
+        <span className="block text-ink-soft">{formatPrice(service.priceMinor)}</span>
+        {!margin ? (
+          <span
+            className="block text-[11px] text-muted"
+            title={
+              servicesInForeignCurrency(website) > 0
+                ? 'Priced in another currency and not yet run through the engine. Recalculate on the Pricing screen and the cost appears here.'
+                : 'No cost recorded for this placement.'
+            }
+          >
+            no cost
+          </span>
+        ) : margin.unpriced ? (
+          <span
+            className="block text-[11px] text-muted"
+            title="Costs us this much, with no sell price set yet. Nothing can be bought until it is priced."
+          >
+            costs {formatPrice(margin.costMinor)}
+          </span>
+        ) : (
+          <span
+            className={`block text-[11px] ${margin.profitMinor > 0 ? 'text-muted' : 'text-coral-700'}`}
+            title={
+              margin.converted
+                ? 'The publisher\u2019s price converted at the stored rate, plus the FX buffer, the payment fee and any VAT they add.'
+                : 'What we pay the publisher.'
+            }
+          >
+            {/* Labelled, because a bare pair of numbers under a price reads
+                as a range. */}
+            cost {formatPrice(margin.costMinor)} &middot;{' '}
+            {margin.profitMinor > 0 ? '+' : ''}
+            {formatPrice(margin.profitMinor)}
+          </span>
+        )}
+      </>
     );
   }
 
-  function profitOf(website: WebsiteListItem) {
-    const result = marginOf(website);
-    const foreign = servicesInForeignCurrency(website);
+  /**
+   * The thinnest margin on the listing.
+   *
+   * The worst case is the one worth knowing in a column somebody scans three
+   * hundred rows of, because the best case is never the one losing money.
+   */
+  function marginCell(website: WebsiteListItem) {
+    const margins = marginsFor(website);
+    const worst = worstPlacement(margins);
 
-    if (!result) {
+    if (!worst) {
+      const unpriced = margins.filter((margin) => margin.unpriced).length;
       return (
         <span
           className="text-muted"
           title={
-            foreign > 0
-              ? 'Priced in another currency and not yet run through the engine. Recalculate on the Pricing screen and the GBP cost and profit appear here.'
-              : 'No cost recorded.'
+            unpriced > 0
+              ? 'Nothing has a sell price yet, so there is no margin to show. Price it on the Pricing screen.'
+              : 'No cost recorded, so no margin can be worked out.'
           }
         >
           &mdash;
@@ -256,27 +309,19 @@ export function AdminWebsitesTable({
       );
     }
 
-    const margin = result.margin;
-    const missing = servicesMissingCost(website);
+    const priced = margins.filter((margin) => !margin.unpriced).length;
     return (
-      <span className={margin.profitMinor >= 0 ? 'text-accent-700' : 'text-coral-700'}>
-        {formatPrice(margin.profitMinor)}
-        <span className="ml-1 text-muted">({margin.marginPct}%)</span>
-        {missing > 0 ? (
-          <span
-            className="ml-1 text-muted"
-            title={`${missing} service${missing === 1 ? '' : 's'} with no cost recorded, left out of this figure`}
-          >
-            *
-          </span>
-        ) : null}
+      <span
+        className={worst.profitMinor > 0 ? 'text-accent-700' : 'text-coral-700'}
+        title={
+          priced > 1
+            ? `The thinnest of ${priced} placements: ${worst.type} at ${worst.marginPct}%.`
+            : `${worst.type} at ${worst.marginPct}%.`
+        }
+      >
+        {worst.marginPct}%
       </span>
     );
-  }
-
-  function priceFor(website: WebsiteListItem, type: string) {
-    const service = website.services.find((candidate) => candidate.type === type);
-    return service ? formatPrice(service.priceMinor) : '—';
   }
 
   return (
@@ -318,6 +363,28 @@ export function AdminWebsitesTable({
         </div>
         <p className="tabular text-[13px] text-muted">{rows.length} websites</p>
       </div>
+
+      {losing.size > 0 ? (
+        <div className="flex flex-wrap items-center gap-2 rounded-[var(--radius-card)] border border-coral-200 bg-coral-50 px-4 py-3 text-[13px]">
+          <AlertTriangle className="h-4 w-4 shrink-0 text-coral-700" aria-hidden="true" />
+          <p className="text-coral-700">
+            <span className="font-medium">
+              {losing.size} {losing.size === 1 ? 'listing sells' : 'listings sell'} a placement at or
+              below cost.
+            </span>{' '}
+            The engine never prices one that way, so either the price was set by hand or the
+            publisher has put their price up since.
+          </p>
+          <div className="ml-auto flex items-center gap-2">
+            <Button size="sm" variant="outline" onClick={() => setOnlyLosing((on) => !on)}>
+              {onlyLosing ? 'Show all' : 'Show only these'}
+            </Button>
+            <Button asChild size="sm" variant="accent">
+              <Link href="/admin/pricing">Reprice</Link>
+            </Button>
+          </div>
+        </div>
+      ) : null}
 
       {selected.size > 0 ? (
         <div className="flex flex-wrap items-center gap-2 rounded-[var(--radius-card)] border border-navy-900/15 bg-navy-900/[0.03] px-4 py-3">
@@ -495,10 +562,13 @@ export function AdminWebsitesTable({
               <Th>DR</Th>
               <Th>Traffic</Th>
               <Th>Ref. domains</Th>
+              {/* Price, then what it costs us and what it leaves, per
+                  placement. There is no single cost for a listing - only a
+                  cost per thing somebody can buy - so the old Cost and Profit
+                  columns, which summed both, have gone. */}
               <Th className="text-right">Guest post</Th>
               <Th className="text-right">Niche edit</Th>
-              <Th className="text-right">Cost</Th>
-              <Th className="text-right">Profit</Th>
+              <Th className="text-right">Margin</Th>
               <Th>Turnaround</Th>
               <Th>Status</Th>
               <Th className="w-12 text-right">
@@ -538,16 +608,13 @@ export function AdminWebsitesTable({
                 <Td className="tabular text-[13px] text-ink-soft">
                   {formatCompactNumber(website.metrics.referringDomains)}
                 </Td>
-                <Td className="tabular text-right text-[13px] text-ink-soft">
-                  {priceFor(website, 'guest-post')}
+                <Td className="tabular text-right text-[13px] whitespace-nowrap">
+                  {placementCell(website, 'guest-post')}
                 </Td>
-                <Td className="tabular text-right text-[13px] text-ink-soft">
-                  {priceFor(website, 'niche-edit')}
+                <Td className="tabular text-right text-[13px] whitespace-nowrap">
+                  {placementCell(website, 'niche-edit')}
                 </Td>
-                <Td className="tabular text-right text-[13px] text-muted">
-                  {costOf(website)}
-                </Td>
-                <Td className="tabular text-right text-[13px]">{profitOf(website)}</Td>
+                <Td className="tabular text-right text-[13px]">{marginCell(website)}</Td>
                 <Td className="tabular text-[13px] whitespace-nowrap text-ink-soft">
                   {website.headlineService
                     ? formatTurnaround(
