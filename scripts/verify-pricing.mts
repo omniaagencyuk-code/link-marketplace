@@ -18,6 +18,8 @@ import {
 import { ratesFromSource, RATE_MOVE_THRESHOLD_PCT } from '../src/lib/services/fx-service';
 import { breakdownSteps } from '../src/lib/pricing/steps';
 import { formatPrice } from '../src/lib/utils/format';
+import fs from 'node:fs';
+import path from 'node:path';
 import {
   generalMargin,
   losingPlacements,
@@ -757,6 +759,71 @@ console.log('\n--- what stops a listing being published ---');
   publishBlockerMessage('below-cost').includes('below what we pay')
     ? ok('and the message names the problem')
     : bad('the below-cost message does not say what is wrong');
+}
+
+console.log('\n--- no pricing read is allowed to come back half full ---');
+/*
+  The one that cost nine hundred listings.
+
+  `calculate` used to fetch services, niche costs and niche prices whole - no
+  filter, no paging - and narrow them in the loops afterwards. That works
+  until the inventory outgrows one page of rows, and then it fails in the
+  worst way there is: the rows past the end are never priced, and nothing
+  anywhere says so. Listings came back from approval with their cost recorded
+  and their sell price still zero, including when the run was asked for that
+  one listing by id.
+
+  Checked in the source rather than remembered, because the next person to add
+  a table here will write the same unfiltered select, and the symptom is
+  silence.
+*/
+{
+  const source = fs.readFileSync(
+    path.join(process.cwd(), 'src/lib/services/pricing-service.ts'),
+    'utf8',
+  );
+
+  /*
+    One query, not everything after it.
+
+    Splitting on the semicolon was the first attempt, and it passed with the
+    filter deleted: these three queries sit inside one `await Promise.all([
+    ... ]);`, so the text after the first of them contained the other two -
+    and their filters counted as its own. A query ends at the next `.from(`.
+  */
+  const queriesOn = (table: string) => {
+    const found: string[] = [];
+    const opener = `.from('${table}')`;
+    for (let at = source.indexOf(opener); at !== -1; at = source.indexOf(opener, at + 1)) {
+      const rest = source.slice(at + opener.length);
+      const nextTable = rest.indexOf('.from(');
+      const end = rest.indexOf(';');
+      const stop = [nextTable, end].filter((index) => index !== -1);
+      found.push(rest.slice(0, stop.length ? Math.min(...stop) : rest.length));
+    }
+    return found.filter((query) => query.includes('.select('));
+  };
+
+  const keyedToAWebsite = ['services', 'website_niche_costs', 'website_niche_prices'];
+  const unbounded: string[] = [];
+
+  for (const table of keyedToAWebsite) {
+    for (const query of queriesOn(table)) {
+      if (!query.includes("in('website_id'")) unbounded.push(table);
+    }
+  }
+
+  is('every pricing read is keyed to the listings it is for', unbounded.join(','), '');
+
+  // price_calculations is read for the whole table by the websites screen, so
+  // it cannot be keyed the same way - it is paged instead.
+  const calculations = queriesOn('price_calculations');
+  is('there is a read to check', calculations.length > 0, true);
+  is(
+    'and the one that cannot be keyed is paged',
+    calculations.every((query) => query.includes('.range(')),
+    true,
+  );
 }
 
 console.log('\n--- what the rates panel should say ---');

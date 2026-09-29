@@ -1,5 +1,6 @@
 import { getAdminScopedClient } from '@/lib/supabase/server';
 import type { TrueCostIndex } from '@/lib/utils/margin';
+import { chunk } from '@/lib/utils/chunk';
 import { isSupabaseEnabled } from '@/lib/supabase/config';
 import { fxService } from './fx-service';
 import {
@@ -57,6 +58,68 @@ const DEFAULT_RULES: PricingRules = {
   minMarginMinor: 4000,
   agencyDiscountPoints: 10,
 };
+
+/**
+ * How many rows one request may return before the server truncates it.
+ *
+ * Conservative on purpose. The cost of an extra round trip is a few
+ * milliseconds; the cost of one truncated read is a listing that comes back
+ * from approval with a cost and no sell price, and nothing anywhere saying
+ * why.
+ */
+const PAGE = 1000;
+
+/** How many listings' rows to ask for at once. */
+const WEBSITES_PER_READ = 200;
+
+/** How many rows to send in one upsert. */
+const ROWS_PER_WRITE = 500;
+
+/**
+ * How many single-row updates to have in flight at once.
+ *
+ * Services have no unique constraint to upsert on, so each is its own
+ * request. Sequentially, two and a half thousand of them is over a minute of
+ * round trips on a screen somebody is watching; in tens it is seconds, and
+ * ten concurrent writes is well inside what the connection pool expects.
+ */
+const WRITES_AT_ONCE = 10;
+
+/* eslint-disable @typescript-eslint/no-explicit-any */
+/** Every row a query matches, in pages, rather than the first page of them. */
+async function readPaged<T>(build: () => any): Promise<T[]> {
+  const all: T[] = [];
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await build().range(from, from + PAGE - 1);
+    if (error) break;
+    const rows = (data ?? []) as T[];
+    all.push(...rows);
+    if (rows.length < PAGE) break;
+  }
+  return all;
+}
+
+/**
+ * Rows for a set of listings, asked for in batches.
+ *
+ * Batched by listing rather than paged by offset because these tables are
+ * keyed on (website_id, niche, link_type) with no single column to order by
+ * safely - and an offset walk over an unstable order skips rows, which is the
+ * failure this exists to prevent.
+ */
+async function readByWebsite<T>(
+  websiteIds: string[],
+  build: (group: string[]) => any,
+): Promise<T[]> {
+  const all: T[] = [];
+  for (const group of chunk(websiteIds, WEBSITES_PER_READ)) {
+    const { data, error } = await build(group);
+    if (error) continue;
+    all.push(...((data ?? []) as T[]));
+  }
+  return all;
+}
+/* eslint-enable @typescript-eslint/no-explicit-any */
 
 export const pricingService = {
   async getSettings(): Promise<PricingSettings & { reason?: string }> {
@@ -297,26 +360,58 @@ export const pricingService = {
     const resolved = settings ?? (await pricingService.getSettings());
     const rates = await fxService.rateMap();
 
-    let websiteQuery = supabase
-      .from('websites')
-      .select(
-        'id, domain, status, website_commercials (cost_currency, payment_methods, prices_exclude_vat, vat_rate_pct)',
-      )
-      .neq('status', 'archived');
-    if (websiteIds?.length) websiteQuery = websiteQuery.in('id', websiteIds);
+    /*
+      Read the listings first, then everything else keyed to them.
 
-    const [websiteRows, serviceRows, nicheCostRows, nichePriceRows] = await Promise.all([
-      websiteQuery,
-      supabase.from('services').select('id, website_id, type, price_minor, price_override, service_costs (cost_price_minor)'),
-      supabase.from('website_niche_costs').select('website_id, niche, link_type, cost_minor, assumed'),
-      supabase.from('website_niche_prices').select('website_id, niche, link_type, price_minor, price_override'),
-    ]);
+      The three tables below used to be fetched whole, with no filter and no
+      paging, and then narrowed in the loops. That works until the inventory
+      outgrows one page of rows - and then it fails in the worst possible way,
+      because the rows that fall off the end are simply never priced and
+      nothing says so. Nine hundred listings is around two and a half thousand
+      services; the ones past the first page came back from approval with
+      their cost recorded, their sell price still zero, and no error anywhere.
 
+      Reading by website id fixes both halves: a single-listing run asks for
+      that listing's rows and nothing else, and a full run asks in batches
+      small enough that no batch can be truncated.
+    */
     /* eslint-disable @typescript-eslint/no-explicit-any */
-    const websites = (websiteRows.data ?? []) as any[];
-    const services = (serviceRows.data ?? []) as any[];
-    const nicheCosts = (nicheCostRows.data ?? []) as any[];
-    const nichePrices = (nichePriceRows.data ?? []) as any[];
+    const websites = await readPaged<any>(() =>
+      websiteIds?.length
+        ? supabase
+            .from('websites')
+            .select('id, domain, status, website_commercials (cost_currency, payment_methods, prices_exclude_vat, vat_rate_pct)')
+            .neq('status', 'archived')
+            .in('id', websiteIds)
+            .order('id')
+        : supabase
+            .from('websites')
+            .select('id, domain, status, website_commercials (cost_currency, payment_methods, prices_exclude_vat, vat_rate_pct)')
+            .neq('status', 'archived')
+            .order('id'),
+    );
+
+    const ids = websites.map((site) => String(site.id));
+    const [services, nicheCosts, nichePrices] = await Promise.all([
+      readByWebsite<any>(ids, (group) =>
+        supabase
+          .from('services')
+          .select('id, website_id, type, price_minor, price_override, service_costs (cost_price_minor)')
+          .in('website_id', group),
+      ),
+      readByWebsite<any>(ids, (group) =>
+        supabase
+          .from('website_niche_costs')
+          .select('website_id, niche, link_type, cost_minor, assumed')
+          .in('website_id', group),
+      ),
+      readByWebsite<any>(ids, (group) =>
+        supabase
+          .from('website_niche_prices')
+          .select('website_id, niche, link_type, price_minor, price_override')
+          .in('website_id', group),
+      ),
+    ]);
     /* eslint-enable @typescript-eslint/no-explicit-any */
 
     const commercialsFor = new Map(
@@ -502,11 +597,18 @@ export const pricingService = {
       }
     }
 
-    // Services are updated rather than upserted: the row already exists, and
-    // an upsert on (website_id, type) would need a unique constraint that
-    // does not exist.
-    for (const service of services) {
-      await supabase
+    /*
+      Services are updated rather than upserted: the row already exists, and
+      an upsert on (website_id, type) would need a unique constraint that does
+      not exist.
+
+      A few at a time rather than one after another. Nine hundred listings is
+      around two and a half thousand of these, and sequentially that is over a
+      minute of round trips for a screen somebody is watching - long enough to
+      be killed half way, leaving the inventory part priced.
+    */
+    const writeService = (service: Record<string, unknown>) =>
+      supabase
         .from('services')
         .update({
           price_minor: service.price_minor,
@@ -522,18 +624,21 @@ export const pricingService = {
         .eq('website_id', service.website_id)
         .eq('type', service.type)
         .eq('price_override', false);
+
+    for (const group of chunk(services, WRITES_AT_ONCE)) {
+      await Promise.all(group.map(writeService));
     }
 
-    if (nichePrices.length > 0) {
+    for (const group of chunk(nichePrices, ROWS_PER_WRITE)) {
       await supabase
         .from('website_niche_prices')
-        .upsert(nichePrices, { onConflict: 'website_id,niche,link_type' });
+        .upsert(group, { onConflict: 'website_id,niche,link_type' });
     }
 
-    if (calculations.length > 0) {
+    for (const group of chunk(calculations, ROWS_PER_WRITE)) {
       await supabase
         .from('price_calculations')
-        .upsert(calculations, { onConflict: 'website_id,link_type,niche' });
+        .upsert(group, { onConflict: 'website_id,link_type,niche' });
     }
 
     return {

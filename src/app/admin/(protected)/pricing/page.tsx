@@ -11,6 +11,14 @@ import { staleRates } from '@/lib/pricing/rates';
 
 export const dynamic = 'force-dynamic';
 
+/*
+  Recalculating runs inside a server action on this route, and it walks every
+  listing: nine hundred of them is a few thousand reads and writes. The
+  default function ceiling is nowhere near that, and a run killed half way
+  leaves the inventory part priced with nothing saying which part.
+*/
+export const maxDuration = 300;
+
 /**
  * Pricing.
  *
