@@ -43,10 +43,10 @@ import { nicheName } from '@/lib/data/categories';
 import { countryShortName } from '@/lib/data/countries';
 import { formatCompactNumber, formatPrice, formatTurnaround } from '@/lib/utils/format';
 import {
+  generalMargin,
   losingPlacements,
   placementLabel,
   placementMargins,
-  servicesInForeignCurrency,
   worstPlacement,
   type PlacementMargin,
   type TrueCostIndex,
@@ -276,22 +276,42 @@ export function AdminWebsitesTable({
     const service = website.services.find((candidate) => candidate.type === type);
     if (!service) return <span className="text-muted">&mdash;</span>;
 
-    const margin = marginsFor(website).find((entry) => entry.type === type);
+    // By topic as well as placement: this column is the general rate, and a
+    // listing with no general cost but a gambling one would otherwise print
+    // the gambling cost beside the general price.
+    const margin = generalMargin(marginsFor(website), service.type);
 
     return (
       <>
         <span className="block text-ink-soft">{formatPrice(service.priceMinor)}</span>
         {!margin ? (
-          <span
-            className="block text-[11px] text-muted"
-            title={
-              servicesInForeignCurrency(website) > 0
-                ? 'Priced in another currency and not yet run through the engine. Recalculate on the Pricing screen and the cost appears here.'
-                : 'No cost recorded for this placement.'
-            }
-          >
-            no cost
-          </span>
+          /*
+            Two different states, and they used to read the same.
+
+            A publisher quoting in another currency has a cost - we just
+            cannot subtract it from our price until the engine has converted
+            it, applied the buffer and the payment fee. Printing "no cost"
+            against their number sent somebody looking for a price that was
+            already recorded. Their figure is shown instead, in their money,
+            so the row says which of the two jobs it needs.
+          */
+          service.costPriceMinor != null ? (
+            <span
+              className="block text-[11px] text-muted"
+              title={`The publisher charges ${service.costCurrency ?? 'an unrecorded currency'}. Recalculate on the Pricing screen and the converted cost and margin appear here.`}
+            >
+              {service.costCurrency
+                ? `${formatPrice(service.costPriceMinor, { currency: service.costCurrency })} · not converted`
+                : 'cost in an unrecorded currency'}
+            </span>
+          ) : (
+            <span
+              className="block text-[11px] text-muted"
+              title="Nothing has been recorded for what this placement costs us, so it cannot be priced."
+            >
+              no cost recorded
+            </span>
+          )
         ) : margin.unpriced ? (
           <span
             className="block text-[11px] text-muted"

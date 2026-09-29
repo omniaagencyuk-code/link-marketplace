@@ -19,6 +19,7 @@ import { ratesFromSource, RATE_MOVE_THRESHOLD_PCT } from '../src/lib/services/fx
 import { breakdownSteps } from '../src/lib/pricing/steps';
 import { formatPrice } from '../src/lib/utils/format';
 import {
+  generalMargin,
   losingPlacements,
   marginBlock,
   placementLabel,
@@ -637,6 +638,18 @@ console.log('\n--- gambling has its own cost, and its own margin ---');
   is('against the gambling cost', exposed[1]?.costMinor, 70000);
   is('which is a loss nobody had declared', losingPlacements(exposed).length, 1);
   is('and publishing it is refused', publishBlocker(noOverride, costs), 'below-cost');
+
+  // The column showing the general price must read the general line, matched
+  // on topic as well as placement. On this listing the general cost is
+  // missing and the gambling one is not, so the first guest post line IS the
+  // gambling one - and finding by placement alone printed a zero sell price
+  // beside a hundred and three pounds of profit.
+  const noGeneralCost = placementMargins(site, { gambling: { 'guest-post': 70000 } });
+  is('the first line for this placement is the topic one', noGeneralCost[0]?.niche, 'gambling');
+  is('so the general column finds nothing rather than the wrong thing',
+    generalMargin(noGeneralCost, 'guest-post'), undefined);
+  is('and where there is a general line it is that one',
+    generalMargin(margins, 'guest-post')?.niche, null);
 
   // A topic that costs the general rate and sells at it is not a second line.
   // It would repeat the general margin under a dozen headings and drown the

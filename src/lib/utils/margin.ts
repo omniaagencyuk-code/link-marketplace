@@ -227,6 +227,24 @@ export function placementLabel(margin: PlacementMargin): string {
 }
 
 /**
+ * The margin on the rate that applies to everything else.
+ *
+ * Matched on the topic as well as the placement, which is the whole point.
+ * Finding by placement alone returns whichever line comes first, and where a
+ * listing has no general cost recorded but does have a gambling one, the
+ * first line for a guest post *is* the gambling one - so a column showing the
+ * general price printed a topic rate's cost and profit beside it. A zero sell
+ * price next to a hundred pounds of profit, which is not a rounding error but
+ * two different placements read as one.
+ */
+export function generalMargin(
+  margins: PlacementMargin[],
+  type: Service['type'],
+): PlacementMargin | undefined {
+  return margins.find((margin) => margin.type === type && margin.niche === null);
+}
+
+/**
  * The thinnest margin on the listing.
  *
  * What belongs in a column somebody scans three hundred rows of: the worst
@@ -254,11 +272,6 @@ export function worstPlacement(margins: PlacementMargin[]): PlacementMargin | nu
  */
 export function losingPlacements(margins: PlacementMargin[]): PlacementMargin[] {
   return margins.filter((margin) => !margin.unpriced && margin.profitMinor <= 0);
-}
-
-/** How many of a site's services still have no cost recorded. */
-export function servicesMissingCost(website: Pick<Website, 'services'>): number {
-  return website.services.filter((service) => typeof service.costPriceMinor !== 'number').length;
 }
 
 /**
