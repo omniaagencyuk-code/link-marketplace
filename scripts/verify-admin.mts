@@ -7,6 +7,7 @@
  */
 import { chunk } from '../src/lib/utils/chunk';
 import { csvCell, csvFilename, toCsv } from '../src/lib/admin/export-csv';
+import { pageWindow, paginate } from '../src/lib/admin/paging';
 import {
   BULK_CHUNK_SIZE,
   bulkProgressPercent,
@@ -148,6 +149,61 @@ console.log('\n--- the export is a file a spreadsheet can read ---');
   is('an empty selection still has its header', toCsv([], [{ header: 'Domain', value: () => '' }]), 'Domain\r\n');
 
   has('the filename carries the date', csvFilename('websites', new Date('2026-09-29T11:00:00Z')), 'websites-2026-09-29.csv');
+}
+
+console.log('\n--- a long table, a page at a time ---');
+{
+  const rows = Array.from({ length: 950 }, (_, at) => at + 1);
+
+  const first = paginate(rows, 1, 50);
+  is('the first page holds a page', first.rows.length, 50);
+  is('starting at the first row', first.rows[0], 1);
+  is('numbered from one, not zero', first.from, 1);
+  is('and says where it ends', first.to, 50);
+  is('950 rows at 50 a page is 19 pages', first.pages, 19);
+
+  const last = paginate(rows, 19, 50);
+  is('the last page holds the remainder', last.rows.length, 50);
+  is('and ends on the last row', last.to, 950);
+
+  /*
+    The clamp is the part that matters.
+
+    A filter that shrinks the list leaves the page number where it was, and
+    page 12 of a three-page list is an empty table with no way back - which
+    reads as "no results" for a filter that matched plenty.
+  */
+  const past = paginate(rows.slice(0, 60), 12, 50);
+  is('a page past the end comes back to the last one', past.page, 2);
+  is('with rows on it', past.rows.length, 10);
+
+  is('a page before the first is the first', paginate(rows, 0, 50).page, 1);
+  is('and so is a nonsense one', paginate(rows, Number.NaN, 50).page, 1);
+
+  // "All" is a real answer, and the one somebody picks before selecting
+  // everything to act on it.
+  const all = paginate(rows, 1, 0);
+  is('all of them is one page', all.pages, 1);
+  is('holding all of them', all.rows.length, 950);
+
+  const none = paginate([], 1, 50);
+  is('an empty list is one page', none.pages, 1);
+  is('and starts at nothing rather than at one', none.from, 0);
+}
+
+console.log('\n--- the page numbers somebody can actually use ---');
+{
+  is('one page needs no navigation', pageWindow(1, 1).join(','), '1');
+  is('a handful is printed in full', pageWindow(2, 4).join(','), '1,2,3,4');
+
+  // First, last, and a window around where you are. Nineteen numbers in a row
+  // is not navigation.
+  is('the middle of a long list gets gaps', pageWindow(10, 19).join(','), '1,,9,10,11,,19');
+  is('the start of one does not need the left gap', pageWindow(2, 19).join(','), '1,2,3,,19');
+  is('nor the end the right', pageWindow(18, 19).join(','), '1,,17,18,19');
+
+  // An ellipsis standing in for one page is wider than the page it hides.
+  is('a single skipped page is printed, not hidden', pageWindow(4, 6).join(','), '1,2,3,4,5,6');
 }
 
 console.log(failed ? `\n  ${failed} FAILED\n` : '\n  all passed\n');

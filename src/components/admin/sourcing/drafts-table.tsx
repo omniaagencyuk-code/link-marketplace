@@ -7,7 +7,10 @@ import { AlertTriangle, Check, Sparkles, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Table, TableWrap, Td, Th, Tr } from '@/components/ui/table';
+import { Table, Td, Th, Tr } from '@/components/ui/table';
+import { TableScroll } from '@/components/ui/table-scroll';
+import { Pagination } from '@/components/ui/pagination';
+import { DEFAULT_PAGE_SIZE, paginate, type PageSize } from '@/lib/admin/paging';
 import {
   approveSelectedAction,
   bulkApproveConfidentAction,
@@ -36,6 +39,16 @@ export function DraftsTable({ drafts }: { drafts: DraftRow[] }) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   /** How far through a run is, so the bar moves on real counts. */
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState<PageSize>(DEFAULT_PAGE_SIZE);
+
+  /*
+    Paging is display only. Both approve buttons work on the whole queue, not
+    on the page - approving two hundred drafts is the job, and making it four
+    page-loads of ticking would be a page break getting in the way of the
+    thing it was added to help with.
+  */
+  const paged = paginate(drafts, page, pageSize);
 
   /**
    * Approve these, a chunk at a time, and show the page the outcome.
@@ -212,14 +225,16 @@ export function DraftsTable({ drafts }: { drafts: DraftRow[] }) {
         </p>
       ) : null}
 
-      <TableWrap>
+      <TableScroll>
         <Table>
           <caption className="sr-only">Listing drafts awaiting review</caption>
           <thead>
             <tr>
               <Th className="w-10">
                 <Checkbox
-                  aria-label={allSelected ? 'Clear selection' : 'Select every draft'}
+                  aria-label={
+                    allSelected ? 'Clear selection' : `Select all ${drafts.length} drafts`
+                  }
                   checked={allSelected}
                   indeterminate={someSelected}
                   onChange={() =>
@@ -238,7 +253,7 @@ export function DraftsTable({ drafts }: { drafts: DraftRow[] }) {
             </tr>
           </thead>
           <tbody>
-            {drafts.map((draft) => (
+            {paged.rows.map((draft) => (
               <Tr key={draft.id}>
                 <Td>
                   <Checkbox
@@ -299,7 +314,18 @@ export function DraftsTable({ drafts }: { drafts: DraftRow[] }) {
             ))}
           </tbody>
         </Table>
-      </TableWrap>
+      </TableScroll>
+
+      <Pagination
+        paged={paged}
+        size={pageSize}
+        noun="drafts"
+        onPage={setPage}
+        onSize={(next) => {
+          setPageSize(next);
+          setPage(1);
+        }}
+      />
     </div>
   );
 }

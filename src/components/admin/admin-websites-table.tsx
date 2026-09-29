@@ -22,7 +22,10 @@ import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
-import { Table, TableWrap, Td, Th, Tr } from '@/components/ui/table';
+import { Table, Td, Th, Tr } from '@/components/ui/table';
+import { TableScroll } from '@/components/ui/table-scroll';
+import { Pagination } from '@/components/ui/pagination';
+import { DEFAULT_PAGE_SIZE, paginate, type PageSize } from '@/lib/admin/paging';
 import { WebsiteStatusBadge } from '@/components/shared/status-badge';
 import { WebsiteRateCard } from '@/components/admin/website-rate-card';
 import {
@@ -89,6 +92,8 @@ export function AdminWebsitesTable({
   /** Live counts while a bulk action is running, so the bar means something. */
   const [progress, setProgress] = useState<BulkProgress | null>(null);
   const [onlyLosing, setOnlyLosing] = useState(false);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState<PageSize>(DEFAULT_PAGE_SIZE);
   /**
    * Listings whose full rate card is open.
    *
@@ -144,9 +149,31 @@ export function AdminWebsitesTable({
     });
   }, [websites, term, status, onlyLosing, losing]);
 
-  // Select-all applies to what is on screen, not to the whole database.
-  // Filtering to "draft" and ticking the header should publish those drafts,
-  // not every listing including the ones deliberately filtered out.
+  /*
+    Paging is display only. The header checkbox still selects everything the
+    filter matches, not the fifty rows on this page.
+
+    Filtering to "draft" and ticking the header is how two hundred drafts get
+    published in one go, and making that four page-loads of ticking would be
+    a page break getting in the way of the job it was added to help with. The
+    label says how many it will take, so it is never a surprise.
+  */
+  const paged = useMemo(() => paginate(rows, page, pageSize), [rows, page, pageSize]);
+
+  /*
+    Back to the first page whenever the set changes underneath.
+
+    Done where the filter changes rather than in an effect watching it.
+    Clamping alone would leave somebody on page 3 of a list that just became
+    one row, and an effect that calls setState is a second render for
+    something the click already knew.
+  */
+  function filterTo(change: () => void) {
+    change();
+    setPage(1);
+  }
+
+  // Select-all applies to what the filter matches, not to the whole database.
   const visibleIds = useMemo(() => rows.map((row) => row.id), [rows]);
   const selectedVisible = visibleIds.filter((id) => selected.has(id));
   const allVisibleSelected = visibleIds.length > 0 && selectedVisible.length === visibleIds.length;
@@ -482,7 +509,7 @@ export function AdminWebsitesTable({
             id="admin-website-search"
             type="search"
             value={term}
-            onChange={(event) => setTerm(event.target.value)}
+            onChange={(event) => filterTo(() => setTerm(event.target.value))}
             placeholder="Search domain, title or niche"
             className="h-9 pl-9 text-[13px]"
           />
@@ -495,7 +522,9 @@ export function AdminWebsitesTable({
             id="admin-status-filter"
             size="sm"
             value={status}
-            onChange={(event) => setStatus(event.target.value as WebsiteStatus | 'all')}
+            onChange={(event) =>
+              filterTo(() => setStatus(event.target.value as WebsiteStatus | 'all'))
+            }
           >
             {statusFilters.map((option) => (
               <option key={option.value} value={option.value}>
@@ -520,7 +549,11 @@ export function AdminWebsitesTable({
             margin, so either the price was set by hand or the publisher has put theirs up since.
           </p>
           <div className="ml-auto flex items-center gap-2">
-            <Button size="sm" variant="outline" onClick={() => setOnlyLosing((on) => !on)}>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => filterTo(() => setOnlyLosing((on) => !on))}
+            >
               {onlyLosing ? 'Show all' : 'Show only these'}
             </Button>
             <Button asChild size="sm" variant="accent">
@@ -698,7 +731,7 @@ export function AdminWebsitesTable({
         </div>
       ) : null}
 
-      <TableWrap>
+      <TableScroll>
         <Table>
           <caption className="sr-only">Website database</caption>
           <thead>
@@ -709,7 +742,9 @@ export function AdminWebsitesTable({
               <Th className="w-10">
                 <label className="flex items-center justify-center">
                   <span className="sr-only">
-                    {allVisibleSelected ? 'Clear selection' : 'Select all websites shown'}
+                    {allVisibleSelected
+                      ? 'Clear selection'
+                      : `Select all ${visibleIds.length} websites the filter matches`}
                   </span>
                   <Checkbox
                     checked={allVisibleSelected}
@@ -743,7 +778,7 @@ export function AdminWebsitesTable({
             </tr>
           </thead>
           <tbody>
-            {rows.map((website) => (
+            {paged.rows.map((website) => (
               <Fragment key={website.id}>
               <Tr>
                 <Td>
@@ -884,7 +919,20 @@ export function AdminWebsitesTable({
             ))}
           </tbody>
         </Table>
-      </TableWrap>
+      </TableScroll>
+
+      <Pagination
+        paged={paged}
+        size={pageSize}
+        noun="websites"
+        onPage={setPage}
+        onSize={(next) => {
+          setPageSize(next);
+          // Back to the first page: staying on page 7 while the page size
+          // trebles lands somewhere nobody asked to be.
+          setPage(1);
+        }}
+      />
     </div>
   );
 }

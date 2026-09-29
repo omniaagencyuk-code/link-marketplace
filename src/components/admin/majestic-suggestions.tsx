@@ -5,7 +5,10 @@ import { Check } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Table, TableWrap, Td, Th, Tr } from '@/components/ui/table';
+import { Table, Td, Th, Tr } from '@/components/ui/table';
+import { TableScroll } from '@/components/ui/table-scroll';
+import { Pagination } from '@/components/ui/pagination';
+import { DEFAULT_PAGE_SIZE, paginate, type PageSize } from '@/lib/admin/paging';
 import { acceptSuggestionsAction } from '@/app/admin/(protected)/majestic/actions';
 import { chunk } from '@/lib/utils/chunk';
 import type { MajesticSuggestion } from '@/lib/services/majestic-service';
@@ -33,6 +36,8 @@ export function MajesticSuggestions({
   const [busy, startTransition] = useTransition();
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [message, setMessage] = useState<string | null>(null);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState<PageSize>(DEFAULT_PAGE_SIZE);
 
   /*
     Listings with no category at all come first.
@@ -46,6 +51,9 @@ export function MajesticSuggestions({
     [suggestions],
   );
 
+  // Paging is display only: accepting works on the whole list, because the
+  // point of the list is to accept nine hundred of them in one go.
+  const paged = paginate(rows, page, pageSize);
   const allSelected = rows.length > 0 && selected.size === rows.length;
 
   function toggle(id: string) {
@@ -135,14 +143,16 @@ export function MajesticSuggestions({
           </p>
         ) : null}
 
-        <TableWrap>
+        <TableScroll>
           <Table>
             <caption className="sr-only">Suggested categories from Majestic topics</caption>
             <thead>
               <tr>
                 <Th className="w-10">
                   <Checkbox
-                    aria-label={allSelected ? 'Clear selection' : 'Select every suggestion'}
+                    aria-label={
+                      allSelected ? 'Clear selection' : `Select all ${rows.length} suggestions`
+                    }
                     checked={allSelected}
                     indeterminate={selected.size > 0 && !allSelected}
                     onChange={() =>
@@ -157,7 +167,7 @@ export function MajesticSuggestions({
               </tr>
             </thead>
             <tbody>
-              {rows.map((row) => (
+              {paged.rows.map((row) => (
                 <Tr key={row.websiteId}>
                   <Td>
                     <Checkbox
@@ -196,7 +206,18 @@ export function MajesticSuggestions({
               ))}
             </tbody>
           </Table>
-        </TableWrap>
+        </TableScroll>
+
+        <Pagination
+          paged={paged}
+          size={pageSize}
+          noun="listings"
+          onPage={setPage}
+          onSize={(next) => {
+            setPageSize(next);
+            setPage(1);
+          }}
+        />
       </CardContent>
     </Card>
   );

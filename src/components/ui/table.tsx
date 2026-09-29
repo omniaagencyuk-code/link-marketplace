@@ -21,7 +21,16 @@ export function Th({ className, ...props }: ThHTMLAttributes<HTMLTableCellElemen
   return (
     <th
       className={cn(
-        'overflow-hidden border-b border-line bg-surface/70 px-2.5 py-2.5 text-left text-[10px] font-semibold tracking-[0.04em] text-muted uppercase',
+        'overflow-hidden border-b border-line px-2.5 py-2.5 text-left text-[10px] font-semibold tracking-[0.04em] text-muted uppercase',
+        /*
+          Sticks to the top of the page as the rows go past.
+
+          Opaque rather than the translucent surface it used to be: a sticky
+          header with rows showing through it is harder to read than no
+          sticky header at all. The z-index clears the checkboxes and links
+          in the rows below, which would otherwise slide over it.
+        */
+        'sticky top-0 z-20 bg-surface',
         className,
       )}
       {...props}
