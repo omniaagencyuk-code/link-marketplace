@@ -18,6 +18,60 @@ import { cn } from '@/lib/utils/cn';
  */
 const EXTENSIONS = ['.webp', '.avif', '.png', '.svg'];
 
+/**
+ * The artwork's real size, for the space the browser reserves.
+ *
+ * The dimensions used to be two constants, correct for the first parrot
+ * drawn and wrong for every one after it. A picture that is 1374 wide
+ * declared as 1263 does not render wrong - `h-auto w-full` governs that -
+ * but the browser holds the wrong shaped gap for it, and the page jumps when
+ * it arrives. On a landing page whose whole job is to look credible to a
+ * stranger, that jump is the first thing they see.
+ *
+ * Read from the file, so the next parrot needs no edit here either. Falls
+ * back to the drawn parrot's shape when the header cannot be read, which
+ * puts us exactly where we were before rather than anywhere worse.
+ */
+const FALLBACK_SIZE = { width: 1263, height: 1246 };
+
+function artworkSize(publicPath: string): { width: number; height: number } {
+  try {
+    const file = fs.readFileSync(path.join(process.cwd(), 'public', publicPath));
+
+    // PNG: width and height are big-endian 32-bit, straight after the IHDR tag.
+    const ihdr = file.indexOf('IHDR');
+    if (ihdr > 0) {
+      return { width: file.readUInt32BE(ihdr + 4), height: file.readUInt32BE(ihdr + 8) };
+    }
+
+    // WebP: three flavours, and they store the size in three different ways.
+    const vp8x = file.indexOf('VP8X');
+    if (vp8x > 0) {
+      const at = vp8x + 12;
+      return {
+        width: file.readUIntLE(at, 3) + 1,
+        height: file.readUIntLE(at + 3, 3) + 1,
+      };
+    }
+    const vp8l = file.indexOf('VP8L');
+    if (vp8l > 0) {
+      const bits = file.readUInt32LE(vp8l + 9);
+      return { width: (bits & 0x3fff) + 1, height: ((bits >> 14) & 0x3fff) + 1 };
+    }
+    const vp8 = file.indexOf('VP8 ');
+    if (vp8 > 0) {
+      return {
+        width: file.readUInt16LE(vp8 + 14) & 0x3fff,
+        height: file.readUInt16LE(vp8 + 16) & 0x3fff,
+      };
+    }
+  } catch {
+    // An unreadable file is not worth failing a landing page over.
+  }
+
+  return FALLBACK_SIZE;
+}
+
 function findArtwork(src: string): string | undefined {
   if (!src) return undefined;
 
@@ -50,6 +104,8 @@ export function NicheMascot({
 }) {
   const artwork = findArtwork(src);
   const uploaded = Boolean(artwork && /^https?:\/\//i.test(artwork));
+  // An uploaded image lives on another host, so there is no file to measure.
+  const size = artwork && !uploaded ? artworkSize(artwork) : FALLBACK_SIZE;
 
   return (
     <div className={cn('relative flex items-center justify-center', className)}>
@@ -74,16 +130,16 @@ export function NicheMascot({
           <img
             src={artwork}
             alt={alt}
-            width={1263}
-            height={1246}
+            width={size.width}
+            height={size.height}
             className="h-auto w-full drop-shadow-[0_18px_30px_rgba(11,27,43,0.16)]"
           />
         ) : (
           <Image
             src={artwork}
             alt={alt}
-            width={1263}
-            height={1246}
+            width={size.width}
+            height={size.height}
             priority
             sizes="(max-width: 640px) 70vw, (max-width: 1024px) 45vw, 32vw"
             className="h-auto w-full drop-shadow-[0_18px_30px_rgba(11,27,43,0.16)]"
