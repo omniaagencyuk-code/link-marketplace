@@ -26,15 +26,18 @@ import {
   groupSkipped,
   type BulkProgress,
 } from '@/lib/admin/bulk';
+import { acceptedNicheLabel } from '@/lib/config/accepted-niches';
 import { nicheName } from '@/lib/data/categories';
 import { countryShortName } from '@/lib/data/countries';
 import { formatCompactNumber, formatPrice, formatTurnaround } from '@/lib/utils/format';
 import {
   losingPlacements,
+  placementLabel,
   placementMargins,
   servicesInForeignCurrency,
   worstPlacement,
   type PlacementMargin,
+  type TrueCostIndex,
 } from '@/lib/utils/margin';
 import type { WebsiteListItem, WebsiteStatus } from '@/lib/types';
 
@@ -52,11 +55,12 @@ export function AdminWebsitesTable({
 }: {
   websites: WebsiteListItem[];
   /**
-   * What each listing costs us in GBP, by placement type, from the pricing
-   * engine. Without it a publisher quoting in dollars can only be shown as
-   * "not priced" - the raw number is not comparable with a sterling price.
+   * What each listing costs us in our own currency, by niche and then
+   * placement, from the pricing engine. Without it a publisher quoting in
+   * another currency can only be shown as "not priced" - their raw number is
+   * not comparable with our price.
    */
-  trueCosts?: Record<string, Record<string, number>>;
+  trueCosts?: Record<string, TrueCostIndex>;
 }) {
   const router = useRouter();
   const [term, setTerm] = useState('');
@@ -284,7 +288,13 @@ export function AdminWebsitesTable({
   }
 
   /**
-   * The thinnest margin on the listing.
+   * The thinnest margin on the listing, across everything sellable.
+   *
+   * Including the rate card: a gambling guest post is a different thing at a
+   * different price against a different cost, and it is the one most likely
+   * to be under water - the publisher charges more for it, and until this
+   * looked at it a site could sell gambling at the general price while paying
+   * the sensitive rate.
    *
    * The worst case is the one worth knowing in a column somebody scans three
    * hundred rows of, because the best case is never the one losing money.
@@ -310,16 +320,23 @@ export function AdminWebsitesTable({
     }
 
     const priced = margins.filter((margin) => !margin.unpriced).length;
+    const rateCard = margins.filter((margin) => margin.niche !== null).length;
     return (
       <span
         className={worst.profitMinor > 0 ? 'text-accent-700' : 'text-coral-700'}
         title={
           priced > 1
-            ? `The thinnest of ${priced} placements: ${worst.type} at ${worst.marginPct}%.`
-            : `${worst.type} at ${worst.marginPct}%.`
+            ? `The thinnest of ${priced} rates${rateCard > 0 ? ` (${rateCard} of them per topic)` : ''}: ${placementLabel(worst)} at ${worst.marginPct}%.`
+            : `${placementLabel(worst)} at ${worst.marginPct}%.`
         }
       >
         {worst.marginPct}%
+        {/* A listing whose worst rate is a topic rate rather than the general
+            one, marked so the column is not read as being about guest posts
+            and niche edits alone. */}
+        {worst.niche ? (
+          <span className="block text-[11px] text-muted">{acceptedNicheLabel(worst.niche)}</span>
+        ) : null}
       </span>
     );
   }
@@ -369,11 +386,12 @@ export function AdminWebsitesTable({
           <AlertTriangle className="h-4 w-4 shrink-0 text-coral-700" aria-hidden="true" />
           <p className="text-coral-700">
             <span className="font-medium">
-              {losing.size} {losing.size === 1 ? 'listing sells' : 'listings sell'} a placement at or
+              {losing.size} {losing.size === 1 ? 'listing sells' : 'listings sell'} something at or
               below cost.
             </span>{' '}
-            The engine never prices one that way, so either the price was set by hand or the
-            publisher has put their price up since.
+            Counted across the topic rates as well as the general ones, since a publisher charges
+            more for gambling than for anything else. The engine never prices below the minimum
+            margin, so either the price was set by hand or the publisher has put theirs up since.
           </p>
           <div className="ml-auto flex items-center gap-2">
             <Button size="sm" variant="outline" onClick={() => setOnlyLosing((on) => !on)}>

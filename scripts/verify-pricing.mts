@@ -21,6 +21,7 @@ import { formatPrice } from '../src/lib/utils/format';
 import {
   losingPlacements,
   marginBlock,
+  placementLabel,
   placementMargins,
   serviceMargin,
   servicesInForeignCurrency,
@@ -487,7 +488,7 @@ console.log('\n--- a cost is never subtracted from a price in other money ---');
 
   // A foreign cost is dropped rather than added in at face value, which
   // would understate the margin on every mixed listing.
-  const site = { services: [pounds, { ...dollars, type: 'niche-edit' as const }] };
+  const site = { services: [pounds, { ...dollars, type: 'niche-edit' as const }], nichePrices: [] };
   is('only what can be compared gets a margin', placementMargins(site, undefined, 'GBP').length, 1);
   is('and counts the foreign one so it can be explained', servicesInForeignCurrency(site, 'GBP'), 1);
 
@@ -510,9 +511,12 @@ console.log('\n--- the admin table, per placement and in our own money ---');
       { ...base, id: 'a', type: 'guest-post' as const, priceMinor: 15500, costPriceMinor: 10900, costCurrency: 'USD' },
       { ...base, id: 'b', type: 'niche-edit' as const, priceMinor: 9500, costPriceMinor: 5000, costCurrency: 'USD' },
     ],
+    nichePrices: [],
   };
 
-  const trueCosts = { 'guest-post': 9313, 'niche-edit': 4300 };
+  // Keyed by niche, then placement. The general rate lives under the empty
+  // string, which is how `price_calculations` records it.
+  const trueCosts = { '': { 'guest-post': 9313, 'niche-edit': 4300 } };
   const margins = placementMargins(site, trueCosts);
 
   is('one line per placement, not one for the site', margins.length, 2);
@@ -526,7 +530,7 @@ console.log('\n--- the admin table, per placement and in our own money ---');
   // one losing money.
   is('the worst placement is the one reported', worstPlacement(margins)?.type, 'guest-post');
 
-  const hidden = placementMargins(site, { 'guest-post': 9313, 'niche-edit': 11000 });
+  const hidden = placementMargins(site, { '': { 'guest-post': 9313, 'niche-edit': 11000 } });
   // Summed, this listing shows 25000 - 20313 = a healthy 18.7%. Per
   // placement, the niche edit is 1500 in the red and cannot hide.
   is('a losing placement is not hidden by a winning one', losingPlacements(hidden).length, 1);
@@ -536,7 +540,7 @@ console.log('\n--- the admin table, per placement and in our own money ---');
   // We sell in dollars, so a dollar cost needs no engine to be comparable.
   // A placement the engine has not reached falls back to the publisher's own
   // number rather than vanishing from the table.
-  const halfPriced = placementMargins(site, { 'guest-post': 9313 });
+  const halfPriced = placementMargins(site, { '': { 'guest-post': 9313 } });
   is('the engine\u2019s figure wins where there is one', halfPriced[0]?.costMinor, 9313);
   is('and the other falls back to the raw cost', halfPriced[1]?.costMinor, 5000);
   is('which is marked as not the engine\u2019s', halfPriced[1]?.converted, false);
@@ -547,15 +551,17 @@ console.log('\n--- the admin table, per placement and in our own money ---');
   // number, and the number is nonsense.
   const foreign = {
     services: [{ ...base, id: 'a', type: 'guest-post' as const, priceMinor: 15500, costPriceMinor: 10900, costCurrency: 'GBP' }],
+    nichePrices: [],
   };
   is('a cost we cannot compare is left out', placementMargins(foreign, undefined).length, 0);
-  is('until the engine converts it', placementMargins(foreign, { 'guest-post': 9313 }).length, 1);
+  is('until the engine converts it', placementMargins(foreign, { '': { 'guest-post': 9313 } }).length, 1);
 
   // No sell price is not a loss. Every listing sourced from an email arrives
   // at zero on purpose, and calling three hundred of those "below cost" would
   // bury the handful that really are.
   const draft = {
     services: [{ ...base, id: 'a', type: 'guest-post' as const, priceMinor: 0, costPriceMinor: 10900, costCurrency: 'USD' }],
+    nichePrices: [],
   };
   const draftMargins = placementMargins(draft);
   is('an unpriced placement says so', draftMargins[0]?.unpriced, true);
@@ -566,12 +572,74 @@ console.log('\n--- the admin table, per placement and in our own money ---');
   // set by hand shows the margin actually being earned on it.
   const overridden = {
     services: [{ ...base, id: 'a', type: 'guest-post' as const, priceMinor: 12000, costPriceMinor: 10900, costCurrency: 'USD' }],
+    nichePrices: [],
   };
   is(
     'a hand-set price is measured against the real cost',
-    placementMargins(overridden, { 'guest-post': 9313 })[0]?.profitMinor,
+    placementMargins(overridden, { '': { 'guest-post': 9313 } })[0]?.profitMinor,
     2687,
   );
+}
+
+console.log('\n--- gambling has its own cost, and its own margin ---');
+{
+  // The one this was built for. A publisher quotes 400 generally and 700 for
+  // gambling. The general rate was the only thing measured, so the listing
+  // showed a healthy margin while every gambling order lost money - and
+  // gambling is the topic the whole niche landing page exists to sell.
+  const base = { websiteId: 'w1', turnaroundMinDays: 1, turnaroundMaxDays: 5, available: true };
+  const site = {
+    services: [{ ...base, id: 'a', type: 'guest-post' as const, priceMinor: 55000 }],
+    nichePrices: [
+      { websiteId: 'w1', niche: 'gambling', linkType: 'guest-post' as const, priceMinor: 55000 },
+    ],
+  };
+
+  // 400 general, 700 for gambling, both converted by the engine.
+  const costs = { '': { 'guest-post': 40000 }, gambling: { 'guest-post': 70000 } };
+  const margins = placementMargins(site, costs);
+
+  is('the rate card gets a line of its own', margins.length, 2);
+  is('the general placement is fine', margins[0]?.profitMinor, 15000);
+  is('and the gambling one is not', margins[1]?.profitMinor, -15000);
+  is('which is the one reported', worstPlacement(margins)?.niche, 'gambling');
+  is('and it is named in words, not slugs', placementLabel(worstPlacement(margins)!), 'Gambling and iGaming Guest Post');
+  is('the loss is counted', losingPlacements(margins).length, 1);
+
+  // Summed the old way this listing looked healthy: one placement, 550
+  // against 400. The topic rate is where the money went.
+  is('publishing it is refused', publishBlocker(site, costs), 'below-cost');
+
+  // Priced properly for gambling, it publishes.
+  const priced = {
+    ...site,
+    nichePrices: [
+      { websiteId: 'w1', niche: 'gambling', linkType: 'guest-post' as const, priceMinor: 95000 },
+    ],
+  };
+  is('once the gambling rate covers the gambling cost', publishBlocker(priced, costs), null);
+  // 950 against 700 is 26.3%; 550 against 400 is 27.3%. Gambling is still the
+  // thinner of the two, which is the point of reporting the worst rather than
+  // the average - the topic somebody actually buys is the one under pressure.
+  is('though it is still the thinner of the two', worstPlacement(placementMargins(priced, costs))?.niche, 'gambling');
+  is('and both are now in profit', losingPlacements(placementMargins(priced, costs)).length, 0);
+
+  // A topic the publisher never priced separately costs what everything else
+  // costs. Measuring it again would repeat the general margin under a dozen
+  // headings and drown the one that differs.
+  const noOverride = { ...site, nichePrices: [] };
+  is('a topic with no rate of its own is not a second line', placementMargins(noOverride, costs).length, 1);
+
+  // A topic rate on a placement nobody can buy is not a loss.
+  const withdrawn = {
+    ...site,
+    services: [{ ...base, id: 'a', type: 'guest-post' as const, priceMinor: 55000, available: false }],
+  };
+  is('a withdrawn placement blocks for its own reason', publishBlocker(withdrawn, costs), 'priced-but-off');
+
+  // Without the engine's figures nothing can be said about a topic rate, and
+  // saying nothing is right: the publisher's own number is in their currency.
+  is('no calculations means no topic margins', placementMargins(site, undefined).length, 0);
 }
 
 console.log('\n--- what stops a listing being published ---');
@@ -582,15 +650,15 @@ console.log('\n--- what stops a listing being published ---');
     priceMinor: 19500, available: true, ...patch,
   });
 
-  is('a priced, switched-on listing publishes', publishBlocker({ services: [service()] }), null);
+  is('a priced, switched-on listing publishes', publishBlocker({ services: [service()], nichePrices: [] }), null);
   is(
     'no services at all is unpriced',
-    publishBlocker({ services: [] }),
+    publishBlocker({ services: [], nichePrices: [] }),
     'unpriced',
   );
   is(
     'a service priced at zero is unpriced',
-    publishBlocker({ services: [service({ priceMinor: 0 })] }),
+    publishBlocker({ services: [service({ priceMinor: 0 })], nichePrices: [] }),
     'unpriced',
   );
 
@@ -599,7 +667,7 @@ console.log('\n--- what stops a listing being published ---');
   // and the guard said "no sell price" about a listing showing $195.
   is(
     'priced but switched off is its own answer, not "unpriced"',
-    publishBlocker({ services: [service({ available: false })] }),
+    publishBlocker({ services: [service({ available: false })], nichePrices: [] }),
     'priced-but-off',
   );
   publishBlockerMessage('priced-but-off').includes('switched off')
@@ -611,6 +679,7 @@ console.log('\n--- what stops a listing being published ---');
     'one good placement among dead ones is enough',
     publishBlocker({
       services: [service({ available: false }), service({ id: 'b', type: 'niche-edit' as const })],
+      nichePrices: [],
     }),
     null,
   );
@@ -621,17 +690,17 @@ console.log('\n--- what stops a listing being published ---');
   // them, which moves the cost and leaves the sell price exactly where it was.
   is(
     'selling below cost blocks publishing',
-    publishBlocker({ services: [service({ priceMinor: 9000, costPriceMinor: 10900, costCurrency: 'USD' })] }),
+    publishBlocker({ services: [service({ priceMinor: 9000, costPriceMinor: 10900, costCurrency: 'USD' })], nichePrices: [] }),
     'below-cost',
   );
   is(
     'and so does selling at exactly cost',
-    publishBlocker({ services: [service({ priceMinor: 10900, costPriceMinor: 10900, costCurrency: 'USD' })] }),
+    publishBlocker({ services: [service({ priceMinor: 10900, costPriceMinor: 10900, costCurrency: 'USD' })], nichePrices: [] }),
     'below-cost',
   );
   is(
     'a cent of margin is enough to publish',
-    publishBlocker({ services: [service({ priceMinor: 10901, costPriceMinor: 10900, costCurrency: 'USD' })] }),
+    publishBlocker({ services: [service({ priceMinor: 10901, costPriceMinor: 10900, costCurrency: 'USD' })], nichePrices: [] }),
     null,
   );
   // A cost in a currency we do not sell in needs the rate, the buffer and the
@@ -639,7 +708,7 @@ console.log('\n--- what stops a listing being published ---');
   // the service row. Comparing it here would refuse listings that are fine.
   is(
     'a foreign cost is left alone rather than compared badly',
-    publishBlocker({ services: [service({ priceMinor: 9000, costPriceMinor: 10900, costCurrency: 'GBP' })] }),
+    publishBlocker({ services: [service({ priceMinor: 9000, costPriceMinor: 10900, costCurrency: 'GBP' })], nichePrices: [] }),
     null,
   );
   // A loss on a placement nobody can buy is not a loss.
@@ -650,6 +719,7 @@ console.log('\n--- what stops a listing being published ---');
         service({ available: false, priceMinor: 9000, costPriceMinor: 10900, costCurrency: 'USD' }),
         service({ id: 'b', type: 'niche-edit' as const }),
       ],
+      nichePrices: [],
     }),
     null,
   );

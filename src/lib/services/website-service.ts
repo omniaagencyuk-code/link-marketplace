@@ -6,6 +6,7 @@ import { newWebsiteDefaults, toWebsitePatch } from '@/lib/import/to-website';
 import { toPreviewRows, type MarketplacePreview } from './marketplace-preview';
 import { isSupabaseEnabled } from '@/lib/supabase/config';
 import { publishBlocker, publishBlockerMessage } from '@/lib/websites/publishing';
+import { pricingService } from './pricing-service';
 import { supabaseWebsiteRepository } from './supabase/website-repository';
 import type { ImportPayloadRow, ImportBatchResult, DuplicateMode } from '@/lib/import/types';
 import type {
@@ -299,7 +300,26 @@ export const websiteService = {
   async setStatus(id: string, status: WebsiteStatus) {
     if (status === 'active') {
       const website = await websiteService.getById(id);
-      const blocker = website ? publishBlocker(website) : 'unpriced';
+      /*
+        The engine's converted costs, including the rate card.
+
+        One extra read per publish, and it buys the only check that can see a
+        gambling rate: the publisher's sensitive cost lives in
+        `website_niche_costs` and never reaches the Website object, so without
+        this a site could go live selling gambling at its general price while
+        paying the publisher half as much again for it.
+
+        A failure here must not block publishing a listing that is fine, so it
+        falls back to the general check rather than throwing.
+      */
+      const costs = website
+        ? await pricingService
+            .trueCostsByWebsite([id])
+            .then((all) => all[id])
+            .catch(() => undefined)
+        : undefined;
+
+      const blocker = website ? publishBlocker(website, costs) : 'unpriced';
       if (blocker) throw new Error(publishBlockerMessage(blocker));
     }
     return websiteService.update(id, { status });

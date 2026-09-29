@@ -1,4 +1,6 @@
 import { brand } from '@/lib/config/brand';
+import { acceptedNicheLabel } from '@/lib/config/accepted-niches';
+import { linkTypeLabels } from '@/lib/utils/labels';
 import type { Service, Website } from '@/lib/types';
 
 /**
@@ -84,7 +86,18 @@ export function marginBlock(service: Service, currency = brand.currency): Margin
  * no usable cost is left out entirely rather than counted as free.
  */
 export interface PlacementMargin {
-  type: string;
+  type: Service['type'];
+  /**
+   * The topic this rate is for, or null for the rate that applies to
+   * everything else.
+   *
+   * A gambling guest post and an ordinary guest post are two different things
+   * somebody can buy, at two prices, against two costs. Treating them as one
+   * placement is how a site came to sell gambling at the general price while
+   * paying the publisher their sensitive rate, with a healthy margin showing
+   * on the only screen anybody checks.
+   */
+  niche: string | null;
   priceMinor: number;
   costMinor: number;
   profitMinor: number;
@@ -103,39 +116,93 @@ export interface PlacementMargin {
   unpriced: boolean;
 }
 
+/**
+ * What a listing costs us, by niche and then placement.
+ *
+ * The general rate is stored under the empty-string key, which is how
+ * `price_calculations` records it. A niche with no entry of its own costs
+ * what the general rate costs - the publisher quoted one number and it
+ * applies to everything they did not price separately.
+ */
+export type TrueCostIndex = Record<string, Record<string, number>>;
+
 export function placementMargins(
-  website: Pick<Website, 'services'>,
-  trueCostByType?: Record<string, number>,
+  website: Pick<Website, 'services' | 'nichePrices'>,
+  costs?: TrueCostIndex,
   currency = brand.currency,
 ): PlacementMargin[] {
-  const margins: PlacementMargin[] = [];
+  const general = costs?.[''];
 
-  for (const service of website.services) {
-    const engineCost = trueCostByType?.[service.type];
-    const usable =
-      typeof engineCost === 'number'
-        ? { costMinor: engineCost, converted: true }
-        : comparable(service, currency)
-          ? { costMinor: service.costPriceMinor as number, converted: false }
-          : null;
+  /** The cost of one placement for one topic, or null when we cannot say. */
+  function costOf(service: Service, niche: string | null) {
+    // The niche's own cost where the engine has one, then the general rate -
+    // a publisher who never quoted a sensitive price charges their ordinary
+    // one for it, which is the same assumption the engine makes.
+    const engineCost = (niche ? costs?.[niche]?.[service.type] : undefined) ?? general?.[service.type];
+    if (typeof engineCost === 'number') return { costMinor: engineCost, converted: true };
+    if (comparable(service, currency)) return { costMinor: service.costPriceMinor as number, converted: false };
+    return null;
+  }
 
-    if (!usable) continue;
+  function entry(
+    service: Service,
+    niche: string | null,
+    priceMinor: number,
+  ): PlacementMargin | null {
+    const usable = costOf(service, niche);
+    if (!usable) return null;
 
-    const priceMinor = service.priceMinor;
     const profitMinor = priceMinor - usable.costMinor;
-
-    margins.push({
+    return {
       type: service.type,
+      niche,
       priceMinor,
       costMinor: usable.costMinor,
       profitMinor,
       marginPct: priceMinor > 0 ? Math.round((profitMinor / priceMinor) * 1000) / 10 : 0,
       converted: usable.converted,
       unpriced: priceMinor <= 0,
-    });
+    };
+  }
+
+  const margins: PlacementMargin[] = [];
+
+  for (const service of website.services) {
+    const general = entry(service, null, service.priceMinor);
+    if (general) margins.push(general);
+  }
+
+  /*
+    The rate card, one line per topic the publisher prices differently.
+
+    Only topics with a sell price of their own: where there is no override the
+    general rate applies, and it has already been measured above. Measuring it
+    again per topic would report the same margin a dozen times and drown the
+    one that differs.
+  */
+  for (const price of website.nichePrices) {
+    if (price.priceMinor <= 0) continue;
+    const service = website.services.find((candidate) => candidate.type === price.linkType);
+    if (!service) continue;
+
+    const margin = entry(service, price.niche, price.priceMinor);
+    if (margin) margins.push(margin);
   }
 
   return margins;
+}
+
+/**
+ * "Gambling Guest Post", or just "Guest Post" for the rate that applies to
+ * everything else.
+ *
+ * Built from the two label registries rather than the slugs, so the words in
+ * a tooltip are the words on the rest of the screen. A tooltip reading
+ * "gambling guest-post at 4.2%" is a slug leaking into a sentence.
+ */
+export function placementLabel(margin: PlacementMargin): string {
+  const placement = linkTypeLabels[margin.type];
+  return margin.niche ? `${acceptedNicheLabel(margin.niche)} ${placement}` : placement;
 }
 
 /**

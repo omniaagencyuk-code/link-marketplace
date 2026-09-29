@@ -1,4 +1,5 @@
 import { getAdminScopedClient } from '@/lib/supabase/server';
+import type { TrueCostIndex } from '@/lib/utils/margin';
 import { isSupabaseEnabled } from '@/lib/supabase/config';
 import { fxService } from './fx-service';
 import {
@@ -200,34 +201,59 @@ export const pricingService = {
    * breakdown show. Three screens disagreeing about a cost would be worse
    * than the table showing nothing.
    *
-   * Only the general rate per placement type: the niche rows are a rate card,
-   * not additional cost, and adding them would treat one placement as several.
+   * Every row, general and per niche. It used to be the general rate only,
+   * on the grounds that the niche rows are a rate card rather than extra
+   * cost - true of a total, and the reason a gambling placement sold at the
+   * general price while costing the publisher's sensitive rate showed a
+   * healthy margin on the only screen anybody checks. They are not extra
+   * cost; they are a different cost for a different thing somebody can buy,
+   * and each needs its own margin.
    *
    * It is the true cost - converted, buffered, and with the payment fee and
    * any publisher VAT in it - because that is what leaves our account, and a
    * profit worked out against anything less is one we do not make.
    */
-  async trueCostsByWebsite(
-    websiteIds?: string[],
-  ): Promise<Record<string, Record<string, number>>> {
+  async trueCostsByWebsite(websiteIds?: string[]): Promise<Record<string, TrueCostIndex>> {
     if (!isSupabaseEnabled()) return {};
 
     const supabase = getAdminScopedClient();
-    let query = supabase
-      .from('price_calculations')
-      .select('website_id, link_type, true_cost_minor')
-      .eq('niche', '');
-    if (websiteIds?.length) query = query.in('website_id', websiteIds);
+    const byWebsite: Record<string, TrueCostIndex> = {};
 
-    const { data } = await query;
+    /*
+      Read in pages.
 
-    const byWebsite: Record<string, Record<string, number>> = {};
-    for (const row of (data ?? []) as Record<string, unknown>[]) {
-      const websiteId = String(row.website_id);
-      const linkType = String(row.link_type);
-      const cost = Number(row.true_cost_minor);
-      if (!Number.isFinite(cost)) continue;
-      (byWebsite[websiteId] ??= {})[linkType] = cost;
+      This used to be the general rates alone - two rows a listing, a few
+      hundred in all, comfortably inside any default row cap. With the rate
+      card it is a row per topic per placement, so three hundred listings that
+      price eight topics is nearer eight thousand. A silently truncated read
+      would leave the listings in the tail showing no cost and no margin,
+      which is the same table lying quietly that this whole change is about.
+    */
+    const PAGE = 1000;
+    for (let from = 0; ; from += PAGE) {
+      let query = supabase
+        .from('price_calculations')
+        .select('website_id, link_type, niche, true_cost_minor')
+        .order('website_id', { ascending: true })
+        .range(from, from + PAGE - 1);
+      if (websiteIds?.length) query = query.in('website_id', websiteIds);
+
+      const { data, error } = await query;
+      if (error) break;
+
+      const rows = (data ?? []) as Record<string, unknown>[];
+      for (const row of rows) {
+        const websiteId = String(row.website_id);
+        const linkType = String(row.link_type);
+        // The general rate is stored with an empty niche, which is the key
+        // the margin helpers look under.
+        const niche = String(row.niche ?? '');
+        const cost = Number(row.true_cost_minor);
+        if (!Number.isFinite(cost)) continue;
+        ((byWebsite[websiteId] ??= {})[niche] ??= {})[linkType] = cost;
+      }
+
+      if (rows.length < PAGE) break;
     }
 
     return byWebsite;

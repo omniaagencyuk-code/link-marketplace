@@ -1,4 +1,4 @@
-import { serviceMargin } from '@/lib/utils/margin';
+import { losingPlacements, placementMargins, type TrueCostIndex } from '@/lib/utils/margin';
 import type { Website } from '@/lib/types';
 
 /**
@@ -24,7 +24,19 @@ export type PublishBlocker =
   /** On sale for at or below what we pay the publisher. */
   | 'below-cost';
 
-export function publishBlocker(website: Pick<Website, 'services'>): PublishBlocker | null {
+export function publishBlocker(
+  website: Pick<Website, 'services' | 'nichePrices'>,
+  /**
+   * What the listing costs us per niche, from the pricing engine.
+   *
+   * Optional, and the difference it makes is the rate card. Without it only
+   * placements whose cost is recorded in our own currency can be judged;
+   * with it, a gambling rate is measured against the gambling cost - which
+   * is the one most likely to be under water, because the publisher charges
+   * more for it.
+   */
+  costs?: TrueCostIndex,
+): PublishBlocker | null {
   const sellable = website.services.filter(
     (service) => service.available && service.priceMinor > 0,
   );
@@ -35,7 +47,7 @@ export function publishBlocker(website: Pick<Website, 'services'>): PublishBlock
   }
 
   /*
-    A placement on sale for less than it costs us.
+    Anything on sale for less than it costs us.
 
     The engine cannot produce one - it adds the band's markup, lifts it to the
     minimum margin and rounds the price up - so this means a price set by hand,
@@ -44,18 +56,18 @@ export function publishBlocker(website: Pick<Website, 'services'>): PublishBlock
     that happens, and the listing goes on selling at a loss until somebody
     notices.
 
-    Only costs in our own currency are judged here. A publisher quoting in
-    dollars needs the rate, the buffer and the payment fee before their number
-    means anything against a sterling price, and none of that is on the service
-    row - so a foreign cost is left alone rather than compared badly. The
-    Websites table flags those from the engine's own figures.
+    A cost in a currency we do not sell in and that the engine has not
+    converted is left alone rather than compared badly: it needs the rate, the
+    buffer and the payment fee before it means anything against our price, and
+    none of that is on the service row.
   */
-  const losing = sellable.some((service) => {
-    const margin = serviceMargin(service);
-    return margin != null && margin.profitMinor <= 0;
-  });
+  const sellableTypes = new Set(sellable.map((service) => service.type));
+  const losing = losingPlacements(
+    placementMargins({ services: sellable, nichePrices: website.nichePrices }, costs),
+  );
 
-  return losing ? 'below-cost' : null;
+  // A topic rate on a placement that is switched off cannot be bought either.
+  return losing.some((margin) => sellableTypes.has(margin.type)) ? 'below-cost' : null;
 }
 
 export function publishBlockerMessage(blocker: PublishBlocker): string {
