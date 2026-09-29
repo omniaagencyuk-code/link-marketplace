@@ -6,6 +6,7 @@
  * put on screen so a person can read them. Each one has been wrong once.
  */
 import { chunk } from '../src/lib/utils/chunk';
+import { csvCell, csvFilename, toCsv } from '../src/lib/admin/export-csv';
 import {
   BULK_CHUNK_SIZE,
   bulkProgressPercent,
@@ -100,6 +101,53 @@ console.log('\n--- refusals are grouped, not listed ---');
   is('the one-off is still there', groups.some((group) => group.reason === 'No longer exists.'), true);
   is('every refusal is accounted for', groups.reduce((total, group) => total + group.count, 0), skipped.length);
   is('nothing to report is no groups', groupSkipped([]).length, 0);
+}
+
+console.log('\n--- the export is a file a spreadsheet can read ---');
+{
+  // Publisher notes were written by a person in an email, so every one of
+  // these turns up: commas shift the later columns, an unescaped quote ends
+  // the cell early, and a newline becomes a new row.
+  is('a plain value is left alone', csvCell('casinoguru.co.uk'), 'casinoguru.co.uk');
+  is('a comma forces quotes', csvCell('Berlin, Germany'), '"Berlin, Germany"');
+  is('a quote is doubled inside them', csvCell('the "best" sites'), '"the ""best"" sites"');
+  is('a newline forces them too', csvCell('line one\nline two'), '"line one\nline two"');
+  is('nothing is an empty cell, not the word null', csvCell(null), '');
+  is('and zero is zero, not empty', csvCell(0), '0');
+
+  /*
+    The one that is a security question rather than a formatting one.
+
+    Every text column here came from a stranger - publisher names, titles and
+    notes read out of their replies - and a spreadsheet evaluates a cell that
+    begins with =, +, - or @. `=HYPERLINK(...)` in a publisher's name is a
+    link somebody's Excel offers to follow, and worse is possible.
+  */
+  is('a formula is defused', csvCell('=HYPERLINK("http://x")'), `"'=HYPERLINK(""http://x"")"`);
+  is('and so is a plus', csvCell('+1 555 0100'), "'+1 555 0100");
+  is('and a minus', csvCell('-50% for bulk'), "'-50% for bulk");
+  is('and an at sign', csvCell('@everyone'), "'@everyone");
+  // A negative number would be defused too, which is why money is written as
+  // a string of major units and losses are not exported as bare negatives.
+  is('the apostrophe goes inside the quotes', csvCell('=a,b'), `"'=a,b"`);
+
+  const csv = toCsv(
+    [{ domain: 'a.com', note: 'has, a comma' }, { domain: 'b.com', note: '' }],
+    [
+      { header: 'Domain', value: (row) => row.domain },
+      { header: 'Note', value: (row) => row.note },
+    ],
+  );
+  is('the header comes first', csv.split('\r\n')[0], 'Domain,Note');
+  is('one line per row, plus a trailing break', csv.split('\r\n').length, 4);
+  // RFC 4180, and what stops Excel on Windows reading a multi-line cell as
+  // several rows.
+  is('lines end CRLF', csv.includes('\r\n'), true);
+  has('and a comma inside a cell survives', csv, '"has, a comma"');
+
+  is('an empty selection still has its header', toCsv([], [{ header: 'Domain', value: () => '' }]), 'Domain\r\n');
+
+  has('the filename carries the date', csvFilename('websites', new Date('2026-09-29T11:00:00Z')), 'websites-2026-09-29.csv');
 }
 
 console.log(failed ? `\n  ${failed} FAILED\n` : '\n  all passed\n');

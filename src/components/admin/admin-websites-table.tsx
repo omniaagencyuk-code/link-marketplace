@@ -7,7 +7,9 @@ import {
   AlertTriangle,
   Archive,
   ChevronDown,
+  ClipboardList,
   Copy,
+  Download,
   MoreHorizontal,
   Pencil,
   Search,
@@ -32,6 +34,9 @@ import {
 } from '@/app/admin/actions';
 import { ProgressBar } from '@/components/ui/progress-bar';
 import { chunk } from '@/lib/utils/chunk';
+import { csvFilename, toCsv } from '@/lib/admin/export-csv';
+import { websiteExportColumns } from '@/lib/admin/website-export';
+import { copyText, downloadTextFile } from '@/lib/admin/download';
 import {
   BULK_CHUNK_SIZE,
   bulkProgressText,
@@ -340,6 +345,57 @@ export function AdminWebsitesTable({
   }
 
   /**
+   * The selection as a spreadsheet.
+   *
+   * Built here rather than fetched: the table is already holding every row a
+   * download would ask the server for, so a round trip would be slower, cost
+   * a second query, and could disagree with what is on screen.
+   *
+   * It carries costs and publisher contacts, which is the point - it is the
+   * file you reconcile from - and it is why this button lives behind the
+   * admin session like everything else on this page.
+   */
+  function exportSelected() {
+    const chosen = websites.filter((website) => selected.has(website.id));
+    if (chosen.length === 0) return;
+
+    downloadTextFile(
+      csvFilename('press-parrot-websites'),
+      toCsv(chosen, websiteExportColumns(trueCosts)),
+    );
+    setResult({
+      changed: chosen.length,
+      skipped: [],
+      verb: `exported to ${csvFilename('press-parrot-websites')}`,
+    });
+  }
+
+  /**
+   * Just the domains, one per line.
+   *
+   * What a bulk checker's paste box wants. Downloading a spreadsheet, opening
+   * it and copying a column is four steps to get a list somebody already has
+   * on screen - and the spreadsheet on the way through carries what we pay
+   * publishers into a third-party tool that has no business seeing it.
+   */
+  function copyDomains() {
+    const chosen = websites.filter((website) => selected.has(website.id));
+    if (chosen.length === 0) return;
+
+    const list = chosen.map((website) => website.domain).join('\n');
+    startTransition(async () => {
+      const copied = await copyText(list);
+      setResult({
+        changed: copied ? chosen.length : 0,
+        skipped: copied
+          ? []
+          : [{ domain: 'Clipboard', reason: 'The browser would not allow it. Use the CSV export instead.' }],
+        verb: 'copied, one per line',
+      });
+    });
+  }
+
+  /**
    * Is there anything the row does not already show?
    *
    * A topic the publisher prices differently, or a placement without a column
@@ -481,6 +537,25 @@ export function AdminWebsitesTable({
           </p>
 
           <div className="ml-auto flex flex-wrap items-center gap-2">
+            {/*
+              Export and copy sit before the status buttons and outside the
+              delete confirmation: they change nothing, and a read-only action
+              should never be one row away from a destructive one.
+            */}
+            {!confirmingDelete ? (
+              <>
+                <Button size="sm" variant="outline" disabled={pending} onClick={copyDomains}>
+                  <ClipboardList className="h-3.5 w-3.5" aria-hidden="true" />
+                  Copy domains
+                </Button>
+                <Button size="sm" variant="outline" onClick={exportSelected}>
+                  <Download className="h-3.5 w-3.5" aria-hidden="true" />
+                  Export CSV
+                </Button>
+                <span aria-hidden="true" className="mx-1 h-5 w-px bg-line" />
+              </>
+            ) : null}
+
             {confirmingDelete ? (
               <>
                 <p className="text-[13px] text-ink">
