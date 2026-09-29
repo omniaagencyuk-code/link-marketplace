@@ -770,7 +770,7 @@ console.log('\n--- a pricing run says why it skipped things ---');
   // throw both reasons away. The screen said "Repriced 2,431" and stopped,
   // which is no help at all to somebody looking at a page of listings priced
   // at zero.
-  const clean = applySummary({ priced: 2431, skippedOverrides: 0, missingRates: [], noCurrency: [] });
+  const clean = applySummary({ priced: 2431, skippedOverrides: 0, missingRates: [], noCurrency: [], noCost: [] });
   is('a clean run says only what it did', clean, 'Repriced 2431 placements.');
 
   const messy = applySummary({
@@ -778,21 +778,25 @@ console.log('\n--- a pricing run says why it skipped things ---');
     skippedOverrides: 12,
     missingRates: ['AUD', 'BRL'],
     noCurrency: ['a.com', 'b.com', 'c.com', 'd.com', 'e.com', 'f.com'],
+    noCost: ['g.com', 'h.com'],
   });
   has('overrides are named as left alone, not as failures', messy, '12 left alone as overrides');
   has('listings with no currency are counted', messy, '6 listings have no cost currency');
   has('and a few are named', messy, 'a.com, b.com, c.com, d.com and 2 more');
   has('missing rates are named by currency', messy, 'No exchange rate for AUD, BRL');
+  // The one that used to return in silence. A page of listings at zero
+  // appeared in none of the lists, because there was no list for them.
+  has('and a placement with no cost is reported at all', messy, '2 listings have a placement with no cost recorded');
 
   // "Placements", because a listing has two or three of them and a count
   // larger than the inventory reads as a bug rather than as arithmetic.
   has('the unit is stated', clean, 'placements');
   has('and it is singular when it should be',
-    applySummary({ priced: 1, skippedOverrides: 0, missingRates: [], noCurrency: [] }),
+    applySummary({ priced: 1, skippedOverrides: 0, missingRates: [], noCurrency: [], noCost: [] }),
     '1 placement.');
 
   has('the verb can be changed for the save-and-reprice button',
-    applySummary({ priced: 5, skippedOverrides: 0, missingRates: [], noCurrency: [] }, 'Saved and repriced'),
+    applySummary({ priced: 5, skippedOverrides: 0, missingRates: [], noCurrency: [], noCost: [] }, 'Saved and repriced'),
     'Saved and repriced 5');
 }
 

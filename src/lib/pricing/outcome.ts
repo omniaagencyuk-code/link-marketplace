@@ -20,6 +20,15 @@ export interface ApplyOutcome {
   missingRates: string[];
   /** Domains with no cost currency recorded against the publisher. */
   noCurrency: string[];
+  /**
+   * Domains with a placement that has no cost at all.
+   *
+   * The commonest of the three and, until it was added, the only one the run
+   * could not report: the engine returned early and said nothing, so a page
+   * of listings priced at zero appeared in none of these lists and there was
+   * no way to tell why.
+   */
+  noCost: string[];
 }
 
 /** A few names, then a count, so a long list stays one line. */
@@ -29,7 +38,7 @@ function nameSome(items: string[], show = 4): string {
 }
 
 export function applySummary(outcome: ApplyOutcome, verb = 'Repriced'): string {
-  const { priced, skippedOverrides, missingRates, noCurrency } = outcome;
+  const { priced, skippedOverrides, missingRates, noCurrency, noCost } = outcome;
 
   // "Placements" rather than a bare number, because a listing has two or
   // three and the count being larger than the inventory reads as a bug.
@@ -46,6 +55,12 @@ export function applySummary(outcome: ApplyOutcome, verb = 'Repriced'): string {
   if (noCurrency.length > 0) {
     parts.push(
       `${noCurrency.length} ${noCurrency.length === 1 ? 'listing has' : 'listings have'} no cost currency recorded, so nothing could be converted: ${nameSome(noCurrency)}.`,
+    );
+  }
+
+  if (noCost.length > 0) {
+    parts.push(
+      `${noCost.length} ${noCost.length === 1 ? 'listing has a placement' : 'listings have a placement'} with no cost recorded, so there was nothing to price from: ${nameSome(noCost)}.`,
     );
   }
 

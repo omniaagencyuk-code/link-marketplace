@@ -353,8 +353,8 @@ export const pricingService = {
   async calculate(
     settings?: PricingSettings,
     websiteIds?: string[],
-  ): Promise<{ rows: PriceRow[]; missingRates: string[]; noCurrency: string[] }> {
-    if (!isSupabaseEnabled()) return { rows: [], missingRates: [], noCurrency: [] };
+  ): Promise<{ rows: PriceRow[]; missingRates: string[]; noCurrency: string[]; noCost: string[] }> {
+    if (!isSupabaseEnabled()) return { rows: [], missingRates: [], noCurrency: [], noCost: [] };
 
     const supabase = getAdminScopedClient();
     const resolved = settings ?? (await pricingService.getSettings());
@@ -434,6 +434,7 @@ export const pricingService = {
     const rows: PriceRow[] = [];
     const missingRates = new Set<string>();
     const noCurrency = new Set<string>();
+    const noCost = new Set<string>();
 
     /** One cost, priced, or skipped with a reason we can report. */
     const price = (
@@ -444,7 +445,22 @@ export const pricingService = {
       current: { priceMinor: number; isOverride: boolean } | null,
       assumedCost = false,
     ) => {
-      if (!costMinor || costMinor <= 0) return;
+      /*
+        Nothing to price from.
+
+        This used to return in silence, and silence is what made a page of
+        listings at zero impossible to explain: they were in none of the
+        lists the run reports, because the run had no list for them. A
+        placement with no cost is the commonest reason of the three and it
+        was the only one nobody could see.
+
+        Niche rows cannot reach this - their cost column is constrained
+        positive - so it only ever describes a general placement.
+      */
+      if (!costMinor || costMinor <= 0) {
+        noCost.add(domainFor.get(websiteId) ?? websiteId);
+        return;
+      }
 
       const commercials = commercialsFor.get(websiteId);
       const currency = (commercials?.cost_currency as string | null)?.trim().toUpperCase();
@@ -525,7 +541,12 @@ export const pricingService = {
       );
     }
 
-    return { rows, missingRates: [...missingRates], noCurrency: [...noCurrency] };
+    return {
+      rows,
+      missingRates: [...missingRates],
+      noCurrency: [...noCurrency],
+      noCost: [...noCost],
+    };
   },
 
   /**
@@ -540,9 +561,10 @@ export const pricingService = {
     skippedOverrides: number;
     missingRates: string[];
     noCurrency: string[];
+    noCost: string[];
   }> {
     const supabase = getAdminScopedClient();
-    const { rows, missingRates, noCurrency } = await pricingService.calculate(
+    const { rows, missingRates, noCurrency, noCost } = await pricingService.calculate(
       undefined,
       websiteIds,
     );
@@ -646,6 +668,7 @@ export const pricingService = {
       skippedOverrides,
       missingRates,
       noCurrency,
+      noCost,
     };
   },
 };
