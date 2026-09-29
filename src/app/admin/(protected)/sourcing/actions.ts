@@ -355,25 +355,45 @@ export async function rejectDraftAction(draftId: string, reason: string) {
  * Only drafts with no low-confidence field and no reviewer flag: a draft
  * carrying "single price, confirm niches" is precisely the one a human has to
  * look at, so it is never swept up by a bulk action.
+ *
+ * The browser names the drafts and sends them a chunk at a time, because two
+ * hundred approvals in one request runs past the function ceiling and
+ * answers nothing. Naming them does not mean trusting the list: every
+ * condition is re-checked here against the row as it stands now, so a draft
+ * that has been flagged, reviewed or contested since the page was rendered
+ * is skipped rather than approved on the strength of a stale screen.
+ *
+ * Contested domains are the reason that matters. Their flag is worked out
+ * when the page renders rather than stored on the row, so the filter on
+ * `flags` below cannot see it - and approving one of two offers overwrites
+ * the other's price and contact with nobody looking.
  */
-export async function bulkApproveConfidentAction() {
+export async function bulkApproveConfidentAction(draftIds: string[]) {
   const by = await reviewer();
+  if (draftIds.length === 0) return { ok: true, approved: 0, failures: [] as string[], skipped: 0 };
+
   const supabase = getAdminScopedClient();
 
-  const { data } = await supabase
-    .from('listing_drafts')
-    .select('id, domain, email_id, matched_website_id, proposed, flags')
-    .eq('status', 'pending')
-    .eq('low_confidence_count', 0)
-    .limit(100);
+  const [{ data }, contested] = await Promise.all([
+    supabase
+      .from('listing_drafts')
+      .select('id, domain, email_id, matched_website_id, proposed, flags')
+      .in('id', draftIds.slice(0, 100))
+      .eq('status', 'pending')
+      .eq('low_confidence_count', 0),
+    sourcingService.domainsWithCompetingOffers().catch(() => new Set<string>()),
+  ]);
 
   // The flag filter is applied here rather than in the query. Comparing a
   // text[] column to an empty array through PostgREST is fiddly enough to get
   // subtly wrong, and getting it wrong in this direction would bulk-approve
   // the flagged drafts this action exists to leave alone.
   const drafts = ((data ?? []) as Record<string, unknown>[]).filter(
-    (draft) => ((draft.flags as string[] | null) ?? []).length === 0,
+    (draft) =>
+      ((draft.flags as string[] | null) ?? []).length === 0 &&
+      !contested.has(String(draft.domain)),
   );
+  const skipped = draftIds.length - drafts.length;
   let approved = 0;
   const failures: string[] = [];
 
@@ -398,7 +418,7 @@ export async function bulkApproveConfidentAction() {
 
   revalidatePath('/admin/sourcing');
   revalidatePath('/admin/websites');
-  return { ok: true, approved, failures };
+  return { ok: true, approved, failures, skipped };
 }
 
 /**

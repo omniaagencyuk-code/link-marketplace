@@ -17,6 +17,7 @@ import { offersNote, rankOffers, senderSignal } from '../src/lib/sourcing/offers
 import { healthOf, progressMessage, runProgress, type BatchRow } from '../src/lib/sourcing/batch-health';
 import { describeSkip, nightlySkipReason, type NightlyState } from '../src/lib/sourcing/schedule';
 import { extractionLimit } from '../src/lib/sourcing/limits';
+import { APPROVE_CHUNK_SIZE, chunk, progressText } from '../src/lib/sourcing/approving';
 import { zodOutputFormat } from '@anthropic-ai/sdk/helpers/zod';
 
 let failed = 0;
@@ -749,6 +750,72 @@ console.log('\n--- two people offering the same site ---');
     { draftId: 'b', domain: 'x.com', fromAddress: 'b@gmail.com', cost: 200, currency: 'RUB', sentAt: null, status: 'pending' },
   ], rates);
   has('and two unconvertible ones say they cannot be compared', offersNote(unconvertible) ?? '', 'cannot be compared');
+}
+
+console.log('\n--- approving in pieces ---');
+// Two hundred approvals in one request ran past the function ceiling and
+// answered nothing: the work happened, the page showed no count and lost no
+// rows, and reloading by hand was the only way to find out. These are the
+// two things the fix depends on - that the list really is broken up, and
+// that what comes back is reported honestly.
+{
+  const ids = Array.from({ length: 200 }, (_, at) => `draft-${at}`);
+  const parts = chunk(ids, APPROVE_CHUNK_SIZE);
+
+  is('two hundred drafts go in ten requests', parts.length, 10);
+  is('none of them is oversized', parts.every((part) => part.length <= APPROVE_CHUNK_SIZE), true);
+  is('every draft is sent exactly once', parts.flat().length, ids.length);
+  is('and in order', parts.flat().join() === ids.join(), true);
+
+  const ragged = chunk(['a', 'b', 'c'], 2);
+  is('a remainder gets its own request', ragged.length, 2);
+  is('and holds what is left', ragged[1]?.length, 1);
+  is('nothing to approve is no requests', chunk([], 20).length, 0);
+}
+
+{
+  const running = progressText({
+    done: 40, total: 200, approved: 40, failures: [], skipped: 0, finished: false,
+  });
+  has('while it runs it says how far through', running, '40 of 200');
+
+  const done = progressText({
+    done: 200, total: 200, approved: 197, failures: ['a.com'], skipped: 2, finished: true,
+  });
+  has('the total is what was asked for, not what worked', done, '197 of 200');
+  // Silent failures are how a domain goes missing. Both the held-back and
+  // the failed have to be in the sentence, or 197 of 200 is a mystery.
+  has('drafts held back for a human are counted', done, '2 were left in the queue');
+  has('and failures are named', done, 'a.com');
+
+  const clean = progressText({
+    done: 5, total: 5, approved: 5, failures: [], skipped: 0, finished: true,
+  });
+  is('a clean run says only what happened', clean, 'Approved 5 of 5.');
+}
+
+console.log('\n--- bulk approve cannot walk past a contested domain ---');
+// The competing-offer flag is worked out when the page renders, not stored on
+// the row, so a server action filtering on `flags` cannot see it. Bulk
+// approve did exactly that, and the last approval of a domain wins: one
+// offer's price and contact quietly overwrote the other's. Checked here
+// rather than remembered, because the next person to touch this action will
+// not know the flag is invisible to it.
+{
+  const source = fs.readFileSync(
+    path.join(process.cwd(), 'src/app/admin/(protected)/sourcing/actions.ts'),
+    'utf8',
+  );
+  const action = source
+    .slice(source.indexOf('export async function bulkApproveConfidentAction'))
+    .split('\nexport ')[0];
+
+  is(
+    'the bulk action asks which domains are contested',
+    action.includes('domainsWithCompetingOffers'),
+    true,
+  );
+  is('and leaves them out', action.includes('!contested.has('), true);
 }
 
 console.log('\n--- the claim is honoured everywhere ---');

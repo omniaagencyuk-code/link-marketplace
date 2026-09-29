@@ -3,7 +3,7 @@ import { isSupabaseEnabled } from '@/lib/supabase/config';
 import { readMbox, readPastedEmail, type ParsedMessage } from '@/lib/sourcing/mbox';
 import { gmailSearchUrl, gmailThreadUrl, type ReadThread } from '@/lib/gmail/thread';
 import { extractLinks, type FoundLink } from '@/lib/sourcing/links';
-import { rankOffers, type Offer, type RankedOffer } from '@/lib/sourcing/offers';
+import { offersNote, rankOffers, type Offer, type RankedOffer } from '@/lib/sourcing/offers';
 import { fxService } from './fx-service';
 import {
   ABANDON_AFTER_MINUTES,
@@ -77,6 +77,16 @@ export interface NoDraftEmail {
   gmailUrl: string | null;
   /** A search by Message-ID, which works for uploaded emails too. */
   findUrl: string | null;
+}
+
+export interface DuplicateGroup {
+  domain: string;
+  /** Every draft for this domain, cheapest convertible offer first. */
+  offers: RankedOffer[];
+  /** How many of them are still waiting, which is the work left to do. */
+  pending: number;
+  /** What the two signals say, when they say anything. */
+  note: string | null;
 }
 
 export interface IngestResult {
@@ -439,29 +449,46 @@ export const sourcingService = {
     return rankOffers(offers, await fxService.rateMap());
   },
 
-  /**
-   * Domains that more than one reply offers.
-   *
-   * Computed rather than stored on the draft, because the second offer
-   * usually arrives after the first was read - a flag written at extraction
-   * would be right about the newer draft and wrong about the older one.
-   */
+  /** Domains that more than one reply offers. See `contestedDrafts`. */
   async domainsWithCompetingOffers(): Promise<Set<string>> {
-    if (!isSupabaseEnabled()) return new Set();
-    const supabase = getAdminScopedClient();
+    return new Set((await contestedDrafts()).keys());
+  },
 
-    const { data } = await supabase
-      .from('listing_drafts')
-      .select('domain')
-      .in('status', ['pending', 'approved'])
-      .limit(5000);
+  /**
+   * The duplicates, laid out so one can be chosen over the other.
+   *
+   * They used to sit in the main queue with a note at the top saying four
+   * domains appeared twice - true, unactionable, and in the way of the two
+   * hundred drafts that needed nothing but a tick. Approving in bulk past
+   * them was the dangerous part: the last approval of a domain wins, so
+   * whichever copy happened to be later overwrote the other's price and
+   * contact with nobody looking.
+   *
+   * Two queues instead of one warning. The plain drafts can be approved
+   * without reading anything; these wait here, with both prices converted
+   * and both senders described, until somebody has the time.
+   */
+  async duplicateGroups(): Promise<DuplicateGroup[]> {
+    const contested = await contestedDrafts();
+    if (contested.size === 0) return [];
 
-    const seen = new Map<string, number>();
-    for (const row of (data ?? []) as { domain: string }[]) {
-      seen.set(row.domain, (seen.get(row.domain) ?? 0) + 1);
-    }
+    const rates = await fxService.rateMap();
 
-    return new Set([...seen].filter(([, count]) => count > 1).map(([domain]) => domain));
+    const groups = [...contested].map(([domain, offers]) => {
+      const ranked = rankOffers(offers, rates);
+      return {
+        domain,
+        offers: ranked,
+        pending: ranked.filter((offer) => offer.status === 'pending').length,
+        note: offersNote(ranked),
+      };
+    });
+
+    // Anything with nothing pending is finished - both copies were dealt
+    // with - and listing it would be a worklist that never empties.
+    return groups
+      .filter((group) => group.pending > 0)
+      .sort((a, b) => b.offers.length - a.offers.length || a.domain.localeCompare(b.domain));
   },
 
   // --------------------------------------------------------- no-draft work
@@ -1126,6 +1153,54 @@ export const sourcingService = {
     return { extracted, failed, draftsCreated, firstError };
   },
 };
+
+/**
+ * Drafts for domains that more than one reply offers.
+ *
+ * One query behind both the flag on a row and the duplicates queue, because
+ * two definitions of "this domain came up twice" would disagree within a
+ * month and the disagreement would be invisible: a draft flagged on one
+ * screen and missing from the other.
+ *
+ * Computed rather than stored on the draft, because the second offer usually
+ * arrives after the first was read - a flag written at extraction would be
+ * right about the newer draft and wrong about the older one.
+ *
+ * `merged` drafts are left out on purpose. A domain we already sell, read
+ * again from the same publisher, is an update rather than a competitor, and
+ * counting every re-read as a duplicate would fill this queue with work that
+ * does not exist.
+ */
+async function contestedDrafts(): Promise<Map<string, Offer[]>> {
+  if (!isSupabaseEnabled()) return new Map();
+  const supabase = getAdminScopedClient();
+
+  const { data } = await supabase
+    .from('listing_drafts')
+    .select('id, domain, status, proposed, inbound_emails (from_address, sent_at)')
+    .in('status', ['pending', 'approved'])
+    .limit(5000);
+
+  const byDomain = new Map<string, Offer[]>();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  for (const row of (data ?? []) as any[]) {
+    const email = Array.isArray(row.inbound_emails) ? row.inbound_emails[0] : row.inbound_emails;
+    const proposed = (row.proposed ?? {}) as Record<string, unknown>;
+    const offers = byDomain.get(row.domain) ?? [];
+    offers.push({
+      draftId: String(row.id),
+      domain: String(row.domain),
+      fromAddress: String(email?.from_address ?? ''),
+      cost: typeof proposed.guest_post_cost === 'number' ? proposed.guest_post_cost : null,
+      currency: typeof proposed.currency === 'string' ? proposed.currency : null,
+      sentAt: (email?.sent_at as string | null) ?? null,
+      status: String(row.status),
+    });
+    byDomain.set(String(row.domain), offers);
+  }
+
+  return new Map([...byDomain].filter(([, offers]) => offers.length > 1));
+}
 
 function describe(error: unknown): string {
   return error instanceof Error ? error.message.slice(0, 400) : 'Unknown error.';

@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useState, useTransition } from 'react';
 import { AlertTriangle, Check, Sparkles, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -13,6 +14,7 @@ import {
   discardDraftsAction,
 } from '@/app/admin/(protected)/sourcing/actions';
 import { formatDate } from '@/lib/utils/format';
+import { APPROVE_CHUNK_SIZE, chunk, progressText } from '@/lib/sourcing/approving';
 import type { DraftRow } from '@/app/admin/(protected)/sourcing/page';
 
 /** Reviewer prompts, in the words a reviewer needs rather than the slug. */
@@ -24,13 +26,64 @@ const FLAG_LABELS: Record<string, string> = {
   'price-without-currency': 'Price with no currency',
   'terms-from-network': 'Terms from the network reply',
   'replied-again': 'They replied again - re-read',
-  'competing-offer': 'Someone else offers this site',
 };
 
 export function DraftsTable({ drafts }: { drafts: DraftRow[] }) {
+  const router = useRouter();
   const [busy, startTransition] = useTransition();
   const [result, setResult] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
+
+  /**
+   * Approve these, a chunk at a time, and show the page the outcome.
+   *
+   * One request for two hundred drafts never came back: it ran past the
+   * function ceiling with the browser still waiting, so no count appeared, no
+   * rows left the table, and the only way to find out it had worked was to
+   * reload by hand. Chunking makes every request short enough to answer, and
+   * the refresh at the end is what the reload used to be - the table and the
+   * marketplace both re-read from the database without anybody pressing
+   * anything.
+   *
+   * The refresh is last rather than per chunk: re-reading a two-hundred-row
+   * page ten times would cost more than the approvals.
+   */
+  function approveInChunks(
+    ids: string[],
+    run: (part: string[]) => Promise<{ approved: number; failures: string[]; skipped?: number }>,
+  ) {
+    startTransition(async () => {
+      const chunks = chunk(ids, APPROVE_CHUNK_SIZE);
+      let approved = 0;
+      let skipped = 0;
+      let done = 0;
+      const failures: string[] = [];
+
+      for (const part of chunks) {
+        setResult(
+          progressText({ done, total: ids.length, approved, failures, skipped, finished: false }),
+        );
+        try {
+          const outcome = await run(part);
+          approved += outcome.approved;
+          skipped += outcome.skipped ?? 0;
+          failures.push(...outcome.failures);
+        } catch {
+          // A chunk that never answered is not a chunk that did nothing, so
+          // its domains are not claimed as failed. The refresh below shows
+          // which of them actually left the queue.
+          failures.push(`${part.length} in one batch did not answer`);
+        }
+        done += part.length;
+      }
+
+      setSelected(new Set());
+      setResult(
+        progressText({ done, total: ids.length, approved, failures, skipped, finished: true }),
+      );
+      router.refresh();
+    });
+  }
 
   const allSelected = drafts.length > 0 && selected.size === drafts.length;
   const someSelected = selected.size > 0 && !allSelected;
@@ -48,18 +101,6 @@ export function DraftsTable({ drafts }: { drafts: DraftRow[] }) {
     (draft) => draft.lowConfidenceCount === 0 && draft.flags.length === 0,
   );
 
-  /*
-    Domains waiting more than once, which means the same reply was read
-    twice. Approving both is harmless - approval re-checks the domain, so the
-    second is an update - but it is sixty listings to work through for
-    nothing, and it is not obvious from a list this long that it is happening.
-  */
-  const perDomain = drafts.reduce<Record<string, number>>((all, draft) => {
-    all[draft.domain] = (all[draft.domain] ?? 0) + 1;
-    return all;
-  }, {});
-  const repeated = Object.values(perDomain).filter((count) => count > 1).length;
-
   return (
     <div className="space-y-3">
       {confident.length > 0 ? (
@@ -73,29 +114,16 @@ export function DraftsTable({ drafts }: { drafts: DraftRow[] }) {
             size="sm"
             disabled={busy}
             onClick={() =>
-              startTransition(async () => {
-                const outcome = await bulkApproveConfidentAction();
-                setResult(
-                  `Approved ${outcome.approved}.${
-                    outcome.failures.length ? ` Could not approve: ${outcome.failures.join(', ')}.` : ''
-                  }`,
-                );
-              })
+              approveInChunks(
+                confident.map((draft) => draft.id),
+                bulkApproveConfidentAction,
+              )
             }
           >
             <Sparkles className="h-3.5 w-3.5" aria-hidden="true" />
             Approve all {confident.length}
           </Button>
         </div>
-      ) : null}
-
-      {repeated > 0 ? (
-        <p className="rounded-lg border border-line bg-surface-sunken px-3 py-2 text-[13px] text-ink-soft">
-          {repeated} {repeated === 1 ? 'domain appears' : 'domains appear'} more than once, so the
-          same reply has been read twice. Open one of the repeats and use{' '}
-          <span className="font-medium text-ink">throw away this email and its drafts</span> on
-          whichever copy you do not want.
-        </p>
       ) : null}
 
       {selected.size > 0 ? (
@@ -129,17 +157,7 @@ export function DraftsTable({ drafts }: { drafts: DraftRow[] }) {
                 ) {
                   return;
                 }
-                startTransition(async () => {
-                  const outcome = await approveSelectedAction([...selected]);
-                  setSelected(new Set());
-                  setResult(
-                    `Approved ${outcome.approved}.${
-                      outcome.failures.length
-                        ? ` Could not approve: ${outcome.failures.join(', ')}.`
-                        : ''
-                    }`,
-                  );
-                });
+                approveInChunks([...selected], approveSelectedAction);
               }}
             >
               <Check className="h-3.5 w-3.5" aria-hidden="true" />
@@ -165,6 +183,7 @@ export function DraftsTable({ drafts }: { drafts: DraftRow[] }) {
                       ? `Deleted ${outcome.discarded} ${outcome.discarded === 1 ? 'draft' : 'drafts'}.`
                       : (outcome.error ?? 'Could not delete those.'),
                   );
+                  router.refresh();
                 });
               }}
             >
@@ -223,14 +242,6 @@ export function DraftsTable({ drafts }: { drafts: DraftRow[] }) {
                   >
                     {draft.domain}
                   </Link>
-                  {(perDomain[draft.domain] ?? 0) > 1 ? (
-                    <span
-                      title="This domain is waiting in more than one draft."
-                      className="ml-1.5 rounded bg-surface-sunken px-1.5 py-0.5 text-[10px] text-muted"
-                    >
-                      x{perDomain[draft.domain]}
-                    </span>
-                  ) : null}
                 </Td>
                 <Td className="hidden truncate text-[12px] text-muted md:table-cell">
                   {draft.fromAddress}

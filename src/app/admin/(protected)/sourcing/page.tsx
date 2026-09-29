@@ -45,12 +45,12 @@ async function load() {
 
   const supabase = getAdminScopedClient();
 
-  const [settings, pending, spent, noDrafts, contested, drafts, emails, problems, batches] = await Promise.all([
+  const [settings, pending, spent, noDrafts, duplicates, drafts, emails, problems, batches] = await Promise.all([
     sourcingService.getSettings(),
     sourcingService.pendingCount().catch(() => 0),
     sourcingService.spentThisMonthUsd().catch(() => 0),
     sourcingService.noDraftEmails(200).catch(() => []),
-    sourcingService.domainsWithCompetingOffers().catch(() => new Set<string>()),
+    sourcingService.duplicateGroups().catch(() => []),
     supabase
       .from('listing_drafts')
       .select('id, domain, matched_website_id, low_confidence_count, flags, created_at, inbound_emails (from_address, sent_at)')
@@ -90,30 +90,30 @@ async function load() {
     return all;
   }, {});
 
+  /*
+    A domain two replies offer is not review work, it is a comparison, and it
+    has a page of its own. Kept out of this list rather than flagged in it:
+    the flag was right and useless - it sat in a queue of two hundred that
+    somebody wanted to tick straight through, and bulk approve walked past it
+    anyway, overwriting one offer's price and contact with the other's.
+  */
+  const contested = new Set(duplicates.map((group) => group.domain));
+
   /* eslint-disable @typescript-eslint/no-explicit-any */
-  const draftRows: DraftRow[] = ((drafts.data ?? []) as any[]).map((row) => {
-    const email = Array.isArray(row.inbound_emails) ? row.inbound_emails[0] : row.inbound_emails;
-    return {
-      id: row.id,
-      domain: row.domain,
-      fromAddress: email?.from_address ?? '',
-      sentAt: email?.sent_at ?? null,
-      matched: Boolean(row.matched_website_id),
-      lowConfidenceCount: row.low_confidence_count ?? 0,
-      /*
-        The competing-offer flag is added here rather than stored on the
-        draft, because the second offer usually arrives after the first was
-        read: a flag written at extraction would be right about the newer
-        draft and wrong about the older one. Added to `flags` so it also
-        keeps the draft out of bulk approve, which is the path that would
-        overwrite the other offer without anybody seeing it.
-      */
-      flags: [
-        ...(row.flags ?? []),
-        ...(contested.has(row.domain) ? ['competing-offer'] : []),
-      ],
-    };
-  });
+  const draftRows: DraftRow[] = ((drafts.data ?? []) as any[])
+    .filter((row) => !contested.has(row.domain))
+    .map((row) => {
+      const email = Array.isArray(row.inbound_emails) ? row.inbound_emails[0] : row.inbound_emails;
+      return {
+        id: row.id,
+        domain: row.domain,
+        fromAddress: email?.from_address ?? '',
+        sentAt: email?.sent_at ?? null,
+        matched: Boolean(row.matched_website_id),
+        lowConfidenceCount: row.low_confidence_count ?? 0,
+        flags: (row.flags ?? []) as string[],
+      };
+    });
   /* eslint-enable @typescript-eslint/no-explicit-any */
 
   return {
@@ -122,6 +122,8 @@ async function load() {
     pending,
     spent,
     noDraftCount: noDrafts.length,
+    duplicateDomains: duplicates.length,
+    duplicateDrafts: duplicates.reduce((total, group) => total + group.pending, 0),
     counts,
     drafts: draftRows,
     problems: (problems.data ?? []) as Record<string, unknown>[],
@@ -208,6 +210,13 @@ export default async function SourcingPage() {
         description="Import replies from Gmail, paste one, or upload an export. Read them with Claude, then check every draft before it becomes a listing."
         action={
           <div className="flex flex-wrap gap-2">
+            {state.duplicateDomains > 0 ? (
+              <Button asChild variant="outline">
+                <Link href="/admin/sourcing/duplicates">
+                  {state.duplicateDomains} offered twice
+                </Link>
+              </Button>
+            ) : null}
             {state.noDraftCount > 0 ? (
               <Button asChild variant="outline">
                 <Link href="/admin/sourcing/no-drafts">
@@ -264,7 +273,18 @@ export default async function SourcingPage() {
             <Badge tone="neutral">{counts.ignored} emails had nothing usable</Badge>
           ) : null}
         </CardHeader>
-        <CardContent>
+        <CardContent className="space-y-3">
+          {state.duplicateDrafts > 0 ? (
+            <p className="rounded-lg border border-line bg-surface-sunken px-3 py-2 text-[13px] text-ink-soft">
+              {state.duplicateDrafts} more {state.duplicateDrafts === 1 ? 'draft is' : 'drafts are'}{' '}
+              held back because {state.duplicateDomains === 1 ? 'its domain is' : 'their domains are'}{' '}
+              offered by more than one person.{' '}
+              <Link href="/admin/sourcing/duplicates" className="text-accent-700 underline">
+                Compare them
+              </Link>{' '}
+              whenever you have time - approving in bulk here will not touch them.
+            </p>
+          ) : null}
           {drafts.length === 0 ? (
             <div className="py-10 text-center">
               <Inbox className="mx-auto h-6 w-6 text-muted" aria-hidden="true" />
