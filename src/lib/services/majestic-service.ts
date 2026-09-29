@@ -133,15 +133,40 @@ export const majesticService = {
    * this is the difference between a category and none at all - but it is
    * still a suggestion, and approving it is a person's decision.
    */
-  async suggestions(limit = 500): Promise<MajesticSuggestion[]> {
+  async suggestions(): Promise<MajesticSuggestion[]> {
     if (!isSupabaseEnabled()) return [];
     const supabase = getAdminScopedClient();
 
-    const { data } = await supabase
-      .from('website_topics')
-      .select('website_id, position, topic, value, websites (id, domain, primary_category_id, categories:primary_category_id (slug))')
-      .order('website_id')
-      .limit(limit * 3);
+    /*
+      Read in pages, and read all of them.
+
+      This took a row limit of three times the number of listings it meant to
+      return, on the reasoning that a listing has at most three topics. Nine
+      hundred listings is two and three-quarter thousand topic rows, so the
+      limit cut it at five hundred listings - and because the order is stable,
+      the same five hundred came back every time. The other four hundred were
+      not "not suggested yet"; they were unreachable, and nothing said so.
+
+      There is no cap on the result any more either. A cap is a silent
+      truncation with a friendlier name, and the table renders nine hundred
+      rows elsewhere in this admin without complaint.
+    */
+    const PAGE = 1000;
+    const rows: Record<string, unknown>[] = [];
+    for (let from = 0; ; from += PAGE) {
+      const { data: page, error } = await supabase
+        .from('website_topics')
+        .select('website_id, position, topic, value, websites (id, domain, primary_category_id, categories:primary_category_id (slug))')
+        .order('website_id')
+        .order('position')
+        .range(from, from + PAGE - 1);
+      if (error) break;
+      const batch = (page ?? []) as Record<string, unknown>[];
+      rows.push(...batch);
+      if (batch.length < PAGE) break;
+    }
+
+    const data = rows;
 
     interface Gathered {
       domain: string;
@@ -187,7 +212,7 @@ export const majesticService = {
 
     // Strongest evidence first: a suggestion backed by a trust flow of 40
     // deserves a look before one backed by 4.
-    return out.sort((a, b) => b.value - a.value).slice(0, limit);
+    return out.sort((a, b) => b.value - a.value);
   },
 
   /** Set the primary category on listings whose suggestion was accepted. */

@@ -235,5 +235,53 @@ console.log('\n--- the mapping earns its keep on a real export ---');
   );
 }
 
+console.log('\n--- no read here is allowed to come back half full ---');
+/*
+  This has now cost twice.
+
+  The pricing engine read every service row with no filter and no paging, so
+  past the first page of rows nothing was priced and nothing said so. Then the
+  suggestions here took a row limit of three times the listings it meant to
+  return - and nine hundred listings is two and three-quarter thousand topic
+  rows, so it cut at five hundred listings and, the order being stable, showed
+  the same five hundred every time. Four hundred listings were not "not
+  suggested"; they were unreachable.
+
+  Both have the same shape and the same symptom, which is silence. Checked in
+  the source, because the next person to add a query here will write it the
+  same way and see nothing wrong.
+*/
+{
+  const source = fs.readFileSync(
+    path.join(process.cwd(), 'src/lib/services/majestic-service.ts'),
+    'utf8',
+  );
+
+  const queries = (table: string) => {
+    const found: string[] = [];
+    const opener = `.from('${table}')`;
+    for (let at = source.indexOf(opener); at !== -1; at = source.indexOf(opener, at + 1)) {
+      const rest = source.slice(at + opener.length);
+      const stops = [rest.indexOf('.from('), rest.indexOf(';')].filter((index) => index !== -1);
+      found.push(rest.slice(0, stops.length ? Math.min(...stops) : rest.length));
+    }
+    return found.filter((query) => query.includes('.select('));
+  };
+
+  const unbounded: string[] = [];
+  for (const table of ['website_topics', 'websites', 'categories']) {
+    for (const query of queries(table)) {
+      // Either keyed to the rows it is for, or walked in pages. A bare limit
+      // is neither: it is a truncation with a friendlier name.
+      const keyed = query.includes('.in(') || query.includes('.eq(');
+      const paged = query.includes('.range(');
+      if (!keyed && !paged) unbounded.push(table);
+    }
+  }
+
+  is('every read is keyed or paged', unbounded.join(','), '');
+  is('there are reads to check', queries('website_topics').length > 0, true);
+}
+
 console.log(failed ? `\n  ${failed} FAILED\n` : '\n  all passed\n');
 process.exit(failed ? 1 : 0);
