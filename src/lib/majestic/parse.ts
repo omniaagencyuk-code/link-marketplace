@@ -34,16 +34,36 @@ export interface MajesticReading {
 /** How many topics we keep. Majestic exports ten; three is what a card shows. */
 export const TOPICS_KEPT = 3;
 
-const COLUMNS = {
+/**
+ * The spellings each column answers to.
+ *
+ * Exported because the screen that explains why a file was unusable has to
+ * accept exactly what this accepts. A second list would eventually tell
+ * somebody their perfectly good export has no Trust Flow column in it.
+ */
+export const COLUMNS = {
   domain: ['item', 'domain', 'url', 'target', 'subdomain'],
   trustFlow: ['trust flow', 'trustflow', 'tf'],
   citationFlow: ['citation flow', 'citationflow', 'cf'],
   referringDomains: ['referring domains', 'refdomains', 'referringdomains', 'ref domains'],
 } as const;
 
-function key(header: string): string {
+/** What a topic column at `position` may be called. */
+export function topicColumn(position: number): string[] {
+  return [
+    `topical trust flow topic ${position}`,
+    `topicaltrustflow topic ${position}`,
+    `topicaltrustflow topic ${position}`,
+    `ttf topic ${position}`,
+  ];
+}
+
+/** Header names are compared with underscores and runs of space flattened. */
+export function columnKey(header: string): string {
   return header.trim().toLowerCase().replace(/[_\s]+/g, ' ');
 }
+
+const key = columnKey;
 
 /** The first header in `row` that matches one of `names`. */
 function pick(row: Record<string, string>, names: readonly string[]): string | undefined {
@@ -73,16 +93,10 @@ function topicsFrom(row: Record<string, string>): TopicReading[] {
   const readings: TopicReading[] = [];
 
   for (let position = 0; position < TOPICS_KEPT; position += 1) {
-    const topic = pick(row, [
-      `topical trust flow topic ${position}`,
-      `topicaltrustflow topic ${position}`,
-      `topicaltrustflow_topic_${position}`,
-      `ttf topic ${position}`,
-    ]);
+    const topic = pick(row, topicColumn(position));
     const value = pick(row, [
       `topical trust flow value ${position}`,
       `topicaltrustflow value ${position}`,
-      `topicaltrustflow_value_${position}`,
       `ttf value ${position}`,
     ]);
 

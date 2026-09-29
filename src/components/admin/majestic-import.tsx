@@ -9,7 +9,7 @@ import { applyMajesticAction } from '@/app/admin/(protected)/majestic/actions';
 import { parseCsvFile } from '@/lib/import/csv';
 import { readMajesticCsv, type MajesticReading } from '@/lib/majestic/parse';
 import { chunk } from '@/lib/utils/chunk';
-import { acceptedOrEmpty } from '@/lib/majestic/summary';
+import { acceptedOrEmpty, describeUnusableFile } from '@/lib/majestic/summary';
 
 /** How many listings to send in one request, for the same reason as everywhere else. */
 const CHUNK = 100;
@@ -40,6 +40,19 @@ export function MajesticImport() {
       setReadings(found.readings);
       setUnusable(found.unusable);
       setFileName(file.name);
+
+      /*
+        A file that yields nothing used to render nothing.
+
+        The screen parsed it, found no readings, and drew no summary - because
+        the summary was written for the case where there was something to
+        summarise. The commonest way to get here is dropping in the list of
+        domains that went *into* Majestic rather than the export that came
+        out, and being told nothing at all leaves somebody with nowhere to go.
+      */
+      if (found.readings.length === 0) {
+        setMessage(describeUnusableFile(parsed.headers, parsed.rows.length));
+      }
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'That file could not be read.');
     }
@@ -130,7 +143,12 @@ export function MajesticImport() {
         ) : null}
 
         {message ? (
-          <p role="status" className="text-[13px] text-ink-soft">
+          <p
+            role="status"
+            className={`text-[13px] leading-relaxed ${
+              readings.length === 0 && fileName ? 'text-coral-700' : 'text-ink-soft'
+            }`}
+          >
             {message}
           </p>
         ) : null}

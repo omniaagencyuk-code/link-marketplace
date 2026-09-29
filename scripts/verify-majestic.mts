@@ -15,7 +15,7 @@ import Papa from 'papaparse';
 import { nicheFromTopic, suggestNiche } from '../src/lib/majestic/topics';
 import { readMajesticCsv, readRow, TOPICS_KEPT } from '../src/lib/majestic/parse';
 import { categoryBySlug } from '../src/lib/data/categories';
-import { acceptedOrEmpty } from '../src/lib/majestic/summary';
+import { acceptedOrEmpty, describeUnusableFile } from '../src/lib/majestic/summary';
 
 let failed = 0;
 const ok = (l: string) => console.log(`  PASS  ${l}`);
@@ -25,6 +25,8 @@ const bad = (l: string, d?: string) => {
 };
 const is = (l: string, actual: unknown, expected: unknown) =>
   actual === expected ? ok(l) : bad(l, `expected ${String(expected)}, got ${String(actual)}`);
+const has = (l: string, haystack: string, needle: string) =>
+  haystack.includes(needle) ? ok(l) : bad(l, `missing ${JSON.stringify(needle)} in ${JSON.stringify(haystack)}`);
 
 const raw = fs.readFileSync(
   path.join(process.cwd(), 'scripts/fixtures/majestic-export.csv'),
@@ -164,6 +166,49 @@ console.log('\n--- what the import screen says before it writes ---');
   is('and never more than there are readings', summary.withTopics <= file.readings.length, true);
   is('suggestions are a subset of those', summary.suggested <= summary.withTopics, true);
   is('an empty file summarises to nothing', acceptedOrEmpty([]).withTopics, 0);
+}
+
+console.log('\n--- a file that yields nothing says why ---');
+{
+  /*
+    This screen used to render nothing at all for a file it could not use: it
+    parsed it, found no readings, and drew no summary, because the summary was
+    only written for the case where there was something to summarise.
+
+    The commonest way to get there is dropping in the list of domains that
+    went INTO Majestic rather than the export that came out. Both are CSVs,
+    both are called something like "all domains", and one of them has no Trust
+    Flow column at all.
+  */
+  const inputList = describeUnusableFile(['Item'], 925);
+  has('an input list is named as one', inputList, 'pasted *into* Majestic');
+  has('and the export is described', inputList, '.backlinks');
+  has('with the columns it did have', inputList, 'Item');
+
+  const partial = describeUnusableFile(['Item', 'Trust Flow', 'Citation Flow'], 10);
+  has('a missing topic column is named', partial, 'a topic column');
+  is('and the ones present are not', partial.includes('no Trust Flow'), false);
+
+  const empty = describeUnusableFile(
+    ['Item', 'Trust Flow', 'Citation Flow', 'Topical Trust Flow Topic 0'],
+    0,
+  );
+  has('a right-shaped empty file says so', empty, 'no rows in it');
+
+  const notFound = describeUnusableFile(
+    ['Item', 'Trust Flow', 'Citation Flow', 'Topical Trust Flow Topic 0'],
+    12,
+  );
+  has('and rows Majestic found nothing for say that instead', notFound, 'not found');
+
+  // Header matching has to be as forgiving here as it is in the parser, or
+  // the diagnosis contradicts the thing it is diagnosing.
+  is(
+    'the check reads headers the parser would accept',
+    describeUnusableFile(['Domain', 'TrustFlow', 'CitationFlow', 'TopicalTrustFlow_Topic_0'], 5)
+      .includes('no Majestic columns'),
+    false,
+  );
 }
 
 console.log('\n--- the mapping earns its keep on a real export ---');
