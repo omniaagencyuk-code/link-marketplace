@@ -89,10 +89,33 @@ function renderNode(node: RichTextNode, key: string, paragraph: string): ReactNo
           </h3>
         );
       }
+      if (level === 4) {
+        return (
+          <h4 key={key} className="mt-6 mb-2 text-[15px] font-semibold text-ink first:mt-0">
+            {children}
+          </h4>
+        );
+      }
+      /*
+        H5 and H6 are only reachable from the blog toolbar, which is the only
+        place a document gets that deep. They step down in weight rather than
+        in size: below h4 the copy scale has run out, and two more sizes of
+        small bold text read as a mistake rather than as a level.
+      */
+      if (level === 5) {
+        return (
+          <h5 key={key} className="mt-5 mb-2 text-[14px] font-semibold text-ink first:mt-0">
+            {children}
+          </h5>
+        );
+      }
       return (
-        <h4 key={key} className="mt-6 mb-2 text-[15px] font-semibold text-ink first:mt-0">
+        <h6
+          key={key}
+          className="mt-5 mb-2 text-[13px] font-semibold tracking-wide text-ink-soft uppercase first:mt-0"
+        >
           {children}
-        </h4>
+        </h6>
       );
     }
 

@@ -1,4 +1,6 @@
 import { acceptedNichesFromFlags, legacyAcceptanceFlags } from '@/lib/config/accepted-niches';
+import { blogSectionDefaults, readBlogSections, type BlogSections } from '@/lib/config/blog-sections';
+import { cleanRichTextDoc, isRichTextDoc } from '@/lib/cms/rich-text';
 import { nicheName } from '@/lib/data/categories';
 import { countryName } from '@/lib/data/countries';
 import type {
@@ -671,6 +673,8 @@ export interface PostRow {
   seo_title: string | null;
   seo_description: string | null;
   published_at: string;
+  body_doc: unknown;
+  sections: unknown;
   created_at: string;
   updated_at: string;
   updated_by: string | null;
@@ -692,13 +696,22 @@ export function mapPost(row: PostRow): BlogPost {
     seoTitle: row.seo_title ?? undefined,
     seoDescription: row.seo_description ?? undefined,
     publishedAt: row.published_at,
+    // Whatever is in the column, put back through the whitelist. The row was
+    // written by this application, but a mapper that trusts its input is one
+    // schema change away from not being able to say that any more.
+    bodyDoc: isRichTextDoc(row.body_doc) ? cleanRichTextDoc(row.body_doc) : undefined,
+    sections: readBlogSections(row.sections),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     updatedBy: row.updated_by ?? undefined,
   };
 }
 
-export function postToRow(post: Omit<BlogPost, 'id' | 'createdAt' | 'updatedAt'>) {
+export function postToRow(
+  post: Omit<BlogPost, 'id' | 'createdAt' | 'updatedAt' | 'sections'> & {
+    sections?: BlogSections;
+  },
+) {
   return {
     slug: post.slug,
     title: post.title,
@@ -712,6 +725,11 @@ export function postToRow(post: Omit<BlogPost, 'id' | 'createdAt' | 'updatedAt'>
     seo_title: post.seoTitle ?? null,
     seo_description: post.seoDescription ?? null,
     published_at: post.publishedAt,
+    // Cleaned on the way in as well as on the way out. The editor already
+    // does it, but the editor is not the only caller this function will ever
+    // have, and the whitelist is cheap.
+    body_doc: post.bodyDoc ? cleanRichTextDoc(post.bodyDoc) : null,
+    sections: post.sections ?? blogSectionDefaults,
     updated_by: post.updatedBy ?? null,
   };
 }

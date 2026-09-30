@@ -1,6 +1,7 @@
 import { seedPosts } from '@/lib/data/blog-posts';
 import { isSupabaseEnabled } from '@/lib/supabase/config';
 import { supabaseBlogRepository } from './supabase/cms-repository';
+import { blogSectionDefaults } from '@/lib/config/blog-sections';
 import type { BlogPost, BlogPostInput, PostCategorySlug } from '@/lib/types/blog';
 
 /**
@@ -107,6 +108,7 @@ export const blogService = {
     const now = new Date().toISOString();
     const post: BlogPost = {
       ...input,
+      sections: input.sections ?? blogSectionDefaults,
       id: newId(),
       createdAt: now,
       updatedAt: now,
@@ -123,6 +125,7 @@ export const blogService = {
     const updated: BlogPost = {
       ...(store[index] as BlogPost),
       ...input,
+      sections: input.sections ?? (store[index] as BlogPost).sections,
       id,
       updatedAt: new Date().toISOString(),
       updatedBy,

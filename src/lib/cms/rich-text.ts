@@ -84,8 +84,17 @@ const ALLOWED_MARKS: ReadonlySet<string> = new Set<RichTextMarkType>([
   'link',
 ]);
 
-/** Matches the page copy scale: h2 down to h4, never h1 - the page owns that. */
-const HEADING_LEVELS = [2, 3, 4];
+/**
+ * Never h1 - the page owns that, and a second one is a real SEO fault rather
+ * than a matter of taste.
+ *
+ * The range runs to h6 because an article can genuinely need that depth, while
+ * a landing page cannot. Which levels an editor is *offered* is a property of
+ * the toolbar, not of the format: the page editor still stops at h4. This list
+ * only decides what survives a save, and clamping a level the blog toolbar
+ * offers would silently turn an h5 into an h2 on the way to the database.
+ */
+const HEADING_LEVELS = [2, 3, 4, 5, 6];
 
 export function isRichTextDoc(value: unknown): value is RichTextDoc {
   return (

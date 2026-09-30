@@ -6,6 +6,8 @@ import { requireAdminSession } from '@/lib/auth/admin-access';
 import { blogService } from '@/lib/services/blog-service';
 import { postCategories, postStatuses, slugifyTitle } from '@/lib/config/blog';
 import { sanitiseText } from '@/lib/import/normalise';
+import { cleanRichTextDoc, isRichTextDoc, isRichTextEmpty, type RichTextDoc } from '@/lib/cms/rich-text';
+import { readBlogSections, type BlogSections } from '@/lib/config/blog-sections';
 import type { BlogPostInput, PostCategorySlug, PostStatus } from '@/lib/types/blog';
 
 /**
@@ -25,6 +27,76 @@ const categorySlugs = new Set(postCategories.map((category) => category.slug));
 const statusValues = new Set(postStatuses.map((status) => status.value));
 
 const MAX_BODY = 120_000;
+
+/**
+ * A section field, one line, trimmed to something a heading can be.
+ *
+ * The same single-line sanitiser the rest of the admin uses. These are copy an
+ * editor types, rendered as React text nodes rather than markup, so this is
+ * about keeping the stored data tidy rather than about safety.
+ */
+const line = (raw: unknown, max: number) => sanitiseText(String(raw ?? ''), max);
+
+/** A link an editor typed: internal, or an absolute http(s) URL. Never else. */
+function safeLink(raw: unknown, fallback: string): string {
+  const href = String(raw ?? '').trim();
+  if (href.startsWith('/') || /^https?:\/\//i.test(href)) return sanitiseText(href, 500);
+  return fallback;
+}
+
+/** The editor posts these as JSON, because a form field holds a string. */
+function readJson(formData: FormData, field: string): unknown {
+  const raw = String(formData.get(field) ?? '').trim();
+  if (!raw) return undefined;
+  try {
+    return JSON.parse(raw);
+  } catch {
+    // A field that did not survive the round trip is not a reason to lose the
+    // save - the defaults, or the markdown, still produce a complete post.
+    return undefined;
+  }
+}
+
+/**
+ * The post's sections, read back through the same whitelist the page uses.
+ *
+ * `readBlogSections` fills every gap from the defaults, so what comes out is
+ * always complete whatever the form sent. Each string is then sanitised and
+ * each link checked, because between the form and here is a server action
+ * endpoint that anything can post to.
+ */
+function readSections(formData: FormData): BlogSections {
+  const parsed = readBlogSections(readJson(formData, 'sections'));
+
+  return {
+    marketplace: {
+      show: parsed.marketplace.show,
+      heading: line(parsed.marketplace.heading, 160),
+      body: line(parsed.marketplace.body, 600),
+      ctaLabel: line(parsed.marketplace.ctaLabel, 60),
+      ctaHref: safeLink(parsed.marketplace.ctaHref, '/marketplace'),
+      note: line(parsed.marketplace.note, 200),
+    },
+    faqs: parsed.faqs
+      .map((faq) => ({ question: line(faq.question, 300), answer: line(faq.answer, 1500) }))
+      .filter((faq) => faq.question && faq.answer)
+      .slice(0, 20),
+    relatedMode: parsed.relatedMode,
+    cta: {
+      show: parsed.cta.show,
+      heading: line(parsed.cta.heading, 160),
+      body: line(parsed.cta.body, 600),
+      primaryLabel: line(parsed.cta.primaryLabel, 60),
+      primaryHref: safeLink(parsed.cta.primaryHref, '/signup'),
+      secondaryLabel: line(parsed.cta.secondaryLabel, 60),
+      // Blank rather than a fallback: an empty label hides the button, and a
+      // button with no label and a real href would be a hole in the page.
+      secondaryHref: line(parsed.cta.secondaryLabel, 60)
+        ? safeLink(parsed.cta.secondaryHref, '/marketplace')
+        : '',
+    },
+  };
+}
 
 function cleanMarkdown(source: string): string {
   return source
@@ -57,7 +129,18 @@ async function readPost(
   }
 
   const body = cleanMarkdown(String(formData.get('body') ?? ''));
-  if (!body.trim()) return { error: 'The post has no content.' };
+
+  /*
+    The article is in one of two fields and the check has to allow either.
+
+    A post written in the editor has an empty `body` - requiring markdown here
+    would reject every post the editor produces, and requiring the document
+    would reject every post written before it existed.
+  */
+  const rawDoc = readJson(formData, 'bodyDoc');
+  const bodyDoc = isRichTextDoc(rawDoc) ? cleanRichTextDoc(rawDoc) : undefined;
+  const hasDoc = Boolean(bodyDoc && !isRichTextEmpty(bodyDoc));
+  if (!hasDoc && !body.trim()) return { error: 'The post has no content.' };
 
   const category = String(formData.get('category') ?? '');
   if (!categorySlugs.has(category as PostCategorySlug)) {
@@ -81,6 +164,8 @@ async function readPost(
       title,
       excerpt: sanitiseText(String(formData.get('excerpt') ?? ''), 400),
       body,
+      bodyDoc: hasDoc ? (bodyDoc as RichTextDoc) : undefined,
+      sections: readSections(formData),
       category: category as PostCategorySlug,
       status: status as PostStatus,
       author: sanitiseText(String(formData.get('author') ?? ''), 120) || 'Press Parrot',

@@ -1,3 +1,4 @@
+import { blogSectionDefaults } from '@/lib/config/blog-sections';
 import type { BlogPost } from '@/lib/types/blog';
 
 /**
@@ -27,6 +28,7 @@ export const seedPosts: BlogPost[] = [
     publishedAt: '2026-08-18T09:00:00.000Z',
     createdAt: '2026-08-18T09:00:00.000Z',
     updatedAt: '2026-08-18T09:00:00.000Z',
+    sections: blogSectionDefaults,
     seoTitle: 'How to build a link plan that survives a core update',
     seoDescription:
       'Spread link acquisition across pages, anchors and placement types so one algorithm change cannot undo months of work. A practical planning framework.',
@@ -84,6 +86,7 @@ That last point matters. Most of the damage done after an update is done by peop
     publishedAt: '2026-07-30T09:00:00.000Z',
     createdAt: '2026-07-30T09:00:00.000Z',
     updatedAt: '2026-07-30T09:00:00.000Z',
+    sections: blogSectionDefaults,
     seoTitle: 'What drives the price of a link placement',
     seoDescription:
       'Why two sites with the same domain rating can be priced very differently, and which of those factors are actually worth paying for.',
@@ -137,6 +140,7 @@ Our [marketplace](/marketplace) shows the price of every placement upfront, per 
     publishedAt: '2026-07-02T09:00:00.000Z',
     createdAt: '2026-07-02T09:00:00.000Z',
     updatedAt: '2026-07-02T09:00:00.000Z',
+    sections: blogSectionDefaults,
     seoTitle: 'Guest post vs niche edit: which to use, and when',
     seoDescription:
       'When a new article beats a link insertion, how host page age affects results, and how anchor choice differs between guest posts and niche edits.',
@@ -196,6 +200,7 @@ Most campaigns that work use niche edits to keep momentum on pages that are clos
     publishedAt: '2026-06-11T09:00:00.000Z',
     createdAt: '2026-06-11T09:00:00.000Z',
     updatedAt: '2026-06-11T09:00:00.000Z',
+    sections: blogSectionDefaults,
     seoTitle: 'How to brief SEO content that ranks and reads well',
     seoDescription:
       'Most weak articles are weak because the brief was weak. What belongs in a content brief, what to leave to the writer, and why keyword lists are not a brief.',
@@ -244,6 +249,7 @@ If you would rather not run this process yourself, our [content writing service]
     publishedAt: '2026-05-20T09:00:00.000Z',
     createdAt: '2026-05-20T09:00:00.000Z',
     updatedAt: '2026-05-20T09:00:00.000Z',
+    sections: blogSectionDefaults,
     seoTitle: 'Running link building across many clients',
     seoDescription:
       'The operational problems that appear when you run link building for a dozen clients, and the decisions that prevent most of them.',
@@ -290,6 +296,7 @@ Press Parrot gives agencies one marketplace, consistent pricing and a single ord
     publishedAt: '2026-09-20T09:00:00.000Z',
     createdAt: '2026-09-10T09:00:00.000Z',
     updatedAt: '2026-09-10T09:00:00.000Z',
+    sections: blogSectionDefaults,
     seoTitle: 'How Press Parrot vets publishers',
     seoDescription:
       'The checks a website has to pass before it is listed in the Press Parrot marketplace, and what vetting can and cannot tell you.',

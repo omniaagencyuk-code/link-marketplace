@@ -41,25 +41,41 @@ import { MediaPicker } from './media-picker';
  * applies on save, so what the editor sees is what the page will get.
  */
 
-const HEADINGS = [
-  { level: 0, label: 'Paragraph' },
-  { level: 2, label: 'Heading 2' },
-  { level: 3, label: 'Heading 3' },
-  { level: 4, label: 'Heading 4' },
-];
+/**
+ * What the dropdown offers, per surface.
+ *
+ * A landing page has four levels of structure at most and an editor given six
+ * will use six, so the page editor keeps the shorter list. An article can
+ * genuinely be that deep, which is the one place the longer one is offered.
+ * Both stop above H1: the page owns that.
+ */
+const PAGE_HEADINGS = [2, 3, 4] as const;
+const ARTICLE_HEADINGS = [2, 3, 4, 5, 6] as const;
+
+export type HeadingRange = 'page' | 'article';
+
+type HeadingLevel = 2 | 3 | 4 | 5 | 6;
+
+function headingsFor(range: HeadingRange): readonly HeadingLevel[] {
+  return range === 'article' ? ARTICLE_HEADINGS : PAGE_HEADINGS;
+}
 
 export function RichTextEditor({
   value,
   onChange,
   rows = 10,
   id,
+  headings = 'page',
 }: {
   /** Markdown from the shipped copy, or a document from a previous edit. */
   value: string | RichTextDoc;
   onChange: (value: RichTextDoc) => void;
   rows?: number;
   id?: string;
+  /** How deep the heading dropdown goes. Articles get H2-H6, pages H2-H4. */
+  headings?: HeadingRange;
 }) {
+  const levels = headingsFor(headings);
   const [linkOpen, setLinkOpen] = useState(false);
   const [mediaOpen, setMediaOpen] = useState(false);
 
@@ -70,7 +86,7 @@ export function RichTextEditor({
     immediatelyRender: false,
     extensions: [
       StarterKit.configure({
-        heading: { levels: [2, 3, 4] },
+        heading: { levels: [...levels] },
         // The page's own rules: no H1, no horizontal rules, no code blocks.
         horizontalRule: false,
         codeBlock: false,
@@ -119,15 +135,15 @@ export function RichTextEditor({
       <div className="flex flex-wrap items-center gap-1 border-b border-line bg-surface/70 px-2 py-1.5">
         <select
           aria-label="Text style"
-          value={currentHeading(editor)}
+          value={currentHeading(editor, levels)}
           onChange={(event) => {
             const level = Number(event.target.value);
             if (level === 0) editor.chain().focus().setParagraph().run();
-            else editor.chain().focus().toggleHeading({ level: level as 2 | 3 | 4 }).run();
+            else editor.chain().focus().toggleHeading({ level: level as HeadingLevel }).run();
           }}
           className="h-7 rounded border border-line-strong bg-white px-1.5 text-[12px] text-ink"
         >
-          {HEADINGS.map((heading) => (
+          {[{ level: 0, label: 'Paragraph' }, ...levels.map((level) => ({ level, label: `Heading ${level}` }))].map((heading) => (
             <option key={heading.level} value={heading.level}>
               {heading.label}
             </option>
@@ -258,8 +274,8 @@ export function RichTextEditor({
   );
 }
 
-function currentHeading(editor: Editor): number {
-  for (const level of [2, 3, 4]) {
+function currentHeading(editor: Editor, levels: readonly HeadingLevel[]): number {
+  for (const level of levels) {
     if (editor.isActive('heading', { level })) return level;
   }
   return 0;

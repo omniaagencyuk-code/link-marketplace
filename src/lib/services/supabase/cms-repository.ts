@@ -93,7 +93,7 @@ export const supabasePageContentRepository = {
 // --------------------------------------------------------------------- blog
 
 const POST_SELECT =
-  'id, slug, title, excerpt, body, category, status, author, cover_image_src, cover_image_alt, seo_title, seo_description, published_at, created_at, updated_at, updated_by';
+  'id, slug, title, excerpt, body, body_doc, sections, category, status, author, cover_image_src, cover_image_alt, seo_title, seo_description, published_at, created_at, updated_at, updated_by';
 
 export const supabaseBlogRepository = {
   async listPublished(options: { category?: PostCategorySlug; limit?: number } = {}) {

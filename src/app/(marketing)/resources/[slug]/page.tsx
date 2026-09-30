@@ -3,10 +3,14 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { ArrowLeft } from 'lucide-react';
 import { Container } from '@/components/layout/container';
-import { Button } from '@/components/ui/button';
 import { PostCard } from '@/components/blog/post-card';
-import { Markdown, markdownToPlainText, readingTime } from '@/lib/cms/markdown';
+import { Markdown, markdownToPlainText, readingTime, wordsToReadingTime } from '@/lib/cms/markdown';
+import { RichText } from '@/lib/cms/rich-text-render';
+import { richTextToPlainText } from '@/lib/cms/rich-text';
+import { PostCta, PostFaqs, PostMarketplace } from '@/components/blog/post-sections';
 import { blogService } from '@/lib/services/blog-service';
+import { websiteService } from '@/lib/services';
+import { RELATED_POST_COUNT } from '@/lib/config/blog-sections';
 import { categoryName } from '@/lib/config/blog';
 import { formatDate } from '@/lib/utils/format';
 import { brand, siteUrl } from '@/lib/config/brand';
@@ -29,7 +33,15 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   const post = await blogService.getPublishedBySlug(slug);
   if (!post) return { title: 'Article not found', robots: { index: false, follow: true } };
 
-  const description = post.seoDescription || post.excerpt || markdownToPlainText(post.body, 155);
+  const description =
+    post.seoDescription ||
+    post.excerpt ||
+    // Whichever half of the article actually holds it. A post written in the
+    // editor has an empty `body`, and a meta description taken from that is
+    // an empty meta description.
+    (post.bodyDoc
+      ? richTextToPlainText(post.bodyDoc, 155)
+      : markdownToPlainText(post.body, 155));
 
   return {
     title: post.seoTitle || post.title,
@@ -54,7 +66,27 @@ export default async function BlogPostPage({ params }: PageProps) {
   const post = await blogService.getPublishedBySlug(slug);
   if (!post) notFound();
 
-  const related = await blogService.getRelated(slug, 3);
+  const { sections } = post;
+
+  /*
+    What follows the article, and the table beside the marketplace block.
+
+    Both are fetched only where the post asks for them: a post that ends at
+    the call to action should not pay for a query whose rows it throws away.
+  */
+  const [following, preview] = await Promise.all([
+    sections.relatedMode === 'related'
+      ? blogService.getRelated(slug, RELATED_POST_COUNT)
+      : sections.relatedMode === 'latest'
+        ? blogService
+            .listPublished({ limit: RELATED_POST_COUNT + 1 })
+            .then((posts) => posts.filter((entry) => entry.slug !== slug).slice(0, RELATED_POST_COUNT))
+        : Promise.resolve([]),
+    sections.marketplace.show
+      ? websiteService.getPublicPreview(6).then((result) => result.rows)
+      : Promise.resolve([]),
+  ]);
+
   const description = post.seoDescription || post.excerpt;
 
   const articleJsonLd = {
@@ -69,6 +101,23 @@ export default async function BlogPostPage({ params }: PageProps) {
     mainEntityOfPage: `${siteUrl}/resources/${post.slug}`,
     ...(post.coverImage?.src ? { image: post.coverImage.src } : {}),
   };
+
+  /*
+    Only where there are questions and answers on the page. Claiming a FAQPage
+    with nothing under it is the kind of markup that costs a site its rich
+    results across the board rather than on the one page.
+  */
+  const faqJsonLd = sections.faqs.length
+    ? {
+        '@context': 'https://schema.org',
+        '@type': 'FAQPage',
+        mainEntity: sections.faqs.map((faq) => ({
+          '@type': 'Question',
+          name: faq.question,
+          acceptedAnswer: { '@type': 'Answer', text: faq.answer },
+        })),
+      }
+    : null;
 
   const breadcrumbJsonLd = {
     '@context': 'https://schema.org',
@@ -95,6 +144,12 @@ export default async function BlogPostPage({ params }: PageProps) {
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbJsonLd) }}
       />
+      {faqJsonLd ? (
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(faqJsonLd) }}
+        />
+      ) : null}
 
       <article>
         <header className="border-b border-line bg-white">
@@ -138,7 +193,14 @@ export default async function BlogPostPage({ params }: PageProps) {
                 <span aria-hidden="true">&middot;</span>
                 <time dateTime={post.publishedAt}>{formatDate(post.publishedAt)}</time>
                 <span aria-hidden="true">&middot;</span>
-                <span>{readingTime(post.body)}</span>
+                <span>
+                  {post.bodyDoc
+                    ? wordsToReadingTime(
+                        richTextToPlainText(post.bodyDoc, Number.MAX_SAFE_INTEGER).split(/\s+/)
+                          .length,
+                      )
+                    : readingTime(post.body)}
+                </span>
               </div>
             </div>
           </Container>
@@ -158,7 +220,13 @@ export default async function BlogPostPage({ params }: PageProps) {
 
         <Container size="wide" className="py-10 lg:py-14">
           <div className="mx-auto max-w-2xl">
-            <Markdown source={post.body} variant="article" />
+            {/* Whichever the post was written in. Nothing was converted when
+                the editor arrived, so both remain first-class. */}
+            {post.bodyDoc ? (
+              <RichText source={post.bodyDoc} variant="article" />
+            ) : (
+              <Markdown source={post.body} variant="article" />
+            )}
           </div>
 
           <div className="mx-auto mt-12 max-w-2xl border-t border-line pt-8">
@@ -173,14 +241,27 @@ export default async function BlogPostPage({ params }: PageProps) {
         </Container>
       </article>
 
-      {related.length ? (
+      {/*
+        Order matters and is fixed rather than editable: the marketplace block
+        is the commercial ask and earns its place directly after the argument
+        that justified it; questions answer whatever the article left open;
+        more reading is the consolation for anyone not ready to act; and the
+        call to action closes, where it has always closed.
+      */}
+      {sections.marketplace.show && preview.length ? (
+        <PostMarketplace section={sections.marketplace} rows={preview} />
+      ) : null}
+
+      {sections.faqs.length ? <PostFaqs faqs={sections.faqs} /> : null}
+
+      {following.length ? (
         <section className="border-t border-line bg-surface" aria-labelledby="related-heading">
           <Container size="wide" className="py-14">
             <h2 id="related-heading" className="text-[15px] font-semibold text-ink">
-              Keep reading
+              {sections.relatedMode === 'latest' ? 'Latest from the blog' : 'Keep reading'}
             </h2>
             <ul className="mt-5 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-              {related.map((entry) => (
+              {following.map((entry) => (
                 <li key={entry.id}>
                   <PostCard post={entry} />
                 </li>
@@ -190,29 +271,7 @@ export default async function BlogPostPage({ params }: PageProps) {
         </section>
       ) : null}
 
-      <section className="bg-navy-950 text-white">
-        <Container size="wide" className="py-14 text-center lg:py-20">
-          <h2 className="mx-auto max-w-2xl text-2xl font-semibold tracking-tight sm:text-3xl">
-            Put it into practice
-          </h2>
-          <p className="mx-auto mt-3 max-w-xl text-[15px] leading-relaxed text-white/70">
-            Create a free account and search thousands of vetted publishers in a few minutes.
-          </p>
-          <div className="mt-7 flex flex-wrap items-center justify-center gap-3">
-            <Button asChild variant="accent" size="lg">
-              <Link href="/signup">Create Free Account</Link>
-            </Button>
-            <Button
-              asChild
-              variant="outline"
-              size="lg"
-              className="border-white/25 bg-transparent text-white hover:bg-white/10 hover:text-white"
-            >
-              <Link href="/marketplace">Explore the marketplace</Link>
-            </Button>
-          </div>
-        </Container>
-      </section>
+      {sections.cta.show ? <PostCta section={sections.cta} /> : null}
     </>
   );
 }

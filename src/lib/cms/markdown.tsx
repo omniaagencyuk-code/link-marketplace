@@ -316,5 +316,10 @@ export function markdownToPlainText(source: string, maxLength = 200): string {
 /** Rough reading time, for blog post headers. */
 export function readingTime(source: string): string {
   const words = markdownToPlainText(source, Number.MAX_SAFE_INTEGER).split(/\s+/).filter(Boolean);
-  return `${Math.max(1, Math.round(words.length / 225))} min read`;
+  return wordsToReadingTime(words.length);
+}
+
+/** The same estimate from a word count somebody else has already taken. */
+export function wordsToReadingTime(words: number): string {
+  return `${Math.max(1, Math.round(words / 225))} min read`;
 }

@@ -3,30 +3,51 @@
 import { useActionState, useState } from 'react';
 import { useFormStatus } from 'react-dom';
 import Link from 'next/link';
-import { AlertCircle, Eye, ExternalLink, Pencil } from 'lucide-react';
+import { AlertCircle, ExternalLink, Plus, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select } from '@/components/ui/select';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Markdown } from '@/lib/cms/markdown';
+import { RichTextEditor } from '@/components/admin/cms/rich-text-editor';
+import type { RichTextDoc } from '@/lib/cms/rich-text';
+import {
+  RELATED_MODES,
+  blogSectionDefaults,
+  type BlogFaq,
+  type BlogSections,
+  type RelatedMode,
+} from '@/lib/config/blog-sections';
 import { postCategories, postStatuses, slugifyTitle } from '@/lib/config/blog';
 import {
   createPostAction,
   updatePostAction,
   type PostActionState,
 } from '@/app/admin/(protected)/blog/actions';
-import { cn } from '@/lib/utils/cn';
 import type { BlogPost } from '@/lib/types/blog';
 
 /**
  * Write or edit a post.
  *
- * Markdown with a live preview rather than a rich-text editor. That is a
- * deliberate trade: markdown is stored as plain text, it diffs cleanly, it
- * cannot carry pasted styling from Word, and it cannot smuggle markup into the
- * page. The preview uses the exact renderer the public page uses, so what is
- * shown here is what publishes.
+ * One editable article with a toolbar over it, and the blocks around it as
+ * fields underneath. The article used to be a markdown textarea with a preview
+ * tab, which is a fine way to write if you write markdown and a bad one if you
+ * do not - and the people writing posts here do not.
+ *
+ * It is the same editor the page CMS uses, which matters more than it sounds:
+ * everything on the toolbar maps to a node the renderer already knows how to
+ * draw, so there is no font, no colour and no size to reach for, and what is
+ * typed here is what publishes. The one difference is the heading dropdown,
+ * which runs to H6 for an article where a landing page stops at H4.
+ *
+ * Markdown is not thrown away. A post written before this existed opens as a
+ * document, converted on the way in, and its original markdown is submitted
+ * untouched - so the conversion is recoverable if it ever turns out to be
+ * lossy on some post nobody has looked at yet.
+ *
+ * Deliberately absent: the value-point row the service pages carry. Four short
+ * benefit statements under a sales headline make sense; under the headline of
+ * an article they do not.
  */
 export function PostEditor({ post }: { post?: BlogPost }) {
   const isEdit = Boolean(post);
@@ -38,14 +59,25 @@ export function PostEditor({ post }: { post?: BlogPost }) {
   const [title, setTitle] = useState(post?.title ?? '');
   const [slug, setSlug] = useState(post?.slug ?? '');
   const [slugTouched, setSlugTouched] = useState(Boolean(post));
-  const [body, setBody] = useState(post?.body ?? '');
-  const [tab, setTab] = useState<'write' | 'preview'>('write');
+  // The article as a document. A post written in markdown is converted by the
+  // editor on the way in; `post.body` still travels with the form untouched.
+  const [bodyDoc, setBodyDoc] = useState<RichTextDoc | null>(post?.bodyDoc ?? null);
+  const [sections, setSections] = useState<BlogSections>(post?.sections ?? blogSectionDefaults);
+
+  const setMarketplace = (patch: Partial<BlogSections['marketplace']>) =>
+    setSections((current) => ({ ...current, marketplace: { ...current.marketplace, ...patch } }));
+  const setCta = (patch: Partial<BlogSections['cta']>) =>
+    setSections((current) => ({ ...current, cta: { ...current.cta, ...patch } }));
+  const setFaqs = (faqs: BlogFaq[]) => setSections((current) => ({ ...current, faqs }));
 
   const effectiveSlug = slugTouched ? slug : slugifyTitle(title);
 
   return (
     <form action={formAction} className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_20rem]">
       {post ? <input type="hidden" name="id" value={post.id} /> : null}
+      {/* Every section as one field: a form holds strings, and splitting this
+          into thirty named inputs would put the shape in two places. */}
+      <input type="hidden" name="sections" value={JSON.stringify(sections)} />
 
       <div className="min-w-0 space-y-5">
         <Card>
@@ -101,52 +133,278 @@ export function PostEditor({ post }: { post?: BlogPost }) {
         </Card>
 
         <Card>
-          <CardHeader className="flex items-center justify-between gap-3">
+          <CardHeader>
             <CardTitle>Content</CardTitle>
-            <div className="flex rounded-md border border-line-strong p-0.5">
-              <TabButton active={tab === 'write'} onClick={() => setTab('write')} icon={Pencil}>
-                Write
-              </TabButton>
-              <TabButton active={tab === 'preview'} onClick={() => setTab('preview')} icon={Eye}>
-                Preview
-              </TabButton>
-            </div>
           </CardHeader>
           <CardContent>
-            {/* The textarea stays mounted while previewing so the form still
-                submits its value and the caret position is not lost. */}
-            <div className={tab === 'write' ? '' : 'hidden'}>
-              <Label htmlFor="body" className="sr-only">
-                Post content
-              </Label>
-              <textarea
-                id="body"
-                name="body"
-                rows={24}
-                required
-                value={body}
-                onChange={(event) => setBody(event.target.value)}
-                placeholder={'## A subheading\n\nA paragraph. **Bold**, *italic*, and [an internal link](/link-building).\n\n- A bullet\n- Another bullet\n\n> A pull quote.'}
-                className="w-full rounded-md border border-line-strong bg-white px-3 py-2 font-mono text-[13px] leading-relaxed text-ink focus:border-accent-500 focus:ring-2 focus:ring-accent-500/20 focus:outline-none"
-              />
-              <p className="mt-2 text-[12px] text-muted">
-                Markdown. <code className="font-mono">##</code> subheading,{' '}
-                <code className="font-mono">-</code> bullet, <code className="font-mono">&gt;</code>{' '}
-                quote, <code className="font-mono">**bold**</code>,{' '}
-                <code className="font-mono">[text](/page)</code> for an internal link.
-              </p>
-            </div>
+            <Label htmlFor="body" className="sr-only">
+              Post content
+            </Label>
+            {/*
+              The markdown travels with the form exactly as it was stored. The
+              page renders the document in preference to it, so this is a
+              record rather than a second source of truth - and the one way
+              back if a conversion ever turns out to have lost something.
+            */}
+            <input type="hidden" name="body" value={post?.body ?? ''} />
+            <input
+              type="hidden"
+              name="bodyDoc"
+              value={bodyDoc ? JSON.stringify(bodyDoc) : ''}
+            />
+            <RichTextEditor
+              id="body"
+              value={bodyDoc ?? post?.body ?? ''}
+              onChange={setBodyDoc}
+              headings="article"
+              rows={24}
+            />
+            <p className="mt-2 text-[12px] text-muted">
+              Headings run from H2 to H6 - the page owns the H1, which is the post
+              title. Paste from anywhere: styling is dropped on the way in.
+            </p>
+          </CardContent>
+        </Card>
 
-            {tab === 'preview' ? (
-              <div className="rounded-md border border-line bg-surface/50 p-5">
-                {body.trim() ? (
-                  <Markdown source={body} variant="article" />
-                ) : (
-                  <p className="text-[13px] text-muted">Nothing to preview yet.</p>
-                )}
+        <Card>
+          <CardHeader className="flex items-center justify-between gap-3">
+            <CardTitle>Marketplace block</CardTitle>
+            <ShowToggle
+              label="Marketplace block"
+              checked={sections.marketplace.show}
+              onChange={(show) => setMarketplace({ show })}
+            />
+          </CardHeader>
+          {sections.marketplace.show ? (
+            <CardContent className="space-y-4">
+              <Field label="Heading" id="mkHeading">
+                <Input
+                  id="mkHeading"
+                  value={sections.marketplace.heading}
+                  onChange={(event) => setMarketplace({ heading: event.target.value })}
+                  maxLength={160}
+                  className="mt-1.5"
+                />
+              </Field>
+              <Field label="Supporting copy" id="mkBody">
+                <TextArea
+                  id="mkBody"
+                  rows={3}
+                  maxLength={600}
+                  value={sections.marketplace.body}
+                  onChange={(value) => setMarketplace({ body: value })}
+                />
+              </Field>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <Field label="Button label" id="mkLabel">
+                  <Input
+                    id="mkLabel"
+                    value={sections.marketplace.ctaLabel}
+                    onChange={(event) => setMarketplace({ ctaLabel: event.target.value })}
+                    maxLength={60}
+                    className="mt-1.5"
+                  />
+                </Field>
+                <Field label="Button link" id="mkHref">
+                  <Input
+                    id="mkHref"
+                    value={sections.marketplace.ctaHref}
+                    onChange={(event) => setMarketplace({ ctaHref: event.target.value })}
+                    className="mt-1.5 font-mono text-[13px]"
+                  />
+                </Field>
               </div>
+              <Field label="Line under the button" id="mkNote">
+                <Input
+                  id="mkNote"
+                  value={sections.marketplace.note}
+                  onChange={(event) => setMarketplace({ note: event.target.value })}
+                  maxLength={200}
+                  className="mt-1.5"
+                />
+              </Field>
+              <p className="text-[12px] text-muted">
+                The redacted table beside this is generated from live listings. It never
+                shows real domains to a signed-out visitor.
+              </p>
+            </CardContent>
+          ) : null}
+        </Card>
+
+        <Card>
+          <CardHeader className="flex items-center justify-between gap-3">
+            <CardTitle>FAQs</CardTitle>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setFaqs([...sections.faqs, { question: '', answer: '' }])}
+            >
+              <Plus className="h-3.5 w-3.5" aria-hidden="true" />
+              Add question
+            </Button>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {sections.faqs.length === 0 ? (
+              <p className="text-[13px] text-muted">
+                No questions, so the section does not appear. Add some and they publish
+                as a FAQ block with the structured data Google reads for rich results.
+              </p>
+            ) : null}
+
+            {sections.faqs.map((faq, index) => (
+              <div key={index} className="rounded-md border border-line p-3.5">
+                <div className="flex items-start gap-2">
+                  <div className="min-w-0 flex-1 space-y-3">
+                    <Input
+                      aria-label={`Question ${index + 1}`}
+                      placeholder="Does a guest post have to be dofollow?"
+                      value={faq.question}
+                      maxLength={300}
+                      onChange={(event) =>
+                        setFaqs(
+                          sections.faqs.map((entry, at) =>
+                            at === index ? { ...entry, question: event.target.value } : entry,
+                          ),
+                        )
+                      }
+                    />
+                    <TextArea
+                      id={`faq-answer-${index}`}
+                      label={`Answer ${index + 1}`}
+                      rows={3}
+                      maxLength={1500}
+                      placeholder="Answer it in full here. Half an answer is worse than none - this is the text Google shows."
+                      value={faq.answer}
+                      onChange={(value) =>
+                        setFaqs(
+                          sections.faqs.map((entry, at) =>
+                            at === index ? { ...entry, answer: value } : entry,
+                          ),
+                        )
+                      }
+                    />
+                  </div>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon-sm"
+                    aria-label={`Remove question ${index + 1}`}
+                    onClick={() => setFaqs(sections.faqs.filter((_, at) => at !== index))}
+                  >
+                    <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
+                  </Button>
+                </div>
+              </div>
+            ))}
+
+            {sections.faqs.length ? (
+              <p className="text-[12px] text-muted">
+                A question with an empty answer is dropped on save. Structured data that
+                claims an answer and has none costs rich results across the whole site,
+                not just this page.
+              </p>
             ) : null}
           </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>After the article</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <Label htmlFor="relatedMode">Show</Label>
+            <Select
+              id="relatedMode"
+              value={sections.relatedMode}
+              onChange={(event) =>
+                setSections((current) => ({
+                  ...current,
+                  relatedMode: event.target.value as RelatedMode,
+                }))
+              }
+              className="mt-1.5"
+            >
+              {RELATED_MODES.map((mode) => (
+                <option key={mode.value} value={mode.value}>
+                  {mode.label}
+                </option>
+              ))}
+            </Select>
+            <p className="mt-2 text-[12px] text-muted">
+              {RELATED_MODES.find((mode) => mode.value === sections.relatedMode)?.help}
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex items-center justify-between gap-3">
+            <CardTitle>Closing call to action</CardTitle>
+            <ShowToggle
+              label="Closing call to action"
+              checked={sections.cta.show}
+              onChange={(show) => setCta({ show })}
+            />
+          </CardHeader>
+          {sections.cta.show ? (
+            <CardContent className="space-y-4">
+              <Field label="Heading" id="ctaHeading">
+                <Input
+                  id="ctaHeading"
+                  value={sections.cta.heading}
+                  onChange={(event) => setCta({ heading: event.target.value })}
+                  maxLength={160}
+                  className="mt-1.5"
+                />
+              </Field>
+              <Field label="Supporting copy" id="ctaBody">
+                <TextArea
+                  id="ctaBody"
+                  rows={2}
+                  maxLength={600}
+                  value={sections.cta.body}
+                  onChange={(value) => setCta({ body: value })}
+                />
+              </Field>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <Field label="Primary button" id="ctaPrimaryLabel">
+                  <Input
+                    id="ctaPrimaryLabel"
+                    value={sections.cta.primaryLabel}
+                    onChange={(event) => setCta({ primaryLabel: event.target.value })}
+                    maxLength={60}
+                    className="mt-1.5"
+                  />
+                </Field>
+                <Field label="Primary link" id="ctaPrimaryHref">
+                  <Input
+                    id="ctaPrimaryHref"
+                    value={sections.cta.primaryHref}
+                    onChange={(event) => setCta({ primaryHref: event.target.value })}
+                    className="mt-1.5 font-mono text-[13px]"
+                  />
+                </Field>
+                <Field label="Second button" id="ctaSecondaryLabel">
+                  <Input
+                    id="ctaSecondaryLabel"
+                    value={sections.cta.secondaryLabel}
+                    onChange={(event) => setCta({ secondaryLabel: event.target.value })}
+                    maxLength={60}
+                    placeholder="Leave blank for one button"
+                    className="mt-1.5"
+                  />
+                </Field>
+                <Field label="Second link" id="ctaSecondaryHref">
+                  <Input
+                    id="ctaSecondaryHref"
+                    value={sections.cta.secondaryHref}
+                    onChange={(event) => setCta({ secondaryHref: event.target.value })}
+                    className="mt-1.5 font-mono text-[13px]"
+                  />
+                </Field>
+              </div>
+            </CardContent>
+          ) : null}
         </Card>
 
         <Card>
@@ -308,30 +566,91 @@ export function PostEditor({ post }: { post?: BlogPost }) {
   );
 }
 
-function TabButton({
-  active,
-  onClick,
-  icon: Icon,
+/** A label above a control, which is most of this form. */
+function Field({
+  label,
+  id,
   children,
 }: {
-  active: boolean;
-  onClick: () => void;
-  icon: typeof Pencil;
+  label: string;
+  id: string;
   children: React.ReactNode;
 }) {
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-pressed={active}
-      className={cn(
-        'inline-flex items-center gap-1.5 rounded px-2.5 py-1 text-[12px] font-medium transition-colors',
-        active ? 'bg-navy-900 text-white' : 'text-ink-soft hover:text-ink',
-      )}
-    >
-      <Icon className="h-3 w-3" aria-hidden="true" />
+    <div>
+      <Label htmlFor={id}>{label}</Label>
       {children}
-    </button>
+    </div>
+  );
+}
+
+/** The one textarea style this form uses, rather than that string six times. */
+function TextArea({
+  id,
+  label,
+  rows,
+  maxLength,
+  value,
+  placeholder,
+  onChange,
+}: {
+  id: string;
+  /** Only where the control has no visible <Label> of its own. */
+  label?: string;
+  rows: number;
+  maxLength: number;
+  value: string;
+  placeholder?: string;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <>
+      {label ? (
+        <Label htmlFor={id} className="sr-only">
+          {label}
+        </Label>
+      ) : null}
+      <textarea
+        id={id}
+        rows={rows}
+        maxLength={maxLength}
+        value={value}
+        placeholder={placeholder}
+        onChange={(event) => onChange(event.target.value)}
+        className="mt-1.5 w-full rounded-md border border-line-strong bg-white px-3 py-2 text-sm text-ink focus:border-accent-500 focus:ring-2 focus:ring-accent-500/20 focus:outline-none"
+      />
+    </>
+  );
+}
+
+/**
+ * Whether a section appears on the page at all.
+ *
+ * Hiding the fields when it is off, rather than only greying them: a section
+ * that will not publish should not look like something being filled in. What
+ * was typed survives the toggle, because it is held in state rather than in
+ * the inputs.
+ */
+function ShowToggle({
+  label,
+  checked,
+  onChange,
+}: {
+  label: string;
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+}) {
+  return (
+    <label className="flex cursor-pointer items-center gap-2 text-[12px] text-muted">
+      <input
+        type="checkbox"
+        checked={checked}
+        aria-label={`Show the ${label.toLowerCase()} on this post`}
+        onChange={(event) => onChange(event.target.checked)}
+        className="h-3.5 w-3.5 rounded border-line-strong text-accent-600 focus:ring-accent-500/30"
+      />
+      Show on this post
+    </label>
   );
 }
 
