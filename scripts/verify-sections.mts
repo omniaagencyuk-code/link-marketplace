@@ -1450,6 +1450,98 @@ console.log('\n--- the artwork library is a catalogue, not a folder ---');
   );
 }
 
+console.log('\n--- an unpublished change cannot reach a visitor ---');
+{
+  /*
+    The property, stated three ways because one of them was wrong.
+
+    A draft is a change an administrator has staged and not published. It
+    must not appear on a live page, in the HTML of one, or to anybody asking
+    for a preview without permission to see one.
+
+    The guarantee is not "the public path filters drafts out". It is that the
+    public path never has one: the Supabase read names its columns and
+    `draft` is not among them, and the in-memory store strips it for the same
+    reason. The URL check on top of that is a door in front of a wall.
+  */
+  const repo = read('src/lib/services/supabase/page-section-repository.ts');
+
+  // `\s*` around the `=`: the public list is declared over two lines, and a
+  // pattern expecting a space after the equals found the other two and
+  // reported the one it was about as missing.
+  const selects = [...repo.matchAll(/const (\w*SELECT)\s*=\s*([^;]+);/g)].map((match) => ({
+    name: match[1],
+    body: match[2],
+  }));
+  const publicSelect = selects.find((entry) => entry.name === 'SECTION_SELECT');
+  yes('the public column list exists', Boolean(publicSelect));
+  yes('and does not name the draft column', !publicSelect?.body.includes('draft'));
+
+  /*
+    `forPage` is what a visitor's request runs. It uses the public list, and
+    it uses the anon client so the policies apply as well.
+  */
+  const forPage = methodBody('forPage');
+  yes('forPage selects the public columns', forPage.includes('SECTION_SELECT'));
+  yes('and not the admin ones', !forPage.includes('ADMIN_SELECT'));
+  yes('through the anon client, so policies apply', forPage.includes('getServerClient'));
+
+  const forPreview = methodBody('forPreview');
+  yes('forPreview asks for the draft column', forPreview.includes('ADMIN_SELECT'));
+  yes('and runs as the admin client', forPreview.includes('getAdminScopedClient'));
+
+  /*
+    The in-memory store holds one object per section, so returning it from
+    the public read returns its draft as well. It did, and a browser test
+    found the unpublished change on the live page within a minute of the
+    feature existing. Both implementations strip it now, rather than one
+    being safe and the other being "only for development".
+  */
+  const service = read('src/lib/services/page-section-service.ts');
+  const store = service.slice(
+    service.indexOf('function fromStore'),
+    service.indexOf('export const pageSectionService'),
+  );
+  yes('the in-memory read drops drafts by default', /withDrafts = false/.test(store));
+  yes('and strips them when it does', /withDrafts \? section : \{ \.\.\.section, draft: undefined \}/.test(store));
+
+  const forPageMock = service.slice(service.indexOf('async forPage('), service.indexOf('async allForPage('));
+  yes('and forPage does not ask for them', !/fromStore\([^)]*,\s*true\s*,\s*true\)/.test(forPageMock));
+
+  /*
+    Permission to see a draft is its own cookie, not the admin session.
+    That one is scoped to /admin so an admin token never travels with a
+    request for a marketing page, and widening it would have been the easy
+    fix and the wrong one.
+  */
+  const preview = read('src/lib/auth/preview-session.ts');
+  yes('the grant is scoped to the site', /path: '\/'/.test(preview));
+  yes('and is short-lived', /PREVIEW_TTL_SECONDS = 30 \* 60/.test(preview));
+  yes('and is httpOnly', /httpOnly: true/.test(preview));
+  yes("and is signed for its own purpose", /'preview'/.test(preview));
+
+  const login = read('src/app/admin/login/actions.ts');
+  yes('the admin session stays scoped to /admin', /path: '\/admin'/.test(login));
+
+  /*
+    And the pages ask the same question the same way. A new page that checks
+    it differently is a new page that gets it subtly wrong.
+  */
+  for (const route of [
+    'src/app/(marketing)/page.tsx',
+    'src/app/(marketing)/gambling-link-building/page.tsx',
+    'src/app/(marketing)/[slug]/page.tsx',
+  ]) {
+    const source = read(route);
+    yes(`${route.split('/').at(-2)} asks isPreview()`, source.includes('isPreview(searchParams)'));
+    yes('and nothing else decides it', !/getAdminSession|hasPreviewGrant/.test(source));
+  }
+
+  const check = read('src/lib/cms/preview.ts');
+  yes('a preview needs the parameter', /params\.preview/.test(check));
+  yes('and the grant', /hasPreviewGrant/.test(check));
+}
+
 console.log('\n--- a starting structure only names sections that exist ---');
 {
   /*

@@ -3,6 +3,7 @@ import { BadgeCheck, Coins, Gauge, ShoppingBag } from 'lucide-react';
 import { NicheLandingPage } from '@/components/marketing/niche-landing-page';
 import { PageSections } from '@/components/cms/page-sections';
 import { metadataForPage } from '@/lib/cms/metadata';
+import { isPreview } from '@/lib/cms/preview';
 import { pageContentService } from '@/lib/services/page-content-service';
 import { websiteService } from '@/lib/services';
 import type { NicheSlug } from '@/lib/types';
@@ -25,7 +26,14 @@ export async function generateMetadata(): Promise<Metadata> {
   return metadataForPage(SLUG);
 }
 
-export default async function Page() {
+export default async function Page({
+  searchParams,
+}: {
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  // `?preview=1`, and only for somebody signed in to the admin.
+  const draft = await isPreview(searchParams);
+
   // Four rows, plus the count of everything in the niche. The rows are
   // redacted on the server before they reach this component.
   const preview = await websiteService.getPublicPreview(4, NICHE);
@@ -66,6 +74,7 @@ export default async function Page() {
       // Already fetched above for the fallback, so the sections do not fetch
       // the same rows again.
       provided={{ preview: preview.rows, listingCount: preview.totalWebsites }}
+      draft={draft}
       fallback={
         <NicheLandingPage
           content={content}

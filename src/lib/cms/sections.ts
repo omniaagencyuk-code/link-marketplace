@@ -57,8 +57,36 @@ export interface PageSection {
   globalId?: string;
   /** Filled in by the reader when `globalId` is set, so the page can render. */
   global?: GlobalSection;
+  /**
+   * A change previewed but not published.
+   *
+   * Absent normally, and absent from the public read entirely - the anon
+   * query names its columns and this is not one of them, so a page cannot
+   * leak an unpublished edit by forgetting a filter.
+   */
+  draft?: SectionDraft;
   updatedAt: string;
   updatedBy?: string;
+}
+
+/** What a pending edit holds: everything a save would have written. */
+export interface SectionDraft {
+  variant: string;
+  animation: Animation;
+  style: SectionStyle;
+  values: SectionValues;
+}
+
+/** A draft read back from jsonb, or nothing. */
+export function readDraft(raw: unknown): SectionDraft | undefined {
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return undefined;
+  const stored = raw as Record<string, unknown>;
+  return {
+    variant: typeof stored.variant === 'string' && stored.variant ? stored.variant : 'default',
+    animation: readAnimation(stored.animation),
+    style: readSectionStyle(stored.style),
+    values: readValues(stored.values),
+  };
 }
 
 export interface GlobalSection {
@@ -89,6 +117,24 @@ export function resolveSection(section: PageSection): {
   animation: Animation;
   style: SectionStyle;
 } {
+  /*
+    A pending edit wins, and only a preview read ever carries one. The public
+    read does not select the column, so this branch cannot be reached by a
+    visitor however the page is requested.
+
+    It wins over a global too. Previewing a change to a shared section from
+    the page you are looking at should show you that change.
+  */
+  if (section.draft) {
+    return {
+      component: (section.global ?? section).component,
+      variant: section.draft.variant,
+      values: section.draft.values,
+      animation: section.draft.animation,
+      style: section.draft.style,
+    };
+  }
+
   const source = section.global ?? section;
   return {
     component: source.component,
@@ -105,7 +151,7 @@ export function resolveSection(section: PageSection): {
   };
 }
 
-import type { SectionStyle } from './style';
+import { readStyle as readSectionStyle, type SectionStyle } from './style';
 
 /** An animation read back from the database, which is to say from jsonb. */
 export function readAnimation(raw: unknown): Animation {

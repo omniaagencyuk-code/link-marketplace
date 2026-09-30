@@ -34,6 +34,8 @@ import {
   addGlobalAction,
   addSectionAction,
   detachGlobalAction,
+  discardDraftAction,
+  previewSectionAction,
   saveAsGlobalAction,
   deleteSectionAction,
   duplicateSectionAction,
@@ -189,6 +191,7 @@ export function SectionList({
                   ) : null}
                 </button>
 
+                {section.draft ? <Badge tone="muted">Draft</Badge> : null}
                 {section.hidden ? <Badge tone="muted">Hidden</Badge> : null}
                 {section.locked ? (
                   <Badge tone="muted">
@@ -315,6 +318,8 @@ export function SectionList({
 function SectionEditor({ section, component }: { section: PageSection; component: ComponentDef }) {
   const [state, formAction] = useActionState<SectionActionState, FormData>(saveSectionAction, {});
   const [values, setValues] = useState<Record<string, unknown>>(section.values);
+  const [previewing, startPreview] = useTransition();
+  const [preview, setPreview] = useState<{ url?: string; error?: string } | null>(null);
 
   return (
     <form action={formAction} className="space-y-4 border-t border-line px-4 py-4">
@@ -403,11 +408,64 @@ function SectionEditor({ section, component }: { section: PageSection; component
         </fieldset>
       ) : null}
 
-      <div className="flex items-center gap-3">
+      <div className="flex flex-wrap items-center gap-3">
         <SaveButton />
+
+        {/* Preview writes to the draft column, which nothing public reads, so
+            it is safe to press on a live page. Saving is what publishes. */}
+        <Button
+          type="submit"
+          variant="outline"
+          size="sm"
+          formAction={(data) => {
+            data.set('id', section.id);
+            data.set('values', JSON.stringify(values));
+            startPreview(async () => {
+              const result = await previewSectionAction({}, data);
+              if (result.error) {
+                setPreview({ error: result.error });
+                return;
+              }
+              setPreview({ url: result.preview });
+              if (result.preview) window.open(result.preview, '_blank', 'noopener');
+            });
+          }}
+          disabled={previewing}
+        >
+          <Eye className="h-3.5 w-3.5" aria-hidden="true" />
+          {previewing ? 'Preparing...' : 'Preview'}
+        </Button>
+
         {state.error ? <p className="text-[13px] text-negative">{state.error}</p> : null}
         {state.message ? <p className="text-[13px] text-muted">{state.message}</p> : null}
+        {preview?.error ? <p className="text-[13px] text-negative">{preview.error}</p> : null}
+        {preview?.url ? (
+          <a
+            href={preview.url}
+            target="_blank"
+            rel="noreferrer"
+            className="text-[13px] font-medium text-accent-700 hover:underline"
+          >
+            Open the preview
+          </a>
+        ) : null}
       </div>
+
+      {section.draft ? (
+        <p className="flex flex-wrap items-center gap-2 rounded-md border border-amber-500/40 bg-amber-50 px-3 py-2 text-[12px] text-amber-900">
+          This section has a change waiting. It is not on the live page until you save.
+          <button
+            type="submit"
+            formAction={(data) => {
+              data.set('id', section.id);
+              void discardDraftAction(data);
+            }}
+            className="font-medium underline"
+          >
+            Discard it
+          </button>
+        </p>
+      ) : null}
 
     </form>
   );

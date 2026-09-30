@@ -10,6 +10,7 @@ import { contentAccessors } from '@/lib/cms/resolve';
 import { customPageService } from '@/lib/services/custom-page-service';
 import { websiteService } from '@/lib/services';
 import { brand, siteUrl } from '@/lib/config/brand';
+import { isPreview } from '@/lib/cms/preview';
 
 /**
  * Pages created from the admin.
@@ -55,8 +56,15 @@ export async function generateMetadata({
   };
 }
 
-export default async function CustomPage({ params }: { params: Promise<{ slug: string }> }) {
+export default async function CustomPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ slug: string }>;
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
+}) {
   const { slug } = await params;
+  const draft = await isPreview(searchParams);
 
   const page = await customPageService.resolve(slug);
   if (!page) notFound();
@@ -88,6 +96,7 @@ export default async function CustomPage({ params }: { params: Promise<{ slug: s
           breadcrumbParent: { label: 'Link Building', href: '/link-building' },
         }}
         provided={{ preview: preview.rows, listingCount: preview.totalWebsites }}
+        draft={draft}
         fallback={
           <NicheLandingPage
             content={content}

@@ -6,6 +6,7 @@ import type {
   Animation,
   GlobalSection,
   PageSection,
+  SectionDraft,
   SectionStyle,
   SectionValues,
 } from '@/lib/cms/sections';
@@ -38,11 +39,24 @@ function attachGlobals(rows: PageSection[]): PageSection[] {
   );
 }
 
-function fromStore(slug: string, includeHidden: boolean): PageSection[] {
+/**
+ * The in-memory equivalent of the two column lists the repository uses.
+ *
+ * `withDrafts` defaults to false, and that default is the safety property:
+ * the Supabase read cannot return a draft because its query does not name
+ * the column, and this one cannot because it strips it. The two
+ * implementations agree on what a visitor can see, rather than one of them
+ * being safe and the other being "only for development".
+ *
+ * It was not stripped here at first, and a browser test found the pending
+ * change on the live page within a minute.
+ */
+function fromStore(slug: string, includeHidden: boolean, withDrafts = false): PageSection[] {
   return attachGlobals(
     [...sections.values()]
       .filter((section) => section.pageSlug === slug && (includeHidden || !section.hidden))
-      .sort((a, b) => a.position - b.position),
+      .sort((a, b) => a.position - b.position)
+      .map((section) => (withDrafts ? section : { ...section, draft: undefined })),
   );
 }
 
@@ -56,7 +70,33 @@ export const pageSectionService = {
   /** Every section including the hidden ones. What the editor uses. */
   async allForPage(slug: string): Promise<PageSection[]> {
     if (isSupabaseEnabled()) return supabasePageSectionRepository.allForPage(slug);
-    return fromStore(slug, true);
+    return fromStore(slug, true, true);
+  },
+
+  /**
+   * The page as it would look with the pending edits published.
+   *
+   * Only ever called behind an admin session. `forPage` is what a visitor
+   * gets, and it reads through a query that cannot return a draft.
+   */
+  async forPreview(slug: string): Promise<PageSection[]> {
+    if (isSupabaseEnabled()) return supabasePageSectionRepository.forPreview(slug);
+    return fromStore(slug, false, true);
+  },
+
+  /** Store a pending edit against a section, or clear it. */
+  async setDraft(id: string, draft: SectionDraft | null, updatedBy?: string): Promise<void> {
+    if (isSupabaseEnabled()) return supabasePageSectionRepository.setDraft(id, draft, updatedBy);
+    const current = sections.get(id);
+    if (current) sections.set(id, { ...current, draft: draft ?? undefined });
+  },
+
+  /** Which pages hold a change previewed and not published. */
+  async pagesWithDrafts(): Promise<Set<string>> {
+    if (isSupabaseEnabled()) return supabasePageSectionRepository.pagesWithDrafts();
+    return new Set(
+      [...sections.values()].filter((section) => section.draft).map((section) => section.pageSlug),
+    );
   },
 
   /**
@@ -120,6 +160,8 @@ export const pageSectionService = {
       ...(patch.values !== undefined ? { values: patch.values } : {}),
       ...(patch.animation !== undefined ? { animation: patch.animation } : {}),
       ...(patch.style !== undefined ? { style: patch.style } : {}),
+      // A save publishes, so whatever was being previewed goes with it.
+      draft: undefined,
       updatedAt: new Date().toISOString(),
       updatedBy,
     };

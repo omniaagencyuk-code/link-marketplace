@@ -26,6 +26,7 @@ import { Faq, type FaqItem } from '@/components/shared/faq';
 import { websiteService, type MarketplaceStats } from '@/lib/services';
 import { pageContentService } from '@/lib/services/page-content-service';
 import { metadataForPage } from '@/lib/cms/metadata';
+import { isPreview } from '@/lib/cms/preview';
 import { brand, siteUrl } from '@/lib/config/brand';
 
 /**
@@ -47,7 +48,13 @@ export async function generateMetadata(): Promise<Metadata> {
   return { ...meta, title: { absolute: `${meta.title as string} | ${brand.name}` } };
 }
 
-export default async function HomePage() {
+export default async function HomePage({
+  searchParams,
+}: {
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  const draft = await isPreview(searchParams);
+
   const [content, preview, nicheCounts, stats] = await Promise.all([
     pageContentService.content(SLUG),
     websiteService.getPublicPreview(5),
@@ -110,6 +117,7 @@ export default async function HomePage() {
             countries: stats.totalCountries,
           },
         }}
+        draft={draft}
         fallback={<LegacyHomePage content={content} preview={preview} nicheCounts={nicheCounts} stats={stats} faqs={faqs} />}
       />
     </>

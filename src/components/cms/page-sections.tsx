@@ -46,6 +46,7 @@ export async function PageSections({
   tokens = {},
   config = {},
   provided,
+  draft = false,
 }: {
   slug: string;
   /** What the page renders while it has no sections of its own. */
@@ -72,8 +73,20 @@ export async function PageSections({
     listingCount?: number;
     totals?: SectionData['totals'];
   };
+  /**
+   * Show pending edits rather than what is published.
+   *
+   * The caller decides this, and every caller decides it the same way: the
+   * URL asked for a preview *and* `getAdminSession()` returned somebody. A
+   * visitor who types `?preview=1` has no session, so they get the live page
+   * - and the read behind the live page cannot return a draft even if this
+   * were wrong, because it does not select the column.
+   */
+  draft?: boolean;
 }) {
-  const sections = await pageSectionService.forPage(slug);
+  const sections = draft
+    ? await pageSectionService.forPreview(slug)
+    : await pageSectionService.forPage(slug);
   if (sections.length === 0) return <>{fallback}</>;
 
   const resolved = sections.map((section) => ({ section, ...resolveSection(section) }));
@@ -85,11 +98,36 @@ export async function PageSections({
 
   return (
     <>
+      {draft ? <PreviewBar slug={slug} pending={sections.filter((row) => row.draft).length} /> : null}
       <PageStructuredData config={config} sections={resolved} tokens={tokens} />
       {sections.map((section) => (
         <Section key={section.id} section={section} tokens={tokens} data={data} />
       ))}
     </>
+  );
+}
+
+/**
+ * A bar saying this is not the live page.
+ *
+ * Unmissable on purpose. A preview that looks exactly like production is a
+ * preview somebody eventually mistakes for production, and then reports a
+ * change as live that nobody has published.
+ */
+function PreviewBar({ slug, pending }: { slug: string; pending: number }) {
+  return (
+    <div className="sticky top-0 z-50 bg-amber-500 text-navy-950">
+      <div className="mx-auto flex max-w-[90rem] flex-wrap items-center justify-between gap-2 px-5 py-2 text-[13px]">
+        <span className="font-semibold">
+          Preview - {pending === 0
+            ? 'nothing is waiting to be published'
+            : `${pending} ${pending === 1 ? 'change' : 'changes'} not published yet`}
+        </span>
+        <a href={`/admin/pages/${slug}`} className="font-medium underline">
+          Back to the editor
+        </a>
+      </div>
+    </div>
   );
 }
 

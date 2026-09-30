@@ -1,11 +1,13 @@
 import { getAdminScopedClient, getServerClient } from '@/lib/supabase/server';
 import {
   readAnimation,
+  readDraft,
   readStyle,
   readValues,
   type Animation,
   type GlobalSection,
   type PageSection,
+  type SectionDraft,
   type SectionStyle,
   type SectionValues,
 } from '@/lib/cms/sections';
@@ -31,6 +33,16 @@ const SECTION_SELECT =
 
 const GLOBAL_SELECT = 'id, name, component, variant, animation, style, values, updated_at, updated_by';
 
+/**
+ * The same columns plus the pending edit.
+ *
+ * Two lists rather than one list and a filter, and that is the safety
+ * property: the public read names its columns and `draft` is not among them,
+ * so an unpublished change cannot reach a visitor through a query that forgot
+ * something. It is not that the public path drops drafts - it never has one.
+ */
+const ADMIN_SELECT = `${SECTION_SELECT}, draft`;
+
 interface SectionRow {
   id: string;
   page_slug: string;
@@ -43,6 +55,7 @@ interface SectionRow {
   style: unknown;
   values: unknown;
   global_id: string | null;
+  draft?: unknown;
   updated_at: string;
   updated_by: string | null;
 }
@@ -72,6 +85,7 @@ function mapSection(row: SectionRow): PageSection {
     style: readStyle(row.style),
     values: readValues(row.values),
     globalId: row.global_id ?? undefined,
+    draft: readDraft(row.draft),
     updatedAt: row.updated_at,
     updatedBy: row.updated_by ?? undefined,
   };
@@ -140,7 +154,7 @@ export const supabasePageSectionRepository = {
     const supabase = getAdminScopedClient();
     const { data, error } = await supabase
       .from('page_sections')
-      .select(SECTION_SELECT)
+      .select(ADMIN_SELECT)
       .eq('page_slug', slug)
       .order('position', { ascending: true });
 
@@ -154,6 +168,55 @@ export const supabasePageSectionRepository = {
       if (globalError) throw new Error(`Failed to read global sections: ${globalError.message}`);
       return (globals ?? []) as unknown as GlobalRow[];
     });
+  },
+
+  /**
+   * A page as it would look if the pending edits were published.
+   *
+   * The same rows the public render gets - visible only, in order - with
+   * each section's draft attached. Read through the admin client, which is
+   * the only client that can see the column at all.
+   */
+  async forPreview(slug: string): Promise<PageSection[]> {
+    const supabase = getAdminScopedClient();
+    const { data, error } = await supabase
+      .from('page_sections')
+      .select(ADMIN_SELECT)
+      .eq('page_slug', slug)
+      .eq('hidden', false)
+      .order('position', { ascending: true });
+
+    if (error) throw new Error(`Failed to read sections for "${slug}": ${error.message}`);
+
+    return withGlobals((data ?? []).map((row) => mapSection(row as unknown as SectionRow)), async (ids) => {
+      const { data: globals, error: globalError } = await supabase
+        .from('global_sections')
+        .select(GLOBAL_SELECT)
+        .in('id', ids);
+      if (globalError) throw new Error(`Failed to read global sections: ${globalError.message}`);
+      return (globals ?? []) as unknown as GlobalRow[];
+    });
+  },
+
+  /** Store a pending edit, or clear one. Never touches what renders. */
+  async setDraft(id: string, draft: SectionDraft | null, updatedBy?: string): Promise<void> {
+    const supabase = getAdminScopedClient();
+    const { error } = await supabase
+      .from('page_sections')
+      .update({ draft, updated_by: updatedBy ?? null })
+      .eq('id', id);
+    if (error) throw new Error(`Failed to save the preview: ${error.message}`);
+  },
+
+  /** Which pages hold a change somebody has previewed and not published. */
+  async pagesWithDrafts(): Promise<Set<string>> {
+    const supabase = getAdminScopedClient();
+    const { data, error } = await supabase
+      .from('page_sections')
+      .select('page_slug')
+      .not('draft', 'is', null);
+    if (error) throw new Error(`Failed to look for drafts: ${error.message}`);
+    return new Set((data ?? []).map((row) => (row as { page_slug: string }).page_slug));
   },
 
   /**
@@ -228,6 +291,12 @@ export const supabasePageSectionRepository = {
     if (patch.values !== undefined) row.values = patch.values;
     if (patch.animation !== undefined) row.animation = patch.animation;
     if (patch.style !== undefined) row.style = patch.style;
+    /*
+      A save publishes, so the pending edit goes with it. Leaving it would
+      mean a preview that kept showing an older change than the live page -
+      which is the one thing a preview must never do.
+    */
+    row.draft = null;
 
     const { data, error } = await supabase
       .from('page_sections')

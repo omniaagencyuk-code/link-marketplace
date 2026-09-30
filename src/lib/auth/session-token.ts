@@ -27,7 +27,7 @@
  * Separating the audiences makes that impossible whether or not the keys are
  * shared, which is the property worth having.
  */
-export type SessionAudience = 'admin' | 'customer';
+export type SessionAudience = 'admin' | 'customer' | 'preview';
 
 const encoder = new TextEncoder();
 

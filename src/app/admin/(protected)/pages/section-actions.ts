@@ -2,6 +2,7 @@
 
 import { revalidatePath } from 'next/cache';
 import { requireAdminSession } from '@/lib/auth/admin-access';
+import { grantPreview, revokePreview } from '@/lib/auth/preview-session';
 import { pageSectionService } from '@/lib/services/page-section-service';
 import {
   cleanSectionStyle,
@@ -287,6 +288,100 @@ export async function saveSectionAction(
 
   refresh(section.pageSlug);
   return { message: 'Saved.' };
+}
+
+/**
+ * Stage a change so it can be looked at before it is published.
+ *
+ * It writes to `draft`, which nothing public reads, and never to what the
+ * page renders. So previewing is safe to do at any point, including on a
+ * live page in front of paid traffic, and a preview left lying around
+ * changes nothing until somebody presses Save.
+ *
+ * The content goes through exactly the same cleaning a save does. A draft
+ * that could hold something a save would refuse would be a way round the
+ * whitelist, and it would be discovered by publishing it.
+ */
+export async function previewSectionAction(
+  _previous: SectionActionState,
+  formData: FormData,
+): Promise<SectionActionState & { preview?: string }> {
+  const admin = await requireAdminSession();
+
+  const id = String(formData.get('id') ?? '');
+  const section = await pageSectionService.find(id);
+  if (!section) return { error: 'That section no longer exists.' };
+
+  const component = getComponent(section.component);
+  if (!component) {
+    return { error: 'This section type is no longer available, so it cannot be previewed.' };
+  }
+
+  let values: unknown;
+  try {
+    values = JSON.parse(String(formData.get('values') ?? '{}'));
+  } catch {
+    return { error: 'The content did not arrive intact. Try again.' };
+  }
+
+  await pageSectionService.setDraft(
+    id,
+    {
+      variant: resolveVariant(component, String(formData.get('variant') ?? '')),
+      values: cleanSectionValues(component, values),
+      animation: component.animatable
+        ? readAnimation({
+            entrance: formData.get('entrance'),
+            speed: formData.get('speed'),
+            delay: formData.get('delay'),
+          })
+        : readAnimation({}),
+      style: cleanSectionStyle(component, {
+        background: formData.get('background'),
+        text: formData.get('text'),
+        accent: formData.get('accent'),
+        decoration: formData.get('decoration'),
+        artworkPosition: formData.get('artworkPosition'),
+        artworkSize: formData.get('artworkSize'),
+      }),
+    },
+    admin.email,
+  );
+
+  /*
+    The browser gets a short-lived permission to see drafts. Issued here
+    rather than at sign-in because it is scoped to the whole site and an
+    admin should only be carrying it when they have asked to preview
+    something - it lapses half an hour later on its own.
+  */
+  await grantPreview(admin.email);
+
+  refresh(section.pageSlug);
+  return { message: 'Ready to preview.', preview: await previewUrl(section.pageSlug) };
+}
+
+/** Stop seeing drafts on the public site, without waiting for the grant to lapse. */
+export async function stopPreviewingAction(): Promise<void> {
+  await requireAdminSession();
+  await revokePreview();
+}
+
+/** Throw away a pending change. What the page renders never moved. */
+export async function discardDraftAction(formData: FormData): Promise<void> {
+  const admin = await requireAdminSession();
+  const id = String(formData.get('id') ?? '');
+  const section = await pageSectionService.find(id);
+  if (!section) return;
+
+  await pageSectionService.setDraft(id, null, admin.email);
+  refresh(section.pageSlug);
+}
+
+/** Where a page's preview lives. The homepage is `/`, not `/home`. */
+async function previewUrl(pageSlug: string): Promise<string> {
+  const registered = getRegisteredPage(pageSlug);
+  const path = registered ? registered.definition.path : `/${pageSlug}`;
+  return `${path}${path.includes('?') ? '&' : '?'}preview=1`;
 }
 
 export async function toggleSectionAction(formData: FormData): Promise<void> {
