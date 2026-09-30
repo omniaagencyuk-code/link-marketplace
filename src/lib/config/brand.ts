@@ -106,9 +106,20 @@ export const brand: BrandConfig = {
   storageNamespace: 'pressparrot',
 };
 
-/** Canonical site URL, used for metadata, sitemap and robots. */
+/**
+ * Canonical site URL, used for metadata, sitemap and robots.
+ *
+ * The fallback is the brand's own domain rather than localhost whenever this
+ * is not a development build. A missing NEXT_PUBLIC_SITE_URL used to put
+ * `http://localhost:3000` into every canonical tag, every Open Graph URL, the
+ * sitemap and the Sitemap line in robots.txt - none of which fails a build or
+ * shows up on the page, and all of which tells Google the real site lives on a
+ * machine it cannot reach. Getting that wrong silently is far worse than
+ * guessing the domain we already know.
+ */
 export const siteUrl =
-  process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, '') ?? 'http://localhost:3000';
+  process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, '') ??
+  (process.env.NODE_ENV === 'development' ? 'http://localhost:3000' : `https://${brand.domain}`);
 
 /** Email domain, derived so admin checks follow a rename automatically. */
 export const brandEmailDomain = brand.supportEmail.split('@')[1] ?? brand.domain;
