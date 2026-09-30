@@ -890,10 +890,21 @@ console.log('\n--- a page converts into its sections without losing anything ---
     The two settings groups are not sections and never become sections.
   */
   const SETTINGS = ['seo', 'marketplace'];
-  const source = readFileSync(
+  /*
+    The niche blueprint's own body, not the whole file.
+
+    Scoped deliberately: the file holds a blueprint per template now, and the
+    homepage's reads a CMS group called `marketplace` of its own. Searching
+    the file would have said the niche page's marketplace category had become
+    a section the moment an unrelated page mentioned the word.
+  */
+  const whole = readFileSync(
     new URL('../src/lib/cms/migrate/page-to-sections.ts', import.meta.url),
     'utf8',
   );
+  const start = whole.indexOf('export function nichePageBlueprint');
+  const source = whole.slice(start, whole.indexOf('\nexport function ', start + 1));
+  yes('the niche blueprint was found to check', source.length > 500);
   for (const section of gambling.definition.sections) {
     if (SETTINGS.includes(section.key)) {
       yes(`"${section.key}" stays a page setting`, !source.includes(`'${section.key}'`));

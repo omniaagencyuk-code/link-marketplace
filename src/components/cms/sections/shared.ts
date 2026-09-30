@@ -46,8 +46,17 @@ export interface SectionData {
    * tempted to type it into a heading.
    */
   listingCount?: number;
-  /** Live listing counts per niche. */
+  /**
+   * Every accepted niche with its live count, busiest first.
+   *
+   * Not filtered here. A component that only wants niches with listings
+   * filters them itself, and one that draws a fixed set of cards needs the
+   * empty ones too - a card for a niche nobody has listed yet still links to
+   * a real marketplace filter, and hiding it would make the row change shape
+   * as inventory moves.
+   */
   niches?: { slug: string; label: string; count: number; href: string }[];
+  /** Marketplace aggregates. Counted on every render, never typed. */
   totals?: { websites: number; niches: number; countries: number };
   /** What the page is, rather than what this section says. Never empty. */
   page: PageConfig;

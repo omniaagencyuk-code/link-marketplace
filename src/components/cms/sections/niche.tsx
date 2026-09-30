@@ -295,35 +295,75 @@ export function TopicPillsSection({ values }: SectionProps) {
  */
 const BENEFIT_ICONS = [BadgeCheck, Gauge, Coins, ShoppingBag];
 
-export function BenefitCardsSection({ values }: SectionProps) {
+export function BenefitCardsSection({ values, variant }: SectionProps) {
   const items = rows<{ title?: string; body?: string }>(values, 'items');
   if (items.length === 0) return null;
+
+  const artwork = image(values, 'image');
+  // Artwork beside the cards rather than above them, when the page has any.
+  // Two columns of two, so the cards stay readable next to a picture.
+  const withArt = variant === 'with-art' && Boolean(artwork.src);
+
+  const cards = (
+    <div
+      data-reveal-items=""
+      className={cn('grid gap-5 sm:grid-cols-2', !withArt && 'lg:grid-cols-4')}
+    >
+      {items.map((item, index) => {
+        const Icon = BENEFIT_ICONS[index % BENEFIT_ICONS.length];
+        return (
+          <div
+            key={item.title || index}
+            className="rounded-[var(--radius-card)] border border-line bg-white p-5 shadow-[var(--shadow-card)]"
+          >
+            {Icon ? (
+              <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-accent-50 text-accent-700">
+                <Icon className="h-4.5 w-4.5" aria-hidden="true" />
+              </span>
+            ) : null}
+            <h3 className="mt-4 text-[15px] font-semibold text-ink">{item.title}</h3>
+            <p className="mt-1.5 text-[14px] leading-relaxed text-muted">{item.body}</p>
+          </div>
+        );
+      })}
+    </div>
+  );
 
   return (
     <section className="border-b border-line bg-surface">
       <Container size="wide" className="py-14 lg:py-20">
-        <h2 className="max-w-2xl text-2xl font-semibold tracking-tight text-ink sm:text-[2rem] sm:leading-tight">
-          {str(values, 'heading')}
-        </h2>
-        <div data-reveal-items="" className="mt-8 grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
-          {items.map((item, index) => {
-            const Icon = BENEFIT_ICONS[index % BENEFIT_ICONS.length];
-            return (
-              <div
-                key={item.title || index}
-                className="rounded-[var(--radius-card)] border border-line bg-white p-5 shadow-[var(--shadow-card)]"
-              >
-                {Icon ? (
-                  <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-accent-50 text-accent-700">
-                    <Icon className="h-4.5 w-4.5" aria-hidden="true" />
-                  </span>
-                ) : null}
-                <h3 className="mt-4 text-[15px] font-semibold text-ink">{item.title}</h3>
-                <p className="mt-1.5 text-[14px] leading-relaxed text-muted">{item.body}</p>
-              </div>
-            );
-          })}
+        <div className="max-w-2xl">
+          {str(values, 'eyebrow') ? (
+            <p className="text-[11px] font-semibold tracking-[0.14em] text-accent-700 uppercase">
+              {str(values, 'eyebrow')}
+            </p>
+          ) : null}
+          {/* The gap belongs to the eyebrow, not to the heading: without one
+              the heading is the top of the section and a margin above it
+              moves the whole band down by 16px. */}
+          <h2
+            className={cn(
+              'text-2xl font-semibold tracking-tight text-ink sm:text-[2rem] sm:leading-tight',
+              str(values, 'eyebrow') && 'mt-4',
+            )}
+          >
+            {str(values, 'heading')}
+          </h2>
+          {str(values, 'body') ? (
+            <p className="mt-3 text-[15px] leading-relaxed text-muted">{str(values, 'body')}</p>
+          ) : null}
         </div>
+
+        {withArt ? (
+          <div className="mt-8 grid items-center gap-10 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)] lg:gap-14">
+            {cards}
+            <div className="min-w-0">
+              <NicheMascot src={artwork.src} alt={artwork.alt} className="lg:ml-auto" />
+            </div>
+          </div>
+        ) : (
+          <div className="mt-8">{cards}</div>
+        )}
       </Container>
     </section>
   );

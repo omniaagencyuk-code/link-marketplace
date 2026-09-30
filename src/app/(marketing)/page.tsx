@@ -22,7 +22,7 @@ import {
 import { MetricCards } from '@/components/home/metric-cards';
 import { FinalCta } from '@/components/home/final-cta';
 import { Faq, type FaqItem } from '@/components/shared/faq';
-import { websiteService } from '@/lib/services';
+import { websiteService, type MarketplaceStats } from '@/lib/services';
 import { pageContentService } from '@/lib/services/page-content-service';
 import { metadataForPage } from '@/lib/cms/metadata';
 import { brand, siteUrl } from '@/lib/config/brand';
@@ -77,6 +77,69 @@ export default async function HomePage() {
     },
   };
 
+  return (
+    <>
+      <script
+        type="application/ld+json"
+        // Describes the company only - never the marketplace inventory. It is
+        // about the page rather than about anything on it, so it is emitted
+        // here whichever way the page below renders.
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(organisationJsonLd) }}
+      />
+
+      {/*
+        Sections are the homepage.
+
+        Rows exist and they are the page, in the order somebody put them in.
+        No rows and the template below renders exactly as it always has, which
+        is what makes the conversion checkable and reversible: delete every
+        section and the old homepage is back.
+
+        The marketplace reads above are handed in rather than repeated, so a
+        converted homepage is the same number of queries as this one.
+      */}
+      <PageSections
+        slug={SLUG}
+        provided={{
+          preview: preview.rows,
+          listingCount: stats.totalWebsites,
+          totals: {
+            websites: stats.totalWebsites,
+            niches: stats.totalNiches,
+            countries: stats.totalCountries,
+          },
+        }}
+        fallback={<LegacyHomePage content={content} preview={preview} nicheCounts={nicheCounts} stats={stats} faqs={faqs} />}
+      />
+    </>
+  );
+}
+
+/**
+ * The homepage as it was before the page builder owned it.
+ *
+ * Kept, and kept working, because a conversion has to be reversible to be
+ * safe: this is what renders while the homepage has no sections, and what
+ * comes back if somebody deletes them. It goes when the built homepage has
+ * been live long enough to trust, and not before.
+ *
+ * Its FAQ structured data lives in here rather than beside the organisation
+ * markup above, because a built page publishes its own from whichever FAQ
+ * sections it holds - two copies would be the one thing worse than none.
+ */
+function LegacyHomePage({
+  content,
+  preview,
+  nicheCounts,
+  stats,
+  faqs,
+}: {
+  content: Awaited<ReturnType<typeof pageContentService.content>>;
+  preview: Awaited<ReturnType<typeof websiteService.getPublicPreview>>;
+  nicheCounts: Awaited<ReturnType<typeof websiteService.countByNiche>>;
+  stats: MarketplaceStats;
+  faqs: FaqItem[];
+}) {
   const faqJsonLd = {
     '@context': 'https://schema.org',
     '@type': 'FAQPage',
@@ -89,11 +152,6 @@ export default async function HomePage() {
 
   return (
     <>
-      <script
-        type="application/ld+json"
-        // Describes the company only - never the marketplace inventory.
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(organisationJsonLd) }}
-      />
       {faqs.length ? (
         <script
           type="application/ld+json"
@@ -105,10 +163,6 @@ export default async function HomePage() {
         The order the page argues in: what this is, that it is real, what is
         in it, how it works, what it looks like inside - then the reading for
         anybody not ready to act, and the ask.
-
-        The trust row used to sit inside the hero and the logos at the very
-        bottom, which put the evidence for the claim four screens below the
-        claim. They are one band under the hero now.
       */}
       <Hero content={content} stats={stats} />
 
@@ -129,16 +183,6 @@ export default async function HomePage() {
       <PlatformFeatures content={content} />
       <AgenciesSection content={content} />
 
-      {/*
-        The editorial half, broken up rather than run together.
-
-        A three-thousand-word block is a wall nobody reads and a page nobody
-        scrolls. The prose alternates with something to look at: an aside, two
-        lists side by side, a checklist, the metric cards. The components are
-        the ones from the section library, fed from this page's own CMS fields
-        - so they are editable here and identical to the ones an admin can add
-        further down.
-      */}
       <SeoEditorial content={content} />
 
       <Reveal animation={{ entrance: 'slide-right', speed: 'subtle', delay: 'none' }}>
@@ -194,15 +238,6 @@ export default async function HomePage() {
       </Reveal>
 
       <MetricCards content={content} />
-
-      {/*
-        Anything built in the admin, between the editorial and the questions.
-
-        This is where the homepage grows without a deploy: comparison blocks,
-        checklists, metric cards, a parrot aside. It renders nothing until
-        somebody adds a section, so today it changes nothing at all.
-      */}
-      <PageSections slug={SLUG} />
 
       {faqs.length ? (
         <section className="border-b border-line bg-surface">

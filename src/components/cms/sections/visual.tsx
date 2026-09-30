@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { Check, Minus, X } from 'lucide-react';
 import { Container } from '@/components/layout/container';
 import { Button } from '@/components/ui/button';
+import { Feather } from '@/components/shared/foliage';
 import { cn } from '@/lib/utils/cn';
 import { link, rows, str, type SectionProps } from './shared';
 
@@ -234,11 +235,91 @@ export function TrustBarSection({ values }: SectionProps) {
 // --------------------------------------------------------------------- steps
 
 export function StepsSection({ values, variant }: SectionProps) {
-  const items = rows<{ title?: string; body?: string }>(values, 'items');
+  const items = rows<{ number?: string; title?: string; body?: string }>(values, 'items');
   if (items.length === 0) return null;
 
   const cta = link(values, 'cta');
   const timeline = variant === 'timeline';
+
+  /*
+    The flight path: the same four steps with a curve drawn between them and
+    a parrot at the end of it. Desktop only - the curve is drawn for a row,
+    and on a phone the steps are a column with nothing to connect.
+
+    The path is decoration rather than a diagram, so it is aria-hidden and the
+    list underneath is the content.
+  */
+  if (variant === 'flight-path') {
+    return (
+      <section className="relative overflow-hidden border-b border-line bg-white py-16 lg:py-20">
+        <Feather
+          aria-hidden="true"
+          className="pointer-events-none absolute top-10 right-6 hidden h-auto w-12 rotate-12 opacity-[0.14] lg:block"
+        />
+
+        <Container size="wide">
+          <div className="max-w-2xl">
+            {str(values, 'eyebrow') ? (
+              <p className="text-[11px] font-semibold tracking-[0.14em] text-accent-700 uppercase">
+                {str(values, 'eyebrow')}
+              </p>
+            ) : null}
+            <h2 className="mt-4 text-3xl font-semibold tracking-tight text-ink sm:text-4xl">
+              {str(values, 'heading')}
+            </h2>
+            {str(values, 'body') ? (
+              <p className="mt-3 text-[15px] leading-relaxed text-muted">{str(values, 'body')}</p>
+            ) : null}
+          </div>
+
+          <svg
+            aria-hidden="true"
+            viewBox="0 0 1200 90"
+            preserveAspectRatio="none"
+            className="pointer-events-none mt-10 hidden h-16 w-full lg:block"
+          >
+            <path
+              d="M40 62C220 8 350 82 600 40 850 -2 980 74 1160 26"
+              fill="none"
+              stroke="var(--color-accent-500)"
+              strokeWidth="2.5"
+              strokeLinecap="round"
+              strokeDasharray="7 9"
+              opacity="0.45"
+            />
+          </svg>
+
+          <div className="relative mt-8 lg:mt-4">
+            <ol
+              data-reveal-items=""
+              className="relative grid gap-6 sm:grid-cols-2 lg:grid-cols-4 lg:gap-5"
+            >
+              {items.map((item, index) => (
+                <li
+                  key={item.title || index}
+                  className="rounded-[var(--radius-card)] border border-line bg-white p-5 shadow-[var(--shadow-card)]"
+                >
+                  <span className="tabular inline-flex h-9 items-center rounded-lg bg-navy-900 px-3 text-[13px] font-semibold text-accent-400">
+                    {item.number || index + 1}
+                  </span>
+                  <h3 className="mt-4 text-[17px] font-semibold text-ink">{item.title}</h3>
+                  {item.body ? (
+                    <p className="mt-2 text-[14px] leading-relaxed text-muted">{item.body}</p>
+                  ) : null}
+                </li>
+              ))}
+            </ol>
+          </div>
+
+          {cta.label && cta.href ? (
+            <Button asChild variant="accent" size="lg" className="mt-10">
+              <Link href={cta.href}>{cta.label}</Link>
+            </Button>
+          ) : null}
+        </Container>
+      </section>
+    );
+  }
 
   return (
     <section className="border-b border-line bg-surface">
@@ -255,7 +336,7 @@ export function StepsSection({ values, variant }: SectionProps) {
           {items.map((item, index) => (
             <li key={item.title || index} className={cn(timeline && 'flex gap-4')}>
               <span className="tabular flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-accent-50 text-[14px] font-semibold text-accent-700">
-                {index + 1}
+                {item.number || index + 1}
               </span>
               <div className={cn('min-w-0', !timeline && 'mt-4')}>
                 <h3 className="text-[15px] font-semibold text-ink">{item.title}</h3>

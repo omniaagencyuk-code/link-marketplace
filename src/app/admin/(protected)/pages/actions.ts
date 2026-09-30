@@ -329,7 +329,7 @@ export async function createPageAction(formData: FormData): Promise<CreatePageRe
     for (const blueprint of blueprintFor(template, customPageDefaults(label, template))) {
       if (!starter.sections.includes(blueprint.component)) continue;
       written.add(blueprint.component);
-      await pageSectionService.create({
+      const created = await pageSectionService.create({
         pageSlug: slug,
         component: blueprint.component,
         variant: blueprint.variant,
@@ -337,6 +337,10 @@ export async function createPageAction(formData: FormData): Promise<CreatePageRe
         locked: blueprint.locked,
         updatedBy: admin.email,
       });
+      if (blueprint.animation && blueprint.animation.entrance !== 'none') {
+        await pageSectionService.update(created.id, { animation: blueprint.animation }, admin.email);
+      }
+      if (blueprint.hidden) await pageSectionService.setHidden(created.id, true, admin.email);
     }
   }
 

@@ -190,7 +190,13 @@ export const customPageService = {
       const saved = await pageContentService.getOverrides(slug);
       return {
         label: registered.definition.label,
-        template: registered.definition.template ?? 'service',
+        /*
+          A custom page can only be a service or a niche page. The homepage is
+          its own template and nobody creates a second one, so duplicating it
+          gives a service page carrying its copy - which is what somebody
+          duplicating the homepage to start a landing page wants anyway.
+        */
+        template: registered.definition.template === 'niche' ? 'niche' : 'service',
         values: mergeValues(registered.defaults, saved?.values ?? {}),
       };
     }

@@ -4,7 +4,7 @@ import { BadgeCheck, Gauge, Receipt, Workflow } from 'lucide-react';
 import { ServicePage } from '@/components/marketing/service-page';
 import { NicheLandingPage } from '@/components/marketing/niche-landing-page';
 import { PageSections } from '@/components/cms/page-sections';
-import { acceptedNiches } from '@/lib/config/accepted-niches';
+import { categories } from '@/lib/data/categories';
 import type { NicheSlug } from '@/lib/types';
 import { contentAccessors } from '@/lib/cms/resolve';
 import { customPageService } from '@/lib/services/custom-page-service';
@@ -115,8 +115,16 @@ export default async function CustomPage({ params }: { params: Promise<{ slug: s
   );
 }
 
-/** A category slug an editor typed, or nothing. Never something else. */
+/**
+ * A category slug an editor typed, or nothing. Never something else.
+ *
+ * Checked against the marketplace's categories, which is the list the
+ * marketplace filters on. It was checked against `acceptedNiches` - what a
+ * publisher will carry, a different list for a different job - so "igaming",
+ * the slug the field's own help text gives as the example, was not a
+ * category and the page silently showed everything.
+ */
 function readNiche(raw: string): NicheSlug | undefined {
   const slug = raw.trim().toLowerCase();
-  return acceptedNiches.some((niche) => niche.slug === slug) ? (slug as NicheSlug) : undefined;
+  return categories.some((category) => category.slug === slug) ? (slug as NicheSlug) : undefined;
 }

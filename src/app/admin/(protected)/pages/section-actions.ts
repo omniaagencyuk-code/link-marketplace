@@ -152,7 +152,7 @@ export async function convertPageToSectionsAction(
   // In order, one at a time: `create` appends to the end of the page, so the
   // order they are written in is the order they end up in.
   for (const blueprint of blueprints) {
-    await pageSectionService.create({
+    const created = await pageSectionService.create({
       pageSlug,
       component: blueprint.component,
       variant: blueprint.variant,
@@ -160,6 +160,18 @@ export async function convertPageToSectionsAction(
       locked: blueprint.locked,
       updatedBy: admin.email,
     });
+
+    // The entrance the page it came from gave this band. Written after the
+    // row exists because `create` takes content, not presentation.
+    if (blueprint.animation && blueprint.animation.entrance !== 'none') {
+      await pageSectionService.update(created.id, { animation: blueprint.animation }, admin.email);
+    }
+
+    // A band with nothing genuine to say yet arrives switched off rather than
+    // arriving empty on a live page.
+    if (blueprint.hidden) {
+      await pageSectionService.setHidden(created.id, true, admin.email);
+    }
   }
 
   refresh(pageSlug, page.path);

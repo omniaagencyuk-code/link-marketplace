@@ -6,7 +6,7 @@ import { resolveSection, type PageSection } from '@/lib/cms/sections';
 import { applyTokens, type TokenValues } from '@/lib/cms/tokens';
 import { neededBy } from '@/lib/cms/components/needs';
 import { websiteService } from '@/lib/services';
-import { acceptedNiches } from '@/lib/config/accepted-niches';
+import { categories } from '@/lib/data/categories';
 import { siteUrl } from '@/lib/config/brand';
 import type { PageConfig, SectionData } from './sections/shared';
 import type { SectionValues } from '@/lib/cms/sections';
@@ -66,7 +66,11 @@ export async function PageSections({
    * it knows whether the fallback is needed. Handing the result in keeps that
    * to one query rather than two; it goes away with the fallback.
    */
-  provided?: { preview?: SectionData['preview']; listingCount?: number };
+  provided?: {
+    preview?: SectionData['preview'];
+    listingCount?: number;
+    totals?: SectionData['totals'];
+  };
 }) {
   const sections = await pageSectionService.forPage(slug);
   if (sections.length === 0) return <>{fallback}</>;
@@ -197,7 +201,11 @@ function PageStructuredData({
 async function gather(
   components: string[],
   config: PageConfig,
-  provided?: { preview?: SectionData['preview']; listingCount?: number },
+  provided?: {
+    preview?: SectionData['preview'];
+    listingCount?: number;
+    totals?: SectionData['totals'];
+  },
 ): Promise<SectionData> {
   const needed = neededBy(components);
   if (needed.size === 0) return { page: config };
@@ -209,29 +217,59 @@ async function gather(
     whole marketplace, where a finance page quietly showing gambling
     publishers is not obviously anything.
   */
-  const niche = acceptedNiches.some((entry) => entry.slug === config.niche)
+  /*
+    Checked against the marketplace's own categories, for the same reason the
+    niche list above is built from them: `getPublicPreview` filters on these
+    slugs. Checked against `acceptedNiches` - a different list, for what a
+    publisher will carry - "igaming" was not a category at all, so the one
+    page that sets a category was quietly asking for the whole marketplace.
+  */
+  const niche = categories.some((category) => category.slug === config.niche)
     ? (config.niche as NicheSlug)
     : undefined;
 
-  const [fetched, counts] = await Promise.all([
+  const [fetched, counts, stats] = await Promise.all([
     needed.has('preview') && provided?.preview === undefined
       ? websiteService.getPublicPreview(6, niche)
       : undefined,
-    needed.has('niches') || needed.has('totals') ? websiteService.countByNiche() : undefined,
+    needed.has('niches') ? websiteService.countByNiche() : undefined,
+    /*
+      Three aggregates through a security-definer function: websites, niches
+      and countries, with no row anything could leak a domain from. Asked for
+      separately from the per-niche counts because a page wanting a figure
+      under its hero should not pay for a count of every category to get it.
+    */
+    needed.has('totals') && provided?.totals === undefined
+      ? websiteService.getStats()
+      : undefined,
   ]);
 
   const preview = provided?.preview ?? fetched?.rows;
   const listingCount = provided?.listingCount ?? fetched?.totalWebsites;
 
+  /*
+    From the marketplace's own categories, which is the vocabulary that
+    matters here: `countByNiche` is keyed by these slugs and `/marketplace?
+    niche=` accepts these slugs.
+
+    It used to read `acceptedNiches`, which is a different list for a
+    different job - what a publisher will carry, where gambling is `gambling`
+    and there is no `igaming` at all. Every count came back zero for the
+    slugs that overlap by accident and the marketplace's biggest category
+    never appeared. Nothing reported it, because no page had used the
+    component yet.
+
+    Unfiltered and busiest first. A component that only wants niches with
+    listings filters them; one drawing a fixed set of cards needs the rest.
+  */
   const niches = counts
-    ? acceptedNiches
-        .map((niche) => ({
-          slug: niche.slug,
-          label: niche.label,
-          count: counts[niche.slug as keyof typeof counts] ?? 0,
-          href: `/marketplace?niche=${niche.slug}`,
+    ? categories
+        .map((category) => ({
+          slug: category.slug as string,
+          label: category.name,
+          count: counts[category.slug] ?? 0,
+          href: `/marketplace?niche=${category.slug}`,
         }))
-        .filter((niche) => niche.count > 0)
         .sort((a, b) => b.count - a.count)
     : undefined;
 
@@ -239,16 +277,16 @@ async function gather(
     page: config,
     preview,
     listingCount,
-    niches: needed.has('niches') ? niches : undefined,
-    totals: needed.has('totals') && niches
-      ? {
-          websites: niches.reduce((total, niche) => total + niche.count, 0),
-          niches: niches.length,
-          // Countries are not aggregated publicly yet, so the figure is left
-          // out rather than guessed - the component drops any figure of zero.
-          countries: 0,
-        }
-      : undefined,
+    niches,
+    totals:
+      provided?.totals ??
+      (stats
+        ? {
+            websites: stats.totalWebsites,
+            niches: stats.totalNiches,
+            countries: stats.totalCountries,
+          }
+        : undefined),
   };
 }
 

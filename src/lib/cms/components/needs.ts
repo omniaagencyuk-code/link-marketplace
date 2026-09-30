@@ -24,10 +24,13 @@ export type SectionNeed = 'preview' | 'niches' | 'totals';
 const NEEDS: Record<string, SectionNeed[]> = {
   'marketplace-preview': ['preview'],
   'niche-preview': ['preview'],
+  'marketplace-demo': ['preview', 'totals'],
   'marketplace-stats': ['totals'],
   'niche-categories': ['niches'],
   'parrot-view': ['totals'],
   hero: ['totals'],
+  'home-hero': ['totals'],
+  'trust-stats': ['totals'],
 };
 
 export function needsOf(component: string): SectionNeed[] {

@@ -19,6 +19,7 @@ export const definition: PageDef = {
   label: 'Homepage',
   path: '/',
   description: 'The main SEO and conversion page for the whole business.',
+  template: 'home',
   sections: [
     section(
       'hero',

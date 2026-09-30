@@ -1,23 +1,30 @@
 import {
+  AgencyPanelSection,
   ArticleBodySection,
   BenefitCardsSection,
   ChecklistSection,
   ComparisonSection,
   ContentUpsellSection,
+  EditorialSection,
   CtaSection,
   ExpandableSection,
   FaqSection,
   FeatureCardsSection,
+  FeatureListSection,
   HeroSection,
+  HomeHeroSection,
   IconGridSection,
   ImageSection,
   JourneyStepsSection,
+  MarketplaceDemoSection,
   MarketplacePreviewSection,
   MarketplaceSearchSection,
   MarketplaceStatsSection,
+  MetricCardsSection,
   NicheCategoriesSection,
   NicheHeroSection,
   NichePreviewSection,
+  OldVsNewSection,
   ParrotChecklistSection,
   ParrotCtaSection,
   ParrotFlightPathSection,
@@ -25,12 +32,15 @@ import {
   ParrotViewSection,
   RelatedPagesSection,
   RichTextSection,
+  ServiceCardsSection,
   StatsSection,
   StepsSection,
   TableSection,
+  TestimonialsSection,
   TextImageSection,
   TopicPillsSection,
   TrustBarSection,
+  TrustStatsSection,
   TwoColumnSection,
   type SectionProps,
 } from '@/components/cms/sections';
@@ -60,6 +70,19 @@ const RENDERERS: Record<string, SectionRenderer> = {
   image: ImageSection,
   table: TableSection,
   hero: HeroSection,
+
+  // the bands the homepage is made of, registered so the next landing page
+  // is assembled rather than written
+  'home-hero': HomeHeroSection,
+  'trust-stats': TrustStatsSection,
+  testimonials: TestimonialsSection,
+  'marketplace-demo': MarketplaceDemoSection,
+  'old-vs-new': OldVsNewSection,
+  'service-cards': ServiceCardsSection,
+  'feature-list': FeatureListSection,
+  'agency-panel': AgencyPanelSection,
+  editorial: EditorialSection,
+  'metric-cards': MetricCardsSection,
 
   // niche landing pages - the blocks the gambling page is made of
   'niche-hero': NicheHeroSection,
@@ -139,6 +162,11 @@ const ANIMATABLE = new Set([
   // the Largest Contentful Paint, and an element at opacity 0 is unpainted.
   // The article body is absent because it is long-form reading.
   'niche-preview', 'topic-pills', 'benefit-cards', 'journey-steps', 'content-upsell',
+  // The homepage hero is absent for the reason the others are: it is the
+  // Largest Contentful Paint. The editorial column is absent because
+  // animating long-form reading is what makes a site feel like a template.
+  'trust-stats', 'testimonials', 'marketplace-demo', 'old-vs-new',
+  'service-cards', 'feature-list', 'agency-panel', 'metric-cards',
   'marketplace-preview', 'marketplace-stats', 'niche-categories', 'marketplace-search',
   'feature-cards', 'stats', 'checklist', 'comparison', 'icon-grid', 'trust-bar', 'steps',
   'parrot-says', 'parrot-checklist', 'parrot-view', 'parrot-cta', 'parrot-flight-path',

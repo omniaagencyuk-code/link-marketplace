@@ -103,6 +103,10 @@ const cardList = (label: string, itemLabel = 'Title') =>
 /** A list of single lines: checklist points, trust logos, reassurance. */
 const lineList = (key: string, label: string, max = 20) =>
   list(key, label, [text('text', 'Line', { maxLength: 200 })], { itemLabelKey: 'text', maxItems: max });
+
+/** The same, for the components that store the line under `label`. */
+const lineList2 = (key: string, label: string, max = 20) =>
+  list(key, label, [text('label', 'Line', { maxLength: 200 })], { itemLabelKey: 'label', maxItems: max });
 const COMPONENTS: ComponentDef[] = [
   {
     key: 'rich-text',
@@ -130,7 +134,8 @@ const COMPONENTS: ComponentDef[] = [
     animatable: true,
     variants: [
       { key: 'light', label: 'Light', help: 'On the page background.' },
-      { key: 'dark', label: 'Dark', help: 'Navy panel, for the end of a page.' },
+      { key: 'dark', label: 'Dark', help: 'Navy band across the page.' },
+      { key: 'panel', label: 'Green panel', help: 'A dark card inside the page, with foliage.' },
       { key: 'marketplace', label: 'Marketplace', help: 'Points at the marketplace.' },
     ],
     fields: [
@@ -140,12 +145,17 @@ const COMPONENTS: ComponentDef[] = [
       link('secondaryCta', 'Second button', {
         help: 'Leave the label blank for a single button.',
       }),
+      text('annotation', 'Handwritten note', {
+        maxLength: 40,
+        help: 'Shown on the green panel only.',
+      }),
     ],
     defaults: {
       heading: 'Ready to start?',
       body: '',
       primaryCta: { label: 'Create Free Account', href: '/signup' },
       secondaryCta: { label: '', href: '' },
+      annotation: '',
     },
   },
 
@@ -179,8 +189,9 @@ const COMPONENTS: ComponentDef[] = [
     description: 'Questions and answers, with the structured data Google reads.',
     animatable: true,
     variants: [
-      { key: 'default', label: 'Standard', help: 'On the page background.' },
-      { key: 'wide', label: 'Wide', help: 'White band, wider measure. What the niche pages use.' },
+      { key: 'default', label: 'Standard', help: 'Tighter measure.' },
+      { key: 'wide', label: 'Wide, white', help: 'What the niche pages use.' },
+      { key: 'wide-muted', label: 'Wide, on the page background', help: 'What the homepage uses.' },
     ],
     fields: [
       text('heading', 'Heading', { maxLength: 160 }),
@@ -325,20 +336,42 @@ const COMPONENTS: ComponentDef[] = [
 
   {
     key: 'niche-categories',
-    label: 'Niche Categories',
+    label: 'Browse by Niche',
     group: 'marketplace',
-    description: 'Cards for each niche, with live counts. Empty niches are left out.',
+    description: 'A card per niche with its live count, linking into the marketplace.',
     animatable: true,
-    variants: [{ key: 'default', label: 'Standard' }],
+    variants: [
+      { key: 'cards', label: 'Icon cards', help: 'Five across, with a mark per niche.' },
+      { key: 'list', label: 'Plain rows', help: 'Three across, name and count only.' },
+    ],
     fields: [
+      text('eyebrow', 'Eyebrow', { maxLength: 60 }),
       text('heading', 'Heading', { maxLength: 160 }),
       textarea('body', 'Supporting copy', { rows: 2, maxLength: 400 }),
+      list(
+        'items',
+        'Which niches',
+        [
+          text('slug', 'Category slug', {
+            maxLength: 40,
+            help: 'e.g. igaming, sports, finance. See Categories in the admin for the list.',
+          }),
+        ],
+        {
+          itemLabelKey: 'slug',
+          maxItems: 12,
+          help:
+            'Named here, they appear in this order, including any with nothing listed yet - the card still links to a real marketplace filter. Leave the list empty to show whatever is busiest.',
+        },
+      ),
       link('cta', 'Link beside the heading'),
     ],
     defaults: {
+      eyebrow: 'Every industry',
       heading: 'Link building opportunities in every industry',
       body: '',
-      cta: { label: 'View all niches', href: '/marketplace' },
+      items: [],
+      cta: { label: 'See the whole marketplace', href: '/marketplace' },
     },
   },
 
@@ -473,15 +506,29 @@ const COMPONENTS: ComponentDef[] = [
     animatable: true,
     variants: [
       { key: 'default', label: 'Across' },
+      { key: 'flight-path', label: 'Flight path', help: 'Across, with the curve drawn between them.' },
       { key: 'timeline', label: 'Down the page' },
     ],
     fields: [
+      text('eyebrow', 'Eyebrow', { maxLength: 60 }),
       text('heading', 'Heading', { maxLength: 160 }),
       textarea('body', 'Supporting copy', { rows: 2, maxLength: 400 }),
-      cardList('Steps', 'Step'),
+      list(
+        'items',
+        'Steps',
+        [
+          text('number', 'Number', {
+            maxLength: 4,
+            help: 'Left blank, the steps number themselves.',
+          }),
+          text('title', 'Title', { maxLength: 80 }),
+          textarea('body', 'Description', { rows: 3, maxLength: 300 }),
+        ],
+        { itemLabelKey: 'title', minItems: 1, maxItems: 8 },
+      ),
       link('cta', 'Button'),
     ],
-    defaults: { heading: '', body: '', items: [], cta: { label: '', href: '' } },
+    defaults: { eyebrow: '', heading: '', body: '', items: [], cta: { label: '', href: '' } },
   },
 
   // ------------------------------------------------------------- press parrot
@@ -691,6 +738,346 @@ const COMPONENTS: ComponentDef[] = [
   },
 
 
+
+  // ------------------------------------------------------------------ pages
+  //
+  // The bands the homepage is made of, registered rather than hardcoded. They
+  // are deliberately not called "homepage sections": a trust row, a
+  // marketplace demonstration, a set of service cards and an editorial column
+  // are what the next paid landing page is assembled from too.
+  //
+  // None of them has a field for a figure. Every number on them is counted on
+  // the render that draws it.
+
+  {
+    key: 'home-hero',
+    label: 'Marketplace Hero',
+    group: 'content',
+    description: 'Three-line headline, two buttons, and live counts floating over the mascot.',
+    animatable: false,
+    structural: true,
+    variants: [{ key: 'default', label: 'Standard' }],
+    fields: [
+      text('eyebrow', 'Eyebrow', { maxLength: 80 }),
+      text('titleLine1', 'Headline, first line', { maxLength: 60 }),
+      text('titleLine2', 'Headline, second line', { maxLength: 60 }),
+      text('titleAccent', 'Headline, highlighted line', {
+        maxLength: 60,
+        help: 'Rendered in Press Parrot green.',
+      }),
+      textarea('intro', 'Intro paragraph', { rows: 4, maxLength: 400 }),
+      link('primaryCta', 'Primary button'),
+      link('secondaryCta', 'Second button'),
+      list('reassurance', 'Ticks under the buttons', [text('label', 'Text', { maxLength: 60 })], {
+        itemLabelKey: 'label',
+        maxItems: 4,
+      }),
+      text('annotation', 'Handwritten note', {
+        maxLength: 60,
+        help: 'The scribble beside the parrot. Two lines are allowed.',
+      }),
+      text('cardWebsites', 'First card label', {
+        maxLength: 40,
+        help: 'The figure beside it is counted from the marketplace, not typed here.',
+      }),
+      text('cardNiches', 'Second card label', { maxLength: 40 }),
+      text('cardCountries', 'Third card label', { maxLength: 40 }),
+      image('image', 'Mascot artwork', {
+        help: 'Leave blank to use the shipped Press Parrot mascot.',
+      }),
+    ],
+    defaults: {
+      eyebrow: 'The link building marketplace',
+      titleLine1: 'Real Websites.',
+      titleLine2: 'Real Traffic.',
+      titleAccent: 'Better Rankings.',
+      intro: '',
+      primaryCta: { label: 'Create Free Account', href: '/signup' },
+      secondaryCta: { label: 'See How It Works', href: '/how-it-works' },
+      reassurance: [],
+      annotation: '',
+      cardWebsites: 'Websites listed',
+      cardNiches: 'Niches covered',
+      cardCountries: 'Countries',
+      image: { src: '', alt: '' },
+    },
+  },
+
+  {
+    key: 'trust-stats',
+    label: 'Trust Numbers',
+    group: 'marketplace',
+    description: 'A row of figures. The first three are counted; anything else is typed.',
+    animatable: true,
+    variants: [{ key: 'default', label: 'Standard' }],
+    fields: [
+      text('websitesLabel', 'Label for the website count', { maxLength: 40 }),
+      text('nichesLabel', 'Label for the niche count', { maxLength: 40 }),
+      text('countriesLabel', 'Label for the country count', { maxLength: 40 }),
+      list(
+        'items',
+        'Extra figures',
+        [text('value', 'Value', { maxLength: 24 }), text('label', 'Label', { maxLength: 40 })],
+        {
+          itemLabelKey: 'label',
+          maxItems: 2,
+          help:
+            'For anything the marketplace cannot count, such as turnaround. Only claim numbers you can stand behind - these are typed, so nothing keeps them true.',
+        },
+      ),
+    ],
+    defaults: {
+      websitesLabel: 'Websites in the marketplace',
+      nichesLabel: 'Niches and industries',
+      countriesLabel: 'Countries',
+      items: [],
+    },
+  },
+
+  {
+    key: 'testimonials',
+    label: 'Customer Quotes',
+    group: 'visual',
+    description: 'Real, attributable quotes. Renders nothing while it holds none.',
+    animatable: true,
+    variants: [{ key: 'default', label: 'Standard' }],
+    fields: [
+      text('eyebrow', 'Eyebrow', { maxLength: 60 }),
+      text('heading', 'Heading', { maxLength: 160 }),
+      textarea('body', 'Supporting copy', { rows: 2, maxLength: 400 }),
+      list(
+        'items',
+        'Quotes',
+        [
+          textarea('quote', 'What they said', { rows: 4, maxLength: 600 }),
+          text('name', 'Name', { maxLength: 60 }),
+          text('role', 'Role', { maxLength: 60 }),
+          text('company', 'Company', { maxLength: 60 }),
+          text('rating', 'Rating out of 5', {
+            maxLength: 1,
+            help: 'Only if they actually gave one. Leave blank otherwise.',
+          }),
+          image('avatar', 'Photo or logo'),
+        ],
+        {
+          itemLabelKey: 'name',
+          maxItems: 9,
+          help:
+            'Only quotes somebody really gave, with permission to publish them. An invented testimonial is a lie on the page a stranger judges the business by, and this section renders nothing while it is empty.',
+        },
+      ),
+    ],
+    defaults: {
+      eyebrow: 'Trusted by SEOs and agencies',
+      heading: 'What our customers say',
+      body: '',
+      items: [],
+    },
+  },
+
+  {
+    key: 'marketplace-demo',
+    label: 'Marketplace Demo',
+    group: 'marketplace',
+    description: 'The redacted listings table, with the reason to register beside it.',
+    animatable: true,
+    variants: [
+      { key: 'unlock', label: 'Unlock panel', help: 'Table first, signup benefits beside it.' },
+      { key: 'metrics', label: 'Filters and totals', help: 'The argument beside the table.' },
+    ],
+    fields: [
+      text('eyebrow', 'Eyebrow', { maxLength: 60 }),
+      text('heading', 'Heading', { maxLength: 160 }),
+      textarea('body', 'Supporting copy', { rows: 4, maxLength: 500 }),
+      text('unlockHeading', 'Heading on the signup panel', { maxLength: 120 }),
+      lineList('benefits', 'What an account gets you', 6),
+      link('cta', 'Primary button'),
+      link('secondaryCta', 'Link under the button'),
+      text('ctaCaption', 'Caption under the button', {
+        maxLength: 120,
+        help: 'Shown on the filters layout only.',
+      }),
+    ],
+    defaults: {
+      eyebrow: 'The marketplace',
+      heading: 'Thousands of real websites at your fingertips',
+      body: '',
+      unlockHeading: 'Create a free account to unlock the marketplace',
+      benefits: [],
+      cta: { label: 'Create Free Account', href: '/signup' },
+      secondaryCta: { label: 'Or browse niches first', href: '/marketplace' },
+      ctaCaption: '',
+    },
+  },
+
+  {
+    key: 'old-vs-new',
+    label: 'Old Way vs Press Parrot',
+    group: 'visual',
+    description: 'Copy beside two lists: doing it yourself, and doing it here.',
+    animatable: true,
+    variants: [{ key: 'default', label: 'Standard' }],
+    fields: [
+      text('heading', 'Heading', { maxLength: 160 }),
+      richtext('body', 'Supporting copy', { rows: 6 }),
+      text('annotation', 'Handwritten note', { maxLength: 40 }),
+      link('cta', 'Button'),
+      text('oldHeading', 'Left column heading', { maxLength: 40 }),
+      lineList2('oldWay', 'Doing it yourself', 12),
+      text('newHeading', 'Right column heading', { maxLength: 40 }),
+      lineList2('newWay', 'With Press Parrot', 12),
+    ],
+    defaults: {
+      heading: '',
+      body: '',
+      annotation: '',
+      cta: { label: 'Browse Websites', href: '/marketplace' },
+      oldHeading: 'On your own',
+      oldWay: [],
+      newHeading: 'With Press Parrot',
+      newWay: [],
+    },
+  },
+
+  {
+    key: 'service-cards',
+    label: 'Service Cards',
+    group: 'content',
+    description: 'What you sell, each card linking to the page that explains it.',
+    animatable: true,
+    variants: [{ key: 'default', label: 'Standard' }],
+    fields: [
+      text('heading', 'Heading', { maxLength: 160 }),
+      textarea('intro', 'Intro', { rows: 3, maxLength: 300 }),
+      list(
+        'items',
+        'Cards',
+        [
+          text('title', 'Title', { maxLength: 40 }),
+          textarea('body', 'Description', { rows: 3, maxLength: 240 }),
+          link('cta', 'Link'),
+        ],
+        { itemLabelKey: 'title', maxItems: 4 },
+      ),
+    ],
+    defaults: { heading: '', intro: '', items: [] },
+  },
+
+  {
+    key: 'feature-list',
+    label: 'Platform Features',
+    group: 'visual',
+    description: 'What the platform does, four across, with a Coming soon badge.',
+    animatable: true,
+    variants: [{ key: 'default', label: 'Standard' }],
+    fields: [
+      text('heading', 'Heading', { maxLength: 160 }),
+      textarea('intro', 'Intro', { rows: 3, maxLength: 300 }),
+      list(
+        'items',
+        'Features',
+        [
+          text('title', 'Title', { maxLength: 40 }),
+          textarea('body', 'Description', { rows: 3, maxLength: 240 }),
+          text('comingSoon', 'Coming soon?', {
+            maxLength: 3,
+            help: 'Type "yes" to show a Coming soon badge. Never list something as built when it is not.',
+          }),
+        ],
+        { itemLabelKey: 'title', maxItems: 12 },
+      ),
+    ],
+    defaults: { heading: '', intro: '', items: [] },
+  },
+
+  {
+    key: 'agency-panel',
+    label: 'Audience Panel',
+    group: 'conversion',
+    description: 'A panel aimed at one audience: copy and buttons beside a grid of points.',
+    animatable: true,
+    variants: [{ key: 'default', label: 'Standard' }],
+    fields: [
+      text('eyebrow', 'Eyebrow', { maxLength: 60 }),
+      text('heading', 'Heading', { maxLength: 160 }),
+      textarea('body', 'Supporting copy', { rows: 4, maxLength: 500 }),
+      link('primaryCta', 'Primary button'),
+      link('secondaryCta', 'Second button'),
+      lineList2('items', 'Points', 8),
+    ],
+    defaults: {
+      eyebrow: '',
+      heading: '',
+      body: '',
+      primaryCta: { label: 'Create Free Account', href: '/signup' },
+      secondaryCta: { label: 'Browse Websites', href: '/marketplace' },
+      items: [],
+    },
+  },
+
+  {
+    key: 'editorial',
+    label: 'Editorial Column',
+    group: 'seo',
+    description: 'Long-form copy with its own contents list and an anchor per article.',
+    animatable: false,
+    variants: [{ key: 'default', label: 'Standard' }],
+    fields: [
+      text('eyebrow', 'Eyebrow', { maxLength: 60 }),
+      text('heading', 'Heading', { maxLength: 160 }),
+      list(
+        'articles',
+        'Articles',
+        [
+          text('id', 'Anchor id', {
+            maxLength: 60,
+            help: 'Used for the contents links, e.g. what-is-link-building. Lowercase, hyphens only.',
+          }),
+          text('heading', 'Heading', { maxLength: 120 }),
+          richtext('content', 'Content', {
+            rows: 8,
+            help: 'Internal links here are worth getting right - they are read as much as the copy.',
+          }),
+        ],
+        { itemLabelKey: 'heading', maxItems: 12 },
+      ),
+    ],
+    defaults: { eyebrow: '', heading: '', articles: [] },
+  },
+
+  {
+    key: 'metric-cards',
+    label: 'Metric Cards',
+    group: 'seo',
+    description: 'What each metric measures, each card linking to where it is explained.',
+    animatable: true,
+    variants: [{ key: 'default', label: 'Standard' }],
+    fields: [
+      text('heading', 'Heading', { maxLength: 160 }),
+      textarea('body', 'Supporting copy', { rows: 3, maxLength: 400 }),
+      list(
+        'items',
+        'Metrics',
+        [
+          text('title', 'Name', { maxLength: 60 }),
+          textarea('body', 'One or two lines', { rows: 2, maxLength: 240 }),
+          text('href', 'Link', {
+            maxLength: 160,
+            help: 'An anchor on the metrics page, e.g. /link-building-metrics#organic-traffic',
+          }),
+        ],
+        { itemLabelKey: 'title', maxItems: 6 },
+      ),
+      link('cta', 'Link under the cards'),
+    ],
+    defaults: {
+      heading: '',
+      body: '',
+      items: [],
+      cta: { label: 'Learn more about metrics', href: '/link-building-metrics' },
+    },
+  },
+
   // --------------------------------------------------------------- niche pages
   //
   // The blocks a niche landing page is made of. They exist because the
@@ -799,12 +1186,27 @@ const COMPONENTS: ComponentDef[] = [
   {
     key: 'benefit-cards',
     label: 'Why Press Parrot',
-    group: 'niche',
-    description: 'Four cards with a mark, a claim and a sentence.',
+    group: 'visual',
+    description: 'Cards with a mark, a claim and a sentence. Artwork beside them, optionally.',
     animatable: true,
-    variants: [{ key: 'default', label: 'Standard' }],
-    fields: [text('heading', 'Heading', { maxLength: 160 }), cardList('Points')],
-    defaults: { heading: 'Why Press Parrot', items: [] },
+    variants: [
+      { key: 'default', label: 'Across' },
+      { key: 'with-art', label: 'With artwork', help: 'Two by two, with a picture beside them.' },
+    ],
+    fields: [
+      text('eyebrow', 'Eyebrow', { maxLength: 60 }),
+      text('heading', 'Heading', { maxLength: 160 }),
+      textarea('body', 'Supporting copy', { rows: 2, maxLength: 400 }),
+      cardList('Points'),
+      image('image', 'Artwork', { help: 'Shown on the "with artwork" layout only.' }),
+    ],
+    defaults: {
+      eyebrow: '',
+      heading: 'Why Press Parrot',
+      body: '',
+      items: [],
+      image: { src: '', alt: '' },
+    },
   },
 
   {

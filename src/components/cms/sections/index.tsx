@@ -4,6 +4,7 @@ import { Container } from '@/components/layout/container';
 import { Button } from '@/components/ui/button';
 import { RichText, type RichTextValue } from '@/lib/cms/rich-text-render';
 import { Faq, type FaqItem } from '@/components/shared/faq';
+import { MonsteraLeaf, PalmFrond } from '@/components/shared/foliage';
 import { cn } from '@/lib/utils/cn';
 import { link as linkOf, rows, str, type SectionProps } from './shared';
 
@@ -32,6 +33,7 @@ export * from './marketplace';
 export * from './parrot';
 export * from './hero';
 export * from './niche';
+export * from './home';
 
 // --------------------------------------------------------------- rich text
 
@@ -76,6 +78,71 @@ export function CtaSection({ values, variant }: SectionProps) {
   const primary = linkOf(values, 'primaryCta');
   const secondary = linkOf(values, 'secondaryCta');
   const dark = variant === 'dark';
+
+  /*
+    The closing panel: a dark green card inside the page rather than a band
+    across it, with foliage kept to one side. Left-aligned on purpose - it is
+    the end of an argument, not a poster.
+  */
+  if (variant === 'panel') {
+    const annotation = str(values, 'annotation');
+    return (
+      <section className="bg-white py-16 lg:py-20">
+        <Container size="wide">
+          <div className="relative overflow-hidden rounded-2xl bg-[#08301F] px-6 py-12 shadow-[var(--shadow-pop)] sm:px-10 lg:px-14 lg:py-16">
+            <div
+              aria-hidden="true"
+              className="absolute inset-0 opacity-[0.35]"
+              style={{
+                backgroundImage:
+                  'radial-gradient(38rem 24rem at 100% 0%, rgba(16,185,129,0.35) 0%, transparent 62%)',
+              }}
+            />
+            <PalmFrond
+              aria-hidden="true"
+              className="pointer-events-none absolute -right-6 -bottom-10 hidden h-auto w-64 rotate-[195deg] text-accent-300 opacity-25 sm:block"
+            />
+            <MonsteraLeaf
+              aria-hidden="true"
+              className="pointer-events-none absolute -top-8 right-24 hidden h-auto w-28 rotate-12 text-accent-300 opacity-20 lg:block"
+            />
+
+            <div className="relative max-w-2xl">
+              <h2 className="text-3xl font-semibold tracking-tight text-white sm:text-4xl">
+                {heading}
+              </h2>
+              {body ? (
+                <p className="mt-4 text-[16px] leading-relaxed text-white/70">{body}</p>
+              ) : null}
+              <div className="mt-8 flex flex-wrap gap-3">
+                {primary.label && primary.href ? (
+                  <Button asChild size="lg" variant="accent">
+                    <Link href={primary.href}>
+                      {primary.label}
+                      <ArrowRight className="h-4 w-4" aria-hidden="true" />
+                    </Link>
+                  </Button>
+                ) : null}
+                {secondary.label && secondary.href ? (
+                  <Button
+                    asChild
+                    size="lg"
+                    variant="outline"
+                    className="border-white/25 bg-transparent text-white hover:bg-white/10 hover:text-white"
+                  >
+                    <Link href={secondary.href}>{secondary.label}</Link>
+                  </Button>
+                ) : null}
+              </div>
+              {annotation ? (
+                <p className="font-handwritten mt-8 text-[20px] text-accent-300">{annotation}</p>
+              ) : null}
+            </div>
+          </div>
+        </Container>
+      </section>
+    );
+  }
 
   return (
     <section className={dark ? 'bg-navy-950 text-white' : 'border-b border-line bg-surface'}>
@@ -189,13 +256,17 @@ export function FaqSection({ values, variant, sectionId }: SectionProps) {
 
   if (items.length === 0) return null;
 
-  // The band the niche and service templates draw: white, deeper, and a
-  // wider measure. It exists so a converted page keeps the questions it had
-  // rather than gaining a differently-sized version of them.
-  const wide = variant === 'wide';
+  /*
+    Three bands, because three pages drew three. The niche template's is white
+    and deep; the homepage's is on the page background and just as deep; the
+    library's own is tighter. They exist so a converted page keeps the
+    questions it had rather than gaining a differently-sized version of them.
+  */
+  const wide = variant === 'wide' || variant === 'wide-muted';
+  const muted = variant !== 'wide';
 
   return (
-    <section className={cn('border-b border-line', wide ? 'bg-white' : 'bg-surface')}>
+    <section className={cn('border-b border-line', muted ? 'bg-surface' : 'bg-white')}>
       <Container size="wide" className={wide ? 'py-14 lg:py-20' : 'py-14 lg:py-16'}>
         <div className={cn('mx-auto', wide ? 'max-w-3xl' : 'max-w-2xl')}>
           {/* Faq brings its own heading and its own accordion markup - a

@@ -133,7 +133,7 @@ export interface PageDef {
    * a duplicate of the gambling page has to come out as a niche page rather
    * than as a service page wearing its copy.
    */
-  template?: 'service' | 'niche';
+  template?: 'service' | 'niche' | 'home';
   /** Live values this page can resolve inside its copy. */
   tokens?: TokenDef[];
   /** Page metadata is editable too - it is the highest-leverage copy on site. */

@@ -1,10 +1,45 @@
 import Link from 'next/link';
-import { ArrowRight, Search } from 'lucide-react';
+import {
+  ArrowRight,
+  Bitcoin,
+  Briefcase,
+  Clapperboard,
+  Cpu,
+  Dice5,
+  HeartPulse,
+  Landmark,
+  Plane,
+  Search,
+  Shirt,
+  Trophy,
+  type LucideIcon,
+} from 'lucide-react';
 import { Container } from '@/components/layout/container';
 import { Button } from '@/components/ui/button';
 import { RedactedPreview } from '@/components/marketplace/redacted-preview';
 import { formatNumber } from '@/lib/utils/format';
-import { link, rows, str, type SectionProps } from './shared';
+import { link, rows, str, type SectionData, type SectionProps } from './shared';
+import type { SectionValues } from '@/lib/cms/sections';
+
+/**
+ * A mark per niche, keyed by slug.
+ *
+ * Fixed in code, like every other icon in the library: an editor writes which
+ * niches appear and the design system draws them. A slug with no icon gets
+ * the generic one rather than a gap.
+ */
+const NICHE_ICONS: Record<string, LucideIcon> = {
+  igaming: Dice5,
+  sports: Trophy,
+  finance: Landmark,
+  technology: Cpu,
+  business: Briefcase,
+  health: HeartPulse,
+  travel: Plane,
+  lifestyle: Shirt,
+  crypto: Bitcoin,
+  entertainment: Clapperboard,
+};
 
 /**
  * Sections that draw the marketplace.
@@ -115,11 +150,99 @@ export function MarketplaceStatsSection({ values, data }: SectionProps) {
  * nothing in it is left out - a card promising Crypto that opens an empty
  * search is worse than no card.
  */
-export function NicheCategoriesSection({ values, data }: SectionProps) {
-  const niches = (data.niches ?? []).filter((niche) => niche.count > 0);
+/**
+ * Which niches a page shows, in which order.
+ *
+ * An editor naming them wins, including ones with nothing listed yet - a card
+ * for an empty niche still links to a real marketplace filter, and a row that
+ * changes shape as inventory moves is worse than one that is occasionally
+ * ahead of itself. Naming none falls back to whatever is busiest, which is
+ * the right default for a page nobody has curated.
+ */
+function chosenNiches(values: SectionValues, data: SectionData) {
+  const all = data.niches ?? [];
+  const wanted = rows<{ slug?: string }>(values, 'items')
+    .map((item) => (item.slug ?? '').trim().toLowerCase())
+    .filter(Boolean);
+
+  if (wanted.length === 0) return all.filter((niche) => niche.count > 0);
+
+  return wanted
+    .map((slug) => all.find((niche) => niche.slug === slug))
+    .filter((niche): niche is NonNullable<typeof niche> => Boolean(niche));
+}
+
+export function NicheCategoriesSection({ values, variant, data }: SectionProps) {
+  const niches = chosenNiches(values, data);
   if (niches.length === 0) return null;
 
   const cta = link(values, 'cta');
+
+  if (variant === 'cards') {
+    return (
+      <section className="border-b border-line bg-surface py-16 lg:py-20">
+        <Container size="wide">
+          <div className="flex flex-wrap items-end justify-between gap-4">
+            <div className="max-w-xl">
+              {str(values, 'eyebrow') ? (
+                <p className="text-[11px] font-semibold tracking-[0.14em] text-accent-700 uppercase">
+                  {str(values, 'eyebrow')}
+                </p>
+              ) : null}
+              <h2 className="mt-4 text-3xl font-semibold tracking-tight text-ink sm:text-4xl">
+                {str(values, 'heading')}
+              </h2>
+              {str(values, 'body') ? (
+                <p className="mt-3 text-[15px] leading-relaxed text-muted">
+                  {str(values, 'body')}
+                </p>
+              ) : null}
+            </div>
+            {cta.label && cta.href ? (
+              <Link
+                href={cta.href}
+                className="text-[13px] font-medium text-accent-700 hover:underline"
+              >
+                {cta.label}
+              </Link>
+            ) : null}
+          </div>
+
+          <ul
+            data-reveal-items=""
+            className="mt-8 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5"
+          >
+            {niches.map((niche) => {
+              const Icon = NICHE_ICONS[niche.slug] ?? Briefcase;
+              return (
+                <li key={niche.slug}>
+                  <Link
+                    href={niche.href}
+                    className="group flex h-full flex-col gap-3 rounded-[var(--radius-card)] border border-line bg-white p-4 shadow-[var(--shadow-card)] transition-all hover:-translate-y-0.5 hover:border-accent-300 hover:shadow-[var(--shadow-raised)]"
+                  >
+                    <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-accent-50 text-accent-700 transition-colors group-hover:bg-accent-600 group-hover:text-white">
+                      <Icon className="h-4.5 w-4.5" aria-hidden="true" />
+                    </span>
+                    <span>
+                      <span className="block text-[14px] font-semibold text-ink">
+                        {niche.label}
+                      </span>
+                      {niche.count ? (
+                        <span className="tabular block text-[12px] text-muted">
+                          {formatNumber(niche.count)}{' '}
+                          {niche.count === 1 ? 'website' : 'websites'}
+                        </span>
+                      ) : null}
+                    </span>
+                  </Link>
+                </li>
+              );
+            })}
+          </ul>
+        </Container>
+      </section>
+    );
+  }
 
   return (
     <section className="border-b border-line bg-white">
