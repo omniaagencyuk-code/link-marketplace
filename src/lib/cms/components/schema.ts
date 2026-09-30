@@ -17,7 +17,7 @@
  * expressed as an absence.
  */
 
-import { link, list, richtext, text, textarea } from '../fields';
+import { image, link, list, richtext, text, textarea } from '../fields';
 import { cleanRichTextDoc, isRichTextDoc } from '../rich-text';
 import type { FieldDef, ListField } from '../types';
 import type { SectionValues } from '../sections';
@@ -76,14 +76,31 @@ export interface ComponentDef {
 }
 
 /*
-  The starter set.
+  The library.
 
-  Four components, chosen to exercise every part of the mechanism rather than
-  to be a library: a rich text block with variants, a call to action with
-  links, a card list with a repeatable group, and an accordion whose entries
-  become structured data. The rest of the library is phase 5 - adding one is
-  an entry here and a component in `render.tsx`, with no change to the CMS.
+  Grouped the way the admin's picker groups them. Adding one later is an entry
+  here and a component in `render.tsx` - no change to the CMS, the editor, the
+  renderer or the database.
+
+  Two patterns worth noticing. Several entries share a renderer and differ only
+  in their defaults: a Signup CTA and a Marketplace CTA are the same layout
+  pointed at different places, and an editor should find both in the library
+  rather than find one and be told to retype it. And nothing here has a field
+  for a colour, a size, a width or a class, which is not an omission.
 */
+
+/** A card list, used by several components with different wording. */
+const cardList = (label: string, itemLabel = 'Title') =>
+  list(
+    'items',
+    label,
+    [text('title', itemLabel, { maxLength: 80 }), textarea('body', 'Description', { rows: 3, maxLength: 300 })],
+    { itemLabelKey: 'title', minItems: 1, maxItems: 12 },
+  );
+
+/** A list of single lines: checklist points, trust logos, reassurance. */
+const lineList = (key: string, label: string, max = 20) =>
+  list(key, label, [text('text', 'Line', { maxLength: 200 })], { itemLabelKey: 'text', maxItems: max });
 const COMPONENTS: ComponentDef[] = [
   {
     key: 'rich-text',
@@ -173,6 +190,534 @@ const COMPONENTS: ComponentDef[] = [
       ),
     ],
     defaults: { heading: 'Frequently asked questions', items: [] },
+  },
+
+  // ----------------------------------------------------------------- content
+
+  {
+    key: 'text-image',
+    label: 'Text + Image',
+    group: 'content',
+    description: 'Copy beside a picture, either way round.',
+    animatable: true,
+    variants: [
+      { key: 'text-left', label: 'Text left' },
+      { key: 'text-right', label: 'Text right' },
+      { key: 'full-width', label: 'Full width', help: 'Copy only, no picture.' },
+    ],
+    fields: [
+      text('heading', 'Heading', { maxLength: 160 }),
+      richtext('body', 'Content', { rows: 10 }),
+      image('image', 'Picture'),
+    ],
+    defaults: { heading: '', body: '', image: { src: '', alt: '' } },
+  },
+
+  {
+    key: 'two-column',
+    label: 'Two Column Content',
+    group: 'content',
+    description: 'Two columns of copy side by side.',
+    animatable: true,
+    variants: [{ key: 'default', label: 'Standard' }],
+    fields: [
+      text('heading', 'Heading', { maxLength: 160 }),
+      richtext('left', 'Left column', { rows: 10 }),
+      richtext('right', 'Right column', { rows: 10 }),
+    ],
+    defaults: { heading: '', left: '', right: '' },
+  },
+
+  {
+    key: 'image',
+    label: 'Image',
+    group: 'content',
+    description: 'A picture on its own, with an optional caption.',
+    animatable: true,
+    variants: [
+      { key: 'default', label: 'Standard' },
+      { key: 'wide', label: 'Full width' },
+    ],
+    fields: [
+      image('image', 'Picture'),
+      text('caption', 'Caption', { maxLength: 300 }),
+      link('link', 'Link to', { help: 'Optional. Makes the picture clickable.' }),
+    ],
+    defaults: { image: { src: '', alt: '' }, caption: '', link: { label: '', href: '' } },
+  },
+
+  {
+    key: 'table',
+    label: 'Table',
+    group: 'content',
+    description: 'An editorial table. Scrolls sideways on a phone rather than squashing.',
+    animatable: false,
+    variants: [{ key: 'default', label: 'Standard' }],
+    fields: [
+      text('heading', 'Heading', { maxLength: 160 }),
+      list('columns', 'Columns', [text('label', 'Heading', { maxLength: 60 })], {
+        itemLabelKey: 'label',
+        maxItems: 6,
+      }),
+      list(
+        'rows',
+        'Rows',
+        [
+          text('cells', 'Cells', {
+            maxLength: 600,
+            help: 'One row, cells separated by a vertical bar: Domain | DR | Price',
+          }),
+        ],
+        { itemLabelKey: 'cells', maxItems: 60 },
+      ),
+    ],
+    defaults: { heading: '', columns: [], rows: [] },
+  },
+
+  // --------------------------------------------------------------- marketplace
+
+  {
+    key: 'marketplace-preview',
+    label: 'Marketplace Preview',
+    group: 'marketplace',
+    description: 'Copy beside a redacted table of real listings.',
+    animatable: true,
+    variants: [{ key: 'default', label: 'Standard' }],
+    fields: [
+      text('heading', 'Heading', { maxLength: 160 }),
+      textarea('body', 'Supporting copy', { rows: 3, maxLength: 600 }),
+      link('cta', 'Button'),
+      text('note', 'Line under the button', { maxLength: 200 }),
+    ],
+    defaults: {
+      heading: 'See what a placement actually costs',
+      body: '',
+      cta: { label: 'Unlock the Marketplace', href: '/marketplace' },
+      note: 'Create a free account to browse publishers and pricing.',
+    },
+  },
+
+  {
+    key: 'marketplace-stats',
+    label: 'Marketplace Stats',
+    group: 'marketplace',
+    description: 'Live counts: websites, niches, countries. Counted, never typed.',
+    animatable: true,
+    variants: [{ key: 'default', label: 'Standard' }],
+    fields: [
+      text('heading', 'Heading', { maxLength: 160 }),
+      text('websitesLabel', 'Label for the website count', { maxLength: 40 }),
+      text('nichesLabel', 'Label for the niche count', { maxLength: 40 }),
+      text('countriesLabel', 'Label for the country count', { maxLength: 40 }),
+    ],
+    defaults: {
+      heading: 'Trusted by SEO professionals, agencies and brands',
+      websitesLabel: 'Websites',
+      nichesLabel: 'Niches',
+      countriesLabel: 'Countries',
+    },
+  },
+
+  {
+    key: 'niche-categories',
+    label: 'Niche Categories',
+    group: 'marketplace',
+    description: 'Cards for each niche, with live counts. Empty niches are left out.',
+    animatable: true,
+    variants: [{ key: 'default', label: 'Standard' }],
+    fields: [
+      text('heading', 'Heading', { maxLength: 160 }),
+      textarea('body', 'Supporting copy', { rows: 2, maxLength: 400 }),
+      link('cta', 'Link beside the heading'),
+    ],
+    defaults: {
+      heading: 'Link building opportunities in every industry',
+      body: '',
+      cta: { label: 'View all niches', href: '/marketplace' },
+    },
+  },
+
+  {
+    key: 'marketplace-search',
+    label: 'Marketplace Search',
+    group: 'marketplace',
+    description: 'A search box that takes the visitor to the marketplace.',
+    animatable: true,
+    variants: [{ key: 'default', label: 'Standard' }],
+    fields: [
+      text('heading', 'Heading', { maxLength: 160 }),
+      textarea('body', 'Supporting copy', { rows: 2, maxLength: 400 }),
+      text('placeholder', 'Placeholder', { maxLength: 120 }),
+      link('cta', 'Button'),
+      text('note', 'Line under the box', { maxLength: 200 }),
+    ],
+    defaults: {
+      heading: 'Find link building opportunities',
+      body: '',
+      placeholder: 'Search publishers by domain, topic or country',
+      cta: { label: 'Search websites', href: '/marketplace' },
+      note: '',
+    },
+  },
+
+  // -------------------------------------------------------------------- visual
+
+  {
+    key: 'stats',
+    label: 'Stats',
+    group: 'visual',
+    description: 'Figures you write yourself, for anything not counted from the database.',
+    animatable: true,
+    variants: [
+      { key: 'default', label: 'On the page' },
+      { key: 'panel', label: 'On a panel' },
+    ],
+    fields: [
+      text('heading', 'Heading', { maxLength: 160 }),
+      textarea('body', 'Supporting copy', { rows: 2, maxLength: 400 }),
+      list(
+        'items',
+        'Figures',
+        [text('value', 'Figure', { maxLength: 20 }), text('label', 'Label', { maxLength: 80 })],
+        { itemLabelKey: 'label', minItems: 2, maxItems: 4 },
+      ),
+    ],
+    defaults: { heading: '', body: '', items: [] },
+  },
+
+  {
+    key: 'checklist',
+    label: 'Checklist',
+    group: 'visual',
+    description: 'A list of ticked points.',
+    animatable: true,
+    variants: [
+      { key: 'default', label: 'On the page' },
+      { key: 'panel', label: 'On a panel' },
+    ],
+    fields: [
+      text('heading', 'Heading', { maxLength: 160 }),
+      textarea('body', 'Supporting copy', { rows: 2, maxLength: 400 }),
+      lineList('items', 'Points'),
+    ],
+    defaults: { heading: '', body: '', items: [] },
+  },
+
+  {
+    key: 'comparison',
+    label: 'Comparison',
+    group: 'visual',
+    description: 'Two lists side by side - what to look for, what to avoid.',
+    animatable: true,
+    variants: [{ key: 'default', label: 'Side by side' }],
+    fields: [
+      text('heading', 'Heading', { maxLength: 160 }),
+      textarea('body', 'Supporting copy', { rows: 2, maxLength: 400 }),
+      text('goodTitle', 'Left column heading', { maxLength: 80 }),
+      lineList('good', 'Left column points'),
+      text('badTitle', 'Right column heading', { maxLength: 80 }),
+      lineList('bad', 'Right column points'),
+    ],
+    defaults: {
+      heading: '',
+      body: '',
+      goodTitle: 'A good opportunity',
+      good: [],
+      badTitle: 'A site to avoid',
+      bad: [],
+    },
+  },
+
+  {
+    key: 'icon-grid',
+    label: 'Icon Grid',
+    group: 'visual',
+    description: 'Short points in a grid, each with a mark beside it.',
+    animatable: true,
+    variants: [
+      { key: 'three', label: '3 columns' },
+      { key: 'four', label: '4 columns' },
+    ],
+    fields: [
+      text('heading', 'Heading', { maxLength: 160 }),
+      textarea('body', 'Supporting copy', { rows: 2, maxLength: 400 }),
+      cardList('Points'),
+    ],
+    defaults: { heading: '', body: '', items: [] },
+  },
+
+  {
+    key: 'trust-bar',
+    label: 'Trust Bar',
+    group: 'visual',
+    description: 'A quiet row of names or credentials.',
+    animatable: true,
+    variants: [{ key: 'default', label: 'Standard' }],
+    fields: [
+      text('heading', 'Line above', { maxLength: 120 }),
+      lineList('items', 'Names', 10),
+    ],
+    defaults: { heading: 'Trusted by SEO professionals, agencies and brands', items: [] },
+  },
+
+  {
+    key: 'steps',
+    label: 'Steps',
+    group: 'visual',
+    description: 'A numbered process, across or down.',
+    animatable: true,
+    variants: [
+      { key: 'default', label: 'Across' },
+      { key: 'timeline', label: 'Down the page' },
+    ],
+    fields: [
+      text('heading', 'Heading', { maxLength: 160 }),
+      textarea('body', 'Supporting copy', { rows: 2, maxLength: 400 }),
+      cardList('Steps', 'Step'),
+      link('cta', 'Button'),
+    ],
+    defaults: { heading: '', body: '', items: [], cta: { label: '', href: '' } },
+  },
+
+  // ------------------------------------------------------------- press parrot
+
+  {
+    key: 'parrot-says',
+    label: 'Parrot Says',
+    group: 'parrot',
+    description: 'A short aside with the mascot, to break up a long read.',
+    animatable: true,
+    variants: [
+      { key: 'default', label: 'Quiet' },
+      { key: 'accent', label: 'Accent panel' },
+    ],
+    fields: [
+      text('label', 'Label', { maxLength: 40 }),
+      textarea('body', 'What the parrot says', { rows: 3, maxLength: 600 }),
+    ],
+    defaults: { label: 'Parrot says', body: '' },
+  },
+
+  {
+    key: 'parrot-checklist',
+    label: 'Parrot Checklist',
+    group: 'parrot',
+    description: 'Selection criteria, with the mascot beside them.',
+    animatable: true,
+    variants: [{ key: 'default', label: 'Standard' }],
+    fields: [
+      text('heading', 'Heading', { maxLength: 160 }),
+      textarea('body', 'Supporting copy', { rows: 2, maxLength: 400 }),
+      lineList('items', 'Points'),
+    ],
+    defaults: { heading: '', body: '', items: [] },
+  },
+
+  {
+    key: 'parrot-view',
+    label: "Parrot's View",
+    group: 'parrot',
+    description: 'One live figure on a dark panel, with a line about what it means.',
+    animatable: true,
+    variants: [{ key: 'default', label: 'Standard' }],
+    fields: [
+      text('label', 'Label', { maxLength: 40 }),
+      textarea('body', 'What the figure means', { rows: 3, maxLength: 400 }),
+    ],
+    defaults: { label: "Parrot's view", body: '' },
+  },
+
+  {
+    key: 'parrot-cta',
+    label: 'Parrot CTA',
+    group: 'parrot',
+    description: 'A call to action with the mascot, for the end of an article.',
+    animatable: true,
+    variants: [{ key: 'default', label: 'Standard' }],
+    fields: [
+      text('heading', 'Heading', { maxLength: 160 }),
+      textarea('body', 'Supporting copy', { rows: 2, maxLength: 400 }),
+      link('primaryCta', 'Primary button'),
+      link('secondaryCta', 'Second button'),
+    ],
+    defaults: {
+      heading: '',
+      body: '',
+      primaryCta: { label: 'Browse Websites', href: '/marketplace' },
+      secondaryCta: { label: '', href: '' },
+    },
+  },
+
+  {
+    key: 'parrot-flight-path',
+    label: 'Parrot Flight Path',
+    group: 'parrot',
+    description: 'A process with a dotted line through it.',
+    animatable: true,
+    variants: [{ key: 'default', label: 'Standard' }],
+    fields: [
+      text('heading', 'Heading', { maxLength: 160 }),
+      textarea('body', 'Supporting copy', { rows: 2, maxLength: 400 }),
+      cardList('Stages', 'Stage'),
+    ],
+    defaults: { heading: '', body: '', items: [] },
+  },
+
+  // ---------------------------------------------------------------- conversion
+
+  {
+    key: 'signup-cta',
+    label: 'Signup CTA',
+    group: 'conversion',
+    description: 'The account call to action. Same layout as the CTA, pointed at signup.',
+    animatable: true,
+    variants: [
+      { key: 'light', label: 'Light' },
+      { key: 'dark', label: 'Dark' },
+    ],
+    fields: [
+      text('heading', 'Heading', { maxLength: 160 }),
+      textarea('body', 'Supporting copy', { rows: 2, maxLength: 400 }),
+      link('primaryCta', 'Primary button'),
+      link('secondaryCta', 'Second button'),
+    ],
+    defaults: {
+      heading: 'Create your free account today',
+      body: 'Get instant access to thousands of websites and start building high quality backlinks.',
+      primaryCta: { label: 'Create Free Account', href: '/signup' },
+      secondaryCta: { label: 'Browse Websites', href: '/marketplace' },
+    },
+  },
+
+  {
+    key: 'marketplace-cta',
+    label: 'Marketplace CTA',
+    group: 'conversion',
+    description: 'Points at the marketplace, with the filter already applied.',
+    animatable: true,
+    variants: [
+      { key: 'light', label: 'Light' },
+      { key: 'dark', label: 'Dark' },
+    ],
+    fields: [
+      text('heading', 'Heading', { maxLength: 160 }),
+      textarea('body', 'Supporting copy', { rows: 2, maxLength: 400 }),
+      link('primaryCta', 'Primary button', {
+        help: 'Send this to /marketplace?niche=igaming to open with that filter applied.',
+      }),
+      link('secondaryCta', 'Second button'),
+    ],
+    defaults: {
+      heading: 'Browse the websites',
+      body: '',
+      primaryCta: { label: 'Browse Websites', href: '/marketplace' },
+      secondaryCta: { label: '', href: '' },
+    },
+  },
+
+  {
+    key: 'order-content-cta',
+    label: 'Order Content CTA',
+    group: 'conversion',
+    description: 'For pages about writing rather than about placements.',
+    animatable: true,
+    variants: [
+      { key: 'light', label: 'Light' },
+      { key: 'dark', label: 'Dark' },
+    ],
+    fields: [
+      text('heading', 'Heading', { maxLength: 160 }),
+      textarea('body', 'Supporting copy', { rows: 2, maxLength: 400 }),
+      link('primaryCta', 'Primary button'),
+      link('secondaryCta', 'Second button'),
+    ],
+    defaults: {
+      heading: 'Let us write it',
+      body: 'Add content writing to the same order and we will produce something the publisher will accept.',
+      primaryCta: { label: 'Order Content', href: '/content-writing' },
+      secondaryCta: { label: '', href: '' },
+    },
+  },
+
+  // ---------------------------------------------------------------------- seo
+
+  {
+    key: 'expandable',
+    label: 'Expandable Content',
+    group: 'seo',
+    description:
+      'An introduction with the rest behind a link. Every word is in the page source, so search engines read all of it.',
+    animatable: false,
+    variants: [{ key: 'default', label: 'Standard' }],
+    fields: [
+      text('heading', 'Heading', { maxLength: 160 }),
+      richtext('intro', 'Always visible', { rows: 8 }),
+      text('label', 'Link label', {
+        maxLength: 80,
+        help: 'Say what is behind it - "Learn more about buying backlinks" beats "Read more".',
+      }),
+      richtext('more', 'Behind the link', { rows: 14 }),
+    ],
+    defaults: { heading: '', intro: '', label: 'Read more', more: '' },
+  },
+
+  {
+    key: 'related-pages',
+    label: 'Related Pages',
+    group: 'seo',
+    description: 'Cards linking to other pages on the site.',
+    animatable: true,
+    variants: [{ key: 'default', label: 'Standard' }],
+    fields: [
+      text('heading', 'Heading', { maxLength: 160 }),
+      textarea('body', 'Supporting copy', { rows: 2, maxLength: 400 }),
+      list(
+        'items',
+        'Pages',
+        [
+          text('label', 'Label', { maxLength: 80 }),
+          text('description', 'One line about it', { maxLength: 200 }),
+          text('href', 'Path', { maxLength: 200, help: 'An internal path, e.g. /guest-posts' }),
+        ],
+        { itemLabelKey: 'label', maxItems: 12 },
+      ),
+    ],
+    defaults: { heading: '', body: '', items: [] },
+  },
+
+  // -------------------------------------------------------------------- hero
+
+  {
+    key: 'hero',
+    label: 'Hero',
+    group: 'content',
+    description: 'The first screen. Holds the page\'s only H1.',
+    animatable: false,
+    structural: true,
+    variants: [
+      { key: 'default', label: 'Standard' },
+      { key: 'with-count', label: 'With the live website count' },
+    ],
+    fields: [
+      text('eyebrow', 'Eyebrow', { maxLength: 60 }),
+      text('heading', 'Headline', { maxLength: 120, help: 'The page\'s H1. There is only one.' }),
+      textarea('body', 'Intro paragraph', { rows: 4, maxLength: 500 }),
+      link('primaryCta', 'Primary button'),
+      link('secondaryCta', 'Second button'),
+      lineList('points', 'Reassurance points', 4),
+      text('microcopy', 'Small print', { maxLength: 160 }),
+      image('image', 'Artwork'),
+    ],
+    defaults: {
+      eyebrow: '',
+      heading: '',
+      body: '',
+      primaryCta: { label: 'Browse Websites', href: '/marketplace' },
+      secondaryCta: { label: 'Create Free Account', href: '/signup' },
+      points: [],
+      microcopy: 'Free account - No subscription - Pay only for what you order',
+      image: { src: '', alt: '' },
+    },
   },
 ];
 

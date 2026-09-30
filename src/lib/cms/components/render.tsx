@@ -1,8 +1,30 @@
 import {
+  ChecklistSection,
+  ComparisonSection,
   CtaSection,
+  ExpandableSection,
   FaqSection,
   FeatureCardsSection,
+  HeroSection,
+  IconGridSection,
+  ImageSection,
+  MarketplacePreviewSection,
+  MarketplaceSearchSection,
+  MarketplaceStatsSection,
+  NicheCategoriesSection,
+  ParrotChecklistSection,
+  ParrotCtaSection,
+  ParrotFlightPathSection,
+  ParrotSaysSection,
+  ParrotViewSection,
+  RelatedPagesSection,
   RichTextSection,
+  StatsSection,
+  StepsSection,
+  TableSection,
+  TextImageSection,
+  TrustBarSection,
+  TwoColumnSection,
   type SectionProps,
 } from '@/components/cms/sections';
 
@@ -24,10 +46,46 @@ import {
 export type SectionRenderer = (props: SectionProps) => React.ReactNode;
 
 const RENDERERS: Record<string, SectionRenderer> = {
+  // content
   'rich-text': RichTextSection,
-  cta: CtaSection,
+  'text-image': TextImageSection,
+  'two-column': TwoColumnSection,
+  image: ImageSection,
+  table: TableSection,
+  hero: HeroSection,
+
+  // marketplace
+  'marketplace-preview': MarketplacePreviewSection,
+  'marketplace-stats': MarketplaceStatsSection,
+  'niche-categories': NicheCategoriesSection,
+  'marketplace-search': MarketplaceSearchSection,
+
+  // visual
   'feature-cards': FeatureCardsSection,
+  stats: StatsSection,
+  checklist: ChecklistSection,
+  comparison: ComparisonSection,
+  'icon-grid': IconGridSection,
+  'trust-bar': TrustBarSection,
+  steps: StepsSection,
+
+  // press parrot
+  'parrot-says': ParrotSaysSection,
+  'parrot-checklist': ParrotChecklistSection,
+  'parrot-view': ParrotViewSection,
+  'parrot-cta': ParrotCtaSection,
+  'parrot-flight-path': ParrotFlightPathSection,
+
+  // conversion - three library entries, one layout, different defaults
+  cta: CtaSection,
+  'signup-cta': CtaSection,
+  'marketplace-cta': CtaSection,
+  'order-content-cta': CtaSection,
+
+  // seo
   faq: FaqSection,
+  expandable: ExpandableSection,
+  'related-pages': RelatedPagesSection,
 };
 
 /**
@@ -59,7 +117,14 @@ export function renderableComponents(): string[] {
  * somebody scrolls into it is the thing that makes a site feel like a
  * template, and long-form copy is what the reader came for.
  */
-const ANIMATABLE = new Set(['cta', 'feature-cards', 'faq']);
+const ANIMATABLE = new Set([
+  'text-image', 'two-column', 'image',
+  'marketplace-preview', 'marketplace-stats', 'niche-categories', 'marketplace-search',
+  'feature-cards', 'stats', 'checklist', 'comparison', 'icon-grid', 'trust-bar', 'steps',
+  'parrot-says', 'parrot-checklist', 'parrot-view', 'parrot-cta', 'parrot-flight-path',
+  'cta', 'signup-cta', 'marketplace-cta', 'order-content-cta',
+  'faq', 'related-pages',
+]);
 
 export function isAnimatable(component: string): boolean {
   return ANIMATABLE.has(component);

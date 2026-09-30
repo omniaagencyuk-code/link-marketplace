@@ -15,6 +15,7 @@ import {
 } from '../src/lib/cms/components/schema';
 import { applyTokens, unknownTokens, TOKENS } from '../src/lib/cms/tokens';
 import { isAnimatable, renderableComponents } from '../src/lib/cms/components/render';
+import { neededBy, needsOf } from '../src/lib/cms/components/needs';
 import {
   DELAYS,
   ENTRANCES,
@@ -525,6 +526,100 @@ console.log('\n--- every way of changing a page checks who is asking ---');
   */
   yes('reordering sends the whole order', actions.includes("formData.get('order')"));
   yes('and goes through the function that does it in one statement', repo.includes('reorder_page_sections'));
+}
+
+console.log('\n--- the library holds together ---');
+{
+  const sectionFiles = [
+    'src/components/cms/sections/index.tsx',
+    'src/components/cms/sections/content.tsx',
+    'src/components/cms/sections/visual.tsx',
+    'src/components/cms/sections/marketplace.tsx',
+    'src/components/cms/sections/parrot.tsx',
+    'src/components/cms/sections/hero.tsx',
+  ];
+  const all = sectionFiles.map(read).join('\n');
+
+  is('the library is a library', listComponents().length >= 20, true);
+  yes('no renderer is a client component', !all.includes("'use client'"));
+
+  /*
+    One H1 per page, and it belongs to the hero.
+
+    A second H1 is a real SEO fault rather than a matter of taste, and a page
+    builder is exactly how a page grows one: every section is written
+    separately, and each one is tempting to start with the biggest heading.
+    The rich text whitelist already refuses an H1 inside content; this is the
+    same rule for the components themselves.
+  */
+  const withH1 = sectionFiles.filter((file) => /<h1[\s>]/.test(read(file)));
+  is('exactly one section file renders an h1', withH1.length, 1);
+  is('and it is the hero', withH1[0]?.endsWith('hero.tsx'), true);
+
+  /*
+    One priority image per page, and it is the hero's.
+
+    Everything else is lazy. Two images marked priority compete for the same
+    early bandwidth, which makes both of them later - so the setting is worth
+    having only while exactly one thing has it.
+  */
+  /*
+    Matched as a prop on its own line, not as a word.
+
+    The first version searched for 'priority' anywhere and found it twice -
+    once as the hero's prop and once in a comment in content.tsx explaining
+    that nothing there is priority. Prose about a rule is not the rule.
+  */
+  const priority = sectionFiles.filter((file) => /^\s*priority\s*$/m.test(read(file)));
+  is('exactly one section file marks an image priority', priority.length, 1);
+  is('and it is the hero again', priority[0]?.endsWith('hero.tsx'), true);
+}
+
+console.log('\n--- the long content is in the page, not behind a request ---');
+{
+  /*
+    The whole reason the expandable section is worth building rather than
+    cutting the copy: every word is in the server's response, inside a
+    <details> that starts closed. Fetching the rest on click would hide it
+    from a crawler, which is the opposite of why the copy exists.
+
+    <details> also means it works without JavaScript, it is keyboard
+    operable, screen readers announce it as a disclosure, and find-in-page
+    opens it.
+  */
+  const content = read('src/components/cms/sections/content.tsx');
+  const expandable = content.slice(content.indexOf('export function ExpandableSection'));
+
+  yes('the hidden copy is rendered, not fetched', expandable.includes('<details'));
+  yes('and it is rendered on the server', !expandable.includes('useState') && !expandable.includes('onClick'));
+  yes('the label is editable rather than always "Read more"', expandable.includes("str(values, 'label')"));
+
+  const schema = getComponent('expandable');
+  yes('and the editor asks for a label that says what is behind it', /Read more/.test(schema?.fields.find((f) => f.key === 'label')?.help ?? ''));
+}
+
+console.log('\n--- what a section may ask the application for ---');
+{
+  // A closed vocabulary. A component can ask for the marketplace preview; it
+  // cannot ask for the result of a query, which is the seam that keeps
+  // editorial content away from the inventory.
+  is('a component with no needs asks for nothing', needsOf('rich-text').length, 0);
+  is('an unknown component asks for nothing', needsOf('nope').length, 0);
+  yes('the preview is something a section can ask for', needsOf('marketplace-preview').includes('preview'));
+
+  // Two marketplace blocks on one page are one fetch between them.
+  const twice = neededBy(['marketplace-preview', 'marketplace-preview', 'marketplace-stats']);
+  is('the same need twice is one fetch', [...twice].filter((need) => need === 'preview').length, 1);
+  is('and two needs are two', twice.size, 2);
+  is('a page needing nothing fetches nothing', neededBy(['rich-text', 'cta']).size, 0);
+
+  // Anything that declares a need has to actually read it, or the declaration
+  // is a query made for nobody.
+  const renderers = read('src/components/cms/sections/marketplace.tsx') + read('src/components/cms/sections/parrot.tsx') + read('src/components/cms/sections/hero.tsx');
+  for (const component of listComponents()) {
+    if (needsOf(component.key).length === 0) continue;
+    yes(`"${component.key}" reads the data it asks for`, renderers.includes('data.'));
+  }
 }
 
 console.log(failed ? `\n  ${failed} FAILED\n` : '\n  all passed\n');

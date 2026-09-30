@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { RichText, type RichTextValue } from '@/lib/cms/rich-text-render';
 import { Faq, type FaqItem } from '@/components/shared/faq';
 import { cn } from '@/lib/utils/cn';
-import type { SectionValues } from '@/lib/cms/sections';
+import { link as linkOf, rows, str, type SectionProps } from './shared';
 
 /**
  * The frontend half of the component registry.
@@ -19,31 +19,17 @@ import type { SectionValues } from '@/lib/cms/sections';
  * here** - it is never a class name from the database, which is the line
  * between a page builder that keeps a design system and one that dissolves
  * it.
+ *
+ * The rest of the library is in the files beside this one, grouped the way
+ * the admin's section picker groups them.
  */
 
-export interface SectionProps {
-  values: SectionValues;
-  variant: string;
-  /** The row's id, for anything that needs to be unique on the page. */
-  sectionId: string;
-}
-
-/** Reading a value that came out of jsonb, with the type it should have. */
-const str = (values: SectionValues, key: string): string =>
-  typeof values[key] === 'string' ? (values[key] as string) : '';
-
-const rows = <T,>(values: SectionValues, key: string): T[] =>
-  Array.isArray(values[key]) ? (values[key] as T[]) : [];
-
-const linkOf = (values: SectionValues, key: string): { label: string; href: string } => {
-  const raw = values[key];
-  if (typeof raw !== 'object' || raw === null) return { label: '', href: '' };
-  const entry = raw as { label?: unknown; href?: unknown };
-  return {
-    label: typeof entry.label === 'string' ? entry.label : '',
-    href: typeof entry.href === 'string' ? entry.href : '',
-  };
-};
+export * from './shared';
+export * from './content';
+export * from './visual';
+export * from './marketplace';
+export * from './parrot';
+export * from './hero';
 
 // --------------------------------------------------------------- rich text
 
