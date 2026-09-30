@@ -264,11 +264,28 @@ export const supabasePageSectionRepository = {
    * number the old second row has not vacated. The function does the whole
    * page at once, so the deferrable constraint is checked when the order is
    * complete.
+   *
+   * The row count is checked, not ignored. The function returns how many rows
+   * it moved, and zero means the policies refused them - which is what
+   * happened to every reorder this application ever made until 0039, without
+   * anything saying so. A write that reports what it did and a caller that
+   * does not look at it is the same as a write that failed.
    */
   async reorder(pageSlug: string, ids: string[]): Promise<void> {
     const supabase = getAdminScopedClient();
-    const { error } = await supabase.rpc('reorder_page_sections', { page: pageSlug, ordered: ids });
+    const { data, error } = await supabase.rpc('reorder_page_sections', {
+      page: pageSlug,
+      ordered: ids,
+    });
     if (error) throw new Error(`Failed to reorder the page: ${error.message}`);
+
+    const moved = typeof data === 'number' ? data : 0;
+    if (ids.length > 0 && moved === 0) {
+      throw new Error(
+        'The new order was refused by the database and nothing moved. ' +
+          'If migration 0039 has not been applied yet, apply it.',
+      );
+    }
   },
 
   /** One section by id, whatever page it is on. */

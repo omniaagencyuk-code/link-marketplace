@@ -1,6 +1,7 @@
 'use client';
 
-import { useActionState, useState } from 'react';
+import { useActionState, useState, useTransition } from 'react';
+import { useRouter } from 'next/navigation';
 import { useFormStatus } from 'react-dom';
 import {
   ChevronDown,
@@ -84,22 +85,52 @@ export function SectionList({
    */
   const [adding, setAdding] = useState<string | null>(null);
   const [dragging, setDragging] = useState<string | null>(null);
+  const [moving, startMoving] = useTransition();
+  const [moveError, setMoveError] = useState<string | null>(null);
+  const router = useRouter();
 
-  /** Send the whole order, because renumbering happens in one statement. */
+  /**
+   * Send the whole order, because renumbering happens in one statement.
+   *
+   * Awaited, and the answer is read. This was fire-and-forget - `void` on the
+   * call, `Promise<void>` on the action - and the database refused every
+   * reorder for months: the arrows moved nothing, dragging moved nothing, and
+   * because nobody was listening there was no error anywhere to find.
+   */
   function moveTo(id: string, to: number) {
     const order = sections.map((section) => section.id);
     const from = order.indexOf(id);
-    if (from === -1 || to < 0 || to >= order.length) return;
+    if (from === -1 || to < 0 || to >= order.length || from === to) return;
 
     order.splice(to, 0, ...order.splice(from, 1));
     const form = new FormData();
     form.set('pageSlug', pageSlug);
     form.set('order', order.join(','));
-    void reorderSectionsAction(form);
+
+    setMoveError(null);
+    startMoving(async () => {
+      const result = await reorderSectionsAction(form);
+      if (result.error) {
+        setMoveError(result.error);
+        return;
+      }
+      // The list is a server component's prop, so the new order arrives with
+      // the refresh rather than from state kept here.
+      router.refresh();
+    });
   }
 
   return (
-    <div className="space-y-3">
+    <div className={cn('space-y-3', moving && 'opacity-70')}>
+      {moveError ? (
+        <p
+          role="status"
+          className="rounded-[var(--radius-card)] border border-negative/30 bg-negative/5 px-4 py-3 text-[13px] leading-relaxed text-negative"
+        >
+          {moveError}
+        </p>
+      ) : null}
+
       {sections.length === 0 ? (
         <p className="rounded-[var(--radius-card)] border border-dashed border-line-strong px-5 py-8 text-center text-[13px] text-muted">
           This page has no sections yet, so it still renders from its template.
@@ -176,14 +207,14 @@ export function SectionList({
                 <div className="flex items-center">
                   <IconButton
                     label={`Move ${component?.label ?? 'section'} up`}
-                    disabled={index === 0 || section.locked}
+                    disabled={index === 0 || section.locked || moving}
                     onClick={() => moveTo(section.id, index - 1)}
                   >
                     <ChevronUp className="h-3.5 w-3.5" />
                   </IconButton>
                   <IconButton
                     label={`Move ${component?.label ?? 'section'} down`}
-                    disabled={index === sections.length - 1 || section.locked}
+                    disabled={index === sections.length - 1 || section.locked || moving}
                     onClick={() => moveTo(section.id, index + 1)}
                   >
                     <ChevronDown className="h-3.5 w-3.5" />

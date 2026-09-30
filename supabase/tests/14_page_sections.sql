@@ -185,13 +185,65 @@ end $$;
 reset role;
 reset request.jwt.claim.sub;
 
--- Security definer runs as the owner, so without its own check this would be
--- a way for anyone at all to rearrange a live marketing page.
-set role anon;
+-- --------------------------------------------- as the admin area itself
+--
+-- The case that matters, and the one this file did not have.
+--
+-- Every test above signs in as an administrator through Supabase Auth. The
+-- admin area does not: it signs in with a shared password, carries no
+-- auth.uid(), and writes through the service-role client - which is stated
+-- at the top of this file and was then not tested.
+--
+-- So the function's own `is_admin()` check, which is false without an
+-- auth.uid(), refused every reorder the application ever made. The arrows
+-- did nothing, dragging did nothing, and nothing anywhere said so. 0039
+-- deletes that second copy of the rule and lets the table's policies decide.
+set role service_role;
+do $$
+declare moved integer;
+begin
+  moved := public.reorder_page_sections('reorder-me', array[
+    'aaaaaaaa-0000-0000-0000-000000000002',
+    'aaaaaaaa-0000-0000-0000-000000000003',
+    'aaaaaaaa-0000-0000-0000-000000000004',
+    'aaaaaaaa-0000-0000-0000-000000000001'
+  ]::uuid[]);
+  raise notice 'the admin area can reorder a page: true (% rows)', moved;
+exception when others then
+  raise notice 'the admin area can reorder a page: FALSE - %', sqlerrm;
+end $$;
+reset role;
+
+select 'order after the admin area moved it: ' || string_agg(component, ', ' order by position)
+  from public.page_sections where page_slug = 'reorder-me';
+
+-- And it still refuses a section from another page, which is the check the
+-- function keeps for itself because no policy can express it.
+set role service_role;
 do $$
 begin
-  perform public.reorder_page_sections('reorder-me', array['aaaaaaaa-0000-0000-0000-000000000001']::uuid[]);
-  raise notice 'anon reordered a page: TRUE - THIS IS A BUG';
+  perform public.reorder_page_sections('reorder-me', array[
+    'aaaaaaaa-0000-0000-0000-000000000001',
+    (select id from public.page_sections where page_slug = 'home' limit 1)
+  ]::uuid[]);
+  raise notice 'the admin area pulled in another page''s section: TRUE - THIS IS A BUG';
+exception when others then
+  raise notice 'another page''s section is still refused: true';
+end $$;
+reset role;
+
+-- Running as the caller means the table's policies decide, so a stranger is
+-- refused by the database rather than by a check the function keeps.
+set role anon;
+do $$
+declare moved integer;
+begin
+  moved := public.reorder_page_sections('reorder-me', array['aaaaaaaa-0000-0000-0000-000000000001']::uuid[]);
+  if moved > 0 then
+    raise notice 'anon reordered a page: TRUE - THIS IS A BUG';
+  else
+    raise notice 'anon reordering a page moves nothing: true';
+  end if;
 exception when others then
   raise notice 'anon reordering a page is refused: true';
 end $$;
@@ -199,3 +251,95 @@ reset role;
 
 select 'order after the refusals: ' || string_agg(component, ', ' order by position)
   from public.page_sections where page_slug = 'reorder-me';
+
+-- ---------------------------------------------------------------------------
+-- Every write the admin area makes, as the client it makes them with.
+--
+-- The reorder bug was not that the function was wrong. It was that nothing
+-- here had ever exercised the service-role path, so a rule that was right for
+-- a signed-in administrator and wrong for the only client the application has
+-- passed every test and failed in production.
+--
+-- So each operation the section editor performs is run here as `service_role`,
+-- which is what `getAdminScopedClient()` is. They should all succeed: the
+-- service role bypasses row level security, and anything that refuses it is a
+-- second copy of an authorisation rule hiding somewhere.
+-- ---------------------------------------------------------------------------
+
+insert into public.page_sections (id, page_slug, component, position, locked) values
+  ('cccccccc-0000-0000-0000-000000000001', 'admin-writes', 'hero', 0, true),
+  ('cccccccc-0000-0000-0000-000000000002', 'admin-writes', 'rich-text', 1, false);
+
+set role service_role;
+
+-- add a section
+do $$
+begin
+  insert into public.page_sections (id, page_slug, component, position)
+  values ('cccccccc-0000-0000-0000-000000000003', 'admin-writes', 'faq', 2);
+  raise notice 'the admin area can add a section: true';
+exception when others then
+  raise notice 'the admin area can add a section: FALSE - %', sqlerrm;
+end $$;
+
+-- save its content and its entrance
+do $$
+begin
+  update public.page_sections
+  set values = '{"heading":"Questions"}'::jsonb,
+      animation = '{"entrance":"fade-up","speed":"normal","delay":"none"}'::jsonb
+  where id = 'cccccccc-0000-0000-0000-000000000003';
+  raise notice 'the admin area can save a section: true (% rows)', (select count(*) from public.page_sections where id = 'cccccccc-0000-0000-0000-000000000003' and values ? 'heading');
+exception when others then
+  raise notice 'the admin area can save a section: FALSE - %', sqlerrm;
+end $$;
+
+-- hide it, then show it again
+do $$
+declare hid boolean;
+begin
+  update public.page_sections set hidden = true where id = 'cccccccc-0000-0000-0000-000000000003';
+  select hidden into hid from public.page_sections where id = 'cccccccc-0000-0000-0000-000000000003';
+  update public.page_sections set hidden = false where id = 'cccccccc-0000-0000-0000-000000000003';
+  raise notice 'the admin area can hide a section: %', hid;
+exception when others then
+  raise notice 'the admin area can hide a section: FALSE - %', sqlerrm;
+end $$;
+
+-- share it across pages, then detach it
+do $$
+begin
+  insert into public.global_sections (id, name, component, values)
+  values ('cccccccc-1111-0000-0000-000000000001', 'Shared questions', 'faq', '{"heading":"Questions"}'::jsonb);
+  update public.page_sections set global_id = 'cccccccc-1111-0000-0000-000000000001'
+  where id = 'cccccccc-0000-0000-0000-000000000003';
+  update public.page_sections set global_id = null
+  where id = 'cccccccc-0000-0000-0000-000000000003';
+  raise notice 'the admin area can share and detach a section: true';
+exception when others then
+  raise notice 'the admin area can share and detach a section: FALSE - %', sqlerrm;
+end $$;
+
+-- A locked section is refused, and `locked = false` is the filter the
+-- application sends: the button is hidden, the action checks, and the query
+-- carries it too, which is the only one of the three a crafted request cannot
+-- go around.
+with removed as (
+  delete from public.page_sections
+  where id = 'cccccccc-0000-0000-0000-000000000001' and locked = false
+  returning id
+)
+select 'deleting a locked section removes: ' || count(*) from removed;
+
+-- An unlocked one goes.
+with removed as (
+  delete from public.page_sections
+  where id = 'cccccccc-0000-0000-0000-000000000003' and locked = false
+  returning id
+)
+select 'deleting an unlocked section removes: ' || count(*) from removed;
+
+reset role;
+
+select 'admin-writes still has: ' || string_agg(component, ', ' order by position)
+  from public.page_sections where page_slug = 'admin-writes';

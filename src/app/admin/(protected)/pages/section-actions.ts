@@ -289,13 +289,6 @@ export async function deleteSectionAction(formData: FormData): Promise<void> {
 }
 
 /**
- * Put a page in this order.
- *
- * The whole order arrives, not a pair to swap, because renumbering is one
- * statement and a statement needs the finished order. Ids that do not belong
- * to this page are refused by the database function rather than trusted.
- */
-/**
  * Save a section for use on other pages.
  *
  * Nothing visibly changes on the page it was saved from - the global starts
@@ -369,7 +362,19 @@ export async function detachGlobalAction(formData: FormData): Promise<void> {
   refresh(section.pageSlug);
 }
 
-export async function reorderSectionsAction(formData: FormData): Promise<void> {
+/**
+ * Put a page in this order.
+ *
+ * The whole order arrives, not a pair to swap, because renumbering is one
+ * statement and a statement needs the finished order. Ids that do not belong
+ * to this page are refused by the database function rather than trusted.
+ *
+ * It returns a result, and that is the fix for the bug that made it necessary:
+ * this was `Promise<void>`, called with `void` from a click handler, so when
+ * the database refused every reorder for months the arrows simply did
+ * nothing and no error reached anybody.
+ */
+export async function reorderSectionsAction(formData: FormData): Promise<SectionActionState> {
   await requireAdminSession();
 
   const pageSlug = String(formData.get('pageSlug') ?? '').trim();
@@ -378,8 +383,14 @@ export async function reorderSectionsAction(formData: FormData): Promise<void> {
     .map((id) => id.trim())
     .filter(Boolean);
 
-  if (!pageSlug || ids.length === 0) return;
+  if (!pageSlug || ids.length === 0) return { error: 'There is nothing to reorder.' };
 
-  await pageSectionService.reorder(pageSlug, ids);
+  try {
+    await pageSectionService.reorder(pageSlug, ids);
+  } catch (cause) {
+    return { error: cause instanceof Error ? cause.message : 'The page could not be reordered.' };
+  }
+
   refresh(pageSlug);
+  return { message: 'Order saved.' };
 }
