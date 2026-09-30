@@ -274,6 +274,125 @@ export async function discardDraftsAction(draftIds: string[]) {
   return { ok: true, discarded: (data ?? []).length };
 }
 
+/**
+ * Settle a contested domain in one click: approve one offer, drop the rest.
+ *
+ * The duplicates page used to be able to do half of this. You could delete
+ * the copies you did not want, one confirm each, and then go and find the
+ * one you did want on its own page and approve it there. For a domain
+ * offered seven times by the same reseller that is seven interactions to
+ * reach a decision that was never in doubt, and the screenshot that prompted
+ * this had a domain already approved sitting above six identical drafts
+ * nobody had got round to clearing.
+ *
+ * Approving first is the whole of the safety here. If the approval throws,
+ * nothing is deleted and the domain is exactly as it was - whereas clearing
+ * first and approving second would, on a bad day, leave no drafts and no
+ * listing.
+ *
+ * The domain is re-read from the winning draft rather than taken from the
+ * caller, so the delete cannot be pointed at a domain the reviewer was not
+ * looking at. Only pending rows go, so a draft approved from another tab
+ * between the page rendering and this running is left alone.
+ */
+export async function resolveDuplicateAction(keepDraftId: string) {
+  const by = await reviewer();
+  const supabase = getAdminScopedClient();
+
+  const { data } = await supabase
+    .from('listing_drafts')
+    .select('id, domain, email_id, matched_website_id, proposed, status')
+    .eq('id', keepDraftId)
+    .maybeSingle();
+
+  if (!data) return { ok: false as const, error: 'That draft no longer exists.' };
+  const draft = data as Record<string, unknown>;
+  if (draft.status !== 'pending') {
+    return { ok: false as const, error: 'That draft has already been reviewed.' };
+  }
+
+  const parsed = extractedListingSchema.safeParse(draft.proposed);
+  if (!parsed.success) {
+    return {
+      ok: false as const,
+      error: 'That draft cannot be approved from here - open it and fix the values first.',
+    };
+  }
+
+  const domain = String(draft.domain);
+
+  try {
+    await approveDraft(keepDraftId, parsed.data, {
+      domain,
+      matchedWebsiteId: (draft.matched_website_id as string | null) ?? null,
+      emailId: String(draft.email_id),
+      reviewer: by,
+    });
+  } catch (error) {
+    return {
+      ok: false as const,
+      error: error instanceof Error ? error.message : 'Could not approve that draft.',
+    };
+  }
+
+  // Everything else still waiting on this domain. A failure here is worth
+  // reporting but not worth undoing the approval over: the listing is
+  // correct, and the leftovers can be cleared again.
+  const { data: cleared, error } = await supabase
+    .from('listing_drafts')
+    .delete()
+    .eq('domain', domain)
+    .eq('status', 'pending')
+    .neq('id', keepDraftId)
+    .select('id');
+
+  revalidatePath('/admin/sourcing');
+  revalidatePath('/admin/sourcing/duplicates');
+  revalidatePath('/admin/websites');
+
+  return {
+    ok: true as const,
+    domain,
+    cleared: (cleared ?? []).length,
+    warning: error ? `Approved, but the other drafts are still there: ${error.message}` : null,
+  };
+}
+
+/**
+ * Clear a contested domain without changing anything we sell.
+ *
+ * For the case the duplicates page had no answer to: a domain already in the
+ * marketplace, at a price somebody checked, with a pile of drafts behind it
+ * that are the same reseller mailing the same list again. None of them is
+ * wrong. None of them is worth approving either, because approving one
+ * writes its contact and its cost over a listing that is already right.
+ *
+ * So this deletes the drafts and touches nothing else. It goes nowhere near
+ * `approveDraft`, which remains the only way anything extracted reaches a
+ * listing, and the emails stay where they are so the same replies can be
+ * read again.
+ */
+export async function leaveDomainAsIsAction(domain: string) {
+  await requireAdminSession();
+
+  const wanted = domain.trim().toLowerCase();
+  if (!wanted) return { ok: false as const, error: 'No domain given.', cleared: 0 };
+
+  const supabase = getAdminScopedClient();
+  const { data, error } = await supabase
+    .from('listing_drafts')
+    .delete()
+    .eq('domain', wanted)
+    .eq('status', 'pending')
+    .select('id');
+
+  if (error) return { ok: false as const, error: error.message, cleared: 0 };
+
+  revalidatePath('/admin/sourcing');
+  revalidatePath('/admin/sourcing/duplicates');
+  return { ok: true as const, cleared: (data ?? []).length };
+}
+
 export async function collectBatchesAction() {
   await requireAdminSession();
   const result = await sourcingService.collectBatches();

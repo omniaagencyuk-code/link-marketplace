@@ -13,7 +13,7 @@ import { extractionResultSchema, fromWire, wireResultSchema, type ExtractedListi
 import { applyGeneralPriceToNiches, assumedNicheCosts, countLowConfidence, expandListings, fillGeneralFromNiches, flagsFor, sellableNiches, sensitiveRate } from '../src/lib/sourcing/review';
 import { sensitiveNicheSlugs } from '../src/lib/config/accepted-niches';
 import { extractLinks, looksLikeRateCardLead } from '../src/lib/sourcing/links';
-import { offersNote, rankOffers, senderSignal } from '../src/lib/sourcing/offers';
+import { offersAgree, offersNote, rankOffers, senderSignal } from '../src/lib/sourcing/offers';
 import { healthOf, progressMessage, runProgress, type BatchRow } from '../src/lib/sourcing/batch-health';
 import { describeSkip, nightlySkipReason, type NightlyState } from '../src/lib/sourcing/schedule';
 import { extractionLimit } from '../src/lib/sourcing/limits';
@@ -752,6 +752,55 @@ console.log('\n--- two people offering the same site ---');
   has('and two unconvertible ones say they cannot be compared', offersNote(unconvertible) ?? '', 'cannot be compared');
 }
 
+console.log('\n--- nothing to choose between them ---');
+{
+  const rates = new Map([['USD', 1]]);
+  const offer = (draftId: string, over: Record<string, unknown> = {}) => ({
+    draftId,
+    domain: 'gpacalculator.app',
+    fromAddress: 'support@guestpostspro.com',
+    cost: 10,
+    currency: 'USD',
+    sentAt: null,
+    status: 'pending',
+    ...over,
+  });
+
+  // The shape that prompted this: one reseller, one price, seven replies.
+  // Reading seven rows to learn they are one offer is the work being saved,
+  // so this has to be right or the note tells somebody not to look when they
+  // should have.
+  const same = rankOffers([offer('a'), offer('b'), offer('c')], rates);
+  is('one sender at one price has nothing to choose between', offersAgree(same), true);
+
+  const dearer = rankOffers([offer('a'), offer('b', { cost: 15 })], rates);
+  is('a different price is a choice', offersAgree(dearer), false);
+
+  const elsewhere = rankOffers([offer('a'), offer('b', { fromAddress: 'sales@other.com' })], rates);
+  is('a different sender is a choice', offersAgree(elsewhere), false);
+
+  // Case and stray spacing in an address are not a second person.
+  const shouty = rankOffers([offer('a'), offer('b', { fromAddress: ' SUPPORT@GuestPostsPro.com ' })], rates);
+  is('the same address written differently is still one person', offersAgree(shouty), true);
+
+  // A currency that could not be converted still has to match. Two prices of
+  // 10 in different currencies are two different offers.
+  const currencies = rankOffers([offer('a'), offer('b', { currency: 'EUR' })], rates);
+  is('the same number in another currency is a choice', offersAgree(currencies), false);
+
+  // Only what is still waiting. An approved draft is a listing already, and
+  // counting it would call a real decision trivial.
+  const settled = rankOffers([offer('a'), offer('b', { status: 'approved', cost: 99 })], rates);
+  is('an approved offer is not one of the ones waiting', offersAgree(settled), false);
+
+  is('one waiting draft agrees with nothing', offersAgree(rankOffers([offer('a')], rates)), false);
+  is('and none at all is not agreement', offersAgree([]), false);
+
+  // Two priceless repeats from one sender are still one offer repeated.
+  const priceless = rankOffers([offer('a', { cost: null, currency: null }), offer('b', { cost: null, currency: null })], rates);
+  is('two replies with no price from one sender still agree', offersAgree(priceless), true);
+}
+
 console.log('\n--- approving in pieces ---');
 // Two hundred approvals in one request ran past the function ceiling and
 // answered nothing: the work happened, the page showed no count and lost no
@@ -816,6 +865,62 @@ console.log('\n--- bulk approve cannot walk past a contested domain ---');
     true,
   );
   is('and leaves them out', action.includes('!contested.has('), true);
+}
+
+console.log('\n--- settling a contested domain from the list ---');
+/*
+  Two properties of the one-click approve, both of which are about what
+  happens on a bad day rather than a good one.
+
+  It approves before it deletes. Deleting first and approving second would,
+  on an approval that throws, leave a domain with no drafts and no listing -
+  the offers gone, the decision unmade, and nothing on screen saying which.
+
+  And "leave as is" never reaches the approval path. Its entire purpose is to
+  clear the queue without touching what we sell, so a listing somebody
+  checked by hand cannot be overwritten by the button that promises not to.
+*/
+{
+  const source = fs.readFileSync(
+    path.join(process.cwd(), 'src/app/admin/(protected)/sourcing/actions.ts'),
+    'utf8',
+  );
+
+  // Comments first. Both actions are documented at length in terms of
+  // `approveDraft` and deleting, so a check against the raw text matches the
+  // explanation of the rule instead of the code that keeps it.
+  const code = source
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .split('\n')
+    .filter((line) => !line.trim().startsWith('//'))
+    .join('\n');
+
+  const body = (name: string) => {
+    const start = code.indexOf(`export async function ${name}`);
+    return start === -1 ? '' : code.slice(start).split('\nexport ')[0];
+  };
+
+  const resolve = body('resolveDuplicateAction');
+  is('the one-click approve exists', resolve.length > 0, true);
+  is('it approves through the one approval path', resolve.includes('approveDraft('), true);
+  is(
+    'and approves before it deletes anything',
+    resolve.indexOf('approveDraft(') < resolve.indexOf('.delete()'),
+    true,
+  );
+  // The domain it sweeps is read from the winning draft, so the delete
+  // cannot be aimed at a domain the reviewer was not looking at.
+  is('the sweep is scoped to pending rows', resolve.includes("eq('status', 'pending')"), true);
+  is('and never deletes the draft it just approved', resolve.includes("neq('id', keepDraftId)"), true);
+
+  const leave = body('leaveDomainAsIsAction');
+  is('leaving a domain alone exists', leave.length > 0, true);
+  is('and does not go near the approval path', leave.includes('approveDraft'), false);
+  is('nor writes to the websites table', leave.includes("from('websites')"), false);
+  is('it only deletes pending drafts', leave.includes("eq('status', 'pending')"), true);
+
+  // Proving the comment strip has not simply blanked the file.
+  is('the strip leaves the code it is checking', code.includes('listing_drafts'), true);
 }
 
 console.log('\n--- the claim is honoured everywhere ---');

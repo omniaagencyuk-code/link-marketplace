@@ -1,10 +1,11 @@
 import { getAdminScopedClient } from '@/lib/supabase/server';
 import { isSupabaseEnabled } from '@/lib/supabase/config';
+import { chunk } from '@/lib/utils/chunk';
 import { readAllPages } from './supabase/paged';
 import { readMbox, readPastedEmail, type ParsedMessage } from '@/lib/sourcing/mbox';
 import { gmailSearchUrl, gmailThreadUrl, type ReadThread } from '@/lib/gmail/thread';
 import { extractLinks, type FoundLink } from '@/lib/sourcing/links';
-import { offersNote, rankOffers, type Offer, type RankedOffer } from '@/lib/sourcing/offers';
+import { offersAgree, offersNote, rankOffers, type Offer, type RankedOffer } from '@/lib/sourcing/offers';
 import { fxService } from './fx-service';
 import {
   ABANDON_AFTER_MINUTES,
@@ -88,6 +89,19 @@ export interface DuplicateGroup {
   pending: number;
   /** What the two signals say, when they say anything. */
   note: string | null;
+  /**
+   * The domain is in the marketplace already.
+   *
+   * Which is what makes "leave as is" a real choice rather than a way of
+   * saying no. Approving one of these updates that listing; leaving it alone
+   * keeps the price and contact somebody already checked.
+   */
+  listed: boolean;
+  /**
+   * Every draft still waiting is the same sender quoting the same price, so
+   * there is nothing to choose between them.
+   */
+  agree: boolean;
 }
 
 export interface IngestResult {
@@ -475,6 +489,12 @@ export const sourcingService = {
 
     const rates = await fxService.rateMap();
 
+    // Which of these domains we already sell. Asked once for the whole list
+    // rather than once a card, and keyed on the domains in hand rather than
+    // read whole, so it neither grows with the marketplace nor gets capped
+    // by it.
+    const listed = await listedDomains([...contested.keys()]);
+
     const groups = [...contested].map(([domain, offers]) => {
       const ranked = rankOffers(offers, rates);
       return {
@@ -482,6 +502,8 @@ export const sourcingService = {
         offers: ranked,
         pending: ranked.filter((offer) => offer.status === 'pending').length,
         note: offersNote(ranked),
+        listed: listed.has(domain),
+        agree: offersAgree(ranked),
       };
     });
 
@@ -1208,6 +1230,28 @@ async function contestedDrafts(): Promise<Map<string, Offer[]>> {
   }
 
   return new Map([...byDomain].filter(([, offers]) => offers.length > 1));
+}
+
+/**
+ * Which of these domains are in the marketplace already.
+ *
+ * Asked in batches keyed on the domains we hold, not as a read of the
+ * whole table. A full read would be capped by the server at its first page
+ * and quietly report the listings past it as absent - which here would mean
+ * telling somebody the marketplace holds nothing for a domain it sells,
+ * next to a button offering to leave that listing alone.
+ */
+async function listedDomains(domains: string[]): Promise<Set<string>> {
+  const found = new Set<string>();
+  if (domains.length === 0) return found;
+
+  const supabase = getAdminScopedClient();
+  for (const group of chunk(domains, 200)) {
+    const { data, error } = await supabase.from('websites').select('domain').in('domain', group);
+    if (error) throw new Error(`Failed to check which domains are listed: ${error.message}`);
+    for (const row of (data ?? []) as { domain: string }[]) found.add(row.domain);
+  }
+  return found;
 }
 
 function describe(error: unknown): string {

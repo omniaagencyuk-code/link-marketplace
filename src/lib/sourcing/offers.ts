@@ -124,6 +124,35 @@ export function rankOffers(offers: Offer[], rates: Map<string, number>): RankedO
 }
 
 /**
+ * True when every offer still waiting is the same person quoting the same
+ * price.
+ *
+ * The common shape of this queue, and the one worth naming. A reseller
+ * mails the same list every fortnight, each reply is read, and six weeks
+ * later a domain sits here with seven drafts on it that are all one offer
+ * repeated. There is nothing to choose between them - approving any of them
+ * produces the same listing - and reading seven rows to discover that is the
+ * work this says can be skipped.
+ *
+ * Only pending offers count. An approved one is a listing already; what is
+ * being asked is whether the drafts still waiting say anything new.
+ *
+ * Deliberately strict. Two addresses at one company are not the same person,
+ * and two prices a pound apart are still a choice, so anything but an exact
+ * repeat falls through to the ordinary comparison.
+ */
+export function offersAgree(ranked: RankedOffer[]): boolean {
+  const waiting = ranked.filter((offer) => offer.status === 'pending');
+  if (waiting.length < 2) return false;
+
+  const first = waiting[0] as RankedOffer;
+  const address = (offer: RankedOffer) => offer.fromAddress.trim().toLowerCase();
+  const money = (offer: RankedOffer) => `${offer.cost ?? ''}|${(offer.currency ?? '').toUpperCase()}`;
+
+  return waiting.every((offer) => address(offer) === address(first) && money(offer) === money(first));
+}
+
+/**
  * What to say about a set of offers, if anything.
  *
  * Null when there is nothing worth saying - one offer, or several that agree.

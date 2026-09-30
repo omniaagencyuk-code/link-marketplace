@@ -33,7 +33,7 @@ export default async function DuplicatesPage() {
     <div className="space-y-5">
       <PageTitle
         title="Offered more than once"
-        description="Two replies about the same site. Keep whichever you want to buy from, delete the other, and the domain leaves this list."
+        description="More than one reply about the same site. Approve the one you want to buy from without leaving this page, or leave the domain as it is - either way it leaves this list."
         action={
           <Button asChild variant="outline">
             <Link href="/admin/sourcing">Publisher inbox</Link>
