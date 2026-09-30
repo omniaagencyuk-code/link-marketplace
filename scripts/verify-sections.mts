@@ -468,5 +468,64 @@ console.log('\n--- only the compositor is asked to do anything ---');
   }
 }
 
+console.log('\n--- every way of changing a page checks who is asking ---');
+{
+  /*
+    A server action has its own endpoint and is reachable without rendering
+    the page that offers it. So a hidden button is a courtesy to whoever is
+    looking at the screen, never a control - the check has to be in the
+    action, and the ones that matter are in the database as well.
+  */
+  const actions = read('src/app/admin/(protected)/pages/section-actions.ts');
+
+  const bodies = actions
+    .split(/export async function /)
+    .slice(1)
+    .map((chunk) => ({ name: chunk.slice(0, chunk.indexOf('(')), body: chunk }));
+
+  is('there are actions to check', bodies.length > 0, true);
+  for (const action of bodies) {
+    yes(`${action.name} requires an admin session`, action.body.includes('requireAdminSession'));
+  }
+
+  /*
+    Content is rebuilt from the component's schema, so a key nobody declared
+    cannot survive however it was posted.
+
+    Matched on the call, not the name. The first version looked for
+    'cleanSectionValues' anywhere in the file and passed with the call
+    deleted, because the import line still mentions it - the same mistake the
+    registry-split check made, in a different file.
+  */
+  const save = bodies.find((action) => action.name === 'saveSectionAction')?.body ?? '';
+  const add = bodies.find((action) => action.name === 'addSectionAction')?.body ?? '';
+
+  /*
+    Scoped to the action that matters, not to the file.
+
+    The first version searched the whole file and passed with the call deleted
+    from saveSectionAction, because addSectionAction has one too - and
+    addSectionAction only ever cleans the component's own defaults. The action
+    handling values somebody posted is the one that has to rebuild them.
+  */
+  yes('saving rebuilds the values from the schema', save.includes('cleanSectionValues(component'));
+  yes('adding starts from cleaned defaults too', add.includes('cleanSectionValues(component'));
+  yes('and the variant has to be one the component named', save.includes('resolveVariant(component'));
+
+  // A locked section is refused three times: the button is not rendered, the
+  // action returns early, and the delete carries locked = false in its filter.
+  yes('deleting checks the lock', /section\.locked/.test(actions));
+  const repo = read('src/lib/services/supabase/page-section-repository.ts');
+  yes('and the delete query carries it too', repo.includes(".eq('locked', false)"));
+
+  /*
+    Reordering sends the finished order rather than a pair to swap, because
+    renumbering is one statement and a statement needs the whole order - a row
+    at a time collides on the unique constraint halfway through.
+  */
+  yes('reordering sends the whole order', actions.includes("formData.get('order')"));
+  yes('and goes through the function that does it in one statement', repo.includes('reorder_page_sections'));
+}
+
 console.log(failed ? `\n  ${failed} FAILED\n` : '\n  all passed\n');
 process.exit(failed ? 1 : 0);

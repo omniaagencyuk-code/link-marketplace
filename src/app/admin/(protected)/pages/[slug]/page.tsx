@@ -9,6 +9,9 @@ import { getRegisteredPage } from '@/lib/cms/registry';
 import { customPageDefaults, customPageDefinition } from '@/lib/cms/custom-page';
 import { pageContentService } from '@/lib/services/page-content-service';
 import { customPageService } from '@/lib/services/custom-page-service';
+import { pageSectionService } from '@/lib/services/page-section-service';
+import { SectionList } from '@/components/admin/cms/section-list';
+import type { PageSection } from '@/lib/cms/sections';
 
 export const dynamic = 'force-dynamic';
 
@@ -20,13 +23,17 @@ export default async function EditPagePage({ params }: { params: Promise<{ slug:
   const registered = getRegisteredPage(slug);
 
   if (registered) {
-    const saved = await pageContentService.getOverrides(slug);
+    const [saved, sections] = await Promise.all([
+      pageContentService.getOverrides(slug),
+      pageSectionService.allForPage(slug),
+    ]);
 
     return (
       <>
         <BackLink />
         <PageTitle title={registered.definition.label} description={registered.definition.description} />
         <MockStorageNotice what="Page edits" />
+        <Sections slug={slug} sections={sections} />
         <PageEditor
           definition={registered.definition}
           defaults={registered.defaults}
@@ -38,7 +45,10 @@ export default async function EditPagePage({ params }: { params: Promise<{ slug:
     );
   }
 
-  const custom = await customPageService.getForAdmin(slug);
+  const [custom, sections] = await Promise.all([
+    customPageService.getForAdmin(slug),
+    pageSectionService.allForPage(slug),
+  ]);
   if (!custom) notFound();
 
   return (
@@ -55,6 +65,10 @@ export default async function EditPagePage({ params }: { params: Promise<{ slug:
       />
 
       <div className="mt-6">
+        <Sections slug={slug} sections={sections} />
+      </div>
+
+      <div className="mt-6">
         <PageEditor
           definition={customPageDefinition(custom)}
           defaults={customPageDefaults(custom.label)}
@@ -63,6 +77,35 @@ export default async function EditPagePage({ params }: { params: Promise<{ slug:
         />
       </div>
     </>
+  );
+}
+
+/**
+ * The sections panel, above the page's own fields.
+ *
+ * Both kinds of page get it - one registered in code and one created here are
+ * the same object as far as sections are concerned, and the point of this is
+ * that a page's shape stops being a property of which kind it is.
+ *
+ * While a page has no sections it still renders from code, which the empty
+ * state says. That is how a page moves across: build its sections, compare the
+ * two renders, and only then retire the code.
+ */
+function Sections({ slug, sections }: { slug: string; sections: PageSection[] }) {
+  return (
+    <section className="mb-6" aria-labelledby="sections-heading">
+      <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
+        <h2 id="sections-heading" className="text-[15px] font-semibold text-ink">
+          Sections
+        </h2>
+        <p className="text-[12px] text-muted">
+          {sections.length === 0
+            ? 'This page renders from code until it has sections.'
+            : `${sections.length} ${sections.length === 1 ? 'section' : 'sections'}, top to bottom.`}
+        </p>
+      </div>
+      <SectionList pageSlug={slug} sections={sections} />
+    </section>
   );
 }
 

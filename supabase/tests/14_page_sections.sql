@@ -143,3 +143,59 @@ begin
 exception when others then
   raise notice 'a section value has to be an object: true';
 end $$;
+
+-- ------------------------------------------------------------- reordering
+--
+-- Dragging a section up renumbers most of the page. The function does it in
+-- one statement so the deferrable constraint is checked once, at the end,
+-- when the new order is complete - a row at a time collides halfway through.
+insert into public.page_sections (id, page_slug, component, position) values
+  ('aaaaaaaa-0000-0000-0000-000000000001', 'reorder-me', 'rich-text', 0),
+  ('aaaaaaaa-0000-0000-0000-000000000002', 'reorder-me', 'cta', 1),
+  ('aaaaaaaa-0000-0000-0000-000000000003', 'reorder-me', 'faq', 2),
+  ('aaaaaaaa-0000-0000-0000-000000000004', 'reorder-me', 'feature-cards', 3);
+
+set role authenticated;
+set request.jwt.claim.sub = '77777777-7777-7777-7777-777777777777';
+
+select 'reordered rows: ' || public.reorder_page_sections('reorder-me', array[
+  'aaaaaaaa-0000-0000-0000-000000000004',
+  'aaaaaaaa-0000-0000-0000-000000000001',
+  'aaaaaaaa-0000-0000-0000-000000000003',
+  'aaaaaaaa-0000-0000-0000-000000000002'
+]::uuid[]);
+
+select 'new order: ' || string_agg(component, ', ' order by position)
+  from public.page_sections where page_slug = 'reorder-me';
+
+-- A section from another page cannot be dragged in by naming its id: the
+-- update would set its position and never touch its page_slug, so it would
+-- appear in two orders at once.
+do $$
+begin
+  perform public.reorder_page_sections('reorder-me', array[
+    'aaaaaaaa-0000-0000-0000-000000000001',
+    (select id from public.page_sections where page_slug = 'home' limit 1)
+  ]::uuid[]);
+  raise notice 'a section from another page was pulled in: TRUE - THIS IS A BUG';
+exception when others then
+  raise notice 'a section from another page is refused: true';
+end $$;
+
+reset role;
+reset request.jwt.claim.sub;
+
+-- Security definer runs as the owner, so without its own check this would be
+-- a way for anyone at all to rearrange a live marketing page.
+set role anon;
+do $$
+begin
+  perform public.reorder_page_sections('reorder-me', array['aaaaaaaa-0000-0000-0000-000000000001']::uuid[]);
+  raise notice 'anon reordered a page: TRUE - THIS IS A BUG';
+exception when others then
+  raise notice 'anon reordering a page is refused: true';
+end $$;
+reset role;
+
+select 'order after the refusals: ' || string_agg(component, ', ' order by position)
+  from public.page_sections where page_slug = 'reorder-me';

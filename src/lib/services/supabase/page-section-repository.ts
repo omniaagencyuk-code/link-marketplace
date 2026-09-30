@@ -2,8 +2,10 @@ import { getAdminScopedClient, getServerClient } from '@/lib/supabase/server';
 import {
   readAnimation,
   readValues,
+  type Animation,
   type GlobalSection,
   type PageSection,
+  type SectionValues,
 } from '@/lib/cms/sections';
 
 /**
@@ -159,6 +161,126 @@ export const supabasePageSectionRepository = {
     const { data, error } = await supabase.from('page_sections').select('page_slug');
     if (error) throw new Error(`Failed to list pages with sections: ${error.message}`);
     return new Set((data ?? []).map((row) => (row as { page_slug: string }).page_slug));
+  },
+
+  /** Add a section to the end of a page. */
+  async create(input: {
+    pageSlug: string;
+    component: string;
+    variant: string;
+    values: SectionValues;
+    locked: boolean;
+    updatedBy?: string;
+  }): Promise<PageSection> {
+    const supabase = getAdminScopedClient();
+
+    // The end of the page, whatever that currently is. Read rather than
+    // counted: positions may have gaps, and a count would land on a number
+    // somebody already holds.
+    const { data: last } = await supabase
+      .from('page_sections')
+      .select('position')
+      .eq('page_slug', input.pageSlug)
+      .order('position', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    const position = ((last as { position: number } | null)?.position ?? -1) + 1;
+
+    const { data, error } = await supabase
+      .from('page_sections')
+      .insert({
+        page_slug: input.pageSlug,
+        component: input.component,
+        variant: input.variant,
+        position,
+        locked: input.locked,
+        values: input.values,
+        updated_by: input.updatedBy ?? null,
+      })
+      .select(SECTION_SELECT)
+      .single();
+
+    if (error) throw new Error(`Failed to add a section: ${error.message}`);
+    return mapSection(data as unknown as SectionRow);
+  },
+
+  /** Change a section's content, variant or animation. */
+  async update(
+    id: string,
+    patch: { variant?: string; values?: SectionValues; animation?: Animation },
+    updatedBy?: string,
+  ): Promise<PageSection | null> {
+    const supabase = getAdminScopedClient();
+    const row: Record<string, unknown> = { updated_by: updatedBy ?? null };
+    if (patch.variant !== undefined) row.variant = patch.variant;
+    if (patch.values !== undefined) row.values = patch.values;
+    if (patch.animation !== undefined) row.animation = patch.animation;
+
+    const { data, error } = await supabase
+      .from('page_sections')
+      .update(row)
+      .eq('id', id)
+      .select(SECTION_SELECT)
+      .maybeSingle();
+
+    if (error) throw new Error(`Failed to save the section: ${error.message}`);
+    return data ? mapSection(data as unknown as SectionRow) : null;
+  },
+
+  async setHidden(id: string, hidden: boolean, updatedBy?: string): Promise<void> {
+    const supabase = getAdminScopedClient();
+    const { error } = await supabase
+      .from('page_sections')
+      .update({ hidden, updated_by: updatedBy ?? null })
+      .eq('id', id);
+    if (error) throw new Error(`Failed to change the section: ${error.message}`);
+  },
+
+  /**
+   * Delete a section.
+   *
+   * Refuses a locked one in the database rather than only in the button that
+   * is hidden: a server action is an endpoint, and the hidden button is a
+   * courtesy to whoever is looking at the page.
+   */
+  async remove(id: string): Promise<boolean> {
+    const supabase = getAdminScopedClient();
+    const { data, error } = await supabase
+      .from('page_sections')
+      .delete()
+      .eq('id', id)
+      .eq('locked', false)
+      .select('id');
+    if (error) throw new Error(`Failed to delete the section: ${error.message}`);
+    return (data ?? []).length > 0;
+  },
+
+  /**
+   * Put a page's sections in this order, in one statement.
+   *
+   * Through the function added in 0037 rather than a row at a time: renumbering
+   * one by one collides, because the row moving to position two lands on a
+   * number the old second row has not vacated. The function does the whole
+   * page at once, so the deferrable constraint is checked when the order is
+   * complete.
+   */
+  async reorder(pageSlug: string, ids: string[]): Promise<void> {
+    const supabase = getAdminScopedClient();
+    const { error } = await supabase.rpc('reorder_page_sections', { page: pageSlug, ordered: ids });
+    if (error) throw new Error(`Failed to reorder the page: ${error.message}`);
+  },
+
+  /** One section by id, whatever page it is on. */
+  async find(id: string): Promise<PageSection | null> {
+    const supabase = getAdminScopedClient();
+    const { data, error } = await supabase
+      .from('page_sections')
+      .select(SECTION_SELECT)
+      .eq('id', id)
+      .maybeSingle();
+    if (error) throw new Error(`Failed to read the section: ${error.message}`);
+    return data ? mapSection(data as unknown as SectionRow) : null;
   },
 
   async listGlobals(): Promise<GlobalSection[]> {
