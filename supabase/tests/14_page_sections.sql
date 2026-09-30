@@ -343,3 +343,107 @@ reset role;
 
 select 'admin-writes still has: ' || string_agg(component, ', ' order by position)
   from public.page_sections where page_slug = 'admin-writes';
+
+-- ---------------------------------------------------------------------------
+-- A pending edit is not readable by a visitor, however they ask.
+--
+-- This is the test that was missing when drafts shipped. There was one, and
+-- it asked the question the application asks - "does the public read return a
+-- draft" - which the public read answered correctly by naming its columns.
+--
+-- A visitor is not limited to the queries the application makes. The
+-- publishable key ships in the browser bundle, so anyone can ask PostgREST
+-- for any column of any row a policy lets them see:
+--
+--     GET /rest/v1/page_sections?select=draft&page_slug=eq.home
+--
+-- Row level security is row level. It came straight back.
+--
+-- So the drafts live in their own table with one policy, and the question
+-- asked here is the one that matters: can anybody who is not an administrator
+-- read this table at all.
+-- ---------------------------------------------------------------------------
+
+insert into public.page_sections (id, page_slug, component, position, values)
+values ('eeeeeeee-0000-0000-0000-000000000001', 'draft-test', 'rich-text', 0,
+        '{"heading":"Published"}'::jsonb);
+
+insert into public.section_drafts (section_id, values)
+values ('eeeeeeee-0000-0000-0000-000000000001',
+        '{"heading":"A CHANGE NOBODY HAS PUBLISHED"}'::jsonb);
+
+select 'the page still renders: ' || (values->>'heading')
+  from public.page_sections where id = 'eeeeeeee-0000-0000-0000-000000000001';
+
+-- ------------------------------------------------------------------ as anon
+set role anon;
+
+select 'anon sees drafts: ' || count(*) from public.section_drafts;
+
+-- Asked by name, which is what a crafted request does.
+do $$
+declare leaked text;
+begin
+  select values->>'heading' into leaked
+  from public.section_drafts
+  where section_id = 'eeeeeeee-0000-0000-0000-000000000001';
+
+  if leaked is null then
+    raise notice 'anon reading a draft by name: refused';
+  else
+    raise notice 'anon read a draft: % - THIS IS A BUG', leaked;
+  end if;
+end $$;
+
+-- And through the section it belongs to, in case a join is the way in.
+do $$
+declare leaked text;
+begin
+  select draft.values->>'heading' into leaked
+  from public.page_sections section
+  join public.section_drafts draft on draft.section_id = section.id
+  where section.page_slug = 'draft-test';
+
+  if leaked is null then
+    raise notice 'anon reading a draft through its section: refused';
+  else
+    raise notice 'anon joined its way to a draft: % - THIS IS A BUG', leaked;
+  end if;
+end $$;
+
+-- A stranger cannot stage one either.
+do $$
+begin
+  insert into public.section_drafts (section_id, values)
+  values ('eeeeeeee-0000-0000-0000-000000000001', '{"heading":"mine now"}'::jsonb);
+  raise notice 'anon staged a change: TRUE - THIS IS A BUG';
+exception when others then
+  raise notice 'anon staging a change is refused: true';
+end $$;
+
+reset role;
+
+-- ------------------------------------------- as a signed-in, non-admin user
+--
+-- The other half of the reason this is its own table: a customer is signed in
+-- and still has no business seeing what a marketing page is about to say.
+insert into auth.users (id, email) values
+  ('88888888-8888-8888-8888-888888888888', 'customer-drafts@test');
+
+set role authenticated;
+set request.jwt.claim.sub = '88888888-8888-8888-8888-888888888888';
+select 'a signed-in customer sees drafts: ' || count(*) from public.section_drafts;
+reset role;
+reset request.jwt.claim.sub;
+
+-- ---------------------------------------------------- as the admin area
+set role service_role;
+select 'the admin area reads the draft: ' || (values->>'heading')
+  from public.section_drafts where section_id = 'eeeeeeee-0000-0000-0000-000000000001';
+reset role;
+
+-- Deleting the section takes its pending edit with it: the foreign key is the
+-- cleanup, which is most of why this is a table rather than a second store.
+delete from public.page_sections where id = 'eeeeeeee-0000-0000-0000-000000000001';
+select 'drafts left after the section went: ' || count(*)
+  from public.section_drafts where section_id = 'eeeeeeee-0000-0000-0000-000000000001';

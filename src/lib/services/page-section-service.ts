@@ -91,26 +91,6 @@ export const pageSectionService = {
     if (current) sections.set(id, { ...current, draft: draft ?? undefined });
   },
 
-  /** Which pages hold a change previewed and not published. */
-  async pagesWithDrafts(): Promise<Set<string>> {
-    if (isSupabaseEnabled()) return supabasePageSectionRepository.pagesWithDrafts();
-    return new Set(
-      [...sections.values()].filter((section) => section.draft).map((section) => section.pageSlug),
-    );
-  },
-
-  /**
-   * Whether this page is built from sections at all.
-   *
-   * The renderer asks this before deciding between the builder and the page's
-   * existing code. It is a read of the same rows `forPage` returns, so the
-   * caller that needs both should call `forPage` and check the length rather
-   * than asking twice.
-   */
-  async hasSections(slug: string): Promise<boolean> {
-    return (await this.forPage(slug)).length > 0;
-  },
-
   async create(input: {
     pageSlug: string;
     component: string;

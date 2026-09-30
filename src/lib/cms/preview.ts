@@ -12,10 +12,15 @@ import { hasPreviewGrant } from '@/lib/auth/preview-session';
  * with a request for a marketing page. Widening it would have been the easy
  * fix and the wrong one.
  *
- * It is defence in depth rather than the defence. Behind this, the public
- * read names its columns and `draft` is not among them, so an unpublished
- * change could not reach a visitor even if this function returned true for
- * everybody. This is the door; that is the wall.
+ * It is defence in depth rather than the defence. Behind this, drafts live
+ * in `section_drafts`, which has one policy and it is `is_admin()` - so an
+ * unpublished change could not reach a visitor even if this returned true
+ * for everybody. This is the door; that is the wall.
+ *
+ * It was a column on `page_sections` for one commit, and that is not a wall:
+ * the policy on that table lets anyone read the rows of a published page,
+ * and row level security is row level. Anyone with the publishable key could
+ * ask for the column by name.
  *
  * One helper rather than the same three lines in each route, so a new page
  * cannot get the check subtly wrong.

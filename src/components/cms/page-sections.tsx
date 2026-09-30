@@ -77,10 +77,12 @@ export async function PageSections({
    * Show pending edits rather than what is published.
    *
    * The caller decides this, and every caller decides it the same way: the
-   * URL asked for a preview *and* `getAdminSession()` returned somebody. A
-   * visitor who types `?preview=1` has no session, so they get the live page
-   * - and the read behind the live page cannot return a draft even if this
-   * were wrong, because it does not select the column.
+   * URL asked for a preview *and* the browser carries a preview grant. A
+   * visitor who types `?preview=1` has none, so they get the live page.
+   *
+   * And if that check were wrong it would still not leak: drafts live in a
+   * table only an administrator's policy admits, so the read behind the live
+   * page cannot return one.
    */
   draft?: boolean;
 }) {

@@ -60,9 +60,12 @@ export interface PageSection {
   /**
    * A change previewed but not published.
    *
-   * Absent normally, and absent from the public read entirely - the anon
-   * query names its columns and this is not one of them, so a page cannot
-   * leak an unpublished edit by forgetting a filter.
+   * Absent normally, and unreachable by a visitor: it lives in
+   * `section_drafts`, which has one policy and it is `is_admin()`. It was a
+   * column on this table for one commit, and a column on a publicly readable
+   * table is readable - row level security is row level, and anyone holding
+   * the publishable key can name a column the policy lets them see the row
+   * of.
    */
   draft?: SectionDraft;
   updatedAt: string;
@@ -77,7 +80,13 @@ export interface SectionDraft {
   values: SectionValues;
 }
 
-/** A draft read back from jsonb, or nothing. */
+/**
+ * A draft read back from its row, or nothing.
+ *
+ * Shaped from whatever came back rather than trusted, the same as every
+ * other reader here: the columns are jsonb and a row written before a field
+ * existed is a row that has to render.
+ */
 export function readDraft(raw: unknown): SectionDraft | undefined {
   if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return undefined;
   const stored = raw as Record<string, unknown>;

@@ -33,15 +33,7 @@ const SECTION_SELECT =
 
 const GLOBAL_SELECT = 'id, name, component, variant, animation, style, values, updated_at, updated_by';
 
-/**
- * The same columns plus the pending edit.
- *
- * Two lists rather than one list and a filter, and that is the safety
- * property: the public read names its columns and `draft` is not among them,
- * so an unpublished change cannot reach a visitor through a query that forgot
- * something. It is not that the public path drops drafts - it never has one.
- */
-const ADMIN_SELECT = `${SECTION_SELECT}, draft`;
+const DRAFT_SELECT = 'section_id, variant, animation, style, values';
 
 interface SectionRow {
   id: string;
@@ -55,7 +47,6 @@ interface SectionRow {
   style: unknown;
   values: unknown;
   global_id: string | null;
-  draft?: unknown;
   updated_at: string;
   updated_by: string | null;
 }
@@ -85,7 +76,6 @@ function mapSection(row: SectionRow): PageSection {
     style: readStyle(row.style),
     values: readValues(row.values),
     globalId: row.global_id ?? undefined,
-    draft: readDraft(row.draft),
     updatedAt: row.updated_at,
     updatedBy: row.updated_by ?? undefined,
   };
@@ -103,6 +93,41 @@ function mapGlobal(row: GlobalRow): GlobalSection {
     updatedAt: row.updated_at,
     updatedBy: row.updated_by ?? undefined,
   };
+}
+
+/**
+ * Attach each section's pending edit, where it has one.
+ *
+ * A second flat read keyed by the ids in hand, the same shape `withGlobals`
+ * uses and for the same reason: a nested embed is one query and also the
+ * shape that fails silently when PostgREST cannot plan the join.
+ *
+ * Only ever called from a path that has already established the caller is an
+ * administrator. `section_drafts` has one policy and it is `is_admin()`, so a
+ * visitor's request cannot read it however it is phrased - which is the whole
+ * reason the drafts are not a column on a publicly readable table.
+ */
+async function withDrafts(
+  supabase: ReturnType<typeof getAdminScopedClient>,
+  sections: PageSection[],
+): Promise<PageSection[]> {
+  const ids = sections.map((section) => section.id);
+  if (ids.length === 0) return sections;
+
+  const { data, error } = await supabase.from('section_drafts').select(DRAFT_SELECT).in('section_id', ids);
+  if (error) throw new Error(`Failed to read pending changes: ${error.message}`);
+
+  const drafts = new Map(
+    ((data ?? []) as Record<string, unknown>[]).map((row) => [
+      row.section_id as string,
+      readDraft(row),
+    ]),
+  );
+
+  return sections.map((section) => {
+    const draft = drafts.get(section.id);
+    return draft ? { ...section, draft } : section;
+  });
 }
 
 /** Attach each referenced global to the row that points at it. */
@@ -154,13 +179,18 @@ export const supabasePageSectionRepository = {
     const supabase = getAdminScopedClient();
     const { data, error } = await supabase
       .from('page_sections')
-      .select(ADMIN_SELECT)
+      .select(SECTION_SELECT)
       .eq('page_slug', slug)
       .order('position', { ascending: true });
 
     if (error) throw new Error(`Failed to read sections for "${slug}": ${error.message}`);
 
-    return withGlobals((data ?? []).map((row) => mapSection(row as unknown as SectionRow)), async (ids) => {
+    const withPending = await withDrafts(
+      supabase,
+      (data ?? []).map((row) => mapSection(row as unknown as SectionRow)),
+    );
+
+    return withGlobals(withPending, async (ids) => {
       const { data: globals, error: globalError } = await supabase
         .from('global_sections')
         .select(GLOBAL_SELECT)
@@ -181,14 +211,19 @@ export const supabasePageSectionRepository = {
     const supabase = getAdminScopedClient();
     const { data, error } = await supabase
       .from('page_sections')
-      .select(ADMIN_SELECT)
+      .select(SECTION_SELECT)
       .eq('page_slug', slug)
       .eq('hidden', false)
       .order('position', { ascending: true });
 
     if (error) throw new Error(`Failed to read sections for "${slug}": ${error.message}`);
 
-    return withGlobals((data ?? []).map((row) => mapSection(row as unknown as SectionRow)), async (ids) => {
+    const withPending = await withDrafts(
+      supabase,
+      (data ?? []).map((row) => mapSection(row as unknown as SectionRow)),
+    );
+
+    return withGlobals(withPending, async (ids) => {
       const { data: globals, error: globalError } = await supabase
         .from('global_sections')
         .select(GLOBAL_SELECT)
@@ -201,22 +236,26 @@ export const supabasePageSectionRepository = {
   /** Store a pending edit, or clear one. Never touches what renders. */
   async setDraft(id: string, draft: SectionDraft | null, updatedBy?: string): Promise<void> {
     const supabase = getAdminScopedClient();
-    const { error } = await supabase
-      .from('page_sections')
-      .update({ draft, updated_by: updatedBy ?? null })
-      .eq('id', id);
-    if (error) throw new Error(`Failed to save the preview: ${error.message}`);
-  },
 
-  /** Which pages hold a change somebody has previewed and not published. */
-  async pagesWithDrafts(): Promise<Set<string>> {
-    const supabase = getAdminScopedClient();
-    const { data, error } = await supabase
-      .from('page_sections')
-      .select('page_slug')
-      .not('draft', 'is', null);
-    if (error) throw new Error(`Failed to look for drafts: ${error.message}`);
-    return new Set((data ?? []).map((row) => (row as { page_slug: string }).page_slug));
+    if (!draft) {
+      const { error } = await supabase.from('section_drafts').delete().eq('section_id', id);
+      if (error) throw new Error(`Failed to clear the preview: ${error.message}`);
+      return;
+    }
+
+    // One row per section, so staging twice replaces rather than stacks.
+    const { error } = await supabase.from('section_drafts').upsert(
+      {
+        section_id: id,
+        variant: draft.variant,
+        animation: draft.animation,
+        style: draft.style,
+        values: draft.values,
+        updated_by: updatedBy ?? null,
+      },
+      { onConflict: 'section_id' },
+    );
+    if (error) throw new Error(`Failed to save the preview: ${error.message}`);
   },
 
   /**
@@ -291,12 +330,6 @@ export const supabasePageSectionRepository = {
     if (patch.values !== undefined) row.values = patch.values;
     if (patch.animation !== undefined) row.animation = patch.animation;
     if (patch.style !== undefined) row.style = patch.style;
-    /*
-      A save publishes, so the pending edit goes with it. Leaving it would
-      mean a preview that kept showing an older change than the live page -
-      which is the one thing a preview must never do.
-    */
-    row.draft = null;
 
     const { data, error } = await supabase
       .from('page_sections')
@@ -306,6 +339,14 @@ export const supabasePageSectionRepository = {
       .maybeSingle();
 
     if (error) throw new Error(`Failed to save the section: ${error.message}`);
+
+    /*
+      A save publishes, so the pending edit goes with it. Leaving it would
+      mean a preview that kept showing an older change than the live page -
+      the one thing a preview must never do.
+    */
+    await supabase.from('section_drafts').delete().eq('section_id', id);
+
     return data ? mapSection(data as unknown as SectionRow) : null;
   },
 
