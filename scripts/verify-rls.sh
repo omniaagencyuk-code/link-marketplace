@@ -128,3 +128,6 @@ run -f "$ROOT/supabase/tests/12_assumed_niche_rates.sql" 2>&1 | grep -v '^$'
 echo
 echo "--- order items follow their order ---"
 run -f "$ROOT/supabase/tests/10_order_item_status.sql" 2>&1 | grep -v '^$'
+echo
+echo "--- a page's sections: what a stranger may read, and reordering ---"
+run -f "$ROOT/supabase/tests/14_page_sections.sql" 2>&1 | grep -v '^$'
