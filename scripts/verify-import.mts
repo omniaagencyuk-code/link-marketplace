@@ -11,6 +11,7 @@ import { autoMapColumns } from '../src/lib/import/auto-map';
 import { prepareRows } from '../src/lib/import/prepare';
 import { toWebsitePatch } from '../src/lib/import/to-website';
 import { matchAcceptedNiches } from '../src/lib/config/accepted-niches';
+import { findCollisions, findUnnormalised } from '../src/lib/import/duplicates';
 
 let failures = 0;
 function check(label: string, actual: unknown, expected: unknown) {
@@ -158,6 +159,63 @@ const noNiches = prepareRows(
 )[0]!;
 check('a file without niche columns leaves overrides alone',
   toWebsitePatch(noNiches.values, noNiches.supplied).nichePrices, undefined);
+
+// --------------------------------------------- two listings for one site
+/*
+  The importer decides create-or-update by looking a domain up in an index of
+  what we already have. That index was capped at its first thousand rows, so
+  every domain past the thousandth looked new. `websites.domain` is unique,
+  so the insert that followed was rejected rather than accepted twice - but
+  that is the constraint saving us, not the code being right, and the
+  constraint compares text where the importer compares normalised text.
+
+  These two functions are what the duplicate report knows. It reads a live
+  database and cannot be run without one; this is where its judgement is
+  checked.
+*/
+const listing = (id: string, domain: string) => ({ id, domain });
+
+check('a clean marketplace has no collisions',
+  findCollisions([listing('1', 'a.com'), listing('2', 'b.com')]), []);
+
+// The case the unique constraint cannot catch: two spellings, one site.
+check('www and bare are one site listed twice',
+  findCollisions([listing('1', 'example.com'), listing('2', 'www.example.com')])
+    .map((hit) => ({ domain: hit.domain, ids: hit.rows.map((row) => row.id) })),
+  [{ domain: 'example.com', ids: ['1', '2'] }]);
+
+check('three spellings are one collision, not three',
+  findCollisions([
+    listing('1', 'example.com'),
+    listing('2', 'www.example.com'),
+    listing('3', 'EXAMPLE.com'),
+  ]).length, 1);
+
+// A near-miss must not be reported as the same site. Somebody would delete a
+// real listing on the strength of this.
+check('a different subdomain is a different site',
+  findCollisions([listing('1', 'example.com'), listing('2', 'shop.example.com')]), []);
+check('and a lookalike domain is not a collision',
+  findCollisions([listing('1', 'example.com'), listing('2', 'example.co')]), []);
+
+// Two rows nothing can be made of are two problems, not one collision.
+check('unparseable domains are not grouped together',
+  findCollisions([listing('1', ''), listing('2', '   ')]), []);
+
+check('collisions come out in a stable order',
+  findCollisions([
+    listing('1', 'zebra.com'), listing('2', 'www.zebra.com'),
+    listing('3', 'apple.com'), listing('4', 'www.apple.com'),
+  ]).map((hit) => hit.domain), ['apple.com', 'zebra.com']);
+
+// Not damage - the shape damage arrives in. A row stored like this is
+// invisible to the next import of its normalised spelling.
+check('a row stored with www would not match a future import',
+  findUnnormalised([listing('1', 'www.example.com')]).map((row) => row.id), ['1']);
+check('a normalised row is not reported',
+  findUnnormalised([listing('1', 'example.com')]), []);
+check('nor is one that cannot be parsed at all',
+  findUnnormalised([listing('1', '')]), []);
 
 console.log(failures ? `\n${failures} FAILED` : '\nall passed');
 process.exit(failures ? 1 : 0);
