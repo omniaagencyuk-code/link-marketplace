@@ -8,6 +8,13 @@
  */
 import { readFileSync } from 'node:fs';
 import {
+  cleanSectionValues,
+  getComponent,
+  listComponents,
+  resolveVariant,
+} from '../src/lib/cms/components/schema';
+import { applyTokens, unknownTokens, TOKENS } from '../src/lib/cms/tokens';
+import {
   DELAYS,
   ENTRANCES,
   NO_ANIMATION,
@@ -198,6 +205,159 @@ console.log('\n--- a section that points at a global ---');
   const detached = resolveSection({ ...section, globalId: undefined, global: undefined });
   is('a detached section renders its own component', detached.component, 'rich-text');
   is('and its own content', detached.values.heading, 'Stale local copy');
+}
+
+const SCHEMA = 'src/lib/cms/components/schema.ts';
+const RENDER = 'src/lib/cms/components/render.tsx';
+const read = (path: string) => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8');
+
+console.log('\n--- the two halves of the registry never meet ---');
+{
+  /*
+    This is the whole performance story, and it is a property of the module
+    graph rather than of anybody's care.
+
+    The admin imports schema.ts for field definitions, labels and validation.
+    The public renderer imports render.tsx for frontend components. If either
+    reaches the other, a public page ships TipTap, the drag-and-drop and every
+    field input - which is exactly the Elementor-style bloat the brief spends
+    a section forbidding.
+  */
+  const schema = read(SCHEMA);
+  const render = read(RENDER);
+
+  yes('the schema imports no frontend component', !/from '@\/components\//.test(schema));
+  // On imports, not on the word: schema.ts names render.tsx in its comments,
+  // which is the point of the comment.
+  yes('the schema imports no renderer', !/^import .*render/m.test(schema));
+  /*
+    Matched on the import statement rather than on a full path. The first
+    version of this looked for 'components/schema', and missed the import
+    anybody would actually write - './schema' - so it passed with the two
+    halves joined together. Proved by joining them: it fails now, both ways
+    round.
+  */
+  const importsSchema = (file: string) => /^import[^;]*from\s+['"][^'"]*schema['"]/m.test(file);
+  yes('the renderer does not import the schema', !importsSchema(render));
+  yes('and imports no field definitions', !/^import[^;]*from\s+['"][^'"]*fields['"]/m.test(render));
+
+  // The public entry point is the one that actually ships to a browser.
+  const entry = read('src/components/cms/page-sections.tsx');
+  yes('the public renderer does not import the schema', !importsSchema(entry));
+  yes('nor the admin editor', !/from '@\/components\/admin/.test(entry));
+
+  /*
+    Renderers are called rather than mounted, which is only safe while they
+    are server components - a client component called as a function loses its
+    boundary and its hooks throw. The day one needs 'use client', page-sections
+    has to go back to JSX, and this says so.
+  */
+  const sectionFiles = read('src/components/cms/sections/index.tsx');
+  yes('no section renderer is a client component', !sectionFiles.includes("'use client'"));
+}
+
+console.log('\n--- every component can be drawn ---');
+{
+  // A component an editor can add and the page cannot draw is a section that
+  // silently renders nothing. The two halves are separate files on purpose,
+  // which is exactly why they can drift.
+  const render = read(RENDER);
+  for (const component of listComponents()) {
+    yes(`"${component.key}" has a renderer`, render.includes(`'${component.key}':`) || render.includes(`  ${component.key}:`));
+  }
+
+  yes('every component has at least one variant', listComponents().every((c) => c.variants.length > 0));
+  yes('and a description for the library', listComponents().every((c) => c.description.length > 10));
+  is('an unknown component is null, not a throw', getComponent('nope'), null);
+}
+
+console.log('\n--- a variant is only ever one the component named ---');
+{
+  const richText = getComponent('rich-text');
+  is('a known variant is kept', resolveVariant(richText, 'narrow'), 'narrow');
+  is('an unknown one falls back to the first', resolveVariant(richText, 'neon'), 'default');
+  is('and a missing component is default', resolveVariant(null, 'narrow'), 'default');
+}
+
+console.log('\n--- values are rebuilt from the schema, not filtered ---');
+{
+  const cta = getComponent('cta');
+  if (!cta) throw new Error('the cta component is missing');
+
+  const cleaned = cleanSectionValues(cta, {
+    heading: '  Ready   to start?  ',
+    body: 'Some copy.',
+    primaryCta: { label: 'Join', href: '/signup' },
+    // Not a field this component declares. Filtering would have to know to
+    // remove it; rebuilding cannot keep it.
+    customCss: '.hero { display: none }',
+    style: { color: 'red' },
+  });
+
+  yes('a key the component does not declare cannot survive', !('customCss' in cleaned));
+  yes('nor can a second one', !('style' in cleaned));
+  is('whitespace in a heading is collapsed', cleaned.heading, 'Ready to start?');
+
+  // The link rules are the same ones the rich text whitelist applies inside a
+  // document, for links that happen to be fields instead.
+  const nasty = cleanSectionValues(cta, {
+    heading: 'Hello',
+    primaryCta: { label: 'Click', href: 'javascript:alert(1)' },
+    secondaryCta: { label: 'Also', href: 'https://example.com' },
+    // An internal path is what a CTA is for.
+    tertiary: { label: 'Ignored', href: '/marketplace' },
+  });
+  is('a javascript: link is dropped', (nasty.primaryCta as { href: string }).href, '');
+
+  /*
+    And so is an external one, on a CTA field.
+
+    `link()` defaults to internalOnly, which is deliberate and older than any
+    of this: a button that points off-site is almost always a mistake, and a
+    marketing page's buttons exist to move somebody further into the site.
+    External links belong in rich text, where the editor offers them with
+    new-tab, nofollow and sponsored - a button has no room to express any of
+    that anyway.
+  */
+  is('an external link on a CTA is dropped too', (nasty.secondaryCta as { href: string }).href, '');
+  is('and an internal path is kept', (cleanSectionValues(cta, { primaryCta: { label: 'Go', href: '/marketplace' } }).primaryCta as { href: string }).href, '/marketplace');
+
+  // A field the section was saved without comes back as the default, so a
+  // component that gains a field does not leave a hole in older pages.
+  const sparse = cleanSectionValues(cta, { heading: 'Only this' });
+  is('a missing field falls back to the default', (sparse.primaryCta as { label: string }).label, 'Create Free Account');
+
+  const cards = getComponent('feature-cards');
+  if (!cards) throw new Error('the feature-cards component is missing');
+  const listed = cleanSectionValues(cards, {
+    items: [
+      { title: 'Real traffic', body: 'Checked by hand.' },
+      { title: '', body: '' },
+      'not an object',
+      { title: 'Kept', body: 'Also kept.', injected: 'no' },
+    ],
+  });
+  const items = listed.items as Record<string, unknown>[];
+  is('empty and non-object rows are dropped', items.length, 2);
+  yes('and an undeclared key inside a row is too', items.every((item) => !('injected' in item)));
+}
+
+console.log('\n--- live numbers inside copy ---');
+{
+  const values = { marketplace_site_count: '950', niche_count: '40' };
+  is('a token resolves', applyTokens('We list {{marketplace_site_count}} websites', values), 'We list 950 websites');
+  is('spacing inside the braces is fine', applyTokens('{{ niche_count }} niches', values), '40 niches');
+  is('case does not matter', applyTokens('{{NICHE_COUNT}} niches', values), '40 niches');
+
+  // A token nobody fills in is removed rather than shown to a visitor, and
+  // the double space it leaves behind goes with it.
+  is('an unfilled token leaves no braces', applyTokens('We list {{gambling_site_count}} sites', values), 'We list sites');
+  is('copy with no tokens is untouched', applyTokens('Plain copy.', values), 'Plain copy.');
+
+  // Which is why the editor has to warn: a typo is silent on the page.
+  is('a typo is reported', unknownTokens('{{marketplace_site_cont}}').length, 1);
+  is('a real token is not', unknownTokens('{{marketplace_site_count}}').length, 0);
+  yes('every token is explained to whoever types it', TOKENS.every((token) => token.help.length > 10));
 }
 
 console.log(failed ? `\n  ${failed} FAILED\n` : '\n  all passed\n');

@@ -4,10 +4,22 @@ export interface FaqItem {
 }
 
 /** Native disclosure list - no JavaScript needed, keyboard accessible. */
-export function Faq({ items, title = 'Frequently asked questions' }: { items: FaqItem[]; title?: string }) {
+export function Faq({
+  items,
+  title = 'Frequently asked questions',
+  // A page could not hold two of these until the page builder existed. Two
+  // elements sharing an id is invalid, and `aria-labelledby` then points at
+  // whichever came first, so the second accordion is announced with the
+  // first one's heading.
+  id = 'faq-heading',
+}: {
+  items: FaqItem[];
+  title?: string;
+  id?: string;
+}) {
   return (
-    <section aria-labelledby="faq-heading">
-      <h2 id="faq-heading" className="text-2xl font-semibold tracking-tight text-ink">
+    <section aria-labelledby={id}>
+      <h2 id={id} className="text-2xl font-semibold tracking-tight text-ink">
         {title}
       </h2>
       <dl className="mt-6 divide-y divide-line overflow-hidden rounded-[var(--radius-card)] border border-line bg-white shadow-[var(--shadow-card)]">
