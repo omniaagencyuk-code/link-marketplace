@@ -5,7 +5,7 @@ import { requireAdminSession } from '@/lib/auth/admin-access';
 import { pageContentService } from '@/lib/services/page-content-service';
 import { getRegisteredPage } from '@/lib/cms/registry';
 import { customPageService } from '@/lib/services/custom-page-service';
-import { checkSlug, customPageDefinition, slugify } from '@/lib/cms/custom-page';
+import { checkSlug, customPageDefinition, readTemplate, slugify } from '@/lib/cms/custom-page';
 import { sanitiseText } from '@/lib/import/normalise';
 import { cleanRichTextDoc, isRichTextDoc } from '@/lib/cms/rich-text';
 import type { FieldDef, FieldValue, ImageValue, LinkValue, PageDef, PageValues } from '@/lib/cms/types';
@@ -228,9 +228,16 @@ export async function createPageAction(formData: FormData): Promise<CreatePageRe
 
   const description = sanitiseText(String(formData.get('description') ?? ''), 200).trim();
 
+  // Checked against the templates that can actually be drawn, not trusted:
+  // this is a server action endpoint like any other.
+  const template = readTemplate(formData.get('template'));
+
   await customPageService.create(slug, {
     label,
-    description: description || `A service page at /${slug}.`,
+    template,
+    description:
+      description ||
+      (template === 'niche' ? `A niche landing page at /${slug}.` : `A service page at /${slug}.`),
     // New pages start as drafts. Publishing is a deliberate second action, so
     // an unfinished page is never briefly live.
     published: false,

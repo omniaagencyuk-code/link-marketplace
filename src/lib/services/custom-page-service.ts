@@ -3,6 +3,7 @@ import { mockStore } from './mock-store';
 import { supabaseCustomPageRepository } from './supabase/custom-page-repository';
 import {
   checkSlug,
+  readTemplate,
   customPageDefaults,
   customPageDefinition,
   type CustomPageInput,
@@ -102,7 +103,7 @@ export const customPageService = {
 
     const resolved = resolvePage(
       customPageDefinition(record),
-      customPageDefaults(record.label),
+      customPageDefaults(record.label, record.template),
       record.values,
     );
     return { ...resolved, record };
@@ -114,6 +115,7 @@ export const customPageService = {
       label: input.label,
       description: input.description,
       published: input.published,
+      template: readTemplate(input.template),
       // A new page starts with no overrides at all, so it renders entirely
       // from the generated defaults until an editor saves something.
       values: {},

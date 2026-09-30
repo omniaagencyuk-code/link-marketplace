@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import { BadgeCheck, Coins, Gauge, ShoppingBag } from 'lucide-react';
 import { NicheLandingPage } from '@/components/marketing/niche-landing-page';
+import { PageSections } from '@/components/cms/page-sections';
 import { metadataForPage } from '@/lib/cms/metadata';
 import { pageContentService } from '@/lib/services/page-content-service';
 import { websiteService } from '@/lib/services';
@@ -45,6 +46,7 @@ export default async function Page() {
       path="/gambling-link-building"
       breadcrumbLabel="Gambling"
       breadcrumbParent={{ label: 'Link Building', href: '/link-building' }}
+      extra={<PageSections slug={SLUG} />}
     />
   );
 }

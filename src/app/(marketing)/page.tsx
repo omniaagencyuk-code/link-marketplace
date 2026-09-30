@@ -13,7 +13,12 @@ import { TrustedBy } from '@/components/home/trusted-by';
 import { TrustMetrics } from '@/components/home/trust-metrics';
 import { PageSections } from '@/components/cms/page-sections';
 import { Reveal } from '@/components/cms/reveal';
-import { ChecklistSection, ComparisonSection, ParrotSaysSection } from '@/components/cms/sections';
+import {
+  ChecklistSection,
+  ComparisonSection,
+  MarketplaceSearchSection,
+  ParrotSaysSection,
+} from '@/components/cms/sections';
 import { MetricCards } from '@/components/home/metric-cards';
 import { FinalCta } from '@/components/home/final-cta';
 import { Faq, type FaqItem } from '@/components/shared/faq';
@@ -147,6 +152,19 @@ export default async function HomePage() {
           data={{}}
         />
       </Reveal>
+
+      <MarketplaceSearchSection
+        values={{
+          heading: content.text('search', 'heading'),
+          body: content.text('search', 'body'),
+          placeholder: content.text('search', 'placeholder'),
+          cta: content.link('search', 'cta'),
+          note: content.text('search', 'note'),
+        }}
+        variant="default"
+        sectionId="home-search"
+        data={{}}
+      />
 
       <ComparisonSection
         values={{

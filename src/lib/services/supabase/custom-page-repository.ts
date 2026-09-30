@@ -1,4 +1,5 @@
 import { getServerClient, getAdminScopedClient } from '@/lib/supabase/server';
+import { readTemplate } from '@/lib/cms/custom-page';
 import type { CustomPageInput, CustomPageRecord } from '@/lib/cms/custom-page';
 import type { PageValues } from '@/lib/cms/types';
 
@@ -16,13 +17,15 @@ import type { PageValues } from '@/lib/cms/types';
  * recognise - without it, opening a draft in the editor would find nothing.
  */
 
-const SELECT = 'slug, label, description, published, values, created_at, updated_at, updated_by';
+const SELECT =
+  'slug, label, description, published, template, values, created_at, updated_at, updated_by';
 
 interface CustomPageRow {
   slug: string;
   label: string;
   description: string | null;
   published: boolean;
+  template: string | null;
   values: PageValues | null;
   created_at: string;
   updated_at: string;
@@ -35,6 +38,9 @@ function mapRow(row: CustomPageRow): CustomPageRecord {
     label: row.label,
     description: row.description ?? '',
     published: row.published,
+    // Null for every page created before templates existed, which is what
+    // readTemplate's fallback is for.
+    template: readTemplate(row.template),
     values: row.values ?? {},
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -84,6 +90,7 @@ export const supabaseCustomPageRepository = {
         label: record.label,
         description: record.description,
         published: record.published,
+        template: record.template,
         values: record.values,
         updated_by: record.updatedBy ?? null,
       })

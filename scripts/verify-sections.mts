@@ -707,5 +707,51 @@ console.log('\n--- the homepage links into the metrics page, and lands ---');
   }
 }
 
+console.log('\n--- a niche page is something somebody makes, not something somebody deploys ---');
+{
+  /*
+    The gambling page's design was locked to one hardcoded route: a sports or
+    finance version of it meant a schema, a route, a registry entry and a
+    deploy. Its shape is shared now, so a page created in the admin can choose
+    it - which is the thing the brief is actually asking for when it says
+    future niche pages should be easy to create without coding.
+  */
+  const gambling = read('src/lib/cms/pages/gambling-link-building.ts');
+  const custom = read('src/lib/cms/custom-page.ts');
+  const route = read('src/app/(marketing)/[slug]/page.tsx');
+  const template = read('src/components/marketing/niche-landing-page.tsx');
+
+  yes('the gambling page uses the shared shape', gambling.includes('nicheSections()'));
+  yes('and no longer declares its own', !gambling.includes("section(\n      'hero'"));
+  yes('a custom page can choose that shape', custom.includes('nicheSections()'));
+  yes('and the route draws it', route.includes('<NicheLandingPage'));
+
+  // An unknown template is the one every page had before templates existed,
+  // not a crash on a live page.
+  const { readTemplate } = await import('../src/lib/cms/custom-page');
+  is('an unknown template falls back', readTemplate('elementor'), 'service');
+  is('so does nothing at all', readTemplate(undefined), 'service');
+  is('and the niche template is real', readTemplate('niche'), 'niche');
+
+  /*
+    The niche template takes a slot rather than importing the page builder.
+    That is what keeps this file the design it always was: it knows nothing
+    about sections, and a page with none passes nothing and renders what it
+    rendered before.
+  */
+  yes('the niche template takes a slot', template.includes('extra?: ReactNode'));
+  yes('and does not import the builder', !template.includes('page-sections'));
+  yes('the gambling route fills it', read('src/app/(marketing)/gambling-link-building/page.tsx').includes('extra={<PageSections'));
+  yes('and so does the custom route', route.includes('extra={<PageSections'));
+
+  /*
+    A niche page scoped to a category nobody recognises shows the whole
+    marketplace rather than the wrong part of it. A finance page quietly
+    listing gambling publishers is worse than one listing everything, because
+    only the second is obvious.
+  */
+  yes('an unknown category scopes to nothing', route.includes('readNiche'));
+}
+
 console.log(failed ? `\n  ${failed} FAILED\n` : '\n  all passed\n');
 process.exit(failed ? 1 : 0);

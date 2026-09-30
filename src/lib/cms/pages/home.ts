@@ -226,6 +226,19 @@ export const definition: PageDef = {
     ),
 
     section(
+      'search',
+      'Find opportunities',
+      [
+        text('heading', 'Heading', { maxLength: 140 }),
+        textarea('body', 'Supporting copy', { rows: 3, maxLength: 400 }),
+        text('placeholder', 'Placeholder in the box', { maxLength: 120 }),
+        link('cta', 'Button'),
+        text('note', 'Line under the box', { maxLength: 200 }),
+      ],
+      'The search box in the editorial. It hands what was typed to the marketplace rather than searching here - the results are behind an account.',
+    ),
+
+    section(
       'comparison',
       'Good opportunity vs site to avoid',
       [
@@ -593,6 +606,14 @@ Links get a page considered. The page itself has to do the rest: answer the ques
   parrotSays: {
     label: 'Parrot says',
     body: 'A high domain rating is the easiest number on a listing to manufacture, and the first one anybody selling a bad link will quote you. Look at whether the traffic is real and whether it is in your country before you look at anything else.',
+  },
+
+  search: {
+    heading: 'Find link building opportunities',
+    body: 'Search by domain, topic or country. Filter by domain rating, traffic, price and turnaround until the shortlist fits the campaign, then order the placements you want.',
+    placeholder: 'Try "finance", "casino" or a domain you have in mind',
+    cta: { label: 'Search websites', href: '/marketplace' },
+    note: 'Publisher names and pricing appear once you have a free account.',
   },
 
   comparison: {

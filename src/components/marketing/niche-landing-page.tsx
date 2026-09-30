@@ -13,6 +13,7 @@ import { journeySteps } from '@/lib/config/how-it-works';
 import { siteUrl } from '@/lib/config/brand';
 import { formatNumber } from '@/lib/utils/format';
 import { cn } from '@/lib/utils/cn';
+import type { ReactNode } from 'react';
 import type { ContentAccessors } from '@/lib/cms/resolve';
 import type { PreviewRow } from '@/lib/services/marketplace-preview';
 
@@ -73,6 +74,14 @@ export interface NicheLandingPageProps {
   listingCount: number;
   /** Icons for the value cards, positionally matched. Not editable. */
   highlightIcons: LucideIcon[];
+  /**
+   * Anything built in the admin, rendered between the body copy and the FAQ.
+   *
+   * A slot rather than a component, so this file stays the design it always
+   * was and knows nothing about the page builder. A page that has added no
+   * sections passes nothing and renders exactly what it rendered before.
+   */
+  extra?: ReactNode;
   path: string;
   breadcrumbLabel: string;
   /** The parent crumb, e.g. Link Building. */
@@ -99,6 +108,7 @@ export function NicheLandingPage({
   path,
   breadcrumbLabel,
   breadcrumbParent,
+  extra,
 }: NicheLandingPageProps) {
   const trust = content.list<TrustItem>('hero', 'trust');
   const categories = content
@@ -474,6 +484,13 @@ export function NicheLandingPage({
           </div>
         </Container>
       </section>
+
+      {/*
+        Anything built in the admin, between the page's own copy and the
+        questions. A page that has added no sections passes nothing here and
+        renders exactly what it rendered before the builder existed.
+      */}
+      {extra}
 
       {/* --------------------------------------------------------------- faq */}
       {faqs.length ? (

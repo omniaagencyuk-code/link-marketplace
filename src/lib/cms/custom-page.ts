@@ -1,4 +1,5 @@
 import { serviceSections } from './pages/service-page-schema';
+import { nicheSections } from './pages/niche-page-schema';
 import type { PageDef, PageValues } from './types';
 
 /**
@@ -106,8 +107,35 @@ export function checkSlug(slug: string): SlugCheck {
 }
 
 /** A stored custom page, before its defaults are applied. */
+/**
+ * Which frontend template draws a page.
+ *
+ * Two, because there are two designs worth having and no more. A third is an
+ * entry here, a schema, and a branch in the route - not a new architecture.
+ */
+export const PAGE_TEMPLATES = [
+  {
+    key: 'service' as const,
+    label: 'Service page',
+    help: 'The shape of /link-building and /guest-posts: value points, marketplace preview, body copy, FAQs.',
+  },
+  {
+    key: 'niche' as const,
+    label: 'Niche landing page',
+    help: 'The shape of /gambling-link-building: mascot, a live count of publishers in the niche, filter shortcuts into the marketplace.',
+  },
+];
+
+export type PageTemplate = (typeof PAGE_TEMPLATES)[number]['key'];
+
+/** A stored value, or the one every page had before templates existed. */
+export function readTemplate(raw: unknown): PageTemplate {
+  return PAGE_TEMPLATES.some((template) => template.key === raw) ? (raw as PageTemplate) : 'service';
+}
+
 export interface CustomPageRecord {
   slug: string;
+  template: PageTemplate;
   label: string;
   description: string;
   /** Draft pages 404 for the public and are visible only in the admin. */
@@ -119,6 +147,7 @@ export interface CustomPageRecord {
 }
 
 export interface CustomPageInput {
+  template?: PageTemplate;
   label: string;
   description: string;
   published: boolean;
@@ -129,13 +158,19 @@ export function customPageDefinition(record: {
   slug: string;
   label: string;
   description: string;
+  template?: PageTemplate;
 }): PageDef {
+  const template = readTemplate(record.template);
+
   return {
     slug: record.slug,
     label: record.label,
     path: `/${record.slug}`,
     description: record.description,
-    sections: serviceSections(),
+    // The page's shape follows the design it chose. A niche page and
+    // /gambling-link-building are the same object from here on, differing only
+    // in their copy - which is the whole point of pulling the schema out.
+    sections: template === 'niche' ? nicheSections() : serviceSections(),
   };
 }
 
@@ -147,8 +182,13 @@ export function customPageDefinition(record: {
  * the value points and the body section describe what the editor should write,
  * rather than asserting something that might not be true.
  */
-export function customPageDefaults(label: string): PageValues {
+export function customPageDefaults(label: string, template: PageTemplate = 'service'): PageValues {
   const name = label.trim() || 'New page';
+
+  // A niche page's fields are a superset in the places that matter and differ
+  // in the rest, so its starting copy is its own rather than the service
+  // page's with holes in it.
+  if (template === 'niche') return nicheDefaults(name);
 
   return {
     hero: {
@@ -212,6 +252,117 @@ Add as many sections as the subject needs. One long, genuinely useful page will 
       metaDescription:
         'Replace this with around 155 characters describing the page. It is what Google shows under the link, so it is worth writing properly.',
       ogImage: { src: '', alt: '' },
+    },
+  };
+}
+
+/**
+ * Starting copy for a niche landing page.
+ *
+ * Placeholder where it has to be and useful where it can be, like the service
+ * page's. Nothing here asserts anything about the business - the body copy
+ * describes what to write rather than claiming something that might not be
+ * true of whatever niche this page turns out to be about.
+ *
+ * The marketplace link is left pointing at the whole marketplace on purpose.
+ * A niche page should open the marketplace with its own filter applied, and
+ * only the person creating the page knows which filter that is - a guessed
+ * one that quietly shows the wrong inventory is worse than an unfiltered one
+ * they will notice and fix.
+ */
+function nicheDefaults(name: string): PageValues {
+  return {
+    hero: {
+      eyebrow: name,
+      title: name,
+      intro:
+        'Replace this with one paragraph explaining what this page covers and who it is for. Name the niche and say what a placement here achieves.',
+      trust: [
+        { label: 'Real websites with traffic' },
+        { label: 'Transparent SEO metrics' },
+        { label: 'Fast ordering process' },
+      ],
+      primaryCta: { label: 'Browse Websites', href: '/marketplace' },
+      secondaryCta: { label: 'Create Free Account', href: '/signup' },
+      microcopy: 'Free account · No subscription · Pay only for what you order',
+      mascot: { src: '', alt: '' },
+      banner: { src: '', alt: '' },
+    },
+
+    preview: {
+      heading: `${name} websites available on Press Parrot`,
+      body:
+        'Every listing carries its domain rating, organic traffic, referring domains, country and price before you commit to anything.',
+      lockNote:
+        'Website names, pricing and full marketplace data are available to Press Parrot members.',
+      cta: { label: 'Create Free Account to View Websites', href: '/signup' },
+      countSuffix: 'websites listed',
+    },
+
+    categories: {
+      heading: 'What the publishers cover',
+      body: 'Each of these opens the marketplace with that search already run.',
+      items: [
+        { label: 'First topic', href: '/marketplace' },
+        { label: 'Second topic', href: '/marketplace' },
+        { label: 'Third topic', href: '/marketplace' },
+      ],
+    },
+
+    highlights: {
+      heading: 'Why buyers use Press Parrot',
+      items: [
+        { title: 'First point', body: 'What makes this worth a reader’s time. One or two sentences.' },
+        { title: 'Second point', body: 'The next reason, in the same shape.' },
+        { title: 'Third point', body: 'A third reason.' },
+        { title: 'Fourth point', body: 'The last one. Remove any you do not need.' },
+      ],
+    },
+
+    body: {
+      sections: [
+        {
+          heading: `${name} link building`,
+          content:
+            'Replace this with the main explanation. Two or three paragraphs on what this niche needs, why relevance matters here specifically, and what a buyer should look for.',
+        },
+      ],
+    },
+
+    content: {
+      heading: 'Need content too?',
+      body:
+        'Add writing to the same order and our team will produce something the publisher will accept.',
+      cta: { label: 'Order Content', href: '/content-writing' },
+    },
+
+    related: {
+      items: [
+        { label: 'Guest posts', href: '/guest-posts', description: 'Articles written for you.' },
+        { label: 'Niche edits', href: '/niche-edits', description: 'Links added to existing articles.' },
+      ],
+    },
+
+    faqs: {
+      items: [
+        {
+          question: 'Replace this with a question buyers actually ask',
+          answer: 'And answer it in full. A question with half an answer is worse than no question.',
+        },
+      ],
+    },
+
+    cta: {
+      heading: `Start with the ${name.toLowerCase()} publishers`,
+      body: 'Create a free account and see the full list with metrics and pricing.',
+      primaryCta: { label: 'Create Free Account', href: '/signup' },
+      secondaryCta: { label: 'Browse Websites', href: '/marketplace' },
+    },
+
+    seo: {
+      metaTitle: name,
+      metaDescription:
+        'Replace this with a description of about 150 characters. It is what appears under the title in search results.',
     },
   };
 }

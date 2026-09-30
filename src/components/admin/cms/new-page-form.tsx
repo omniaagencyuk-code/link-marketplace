@@ -8,7 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input, Textarea } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { createPageAction } from '@/app/admin/(protected)/pages/actions';
-import { checkSlug, slugify } from '@/lib/cms/custom-page';
+import { PAGE_TEMPLATES, checkSlug, slugify } from '@/lib/cms/custom-page';
 
 /**
  * Creating a page.
@@ -72,6 +72,36 @@ export function NewPageForm() {
           </div>
 
           <div>
+            <fieldset className="mb-5">
+              <legend className="mb-2 text-[13px] font-medium text-ink">Design</legend>
+              <div className="space-y-2">
+                {PAGE_TEMPLATES.map((option, index) => (
+                  <label
+                    key={option.key}
+                    className="flex cursor-pointer gap-3 rounded-md border border-line p-3 transition-colors hover:border-accent-500 has-[:checked]:border-accent-500 has-[:checked]:bg-accent-50"
+                  >
+                    <input
+                      type="radio"
+                      name="template"
+                      value={option.key}
+                      defaultChecked={index === 0}
+                      className="mt-0.5 h-3.5 w-3.5 shrink-0 border-line-strong text-accent-600 focus:ring-accent-500/30"
+                    />
+                    <span className="min-w-0">
+                      <span className="block text-[13px] font-medium text-ink">{option.label}</span>
+                      <span className="mt-0.5 block text-[12px] leading-relaxed text-muted">
+                        {option.help}
+                      </span>
+                    </span>
+                  </label>
+                ))}
+              </div>
+              <p className="mt-2 text-[12px] text-muted">
+                This decides which fields the page has, so it cannot be changed afterwards.
+                Duplicating a page of the right kind is usually easier than starting over.
+              </p>
+            </fieldset>
+
             <Label htmlFor="slug">URL</Label>
             <div className="flex items-center gap-1.5">
               <span className="text-[14px] text-muted">/</span>
