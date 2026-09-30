@@ -1166,6 +1166,290 @@ console.log('\n--- the homepage is assembled, and every part of it is true ---')
   }
 }
 
+console.log('\n--- every colour an editor can choose is one they can read ---');
+{
+  /*
+    The rule the brief asks for - no yellow on cream, no white on soft grey -
+    is arithmetic, so it is checked as arithmetic. Every pairing the CMS
+    offers is measured here against the WCAG minimum, and a palette change
+    that creates an unreadable combination fails this before anybody sees it.
+
+    Body copy needs 4.5:1. A heading accent is large text and needs 3:1.
+  */
+  const {
+    ACCENT_DEFS,
+    BACKGROUND_DEFS,
+    CONTRAST_BODY,
+    CONTRAST_LARGE,
+    NO_STYLE,
+    PRESETS,
+    TEXT_TONE_DEFS,
+    accentsFor,
+    contrast,
+    readStyle,
+    resolveStyle,
+    safeAccent,
+    safeTextTone,
+    textTonesFor,
+  } = await import('../src/lib/cms/style');
+
+  for (const background of BACKGROUND_DEFS) {
+    for (const tone of textTonesFor(background.key)) {
+      if (!tone.hex) continue;
+      const ratio = contrast(background.hex, tone.hex);
+      yes(
+        `${tone.label} over ${background.label} reads at ${ratio.toFixed(2)}:1`,
+        ratio >= CONTRAST_BODY,
+      );
+    }
+    for (const accent of accentsFor(background.key)) {
+      if (!accent.hex) continue;
+      const ratio = contrast(background.hex, accent.hex);
+      yes(
+        `${accent.label} accent over ${background.label} reads at ${ratio.toFixed(2)}:1`,
+        ratio >= CONTRAST_LARGE,
+      );
+    }
+  }
+
+  /*
+    And the combinations the brief names are genuinely absent, rather than
+    present and merely discouraged.
+  */
+  const offers = (background: string, tone: string) =>
+    textTonesFor(background as never).some((entry) => entry.key === tone);
+
+  yes('yellow text is not offered over cream', !offers('soft-cream', 'yellow'));
+  yes('white text is not offered over soft grey', !offers('soft-grey', 'white'));
+  yes('green text is not offered over the brand green', !offers('brand-green', 'green'));
+  yes('blue text is not offered over navy', !offers('navy', 'blue'));
+  yes('and yellow is offered over navy, where it reads', offers('navy', 'yellow'));
+
+  /*
+    Automatic follows the background, and for the brand green that means dark
+    text: white over it is 3.77:1 and fails. It was going to be white until
+    the numbers were run, so the number is what the test holds.
+  */
+  const green = BACKGROUND_DEFS.find((entry) => entry.key === 'brand-green');
+  is('the brand green takes dark text', green?.tone, 'dark');
+  yes(
+    'because white over it fails body copy',
+    contrast(green?.hex ?? '#000000', '#ffffff') < CONTRAST_BODY,
+  );
+
+  // A colour chosen over one background, then the background changed, is
+  // dropped at render rather than drawn unreadable.
+  const crafted = readStyle({ background: 'soft-cream', text: 'yellow', accent: 'yellow' });
+  is('a text colour the background cannot carry falls back', safeTextTone(crafted), 'auto');
+  is('and so does the accent', safeAccent(crafted), 'none');
+
+  // Every preset resolves to something the palette allows.
+  for (const preset of PRESETS) {
+    const style = { ...NO_STYLE, background: preset.background, text: preset.text };
+    is(`the "${preset.label}" preset keeps its text setting`, safeTextTone(style), preset.text);
+  }
+
+  /*
+    The swatch shows the colour the page renders. They are two declarations -
+    a hex here for the arithmetic and a token in the stylesheet for the page -
+    and a swatch that lies about the colour is worse than no swatch at all.
+  */
+  const css = read('src/app/globals.css');
+  for (const background of BACKGROUND_DEFS) {
+    if (!background.token) continue;
+    const declared = new RegExp(`${background.token}:\\s*([^;]+);`).exec(css)?.[1]?.trim();
+    is(`${background.label}'s swatch is the colour the page uses`, declared, background.hex);
+  }
+  for (const tone of [...TEXT_TONE_DEFS, ...ACCENT_DEFS]) {
+    if (!tone.token || !tone.hex) continue;
+    const declared = new RegExp(`${tone.token}:\\s*([^;]+);`).exec(css)?.[1]?.trim();
+    is(`${tone.label}'s swatch is the colour the page uses`, declared, tone.hex);
+  }
+
+  /*
+    Nothing chosen means no wrapper and no attributes, so a section that was
+    never styled renders the markup it always did.
+  */
+  const plain = resolveStyle(NO_STYLE);
+  is('an unstyled section adds no wrapper', plain.styled, false);
+  is('and no attributes', Object.keys(plain.attrs).length, 0);
+
+  /*
+    Every control has a value meaning "as the component draws it", and that
+    is what an unstyled section holds.
+
+    Both of these were found by a pixel diff rather than by reading. The
+    artwork position defaulted to `right`, and the content upsell has always
+    drawn its mascot on the left - so the first section to carry a style
+    column silently flipped it. A control with no way to be unset restyles
+    everything the moment it exists.
+  */
+  is('artwork is placed as the component draws it', NO_STYLE.artworkPosition, 'default');
+  is('and sized as it draws it', NO_STYLE.artworkSize, 'default');
+
+  /*
+    And every element that can take the accent names the shade it already
+    drew as its fallback.
+
+    One shared default was one colour, and these elements were two: half the
+    site's ticks and step numbers changed from accent-700 to accent-600 the
+    moment the variable existed, on pages nobody had styled. Checked as a
+    property of the source, because the diff that caught it only runs on one
+    page.
+  */
+  for (const file of [
+    'src/components/cms/sections/home.tsx',
+    'src/components/cms/sections/niche.tsx',
+    'src/components/cms/sections/visual.tsx',
+    'src/components/cms/sections/index.tsx',
+    'src/components/cms/sections/content.tsx',
+    'src/components/cms/sections/marketplace.tsx',
+    'src/components/cms/sections/parrot.tsx',
+    'src/components/cms/sections/hero.tsx',
+  ]) {
+    const uses = [...read(file).matchAll(/--section-accent([,)])/g)].map((match) => match[1]);
+    if (uses.length === 0) continue;
+    yes(
+      `${file.split('/').pop()} gives every accent a fallback`,
+      uses.every((next) => next === ','),
+    );
+  }
+
+  // And nothing declares a global default that would be that second answer.
+  yes(
+    'there is no site-wide accent default',
+    !/:root\s*\{[^}]*--section-accent\s*:/.test(read('src/app/globals.css')),
+  );
+}
+
+console.log('\n--- the palette is a list, not a text field ---');
+{
+  /*
+    The point of the whole system: an editor picks from a set. There is no
+    hex field, no picker, no class name and no opacity control, and the way
+    to keep it that way is to check that no control offers one.
+  */
+  const controls = read('src/components/admin/cms/style-controls.tsx');
+
+  /*
+    Asserted on the form controls rather than on the words, and that is the
+    correction: the first version searched for "opacity" anywhere and failed
+    on the sentence at the top of the file saying there is no opacity
+    control. It was reading the comment, not the code.
+
+    What a control is: an input, a select, or a field name the action reads.
+  */
+  const named = [...controls.matchAll(/name="([a-zA-Z]+)"/g)].map((match) => match[1]);
+  const ALLOWED = [
+    'background',
+    'text',
+    'accent',
+    'decoration',
+    'artworkPosition',
+    'artworkSize',
+  ];
+  yes(
+    `the style form posts only the palette's fields: ${[...new Set(named)].join(', ')}`,
+    named.every((field) => ALLOWED.includes(field as string)),
+  );
+  yes('there is no colour input', !/type="color"/.test(controls));
+  yes('and no slider', !/type="range"/.test(controls));
+  yes('and nothing takes free text', !/type="text"|<Input/.test(controls));
+
+  const { BACKGROUNDS, readStyle, NO_STYLE } = await import('../src/lib/cms/style');
+  // Anything not in the vocabulary is not stored, whatever was posted.
+  is(
+    'a hex posted as a background is refused',
+    readStyle({ background: '#ff0000' }).background,
+    NO_STYLE.background,
+  );
+  is(
+    'and so is a class name',
+    readStyle({ background: 'bg-red-500' }).background,
+    NO_STYLE.background,
+  );
+  yes('the vocabulary is closed', BACKGROUNDS.every((key) => /^[a-z-]+$/.test(key)));
+
+  /*
+    A component only offers what it can carry. The strong colours go to bands
+    of short copy: a white card on a navy band inherits the band's white text
+    and becomes unreadable, so that is a combination the editor cannot reach
+    rather than one they have to learn to avoid.
+  */
+  const { cleanSectionStyle, getComponent, stylingFor } = await import(
+    '../src/lib/cms/components/schema'
+  );
+  const navy = { background: 'navy', text: 'auto' };
+  is(
+    'a navy band is refused on a component of cards',
+    cleanSectionStyle(getComponent('benefit-cards'), navy).background,
+    'default',
+  );
+  is(
+    'and allowed on the closing call to action',
+    cleanSectionStyle(getComponent('cta'), navy).background,
+    'navy',
+  );
+  is(
+    'an accent is dropped on a component with nothing to accent',
+    cleanSectionStyle(getComponent('rich-text'), { accent: 'green' }).accent,
+    'none',
+  );
+  is('and kept where there is', cleanSectionStyle(getComponent('home-hero'), { accent: 'green' }).accent, 'green');
+  is('the hero offers no decoration behind its artwork', stylingFor(getComponent('home-hero')).decoration, false);
+}
+
+console.log('\n--- the artwork library is a catalogue, not a folder ---');
+{
+  /*
+    A section points at a name, never at a filename. That is what lets a
+    better drawing replace a worse one everywhere at once, and it only works
+    if the names are unique and stable.
+  */
+  const { ARTWORK, ARTWORK_CATEGORIES, artworkBySlug, artworkPath } = await import(
+    '../src/lib/cms/artwork-library'
+  );
+
+  const slugs = ARTWORK.map((entry) => entry.slug);
+  is('every artwork slug is unique', new Set(slugs).size, slugs.length);
+  yes('and every one is a slug', slugs.every((slug) => /^[a-z0-9]+(-[a-z0-9]+)*$/.test(slug)));
+  yes(
+    'every entry is in a real category',
+    ARTWORK.every((entry) => (ARTWORK_CATEGORIES as readonly string[]).includes(entry.category)),
+  );
+  yes('every entry describes itself', ARTWORK.every((entry) => entry.description.length > 10));
+  yes('an unknown slug is nothing rather than a guess', artworkBySlug('no-such-parrot') === null);
+
+  /*
+    The niche pieces are named for the marketplace category they belong to,
+    so a page about gambling and the picture on it are found by one name.
+  */
+  const { categories } = await import('../src/lib/data/categories');
+  for (const entry of ARTWORK.filter((art) => art.category === 'niche')) {
+    const slug = entry.slug.replace(/^niche-/, '');
+    yes(
+      `"${entry.slug}" names a real marketplace category`,
+      categories.some((category) => category.slug === slug),
+    );
+  }
+
+  /*
+    Every entry resolves to somewhere under /images, and the handful that
+    shipped before the catalogue did resolve to the files they were committed
+    with rather than being listed as not drawn yet.
+  */
+  yes(
+    'every entry resolves under /images',
+    ARTWORK.every((entry) => artworkPath(entry.slug).startsWith('/images/')),
+  );
+  const { findArtwork } = await import('../src/lib/cms/artwork');
+  const drawn = ARTWORK.filter((entry) => findArtwork(artworkPath(entry.slug)));
+  yes(
+    `the artwork already in the repository is found: ${drawn.map((entry) => entry.slug).join(', ')}`,
+    drawn.length >= 2,
+  );
+}
+
 console.log('\n--- a starting structure only names sections that exist ---');
 {
   /*

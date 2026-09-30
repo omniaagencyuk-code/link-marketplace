@@ -122,7 +122,13 @@ export function HomeHeroSection({ values, data }: SectionProps) {
               {str(values, 'titleLine1')}
               <br className="hidden sm:block" /> {str(values, 'titleLine2')}
               <br className="hidden sm:block" />{' '}
-              <span className="text-accent-600">{str(values, 'titleAccent')}</span>
+              {/* The one word the section highlights. `--section-accent`
+                  falls back to the brand green, so a hero with no accent
+                  chosen is the colour it always was. */}
+              {/* The one word the section highlights. `--section-accent`
+                  falls back to the brand green, so a hero with no accent
+                  chosen renders the colour it always did. */}
+              <span className="text-[var(--section-accent,var(--color-accent-600))]">{str(values, 'titleAccent')}</span>
             </h1>
 
             <p className="mt-6 max-w-xl text-[16px] leading-relaxed text-muted lg:text-[17px]">

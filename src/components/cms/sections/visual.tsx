@@ -81,7 +81,10 @@ export function ChecklistSection({ values, variant }: SectionProps) {
           <ul data-reveal-items="" className="mt-7 space-y-3">
             {items.map((item, index) => (
               <li key={index} className="flex gap-3">
-                <Check className="mt-0.5 h-4.5 w-4.5 shrink-0 text-accent-600" aria-hidden="true" />
+                <Check
+                  className="mt-0.5 h-4.5 w-4.5 shrink-0 text-[var(--section-accent,var(--color-accent-600))]"
+                  aria-hidden="true"
+                />
                 <span className="text-[15px] leading-relaxed text-ink-soft">{item.text}</span>
               </li>
             ))}
@@ -335,7 +338,7 @@ export function StepsSection({ values, variant }: SectionProps) {
         >
           {items.map((item, index) => (
             <li key={item.title || index} className={cn(timeline && 'flex gap-4')}>
-              <span className="tabular flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-accent-50 text-[14px] font-semibold text-accent-700">
+              <span className="tabular flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-accent-50 text-[14px] font-semibold text-[var(--section-accent,var(--color-accent-700))]">
                 {item.number || index + 1}
               </span>
               <div className={cn('min-w-0', !timeline && 'mt-4')}>

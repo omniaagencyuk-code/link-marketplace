@@ -1,8 +1,9 @@
-import type { ReactNode } from 'react';
+import type { CSSProperties, ReactNode } from 'react';
 import { pageSectionService } from '@/lib/services/page-section-service';
 import { getRenderer, isAnimatable } from '@/lib/cms/components/render';
 import { Reveal } from './reveal';
 import { resolveSection, type PageSection } from '@/lib/cms/sections';
+import { resolveStyle, type ResolvedStyle } from '@/lib/cms/style';
 import { applyTokens, type TokenValues } from '@/lib/cms/tokens';
 import { neededBy } from '@/lib/cms/components/needs';
 import { websiteService } from '@/lib/services';
@@ -299,9 +300,14 @@ function Section({
   tokens: TokenValues;
   data: SectionData;
 }) {
-  const { component, variant, values, animation } = resolveSection(section);
+  const { component, variant, values, animation, style } = resolveSection(section);
   const render = getRenderer(component);
   if (!render) return null;
+
+  // What the editor chose, with anything the palette does not allow over the
+  // chosen background dropped rather than drawn. `styled` is false when they
+  // chose nothing, and then there is no wrapper at all.
+  const look = resolveStyle(style);
 
   /*
     Called rather than mounted as <Renderer />.
@@ -317,7 +323,13 @@ function Section({
     map carries 'use client'. The day one needs to, this has to become JSX
     again, and the check will say so rather than the page misbehaving.
   */
-  const drawn = render({ values: fillTokens(values, tokens), variant, sectionId: section.id, data });
+  const drawn = render({
+    values: fillTokens(values, tokens),
+    variant,
+    sectionId: section.id,
+    data,
+    style: look,
+  });
 
   /*
     Wrapped only where there is something to do. `Reveal` is the one client
@@ -325,9 +337,40 @@ function Section({
     nothing for the feature - and a component the registry says is not worth
     animating cannot be animated by a row that asks for it.
   */
-  if (animation.entrance === 'none' || !isAnimatable(component)) return drawn;
+  const revealed =
+    animation.entrance === 'none' || !isAnimatable(component) ? (
+      drawn
+    ) : (
+      <Reveal animation={animation}>{drawn}</Reveal>
+    );
 
-  return <Reveal animation={animation}>{drawn}</Reveal>;
+  return <Styled look={look}>{revealed}</Styled>;
+}
+
+/**
+ * The element that carries a section's colour.
+ *
+ * It does nothing to the component inside it. The attributes it sets are read
+ * by two rules in `globals.css`: one gives the section its background at a
+ * specificity the component's own `bg-white` cannot beat, and one redefines
+ * `--color-ink`, `--color-muted` and `--color-line` for the subtree so every
+ * piece of text follows without a single utility being overridden.
+ *
+ * That indirection is the point. A component knows nothing about being
+ * restyled, so all forty of them gained the control at once and none of them
+ * had to be edited to get it.
+ *
+ * A section with nothing chosen gets no wrapper: the markup is exactly what
+ * it was before this existed.
+ */
+function Styled({ look, children }: { look: ResolvedStyle; children: ReactNode }) {
+  if (!look.styled) return <>{children}</>;
+
+  return (
+    <div {...look.attrs} style={look.vars as CSSProperties}>
+      {children}
+    </div>
+  );
 }
 
 /**

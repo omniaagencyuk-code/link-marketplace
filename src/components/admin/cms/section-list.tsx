@@ -24,9 +24,11 @@ import {
   GROUP_LABELS,
   getComponent,
   listComponents,
+  stylingFor,
   type ComponentDef,
   type ComponentGroup,
 } from '@/lib/cms/components/schema';
+import { StyleControls } from './style-controls';
 import { DELAYS, ENTRANCES, SPEEDS, type GlobalSection, type PageSection } from '@/lib/cms/sections';
 import {
   addGlobalAction,
@@ -352,6 +354,12 @@ function SectionEditor({ section, component }: { section: PageSection; component
           onChange={(value) => setValues((current) => ({ ...current, [field.key]: value }))}
         />
       ))}
+
+      <StyleControls
+        sectionId={section.id}
+        style={section.style}
+        styling={stylingFor(component)}
+      />
 
       {component.animatable ? (
         <fieldset className="rounded-md border border-line p-3">

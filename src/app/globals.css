@@ -3,6 +3,12 @@
 /* --------------------------------------------------------------------------
    Design tokens
    The palette mirrors `src/lib/config/brand.ts`. Update both together.
+
+   The brand sheet lists thirteen colours. Nine of them were already here, so
+   nine of them are still the tokens that were already here - a second navy
+   three points away from the first is not a brand system, it is two navies.
+   Four are genuinely new: the blue wash, the yellow, the cream and the
+   purple. `src/lib/cms/style.ts` names which token each brand colour is.
    -------------------------------------------------------------------------- */
 @theme {
   --font-sans: var(--font-inter), ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
@@ -24,6 +30,28 @@
   --color-accent-600: #059669;
   --color-accent-700: #047857;
   --color-accent-800: #065f46;
+
+  /*
+    Press Parrot blue - the mascot's own colour, promoted from an
+    informational state to a brand one. The value is the one `--color-info`
+    already held, so nothing on the site changes hue: this is the same blue,
+    given a name that says what it is for.
+  */
+  --color-sky-50: #e0f2fe;
+  --color-sky-500: #2563eb;
+  --color-sky-600: #1d4ed8;
+
+  /*
+    Parrot yellow, and the cream wash beside it on the brand sheet.
+    Yellow is a decoration and a heading accent, never body copy - it fails
+    contrast on every light background the site has, which is why the CMS
+    only offers it over navy and blue.
+  */
+  --color-sun-50: #fef3c7;
+  --color-sun-400: #fbbf24;
+
+  /* The softest of the section washes. No darker step: it is a background. */
+  --color-violet-50: #f3e8ff;
 
   /* Secondary accent - the parrot's beak. Used sparingly. */
   --color-coral-50: #fff4f0;
@@ -417,5 +445,153 @@
     opacity: 1 !important;
     transform: none !important;
     transition: none !important;
+  }
+}
+
+/* --------------------------------------------------------------------------
+   Section styling, chosen in the page builder
+
+   Two mechanisms, and neither one reaches into a component.
+
+   The background is a rule at `[data-section-bg] > section`, which is one
+   attribute plus one element - 0,1,1 - and beats the `bg-white` utility the
+   component already carries at 0,1,0. No !important, no component edited, and
+   a section with nothing chosen has no attribute and renders exactly as it
+   always did.
+
+   The text is not a rule at all. The wrapper *redefines the tokens* for its
+   subtree, so `text-ink`, `text-muted` and `border-line` resolve to something
+   else without a single utility being overridden. That is why a dark band
+   works on a component that has never heard of dark bands.
+
+   `> *` covers the entrance wrapper, which sits between when a section is
+   animated as well as styled.
+   -------------------------------------------------------------------------- */
+
+/* --------------------------------------------------------------------------
+   Decoration artwork
+
+   Inline SVG in a data URI rather than a file: a few hundred bytes, no extra
+   request, and no image to lazy-load or get wrong. The shapes are the ones
+   `components/shared/foliage.tsx` already draws, so a decorated section and a
+   hand-drawn one are the same feather.
+
+   The opacity is in the fill and there is no control for it.
+   -------------------------------------------------------------------------- */
+:root {
+  --deco-feathers: url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20viewBox%3D%270%200%20130%20120%27%3E%3Cg%20fill%3D%27%25230b1b2b%27%20opacity%3D%27.055%27%3E%3Cg%20transform%3D%27translate%284%2010%29%20rotate%28-18%2020%2045%29%27%3E%3Cpath%20d%3D%27M20%202c14%2016%2016%2040%206%2060-4%208-9%2015-14%2020%201-9-1-17-6-24C-2%2040%206%2016%2020%202Z%27%2F%3E%3C%2Fg%3E%3Cg%20transform%3D%27translate%2846%200%29%20rotate%288%2020%2045%29%27%3E%3Cpath%20d%3D%27M20%202c14%2016%2016%2040%206%2060-4%208-9%2015-14%2020%201-9-1-17-6-24C-2%2040%206%2016%2020%202Z%27%2F%3E%3C%2Fg%3E%3Cg%20transform%3D%27translate%2886%2022%29%20rotate%2826%2020%2045%29%27%3E%3Cpath%20d%3D%27M20%202c14%2016%2016%2040%206%2060-4%208-9%2015-14%2020%201-9-1-17-6-24C-2%2040%206%2016%2020%202Z%27%2F%3E%3C%2Fg%3E%3C%2Fg%3E%3C%2Fsvg%3E");
+  --deco-leaves: url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20viewBox%3D%270%200%20120%20120%27%3E%3Cg%20transform%3D%27translate%280%200%29%27%3E%3Cpath%20fill%3D%27%25230b1b2b%27%20opacity%3D%27.05%27%20d%3D%27M60%206c-7%2018-21%2027-38%2031%206%209%206%2020%202%2030%2014-2%2024%203%2031%2013%207-12%2017-18%2031-18-6-9-7-20-2-30-10-3-19-12-24-26Z%27%2F%3E%3Cpath%20fill%3D%27none%27%20stroke%3D%27%25230b1b2b%27%20stroke-width%3D%271.5%27%20stroke-linecap%3D%27round%27%20opacity%3D%27.05%27%20d%3D%27M60%206v108M60%2040%2034%2026M60%2040l26-14M60%2066%2032%2056M60%2066l28-10M60%2090l-22-6M60%2090l22-6%27%2F%3E%3C%2Fg%3E%3C%2Fsvg%3E");
+}
+
+[data-section-tone='light'] {
+  --deco-feathers: url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20viewBox%3D%270%200%20130%20120%27%3E%3Cg%20fill%3D%27%2523ffffff%27%20opacity%3D%27.09%27%3E%3Cg%20transform%3D%27translate%284%2010%29%20rotate%28-18%2020%2045%29%27%3E%3Cpath%20d%3D%27M20%202c14%2016%2016%2040%206%2060-4%208-9%2015-14%2020%201-9-1-17-6-24C-2%2040%206%2016%2020%202Z%27%2F%3E%3C%2Fg%3E%3Cg%20transform%3D%27translate%2846%200%29%20rotate%288%2020%2045%29%27%3E%3Cpath%20d%3D%27M20%202c14%2016%2016%2040%206%2060-4%208-9%2015-14%2020%201-9-1-17-6-24C-2%2040%206%2016%2020%202Z%27%2F%3E%3C%2Fg%3E%3Cg%20transform%3D%27translate%2886%2022%29%20rotate%2826%2020%2045%29%27%3E%3Cpath%20d%3D%27M20%202c14%2016%2016%2040%206%2060-4%208-9%2015-14%2020%201-9-1-17-6-24C-2%2040%206%2016%2020%202Z%27%2F%3E%3C%2Fg%3E%3C%2Fg%3E%3C%2Fsvg%3E");
+  --deco-leaves: url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20viewBox%3D%270%200%20120%20120%27%3E%3Cg%20transform%3D%27translate%280%200%29%27%3E%3Cpath%20fill%3D%27%2523ffffff%27%20opacity%3D%27.08%27%20d%3D%27M60%206c-7%2018-21%2027-38%2031%206%209%206%2020%202%2030%2014-2%2024%203%2031%2013%207-12%2017-18%2031-18-6-9-7-20-2-30-10-3-19-12-24-26Z%27%2F%3E%3Cpath%20fill%3D%27none%27%20stroke%3D%27%2523ffffff%27%20stroke-width%3D%271.5%27%20stroke-linecap%3D%27round%27%20opacity%3D%27.08%27%20d%3D%27M60%206v108M60%2040%2034%2026M60%2040l26-14M60%2066%2032%2056M60%2066l28-10M60%2090l-22-6M60%2090l22-6%27%2F%3E%3C%2Fg%3E%3C%2Fsvg%3E");
+}
+
+[data-section-bg] > section,
+[data-section-bg] > * > section {
+  background-color: var(--section-bg);
+}
+
+/*
+  Light text on a dark band.
+
+  `--color-muted` is #cbd5e1 rather than a transparency: white at 65% over
+  navy measures 9.6:1 and over Press Parrot blue it fails, and a token that
+  is readable on one background and not the other is the bug this whole file
+  exists to prevent. The value is opaque and measured.
+*/
+[data-section-tone='light'] {
+  --color-ink: var(--section-ink, #ffffff);
+  --color-ink-soft: #e2e8f0;
+  --color-muted: #cbd5e1;
+  --color-muted-soft: #b6c2cf;
+  --color-line: rgb(255 255 255 / 0.16);
+  --color-line-strong: rgb(255 255 255 / 0.28);
+  --color-accent-700: #6ee7b7;
+  --color-accent-600: #34d399;
+}
+
+/*
+  Dark text, which is also what a chosen colour over a light band gets. The
+  muted step is darker than the site default: #64748b measures 4.03:1 over
+  soft purple, just under the 4.5:1 body copy needs, and #5b6a7d clears every
+  wash in the palette at 4.68:1 or better.
+*/
+[data-section-tone='dark'] {
+  --color-ink: var(--section-ink, #0b1b2b);
+  --color-muted: #5b6a7d;
+}
+
+/*
+  The heading accent.
+
+  There is deliberately no default here. Each element that can carry an
+  accent names its own fallback - `var(--section-accent, var(--color-accent-700))`
+  - because they were not all the same green to begin with, and one default
+  for all of them silently restyled half the site's ticks and step numbers.
+  A section with no accent chosen renders exactly the colour it always did.
+*/
+
+/* --------------------------------------------------------- decorations --
+   Drawn as background images on the section itself, rather than as elements
+   inside it: an element would need a z-index against the background the rule
+   above just set, and the first thing anybody would do is get it wrong.
+
+   Opacity is baked into the fill. There is no control for it, because §12 of
+   the brief is right - a decoration an editor can turn up is a decoration
+   that ends up at full strength on a landing page.
+   -------------------------------------------------------------------------- */
+
+[data-section-deco] > section,
+[data-section-deco] > * > section {
+  background-repeat: no-repeat;
+}
+
+[data-section-deco='feathers'] > section,
+[data-section-deco='feathers'] > * > section {
+  background-image: var(--deco-feathers);
+  background-position: top -2rem right -3rem;
+  background-size: 19rem auto;
+}
+
+[data-section-deco='leaves'] > section,
+[data-section-deco='leaves'] > * > section {
+  background-image: var(--deco-leaves);
+  background-position: top -4rem right -5rem;
+  background-size: 22rem auto;
+}
+
+[data-section-deco='gradient'] > section,
+[data-section-deco='gradient'] > * > section {
+  background-image: radial-gradient(
+    38rem 26rem at 100% 0%,
+    rgb(37 99 235 / 0.07) 0%,
+    transparent 62%
+  );
+}
+
+[data-section-deco='pattern'] > section,
+[data-section-deco='pattern'] > * > section {
+  background-image: var(--deco-feathers);
+  background-repeat: repeat;
+  background-size: 9rem auto;
+}
+
+/* Lighter fills over a dark band, so the decoration is still visible. */
+[data-section-tone='light'][data-section-deco='gradient'] > section,
+[data-section-tone='light'][data-section-deco='gradient'] > * > section {
+  background-image: radial-gradient(
+    38rem 26rem at 100% 0%,
+    rgb(255 255 255 / 0.1) 0%,
+    transparent 62%
+  );
+}
+
+@media (max-width: 640px) {
+  /* A decoration drawn for a wide band is clutter on a phone. */
+  [data-section-deco] > section,
+  [data-section-deco] > * > section {
+    background-image: none;
   }
 }

@@ -10,6 +10,7 @@ import {
 } from './home-content';
 import type { PageValues, FieldValue } from '../types';
 import type { Animation, SectionValues } from '../sections';
+import { NO_STYLE, type SectionStyle } from '../style';
 
 /**
  * Turning a page that was a template into a page that is a list of sections.
@@ -49,6 +50,8 @@ import type { Animation, SectionValues } from '../sections';
 export interface SectionBlueprint {
   component: string;
   variant: string;
+  /** The palette's named choices. Absent means the component's own colours. */
+  style?: Partial<SectionStyle>;
   /** Locked sections cannot be moved or deleted. Their content stays editable. */
   locked: boolean;
   values: SectionValues;
@@ -268,6 +271,15 @@ export function nichePageBlueprint(values: PageValues): SectionBlueprint[] {
  */
 export function homePageBlueprint(values: PageValues): SectionBlueprint[] {
   const blueprints: SectionBlueprint[] = [];
+  /*
+    The page's rhythm: white, a wash, white again. Soft blue carries the
+    three bands that explain the product and soft grey the two that break the
+    reading up, so the colour separates sections rather than decorating them.
+
+    Deliberately two washes and not seven. The palette has seven because
+    different pages want different ones - a finance page in cream, a crypto
+    page in purple - not so that one page can use them all.
+  */
   const stagger = { entrance: 'stagger', speed: 'normal', delay: 'none' } as const;
   const fadeUp = { entrance: 'fade-up', speed: 'normal', delay: 'none' } as const;
 
@@ -303,6 +315,7 @@ export function homePageBlueprint(values: PageValues): SectionBlueprint[] {
 
   blueprints.push({
     component: 'trust-stats',
+    style: { background: 'white' },
     variant: 'default',
     locked: false,
     animation: { entrance: 'stagger', speed: 'subtle', delay: 'none' },
@@ -316,6 +329,7 @@ export function homePageBlueprint(values: PageValues): SectionBlueprint[] {
 
   blueprints.push({
     component: 'niche-categories',
+    style: { background: 'white' },
     variant: 'cards',
     locked: false,
     animation: stagger,
@@ -330,6 +344,7 @@ export function homePageBlueprint(values: PageValues): SectionBlueprint[] {
 
   blueprints.push({
     component: 'steps',
+    style: { background: 'soft-blue', decoration: 'feathers' },
     variant: 'flight-path',
     locked: false,
     animation: stagger,
@@ -350,6 +365,7 @@ export function homePageBlueprint(values: PageValues): SectionBlueprint[] {
   */
   blueprints.push({
     component: 'marketplace-demo',
+    style: { background: 'white' },
     variant: 'unlock',
     locked: false,
     animation: fadeUp,
@@ -372,6 +388,7 @@ export function homePageBlueprint(values: PageValues): SectionBlueprint[] {
   */
   blueprints.push({
     component: 'testimonials',
+    style: { background: 'soft-grey' },
     variant: 'default',
     locked: false,
     hidden: true,
@@ -386,6 +403,7 @@ export function homePageBlueprint(values: PageValues): SectionBlueprint[] {
 
   blueprints.push({
     component: 'benefit-cards',
+    style: { background: 'soft-blue' },
     variant: 'with-art',
     locked: false,
     animation: stagger,
@@ -400,6 +418,7 @@ export function homePageBlueprint(values: PageValues): SectionBlueprint[] {
 
   blueprints.push({
     component: 'service-cards',
+    style: { background: 'white' },
     variant: 'default',
     locked: false,
     animation: stagger,
@@ -473,6 +492,7 @@ export function homePageBlueprint(values: PageValues): SectionBlueprint[] {
 
   blueprints.push({
     component: 'comparison',
+    style: { background: 'soft-grey' },
     variant: 'default',
     locked: false,
     animation: fadeUp,
@@ -536,6 +556,7 @@ export function homePageBlueprint(values: PageValues): SectionBlueprint[] {
 
   blueprints.push({
     component: 'metric-cards',
+    style: { background: 'soft-blue' },
     variant: 'default',
     locked: false,
     animation: stagger,
@@ -549,6 +570,7 @@ export function homePageBlueprint(values: PageValues): SectionBlueprint[] {
 
   blueprints.push({
     component: 'related-pages',
+    style: { background: 'white' },
     variant: 'default',
     locked: false,
     animation: stagger,
@@ -563,6 +585,7 @@ export function homePageBlueprint(values: PageValues): SectionBlueprint[] {
   if (faqs.length > 0) {
     blueprints.push({
       component: 'faq',
+    style: { background: 'soft-grey' },
       variant: 'wide-muted',
       locked: false,
       values: { heading: 'Link building FAQs', items: faqs },
@@ -646,6 +669,12 @@ export function blueprintFor(template: string, values: PageValues): SectionBluep
   return build(values).flatMap((blueprint) => {
     const component = getComponent(blueprint.component);
     if (!component) return [];
-    return [{ ...blueprint, values: cleanSectionValues(component, blueprint.values) }];
+    return [
+      {
+        ...blueprint,
+        style: { ...NO_STYLE, ...blueprint.style },
+        values: cleanSectionValues(component, blueprint.values),
+      },
+    ];
   });
 }

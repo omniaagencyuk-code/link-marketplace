@@ -50,6 +50,8 @@ export interface PageSection {
    */
   locked: boolean;
   animation: Animation;
+  /** Which of the CMS palette's named choices this section carries. */
+  style: SectionStyle;
   values: SectionValues;
   /** Set means this row renders a global section rather than its own values. */
   globalId?: string;
@@ -65,6 +67,7 @@ export interface GlobalSection {
   component: string;
   variant: string;
   animation: Animation;
+  style: SectionStyle;
   values: SectionValues;
   updatedAt: string;
   updatedBy?: string;
@@ -84,6 +87,7 @@ export function resolveSection(section: PageSection): {
   variant: string;
   values: SectionValues;
   animation: Animation;
+  style: SectionStyle;
 } {
   const source = section.global ?? section;
   return {
@@ -91,8 +95,17 @@ export function resolveSection(section: PageSection): {
     variant: source.variant,
     values: source.values,
     animation: section.animation,
+    /*
+      The global's look, like its content. A shared call to action being the
+      same colour everywhere is most of what makes it shared - and unlike the
+      entrance, which is about where a section sits, the colour is part of
+      what the section *is*.
+    */
+    style: source.style,
   };
 }
+
+import type { SectionStyle } from './style';
 
 /** An animation read back from the database, which is to say from jsonb. */
 export function readAnimation(raw: unknown): Animation {
@@ -108,6 +121,15 @@ export function readAnimation(raw: unknown): Animation {
 export function readValues(raw: unknown): SectionValues {
   return isRecord(raw) ? raw : {};
 }
+
+/**
+ * A section's look, read back from jsonb.
+ *
+ * Re-exported here rather than reimplemented: `style.ts` owns what the
+ * palette is, and this file owns what a section is. They meet at one type.
+ */
+export { readStyle, NO_STYLE } from './style';
+export type { SectionStyle } from './style';
 
 function pick<T extends string>(raw: unknown, allowed: readonly T[], fallback: T): T {
   return typeof raw === 'string' && (allowed as readonly string[]).includes(raw)

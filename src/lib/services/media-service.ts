@@ -1,5 +1,6 @@
 import { getAdminScopedClient } from '@/lib/supabase/server';
 import { isSupabaseEnabled } from '@/lib/supabase/config';
+import { artworkBySlug } from '@/lib/cms/artwork-library';
 import { MEDIA_MAX_BYTES, MEDIA_MIME_TYPES, type MediaAsset } from '@/lib/media/types';
 
 export type { MediaAsset };
@@ -152,6 +153,58 @@ export const mediaService = {
   },
 
   /** Alt text travels with the file rather than being retyped per page. */
+  /**
+   * File an uploaded image into the Press Parrot artwork library.
+   *
+   * The slug is what a page points at, so one image holds one slug: assigning
+   * it to a picture that already has it moves it, rather than leaving two
+   * candidates and letting the newest win silently.
+   */
+  async setArtwork(id: string, slug: string | null): Promise<void> {
+    if (!mediaService.isEnabled()) return;
+    const supabase = getAdminScopedClient();
+
+    if (slug) {
+      const { error: cleared } = await supabase
+        .from('media_assets')
+        .update({ artwork_slug: null, artwork_name: null, artwork_category: null })
+        .eq('artwork_slug', slug);
+      if (cleared) throw new Error(`Could not reassign the artwork: ${cleared.message}`);
+    }
+
+    const entry = slug ? artworkBySlug(slug) : null;
+    const { error } = await supabase
+      .from('media_assets')
+      .update({
+        artwork_slug: entry ? entry.slug : null,
+        artwork_name: entry ? entry.name : null,
+        artwork_category: entry ? entry.category : null,
+        description: entry ? entry.description : '',
+        placement: entry ? entry.placement : '',
+        aspect: entry ? entry.aspect : '',
+      })
+      .eq('id', id);
+    if (error) throw new Error(`Could not file the artwork: ${error.message}`);
+  },
+
+  /** Which catalogue slugs have an uploaded image behind them. */
+  async artworkUrls(): Promise<Record<string, string>> {
+    if (!mediaService.isEnabled()) return {};
+    const supabase = getAdminScopedClient();
+    const { data, error } = await supabase
+      .from('media_assets')
+      .select('artwork_slug, url')
+      .not('artwork_slug', 'is', null);
+    if (error) throw new Error(`Could not read the artwork library: ${error.message}`);
+
+    return Object.fromEntries(
+      ((data ?? []) as { artwork_slug: string; url: string }[]).map((row) => [
+        row.artwork_slug,
+        row.url,
+      ]),
+    );
+  },
+
   async setAlt(id: string, alt: string): Promise<void> {
     if (!mediaService.isEnabled()) return;
     const supabase = getAdminScopedClient();

@@ -1,7 +1,14 @@
 import { isSupabaseEnabled } from '@/lib/supabase/config';
 import { mockStore } from './mock-store';
 import { supabasePageSectionRepository } from './supabase/page-section-repository';
-import type { Animation, GlobalSection, PageSection, SectionValues } from '@/lib/cms/sections';
+import { NO_STYLE } from '@/lib/cms/sections';
+import type {
+  Animation,
+  GlobalSection,
+  PageSection,
+  SectionStyle,
+  SectionValues,
+} from '@/lib/cms/sections';
 
 /**
  * A page's sections.
@@ -84,6 +91,7 @@ export const pageSectionService = {
       hidden: false,
       locked: input.locked,
       animation: { entrance: 'none', speed: 'normal', delay: 'none' },
+      style: NO_STYLE,
       values: input.values,
       updatedAt: new Date().toISOString(),
       updatedBy: input.updatedBy,
@@ -94,7 +102,12 @@ export const pageSectionService = {
 
   async update(
     id: string,
-    patch: { variant?: string; values?: SectionValues; animation?: Animation },
+    patch: {
+      variant?: string;
+      values?: SectionValues;
+      animation?: Animation;
+      style?: SectionStyle;
+    },
     updatedBy?: string,
   ): Promise<PageSection | null> {
     if (isSupabaseEnabled()) return supabasePageSectionRepository.update(id, patch, updatedBy);
@@ -106,6 +119,7 @@ export const pageSectionService = {
       ...(patch.variant !== undefined ? { variant: patch.variant } : {}),
       ...(patch.values !== undefined ? { values: patch.values } : {}),
       ...(patch.animation !== undefined ? { animation: patch.animation } : {}),
+      ...(patch.style !== undefined ? { style: patch.style } : {}),
       updatedAt: new Date().toISOString(),
       updatedBy,
     };
@@ -155,6 +169,9 @@ export const pageSectionService = {
       updatedBy,
     });
 
+    // A copy that looks like the thing it was copied from.
+    await this.update(copy.id, { animation: original.animation, style: source.style }, updatedBy);
+
     // create() appends. Put it directly under the original instead, which is
     // where somebody duplicating a section is looking.
     const order = page.map((section) => section.id);
@@ -197,9 +214,9 @@ export const pageSectionService = {
         locked: section.locked,
         updatedBy,
       });
-      if (section.animation.entrance !== 'none') {
-        await this.update(copy.id, { animation: section.animation }, updatedBy);
-      }
+      // The look travels with the copy. A duplicated page that loses its
+      // colours is a page somebody has to restyle band by band.
+      await this.update(copy.id, { animation: section.animation, style: section.style }, updatedBy);
     }
 
     return sections.length;
@@ -229,6 +246,7 @@ export const pageSectionService = {
           component: section.component,
           variant: section.variant,
           values: section.values,
+          style: section.style,
           updatedBy,
         })
       : (() => {
@@ -238,6 +256,7 @@ export const pageSectionService = {
             component: section.component,
             variant: section.variant,
             animation: section.animation,
+            style: section.style,
             values: section.values,
             updatedAt: new Date().toISOString(),
             updatedBy,
@@ -270,7 +289,7 @@ export const pageSectionService = {
 
     const global = (await this.listGlobals()).find((entry) => entry.id === section.globalId);
     if (global) {
-      await this.update(id, { variant: global.variant, values: global.values }, updatedBy);
+      await this.update(id, { variant: global.variant, values: global.values, style: global.style }, updatedBy);
     }
     await this.link(id, null);
     return true;

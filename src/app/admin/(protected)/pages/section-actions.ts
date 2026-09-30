@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache';
 import { requireAdminSession } from '@/lib/auth/admin-access';
 import { pageSectionService } from '@/lib/services/page-section-service';
 import {
+  cleanSectionStyle,
   cleanSectionValues,
   getComponent,
   resolveVariant,
@@ -161,10 +162,27 @@ export async function convertPageToSectionsAction(
       updatedBy: admin.email,
     });
 
-    // The entrance the page it came from gave this band. Written after the
-    // row exists because `create` takes content, not presentation.
-    if (blueprint.animation && blueprint.animation.entrance !== 'none') {
-      await pageSectionService.update(created.id, { animation: blueprint.animation }, admin.email);
+    /*
+      The entrance and the colour the blueprint asked for. Written after the
+      row exists because `create` takes content, not presentation.
+
+      The style goes through the same cleaning a save does, so a blueprint
+      cannot put a navy band on a component that only offers the soft washes
+      - the rule lives in one place and the blueprint is not exempt from it.
+    */
+    const style = blueprint.style
+      ? cleanSectionStyle(getComponent(blueprint.component), blueprint.style)
+      : undefined;
+
+    if ((blueprint.animation && blueprint.animation.entrance !== 'none') || style) {
+      await pageSectionService.update(
+        created.id,
+        {
+          ...(blueprint.animation ? { animation: blueprint.animation } : {}),
+          ...(style ? { style } : {}),
+        },
+        admin.email,
+      );
     }
 
     // A band with nothing genuine to say yet arrives switched off rather than
@@ -245,6 +263,24 @@ export async function saveSectionAction(
             delay: formData.get('delay'),
           })
         : readAnimation({}),
+      /*
+        The same discipline for the look, and one extra check the editor also
+        makes: a text colour or an accent that does not clear contrast over
+        the chosen background is refused here as well. The form only offers
+        readable ones, and the form is not what decides.
+
+        A control the component does not offer is dropped rather than stored,
+        so a strong background posted at a component that only takes the soft
+        washes does not sit in the database looking as though it works.
+      */
+      style: cleanSectionStyle(component, {
+        background: formData.get('background'),
+        text: formData.get('text'),
+        accent: formData.get('accent'),
+        decoration: formData.get('decoration'),
+        artworkPosition: formData.get('artworkPosition'),
+        artworkSize: formData.get('artworkSize'),
+      }),
     },
     admin.email,
   );

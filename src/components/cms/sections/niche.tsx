@@ -295,7 +295,14 @@ export function TopicPillsSection({ values }: SectionProps) {
  */
 const BENEFIT_ICONS = [BadgeCheck, Gauge, Coins, ShoppingBag];
 
-export function BenefitCardsSection({ values, variant }: SectionProps) {
+const ARTWORK_WIDTH: Record<string, string> = {
+  default: '',
+  small: 'lg:max-w-[14rem]',
+  medium: 'lg:max-w-[20rem]',
+  large: 'lg:max-w-none',
+};
+
+export function BenefitCardsSection({ values, variant, style }: SectionProps) {
   const items = rows<{ title?: string; body?: string }>(values, 'items');
   if (items.length === 0) return null;
 
@@ -303,6 +310,9 @@ export function BenefitCardsSection({ values, variant }: SectionProps) {
   // Artwork beside the cards rather than above them, when the page has any.
   // Two columns of two, so the cards stay readable next to a picture.
   const withArt = variant === 'with-art' && Boolean(artwork.src);
+  // Which side it sits on and how much room it takes. Both come from a fixed
+  // set - there is no pixel here, and the grid stays the component's.
+  const artFirst = style.artworkPosition === 'left';
 
   const cards = (
     <div
@@ -317,7 +327,7 @@ export function BenefitCardsSection({ values, variant }: SectionProps) {
             className="rounded-[var(--radius-card)] border border-line bg-white p-5 shadow-[var(--shadow-card)]"
           >
             {Icon ? (
-              <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-accent-50 text-accent-700">
+              <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-accent-50 text-[var(--section-accent,var(--color-accent-700))]">
                 <Icon className="h-4.5 w-4.5" aria-hidden="true" />
               </span>
             ) : null}
@@ -355,11 +365,28 @@ export function BenefitCardsSection({ values, variant }: SectionProps) {
         </div>
 
         {withArt ? (
-          <div className="mt-8 grid items-center gap-10 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)] lg:gap-14">
-            {cards}
-            <div className="min-w-0">
-              <NicheMascot src={artwork.src} alt={artwork.alt} className="lg:ml-auto" />
+          <div
+            className={cn(
+              'mt-8 grid items-center gap-10 lg:gap-14',
+              artFirst
+                ? 'lg:grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)]'
+                : 'lg:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)]',
+            )}
+          >
+            {/* Source order puts the cards first whichever side the picture
+                is on: on a phone the grid is one column, and the argument
+                should be read before the decoration. */}
+            <div className={cn('min-w-0', artFirst ? 'lg:order-1' : 'lg:order-2')}>
+              <NicheMascot
+                src={artwork.src}
+                alt={artwork.alt}
+                className={cn(
+                  ARTWORK_WIDTH[style.artworkSize] ?? '',
+                  artFirst ? 'lg:mr-auto' : 'lg:ml-auto',
+                )}
+              />
             </div>
+            <div className={cn('min-w-0', artFirst ? 'lg:order-2' : 'lg:order-1')}>{cards}</div>
           </div>
         ) : (
           <div className="mt-8">{cards}</div>
@@ -389,7 +416,7 @@ export function JourneyStepsSection({ values }: SectionProps) {
         <ol data-reveal-items="" className="mt-8 grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
           {journeySteps.map((step) => (
             <li key={step.number}>
-              <span className="tabular text-[13px] font-semibold text-accent-700">
+              <span className="tabular text-[13px] font-semibold text-[var(--section-accent,var(--color-accent-700))]">
                 {step.number}
               </span>
               <h3 className="mt-2 text-[15px] font-semibold text-ink">{step.title}</h3>
@@ -474,21 +501,37 @@ export function ArticleBodySection({ values, variant }: SectionProps) {
 // ------------------------------------------------------------ content upsell
 
 /** The small band pointing at content ordering, with the mascot beside it. */
-export function ContentUpsellSection({ values }: SectionProps) {
+export function ContentUpsellSection({ values, style }: SectionProps) {
   const heading = str(values, 'heading');
   if (!heading) return null;
 
   const cta = linkOf(values, 'cta');
   const mascot = image(values, 'mascot');
+  // Left is where this band has always drawn it, so that is what `default`
+  // means here rather than whichever value the list happens to start with.
+  const artFirst = style.artworkPosition !== 'right';
+  const mascotWidth =
+    style.artworkSize === 'small' ? 'w-20' : style.artworkSize === 'large' ? 'w-36' : 'w-28';
 
   return (
     <section className="border-b border-line bg-surface">
       <Container size="wide" className="py-12 lg:py-16">
         <div className="rounded-[var(--radius-card)] border border-line bg-white p-6 shadow-[var(--shadow-card)] lg:p-8">
-          <div className="grid items-center gap-6 sm:grid-cols-[7rem_minmax(0,1fr)_auto] sm:gap-8">
+          <div
+            className={cn(
+              'grid items-center gap-6 sm:gap-8',
+              artFirst
+                ? 'sm:grid-cols-[7rem_minmax(0,1fr)_auto]'
+                : 'sm:grid-cols-[minmax(0,1fr)_7rem_auto]',
+            )}
+          >
             {/* Decorative here: the same bird a screen reader already met in
                 the hero, so it is announced once rather than twice. */}
-            <NicheMascot src={mascot.src} alt="" className="mx-auto w-28 sm:mx-0" />
+            <NicheMascot
+              src={mascot.src}
+              alt=""
+              className={cn('mx-auto sm:mx-0', mascotWidth, !artFirst && 'sm:order-2')}
+            />
             <div className="min-w-0 text-center sm:text-left">
               <h2 className="text-[1.25rem] font-semibold tracking-tight text-ink">{heading}</h2>
               <p className="mt-2 text-[14px] leading-relaxed text-muted">{str(values, 'body')}</p>

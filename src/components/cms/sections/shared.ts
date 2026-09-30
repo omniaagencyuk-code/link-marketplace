@@ -1,5 +1,11 @@
 import type { PreviewRow } from '@/lib/services/marketplace-preview';
 import type { SectionValues } from '@/lib/cms/sections';
+import { NO_STYLE, resolveStyle, type ResolvedStyle } from '@/lib/cms/style';
+
+/** A section drawn outside the page builder, with nothing chosen. */
+export const PLAIN_STYLE: ResolvedStyle = resolveStyle(NO_STYLE);
+
+export type { ResolvedStyle };
 
 /**
  * What every section renderer is handed, and the small readers for it.
@@ -68,6 +74,20 @@ export interface SectionProps {
   /** The row's id, for anything that has to be unique on the page. */
   sectionId: string;
   data: SectionData;
+  /**
+   * What the editor chose about how this section looks.
+   *
+   * Most of it a component never reads: the background, the text tone and
+   * the decoration are applied by the wrapper around it, through CSS that
+   * beats its own utilities on specificity and through tokens redefined for
+   * its subtree. That is what lets forty components gain a colour control
+   * without forty edits.
+   *
+   * What is left are the two a wrapper genuinely cannot do - which side the
+   * artwork sits on, and how big it is - and they are only read by the
+   * components that draw artwork.
+   */
+  style: ResolvedStyle;
 }
 
 export const str = (values: SectionValues, key: string): string =>

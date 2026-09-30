@@ -8,9 +8,19 @@ import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils/cn';
 import {
   deleteMediaAction,
+  listArtworkAction,
   listMediaAction,
   uploadMediaAction,
 } from '@/app/admin/(protected)/media/actions';
+import {
+  ARTWORK_CATEGORIES,
+  CATEGORY_LABELS,
+  type ArtworkCategory,
+  type ArtworkEntry,
+} from '@/lib/cms/artwork-library';
+
+/** A catalogue entry with whatever file, if any, is behind it. */
+type ArtworkChoice = ArtworkEntry & { src?: string };
 import { MEDIA_ACCEPT, MEDIA_MAX_BYTES, type MediaAsset } from '@/lib/media/types';
 
 /**
@@ -35,6 +45,15 @@ export function MediaPicker({
   onSelect: (asset: { url: string; alt: string }) => void;
 }) {
   const [assets, setAssets] = useState<MediaAsset[]>([]);
+  const [artwork, setArtwork] = useState<ArtworkChoice[]>([]);
+  /*
+    Artwork first, uploads second. The commonest thing an editor wants is one
+    of the twenty-two drawings somebody commissioned for the brand, and making
+    them hunt for it among their own screenshots is how a page ends up with a
+    screenshot on it.
+  */
+  const [tab, setTab] = useState<'artwork' | 'library'>('artwork');
+  const [category, setCategory] = useState<ArtworkCategory | 'all'>('all');
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
@@ -49,10 +68,11 @@ export function MediaPicker({
     if (!open) return;
 
     let cancelled = false;
-    listMediaAction().then((result) => {
+    void Promise.all([listMediaAction(), listArtworkAction()]).then(([media, art]) => {
       if (cancelled) return;
-      setAssets(result.assets);
-      setError(result.error ?? null);
+      setAssets(media.assets);
+      setArtwork(art.artwork);
+      setError(media.error ?? art.error ?? null);
       setLoaded(true);
     });
 
@@ -153,6 +173,44 @@ export function MediaPicker({
       }
     >
       <div className="space-y-4">
+        <div role="tablist" className="flex gap-1 rounded-lg bg-surface-sunken p-1">
+          {(
+            [
+              ['artwork', 'Press Parrot artwork'],
+              ['library', 'Uploaded'],
+            ] as const
+          ).map(([key, label]) => (
+            <button
+              key={key}
+              type="button"
+              role="tab"
+              aria-selected={tab === key}
+              onClick={() => setTab(key)}
+              className={cn(
+                'flex-1 rounded-md px-3 py-1.5 text-[13px] font-medium transition-colors',
+                tab === key ? 'bg-white text-ink shadow-[var(--shadow-card)]' : 'text-muted hover:text-ink',
+              )}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+
+        {tab === 'artwork' ? (
+          <ArtworkGrid
+            artwork={artwork}
+            loaded={loaded}
+            category={category}
+            onCategory={setCategory}
+            onChoose={(entry) => {
+              if (!entry.src) return;
+              onSelect({ url: entry.src, alt: entry.description });
+              onClose();
+            }}
+          />
+        ) : null}
+
+        <div className={cn(tab === 'artwork' && 'hidden', 'space-y-4')}>
         <div>
           <input
             ref={fileInput}
@@ -246,13 +304,181 @@ export function MediaPicker({
                       </button>
                     </div>
                   ) : null}
+
+                  {active ? (
+                    <ArtworkSlot
+                      asset={asset}
+                      artwork={artwork}
+                      onFiled={(slug, url) => {
+                        setArtwork((current) =>
+                          current.map((entry) =>
+                            entry.slug === slug
+                              ? { ...entry, src: url }
+                              : entry.src === url
+                                ? { ...entry, src: undefined }
+                                : entry,
+                          ),
+                        );
+                      }}
+                    />
+                  ) : null}
                 </li>
               );
             })}
           </ul>
         )}
+        </div>
       </div>
     </Sheet>
+  );
+}
+
+/**
+ * Filing an upload into one of the catalogue's slots.
+ *
+ * This is what makes the library a library rather than a list of hopes: an
+ * editor uploads the drawing, picks which slot it fills, and every page
+ * pointing at that name gets it. Replacing it later is the same two clicks.
+ *
+ * Only empty slots and the one this picture already fills are offered, so two
+ * uploads cannot both claim one name and leave the page showing whichever the
+ * query happened to return first.
+ */
+function ArtworkSlot({
+  asset,
+  artwork,
+  onFiled,
+}: {
+  asset: MediaAsset;
+  artwork: ArtworkChoice[];
+  onFiled: (slug: string | null, url: string) => void;
+}) {
+  const mine = artwork.find((entry) => entry.src === asset.url);
+  const [slug, setSlug] = useState(mine?.slug ?? '');
+  const [saving, startSaving] = useTransition();
+
+  const open = artwork.filter((entry) => !entry.src || entry.slug === mine?.slug);
+
+  return (
+    <label className="mt-1.5 block">
+      <span className="text-[11px] text-muted">Press Parrot artwork</span>
+      <select
+        value={slug}
+        disabled={saving}
+        aria-label={`Which artwork ${asset.filename} is`}
+        onChange={(event) => {
+          const next = event.target.value;
+          setSlug(next);
+          startSaving(async () => {
+            const { setArtworkAction } = await import('@/app/admin/(protected)/media/actions');
+            await setArtworkAction(asset.id, next || null);
+            onFiled(next || null, asset.url);
+          });
+        }}
+        className="mt-1 h-8 w-full rounded-md border border-line bg-white px-2 text-[12px] text-ink"
+      >
+        <option value="">Not artwork</option>
+        {open.map((entry) => (
+          <option key={entry.slug} value={entry.slug}>
+            {CATEGORY_LABELS[entry.category]} - {entry.name}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
+/**
+ * The brand's own artwork, as pictures.
+ *
+ * Filtered by what it is for rather than by filename, because an editor
+ * looking for the gambling parrot is thinking "gambling", not
+ * "niche-igaming.png".
+ *
+ * An entry with no file is shown rather than hidden. The catalogue is the
+ * list of drawings the brand has commissioned, and a gap in it is a thing
+ * somebody needs to know about.
+ */
+function ArtworkGrid({
+  artwork,
+  loaded,
+  category,
+  onCategory,
+  onChoose,
+}: {
+  artwork: ArtworkChoice[];
+  loaded: boolean;
+  category: ArtworkCategory | 'all';
+  onCategory: (next: ArtworkCategory | 'all') => void;
+  onChoose: (entry: ArtworkChoice) => void;
+}) {
+  if (!loaded) return <p className="text-[13px] text-muted">Loading the artwork...</p>;
+
+  const shown = artwork.filter((entry) => category === 'all' || entry.category === category);
+
+  return (
+    <div className="space-y-3">
+      <div className="flex flex-wrap gap-1.5">
+        {(['all', ...ARTWORK_CATEGORIES] as const).map((key) => (
+          <button
+            key={key}
+            type="button"
+            onClick={() => onCategory(key)}
+            aria-pressed={category === key}
+            className={cn(
+              'rounded-full border px-2.5 py-1 text-[12px] transition-colors',
+              category === key
+                ? 'border-accent-500 bg-accent-50 text-accent-800'
+                : 'border-line text-ink-soft hover:border-line-strong',
+            )}
+          >
+            {key === 'all' ? 'All' : CATEGORY_LABELS[key]}
+          </button>
+        ))}
+      </div>
+
+      <ul className="grid grid-cols-2 gap-3">
+        {shown.map((entry) => (
+          <li key={entry.slug}>
+            <button
+              type="button"
+              disabled={!entry.src}
+              onClick={() => onChoose(entry)}
+              className={cn(
+                'w-full overflow-hidden rounded-lg border text-left transition-colors',
+                entry.src
+                  ? 'border-line hover:border-accent-500'
+                  : 'cursor-not-allowed border-dashed border-line-strong opacity-60',
+              )}
+            >
+              <span className="flex h-24 items-center justify-center bg-surface-sunken">
+                {entry.src ? (
+                  /* eslint-disable-next-line @next/next/no-img-element --
+                     A thumbnail in an admin panel, from either the public
+                     folder or the media host. next/image throws on a host
+                     that is not in its allow list, and that throw would take
+                     the editor's unsaved copy with it. */
+                  <img
+                    src={entry.src}
+                    alt=""
+                    className="max-h-24 w-full object-contain p-2"
+                    loading="lazy"
+                  />
+                ) : (
+                  <span className="text-[11px] text-muted">Not drawn yet</span>
+                )}
+              </span>
+              <span className="block border-t border-line px-2.5 py-2">
+                <span className="block text-[12px] font-medium text-ink">{entry.name}</span>
+                <span className="block text-[11px] text-muted">
+                  {entry.placement} &middot; {entry.aspect}
+                </span>
+              </span>
+            </button>
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }
 

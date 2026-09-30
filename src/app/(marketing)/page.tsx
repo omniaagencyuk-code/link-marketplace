@@ -18,6 +18,7 @@ import {
   ComparisonSection,
   MarketplaceSearchSection,
   ParrotSaysSection,
+  PLAIN_STYLE,
 } from '@/components/cms/sections';
 import { MetricCards } from '@/components/home/metric-cards';
 import { FinalCta } from '@/components/home/final-cta';
@@ -194,6 +195,7 @@ function LegacyHomePage({
           variant="accent"
           sectionId="home-parrot-says"
           data={{ page: {} }}
+          style={PLAIN_STYLE}
         />
       </Reveal>
 
@@ -208,6 +210,7 @@ function LegacyHomePage({
         variant="default"
         sectionId="home-search"
         data={{ page: {} }}
+        style={PLAIN_STYLE}
       />
 
       <ComparisonSection
@@ -222,6 +225,7 @@ function LegacyHomePage({
         variant="default"
         sectionId="home-comparison"
         data={{ page: {} }}
+        style={PLAIN_STYLE}
       />
 
       <Reveal animation={{ entrance: 'stagger', speed: 'normal', delay: 'none' }}>
@@ -234,6 +238,7 @@ function LegacyHomePage({
           variant="default"
           sectionId="home-checklist"
           data={{ page: {} }}
+          style={PLAIN_STYLE}
         />
       </Reveal>
 

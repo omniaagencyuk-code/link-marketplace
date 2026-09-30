@@ -19,6 +19,13 @@
 
 import { image, link, list, richtext, text, textarea } from '../fields';
 import { cleanRichTextDoc, isRichTextDoc } from '../rich-text';
+import {
+  BACKGROUND_DEFS,
+  readStyle,
+  safeAccent,
+  safeTextTone,
+  type SectionStyle,
+} from '../style';
 import type { FieldDef, ListField } from '../types';
 import type { SectionValues } from '../sections';
 
@@ -75,6 +82,47 @@ export interface ComponentDef {
    * position and deletion.
    */
   structural?: boolean;
+  /**
+   * Which of the palette's controls this component offers.
+   *
+   * Absent means the sensible default: the soft washes and a decoration, no
+   * accent, no artwork placement. A component says more than that only when
+   * it can genuinely carry more.
+   */
+  styling?: ComponentStyling;
+}
+
+export interface ComponentStyling {
+  /**
+   * `soft` is the seven washes. `full` adds navy and the two brand colours,
+   * and is only given to bands of short copy with no white cards inside them
+   * - a white card on a navy band inherits the band's white text and becomes
+   * unreadable, which is a combination the editor should not be able to
+   * reach rather than one they have to learn to avoid.
+   *
+   * `none` means the component's own background, always.
+   */
+  backgrounds?: 'none' | 'soft' | 'full';
+  /**
+   * True where the component draws something in the brand accent that is
+   * worth recolouring - a highlighted word, an icon chip, a tick. Never a
+   * button: a button recoloured to yellow is a button nobody can read.
+   */
+  accent?: boolean;
+  /** True where the component draws artwork whose side and size can move. */
+  artwork?: boolean;
+  /** False where a decoration behind the content would be clutter. */
+  decoration?: boolean;
+}
+
+/** What a component offers, with the defaults filled in. */
+export function stylingFor(component: ComponentDef | null): Required<ComponentStyling> {
+  return {
+    backgrounds: component?.styling?.backgrounds ?? 'soft',
+    accent: component?.styling?.accent ?? false,
+    artwork: component?.styling?.artwork ?? false,
+    decoration: component?.styling?.decoration ?? true,
+  };
 }
 
 /*
@@ -114,6 +162,7 @@ const COMPONENTS: ComponentDef[] = [
     group: 'content',
     description: 'Headings, paragraphs, lists, links, images and tables.',
     animatable: false,
+    styling: { backgrounds: 'full' },
     variants: [
       { key: 'default', label: 'Standard', help: 'The usual reading column.' },
       { key: 'narrow', label: 'Narrow article', help: 'Tighter measure, for long reading.' },
@@ -132,6 +181,7 @@ const COMPONENTS: ComponentDef[] = [
     group: 'conversion',
     description: 'A heading, a line of copy and up to two buttons.',
     animatable: true,
+    styling: { backgrounds: 'full' },
     variants: [
       { key: 'light', label: 'Light', help: 'On the page background.' },
       { key: 'dark', label: 'Dark', help: 'Navy band across the page.' },
@@ -381,6 +431,7 @@ const COMPONENTS: ComponentDef[] = [
     group: 'marketplace',
     description: 'A search box that takes the visitor to the marketplace.',
     animatable: true,
+    styling: { backgrounds: 'full' },
     variants: [{ key: 'default', label: 'Standard' }],
     fields: [
       text('heading', 'Heading', { maxLength: 160 }),
@@ -429,6 +480,7 @@ const COMPONENTS: ComponentDef[] = [
     group: 'visual',
     description: 'A list of ticked points.',
     animatable: true,
+    styling: { backgrounds: 'full', accent: true },
     variants: [
       { key: 'default', label: 'On the page' },
       { key: 'panel', label: 'On a panel' },
@@ -504,6 +556,7 @@ const COMPONENTS: ComponentDef[] = [
     group: 'visual',
     description: 'A numbered process, across or down.',
     animatable: true,
+    styling: { accent: true },
     variants: [
       { key: 'default', label: 'Across' },
       { key: 'flight-path', label: 'Flight path', help: 'Across, with the curve drawn between them.' },
@@ -700,6 +753,7 @@ const COMPONENTS: ComponentDef[] = [
     description:
       'An introduction with the rest behind a link. Every word is in the page source, so search engines read all of it.',
     animatable: false,
+    styling: { backgrounds: 'full' },
     variants: [{ key: 'default', label: 'Standard' }],
     fields: [
       text('heading', 'Heading', { maxLength: 160 }),
@@ -756,6 +810,7 @@ const COMPONENTS: ComponentDef[] = [
     description: 'Three-line headline, two buttons, and live counts floating over the mascot.',
     animatable: false,
     structural: true,
+    styling: { accent: true, decoration: false },
     variants: [{ key: 'default', label: 'Standard' }],
     fields: [
       text('eyebrow', 'Eyebrow', { maxLength: 80 }),
@@ -809,6 +864,7 @@ const COMPONENTS: ComponentDef[] = [
     group: 'marketplace',
     description: 'A row of figures. The first three are counted; anything else is typed.',
     animatable: true,
+    styling: { backgrounds: 'full' },
     variants: [{ key: 'default', label: 'Standard' }],
     fields: [
       text('websitesLabel', 'Label for the website count', { maxLength: 40 }),
@@ -1097,6 +1153,7 @@ const COMPONENTS: ComponentDef[] = [
     description: 'The first screen of a landing page: headline, buttons, mascot or banner.',
     animatable: false,
     structural: true,
+    styling: { accent: true, decoration: false },
     variants: [{ key: 'default', label: 'Standard' }],
     fields: [
       text('eyebrow', 'Eyebrow', { maxLength: 60 }),
@@ -1163,6 +1220,7 @@ const COMPONENTS: ComponentDef[] = [
     group: 'niche',
     description: 'A row of shortcuts into the marketplace, each one a real search.',
     animatable: true,
+    styling: { accent: true },
     variants: [{ key: 'default', label: 'Standard' }],
     fields: [
       text('heading', 'Heading', { maxLength: 160 }),
@@ -1189,6 +1247,7 @@ const COMPONENTS: ComponentDef[] = [
     group: 'visual',
     description: 'Cards with a mark, a claim and a sentence. Artwork beside them, optionally.',
     animatable: true,
+    styling: { accent: true, artwork: true },
     variants: [
       { key: 'default', label: 'Across' },
       { key: 'with-art', label: 'With artwork', help: 'Two by two, with a picture beside them.' },
@@ -1215,6 +1274,7 @@ const COMPONENTS: ComponentDef[] = [
     group: 'niche',
     description: 'The shared four-step journey. The steps come from the site, not the page.',
     animatable: true,
+    styling: { accent: true },
     variants: [{ key: 'default', label: 'Standard' }],
     fields: [
       text('heading', 'Heading', {
@@ -1263,6 +1323,7 @@ const COMPONENTS: ComponentDef[] = [
     group: 'niche',
     description: 'A small band with the mascot, pointing at content ordering.',
     animatable: true,
+    styling: { artwork: true },
     variants: [{ key: 'default', label: 'Standard' }],
     fields: [
       text('heading', 'Heading', { maxLength: 160 }),
@@ -1330,6 +1391,46 @@ export function listComponents(): ComponentDef[] {
  */
 export function getComponent(key: string): ComponentDef | null {
   return BY_KEY.get(key) ?? null;
+}
+
+/**
+ * A section's look, rebuilt from what its component actually offers.
+ *
+ * Built rather than filtered, for the reason `cleanSectionValues` is: a
+ * server action is a public endpoint and the form in front of it is a
+ * courtesy. A background the component does not offer, a text colour that
+ * fails contrast over it, an accent on a component with nothing to accent -
+ * none survives the trip, whatever was posted.
+ *
+ * The conversion blueprints go through it too, so there is one rule about
+ * what a component may look like and nothing is exempt from it.
+ */
+export function cleanSectionStyle(component: ComponentDef | null, raw: unknown): SectionStyle {
+  const styling = stylingFor(component);
+  const posted = readStyle(raw);
+
+  const allowed = BACKGROUND_DEFS.filter((entry) =>
+    styling.backgrounds === 'none'
+      ? entry.key === 'default'
+      : styling.backgrounds === 'full'
+        ? true
+        : !entry.strong,
+  );
+
+  const background = allowed.some((entry) => entry.key === posted.background)
+    ? posted.background
+    : 'default';
+
+  const style: SectionStyle = {
+    ...posted,
+    background,
+    decoration: styling.decoration ? posted.decoration : 'none',
+    accent: styling.accent ? posted.accent : 'none',
+  };
+
+  // Contrast, checked against the background that survived rather than the
+  // one that was posted.
+  return { ...style, text: safeTextTone(style), accent: safeAccent(style) };
 }
 
 /** The variant an editor chose, or the component's first, or 'default'. */

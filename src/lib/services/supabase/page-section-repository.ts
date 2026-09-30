@@ -1,10 +1,12 @@
 import { getAdminScopedClient, getServerClient } from '@/lib/supabase/server';
 import {
   readAnimation,
+  readStyle,
   readValues,
   type Animation,
   type GlobalSection,
   type PageSection,
+  type SectionStyle,
   type SectionValues,
 } from '@/lib/cms/sections';
 
@@ -25,9 +27,9 @@ import {
  */
 
 const SECTION_SELECT =
-  'id, page_slug, component, variant, position, hidden, locked, animation, values, global_id, updated_at, updated_by';
+  'id, page_slug, component, variant, position, hidden, locked, animation, style, values, global_id, updated_at, updated_by';
 
-const GLOBAL_SELECT = 'id, name, component, variant, animation, values, updated_at, updated_by';
+const GLOBAL_SELECT = 'id, name, component, variant, animation, style, values, updated_at, updated_by';
 
 interface SectionRow {
   id: string;
@@ -38,6 +40,7 @@ interface SectionRow {
   hidden: boolean;
   locked: boolean;
   animation: unknown;
+  style: unknown;
   values: unknown;
   global_id: string | null;
   updated_at: string;
@@ -50,6 +53,7 @@ interface GlobalRow {
   component: string;
   variant: string;
   animation: unknown;
+  style: unknown;
   values: unknown;
   updated_at: string;
   updated_by: string | null;
@@ -65,6 +69,7 @@ function mapSection(row: SectionRow): PageSection {
     hidden: row.hidden,
     locked: row.locked,
     animation: readAnimation(row.animation),
+    style: readStyle(row.style),
     values: readValues(row.values),
     globalId: row.global_id ?? undefined,
     updatedAt: row.updated_at,
@@ -79,6 +84,7 @@ function mapGlobal(row: GlobalRow): GlobalSection {
     component: row.component,
     variant: row.variant || 'default',
     animation: readAnimation(row.animation),
+    style: readStyle(row.style),
     values: readValues(row.values),
     updatedAt: row.updated_at,
     updatedBy: row.updated_by ?? undefined,
@@ -208,7 +214,12 @@ export const supabasePageSectionRepository = {
   /** Change a section's content, variant or animation. */
   async update(
     id: string,
-    patch: { variant?: string; values?: SectionValues; animation?: Animation },
+    patch: {
+      variant?: string;
+      values?: SectionValues;
+      animation?: Animation;
+      style?: SectionStyle;
+    },
     updatedBy?: string,
   ): Promise<PageSection | null> {
     const supabase = getAdminScopedClient();
@@ -216,6 +227,7 @@ export const supabasePageSectionRepository = {
     if (patch.variant !== undefined) row.variant = patch.variant;
     if (patch.values !== undefined) row.values = patch.values;
     if (patch.animation !== undefined) row.animation = patch.animation;
+    if (patch.style !== undefined) row.style = patch.style;
 
     const { data, error } = await supabase
       .from('page_sections')
@@ -306,6 +318,7 @@ export const supabasePageSectionRepository = {
     component: string;
     variant: string;
     values: SectionValues;
+    style?: SectionStyle;
     updatedBy?: string;
   }): Promise<GlobalSection> {
     const supabase = getAdminScopedClient();
@@ -316,6 +329,7 @@ export const supabasePageSectionRepository = {
         component: input.component,
         variant: input.variant,
         values: input.values,
+        ...(input.style ? { style: input.style } : {}),
         updated_by: input.updatedBy ?? null,
       })
       .select(GLOBAL_SELECT)
@@ -327,7 +341,7 @@ export const supabasePageSectionRepository = {
 
   async updateGlobal(
     id: string,
-    patch: { name?: string; variant?: string; values?: SectionValues },
+    patch: { name?: string; variant?: string; values?: SectionValues; style?: SectionStyle },
     updatedBy?: string,
   ): Promise<void> {
     const supabase = getAdminScopedClient();
@@ -335,6 +349,7 @@ export const supabasePageSectionRepository = {
     if (patch.name !== undefined) row.name = patch.name;
     if (patch.variant !== undefined) row.variant = patch.variant;
     if (patch.values !== undefined) row.values = patch.values;
+    if (patch.style !== undefined) row.style = patch.style;
 
     const { error } = await supabase.from('global_sections').update(row).eq('id', id);
     if (error) throw new Error(`Failed to save the global section: ${error.message}`);
