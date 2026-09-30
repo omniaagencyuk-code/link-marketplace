@@ -622,5 +622,43 @@ console.log('\n--- what a section may ask the application for ---');
   }
 }
 
+console.log('\n--- the homepage counts rather than claims ---');
+{
+  /*
+    The homepage claimed "5,000+ vetted websites" against a real number nearer
+    nine hundred. Nobody lied: somebody typed a figure that was aspirational
+    once, and nothing in the system ever disagreed with it again.
+
+    So the three headline figures are counted on every render and only their
+    labels are editable. This checks the shape rather than the number - a
+    number in a test would go stale the same way.
+  */
+  const hero = read('src/components/home/hero.tsx');
+  const metrics = read('src/components/home/trust-metrics.tsx');
+  const defaults = read('src/lib/cms/pages/home.ts');
+
+  yes('the hero cards read the live count', hero.includes('stats.totalWebsites'));
+  yes('the trust row does too', metrics.includes('stats.totalWebsites'));
+  yes('and the niche count', metrics.includes('stats.totalNiches'));
+  yes('and the country count', metrics.includes('stats.totalCountries'));
+
+  // A figure of zero is a marketplace that has not loaded, not a claim worth
+  // printing.
+  yes('a figure of nothing is left out', /value > 0/.test(hero) && /value > 0/.test(metrics));
+
+  /*
+    And nothing that looks like a website count is typed into the defaults.
+    Matched on the shape a marketing figure takes - "5,000+", "12,450+" -
+    beside a word about websites, which is what was actually there.
+  */
+  const claims = defaults.match(/'[\d,]+\+?'\s*,\s*label:\s*'[^']*(website|site)/gi) ?? [];
+  is('no website count is typed into the homepage defaults', claims.length, 0);
+
+  // The extension point exists, so the page can grow without a deploy.
+  const page = read('src/app/(marketing)/page.tsx');
+  yes('the homepage renders any sections built in the admin', page.includes('<PageSections'));
+  yes('and still fetches its data once', (page.match(/await Promise\.all/g) ?? []).length === 1);
+}
+
 console.log(failed ? `\n  ${failed} FAILED\n` : '\n  all passed\n');
 process.exit(failed ? 1 : 0);

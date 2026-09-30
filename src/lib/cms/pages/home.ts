@@ -42,22 +42,36 @@ export const definition: PageDef = {
           maxLength: 60,
           help: 'The scribble beside the parrot. Use a line break by typing two lines.',
         }),
+        text('cardWebsites', 'First card label', {
+          maxLength: 40,
+          help: 'The figure beside it is counted from the marketplace, not typed here.',
+        }),
+        text('cardNiches', 'Second card label', { maxLength: 40 }),
+        text('cardCountries', 'Third card label', { maxLength: 40 }),
       ],
-      'The first screen, with the mascot and the redacted marketplace preview.',
+      'The first screen. The three cards over the artwork count themselves - clear a label to remove a card.',
     ),
 
     section(
       'metrics',
       'Trust numbers',
       [
+        text('websitesLabel', 'Label for the website count', { maxLength: 40 }),
+        text('nichesLabel', 'Label for the niche count', { maxLength: 40 }),
+        text('countriesLabel', 'Label for the country count', { maxLength: 40 }),
         list(
           'items',
-          'Numbers',
+          'Extra figures',
           [text('value', 'Value', { maxLength: 24 }), text('label', 'Label', { maxLength: 40 })],
-          { itemLabelKey: 'label', minItems: 2, maxItems: 4 },
+          {
+            itemLabelKey: 'label',
+            maxItems: 2,
+            help:
+              'For anything the marketplace cannot count, such as turnaround. Only claim numbers you can stand behind - these are typed, so nothing keeps them true.',
+          },
         ),
       ],
-      'The row of four figures under the hero. Only claim numbers you can stand behind.',
+      'The figures under the hero. The first three are counted from the marketplace on every render.',
     ),
 
     section(
@@ -246,30 +260,35 @@ export const definition: PageDef = {
 
 export const defaults: PageValues = {
   hero: {
-    eyebrow: 'Smarter link building. Better SEO. No squawk.',
-    titleLine1: 'Link Building',
-    titleLine2: 'Services Built for',
-    titleAccent: 'Better Rankings',
+    eyebrow: 'The link building marketplace',
+    titleLine1: 'Real Websites.',
+    titleLine2: 'Real Traffic.',
+    titleAccent: 'Better Rankings.',
     intro:
-      'Build high quality backlinks through thousands of vetted publishers. Search by SEO metrics, order content, manage placements and track everything from one platform.',
-    primaryCta: { label: 'Get Started Free', href: '/signup' },
-    secondaryCta: { label: 'How It Works', href: '/how-it-works' },
+      'Buy backlinks and guest posts on real websites with genuine traffic. Compare SEO metrics, see the price before you order, and track every placement from one account.',
+    primaryCta: { label: 'Browse Websites', href: '/marketplace' },
+    secondaryCta: { label: 'Create Free Account', href: '/signup' },
     reassurance: [
       { label: 'Free account' },
       { label: 'No subscription' },
       { label: 'Pay only for what you order' },
     ],
     annotation: 'Good links\nget you places.',
+    cardWebsites: 'Websites listed',
+    cardNiches: 'Niches covered',
+    cardCountries: 'Countries',
   },
 
   metrics: {
-    items: [
-      { value: '5,000+', label: 'vetted websites' },
-      { value: '20+', label: 'niches' },
-      { value: '50+', label: 'countries' },
-      { value: '24-72 hours', label: 'average turnaround' },
-    ],
+    websitesLabel: 'vetted websites',
+    nichesLabel: 'niches',
+    countriesLabel: 'countries',
+    // Typed, because nothing in the database measures it. Everything above is
+    // counted, which is why the claim of "5,000+ vetted websites" that used to
+    // sit here against a real number nearer nine hundred is gone.
+    items: [{ value: '24-72 hours', label: 'average turnaround' }],
   },
+
 
   marketplace: {
     eyebrow: 'The marketplace',
