@@ -9,6 +9,7 @@ import { MonsteraLeaf } from '@/components/shared/foliage';
 import { NicheBanner } from './niche-banner';
 import { RichText, type RichTextValue } from '@/lib/cms/rich-text-render';
 import { siteUrl } from '@/lib/config/brand';
+import type { ReactNode } from 'react';
 import type { ContentAccessors } from '@/lib/cms/resolve';
 import type { PreviewRow } from '@/lib/services/marketplace-preview';
 
@@ -31,6 +32,16 @@ export interface ServicePageProps {
   path: string;
   /** Breadcrumb label. */
   breadcrumbLabel: string;
+  /**
+   * Anything built in the admin, rendered between the page's own copy and the
+   * questions.
+   *
+   * A slot rather than a component, so this file stays the design it always
+   * was and knows nothing about the page builder. Every service page and every
+   * page created in the admin passes one; a page that has added no sections
+   * passes nothing and renders exactly what it rendered before.
+   */
+  extra?: ReactNode;
 }
 
 interface HighlightItem extends Record<string, unknown> {
@@ -58,6 +69,7 @@ export function ServicePage({
   preview,
   path,
   breadcrumbLabel,
+  extra,
 }: ServicePageProps) {
   const highlights = content.list<HighlightItem>('highlights', 'items');
   const bodySections = content.list<BodySection>('body', 'sections');
@@ -273,6 +285,13 @@ export function ServicePage({
           </div>
         </Container>
       </section>
+
+      {/*
+        Anything built in the admin, between the page's own copy and the
+        questions. Nothing today on any page - it renders when somebody adds
+        a section.
+      */}
+      {extra}
 
       {faqs.length ? (
         <section className="border-b border-line bg-surface">

@@ -1,6 +1,7 @@
 import * as home from './pages/home';
 import * as linkBuilding from './pages/link-building';
 import * as guestPosts from './pages/guest-posts';
+import * as buyBacklinks from './pages/buy-backlinks';
 import * as nicheEdits from './pages/niche-edits';
 import * as digitalPr from './pages/digital-pr';
 import * as agencies from './pages/link-building-agencies';
@@ -31,6 +32,7 @@ export const pageRegistry: RegisteredPage[] = [
   home,
   linkBuilding,
   guestPosts,
+  buyBacklinks,
   nicheEdits,
   digitalPr,
   agencies,

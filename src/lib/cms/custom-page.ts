@@ -36,6 +36,8 @@ export const RESERVED_SLUGS = new Set([
   'digital-pr',
   'forgot-password',
   'guest-posts',
+  'buy-backlinks',
+  'link-building-metrics',
   'gambling-link-building',
   'how-it-works',
   'link-building',

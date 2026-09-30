@@ -52,6 +52,11 @@ export const mainNav: NavGroup[] = [
         description: 'The full service, end to end.',
       },
       {
+        label: 'Buy Backlinks',
+        href: '/buy-backlinks',
+        description: 'Choose the publisher and pay per placement.',
+      },
+      {
         label: 'Guest Posts',
         href: '/guest-posts',
         description: 'Contextual links in new articles.',
@@ -113,6 +118,7 @@ export const footerNav: { title: string; items: NavItem[] }[] = [
     title: 'Services',
     items: [
       { label: 'Link building', href: '/link-building' },
+      { label: 'Buy backlinks', href: '/buy-backlinks' },
       { label: 'Guest posts', href: '/guest-posts' },
       { label: 'Niche edits', href: '/niche-edits' },
       { label: 'Content writing', href: '/content-writing' },
@@ -132,6 +138,7 @@ export const footerNav: { title: string; items: NavItem[] }[] = [
   {
     title: 'Resources',
     items: [
+      { label: 'Link building metrics', href: '/link-building-metrics' },
       { label: 'Blog', href: '/resources' },
       { label: 'Link building guides', href: '/resources?category=link-building' },
       { label: 'SEO resources', href: '/resources?category=seo' },

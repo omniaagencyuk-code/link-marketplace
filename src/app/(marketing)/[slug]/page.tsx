@@ -96,6 +96,7 @@ export default async function CustomPage({ params }: { params: Promise<{ slug: s
       preview={preview.rows}
       path={`/${slug}`}
       breadcrumbLabel={page.record.label}
+      extra={<PageSections slug={slug} />}
     />
   );
 }

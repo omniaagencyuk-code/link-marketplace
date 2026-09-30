@@ -753,5 +753,52 @@ console.log('\n--- a niche page is something somebody makes, not something someb
   yes('an unknown category scopes to nothing', route.includes('readNiche'));
 }
 
+console.log('\n--- a page in code cannot be shadowed by a page in the admin ---');
+{
+  /*
+    Next resolves a static route ahead of a dynamic one, so a custom page
+    created at a slug that already has a route is not a conflict - it is a
+    page that saves, appears in the admin, says it is published, and is
+    unreachable. Nothing anywhere reports it.
+
+    RESERVED_SLUGS exists to refuse that, and it is a hand-maintained list
+    beside a registry that grows. Both pages added in these phases were
+    missing from it until this check was written.
+  */
+  const { RESERVED_SLUGS } = await import('../src/lib/cms/custom-page');
+  const { pageRegistry } = await import('../src/lib/cms/registry');
+
+  for (const page of pageRegistry) {
+    yes(
+      `"/${page.definition.slug}" cannot be taken by a custom page`,
+      RESERVED_SLUGS.has(page.definition.slug),
+    );
+  }
+}
+
+console.log('\n--- every page can grow without a deploy ---');
+{
+  // The slot is on both templates, so every public marketing page has one -
+  // the five service pages, the two niche pages, and everything created in
+  // the admin. A page with no sections passes nothing and is unchanged.
+  const service = read('src/components/marketing/service-page.tsx');
+  yes('the service template takes a slot', service.includes('extra?: ReactNode'));
+  yes('and does not import the builder', !service.includes('page-sections'));
+
+  const routes = [
+    'src/app/(marketing)/buy-backlinks/page.tsx',
+    'src/app/(marketing)/guest-posts/page.tsx',
+    'src/app/(marketing)/niche-edits/page.tsx',
+    'src/app/(marketing)/link-building/page.tsx',
+    'src/app/(marketing)/digital-pr/page.tsx',
+    'src/app/(marketing)/link-building-agencies/page.tsx',
+    'src/app/(marketing)/gambling-link-building/page.tsx',
+    'src/app/(marketing)/[slug]/page.tsx',
+  ];
+  for (const route of routes) {
+    yes(`${route.split('/').at(-2)} fills it`, read(route).includes('extra={<PageSections'));
+  }
+}
+
 console.log(failed ? `\n  ${failed} FAILED\n` : '\n  all passed\n');
 process.exit(failed ? 1 : 0);

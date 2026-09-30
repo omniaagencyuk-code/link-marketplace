@@ -1,15 +1,15 @@
 import type { Metadata } from 'next';
-import { FileEdit, Filter, PenTool, Timer } from 'lucide-react';
+import { BadgeCheck, Receipt, Search, ShieldCheck } from 'lucide-react';
 import { ServicePage } from '@/components/marketing/service-page';
 import { PageSections } from '@/components/cms/page-sections';
 import { metadataForPage } from '@/lib/cms/metadata';
 import { pageContentService } from '@/lib/services/page-content-service';
 import { websiteService } from '@/lib/services';
 
-const SLUG = 'guest-posts';
+const SLUG = 'buy-backlinks';
 
 /** Icons are fixed in code - editors change copy, not composition. */
-const highlightIcons = [Filter, PenTool, FileEdit, Timer];
+const highlightIcons = [Search, Receipt, BadgeCheck, ShieldCheck];
 
 export async function generateMetadata(): Promise<Metadata> {
   return metadataForPage(SLUG);
@@ -26,8 +26,8 @@ export default async function Page() {
       content={content}
       highlightIcons={highlightIcons}
       preview={preview.rows}
-      path="/guest-posts"
-      breadcrumbLabel="Guest posts"
+      path="/buy-backlinks"
+      breadcrumbLabel="Buy backlinks"
       extra={<PageSections slug={SLUG} />}
     />
   );
