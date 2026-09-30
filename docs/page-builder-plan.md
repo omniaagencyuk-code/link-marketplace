@@ -254,3 +254,89 @@ No library. Roughly thirty lines:
 
 Order matters: 1–3 are invisible to the public site, so nothing can regress
 while they land. The first user-visible change is phase 6.
+
+---
+
+## 10. The correction: one page structure, not two
+
+Phases 1–10 shipped the builder as a **slot**. `<PageSections>` rendered at one
+fixed point inside a hand-written template — between the content upsell and
+the FAQ on a niche page, between the body and the FAQ on a service page — and
+a section added in the admin appeared there and nowhere else.
+
+That was deliberate, and it was right for getting phases 2–9 landed without
+touching a live page. It was wrong to leave, because it meant every page had
+**two shapes at once**: the order in the template and the order in the
+database, with the template's winning. An editor who dragged a section to the
+top of the list watched it render in the middle of the page.
+
+### What changed
+
+**A page's sections are the page.** On the niche template, `<PageSections>`
+now wraps the whole route: rows exist and they are what renders, in their
+order; no rows and the template renders, unchanged. The `extra` prop is gone
+from `NicheLandingPage`.
+
+**The ten bands of the gambling page are registered components**, with their
+markup carried across unchanged rather than flattened into generic text
+boxes:
+
+| Band | Component |
+|---|---|
+| Hero | `niche-hero` (structural, locked) |
+| Marketplace preview | `niche-preview` |
+| What publishers cover | `topic-pills` |
+| Why Press Parrot | `benefit-cards` |
+| How it works | `journey-steps` |
+| Main content + Related | `article-body` |
+| Content upsell | `content-upsell` |
+| FAQs | `faq`, `wide` variant |
+| Closing CTA | `cta`, `dark` variant |
+
+Ten bands, nine sections. The related links are a sticky sidebar *inside* the
+body's grid, not a band of their own — split out they would become a
+full-width strip and the page would have changed, which is the one thing this
+was not for. They travel with the body, and its variant says whether it has
+them.
+
+**Page settings are not sections.** The editor is four blocks in the order an
+editor thinks in: PAGE, SEO, MARKETPLACE CATEGORY, SECTIONS. The first three
+are edited by a form narrowed to those keys, which is what lets two forms edit
+one page without blanking each other — each save names the sections it owns.
+
+**The marketplace category is page-level.** It is passed once to
+`<PageSections config={...}>` and read by every section that draws the
+marketplace. No niche component has a category field, and `verify:sections`
+fails if one gains it.
+
+**Conversion is a button, and it is reversible.** `blueprintFor()` reads a
+page's *resolved* content — shipped copy with the editor's overrides on top,
+which is what the live page actually renders — and writes one section per
+band, in order. It adds rows and deletes nothing, so the conversion can be
+compared against the live page and undone by deleting them. Live figures are
+copied as their `{{token}}`, never as the number they happened to be.
+
+**The first section cannot be added by hand.** On a convertible page it is
+refused, because sections are the page and the first one would be the whole of
+it — an editor adding a band to the bottom would have blanked the page.
+
+### Measured
+
+Converted against the shipped gambling page, desktop 1280 and phone 390:
+identical H1, 22 h2s, 8 h3s, 58 links, 8,987 characters, identical page height
+and byte-identical JSON-LD. The only pixels that differ are the mascot's float
+animation — the same box differs by the same amount when the *same* page is
+screenshotted twice.
+
+### Still to do
+
+1. **The service template.** Still a slot. Its six bands need registering, and
+   three of them differ enough from the niche versions to need their own
+   components (`service-hero`, `service-highlights`, `service-preview`). The
+   blocker worth naming: each of the eight service pages passes its own four
+   `highlightIcons` from the route, so preserving them needs an icon field
+   with a closed vocabulary — a field type the CMS does not have yet.
+2. **The homepage.** The same exercise against its ~19 bands.
+3. **Retiring the templates.** `NicheLandingPage` stays until every niche page
+   has been converted and checked. It is the fallback, and the fallback is
+   what makes the conversion safe to undo.

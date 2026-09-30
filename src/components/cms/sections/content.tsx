@@ -3,7 +3,7 @@ import { Container } from '@/components/layout/container';
 import { RichText, type RichTextValue } from '@/lib/cms/rich-text-render';
 import { TableScroll } from '@/components/ui/table-scroll';
 import { cn } from '@/lib/utils/cn';
-import { link as linkOf, rows, str, type SectionProps } from './shared';
+import { image as imageOf, link as linkOf, rows, str, type SectionProps } from './shared';
 
 /**
  * Content sections: words, pictures, tables, and the long-form disclosure.
@@ -17,7 +17,7 @@ import { link as linkOf, rows, str, type SectionProps } from './shared';
 
 export function TextImageSection({ values, variant }: SectionProps) {
   const body = values.body as RichTextValue | undefined;
-  const image = valueImage(values, 'image');
+  const image = imageOf(values, 'image');
   const heading = str(values, 'heading');
   if (!heading && !body && !image.src) return null;
 
@@ -60,7 +60,7 @@ export function TextImageSection({ values, variant }: SectionProps) {
 // -------------------------------------------------------------------- image
 
 export function ImageSection({ values, variant }: SectionProps) {
-  const image = valueImage(values, 'image');
+  const image = imageOf(values, 'image');
   if (!image.src) return null;
 
   const caption = str(values, 'caption');
@@ -256,12 +256,3 @@ export function ExpandableSection({ values }: SectionProps) {
   );
 }
 
-function valueImage(values: Record<string, unknown>, key: string): { src: string; alt: string } {
-  const raw = values[key];
-  if (typeof raw !== 'object' || raw === null) return { src: '', alt: '' };
-  const entry = raw as { src?: unknown; alt?: unknown };
-  return {
-    src: typeof entry.src === 'string' ? entry.src : '',
-    alt: typeof entry.alt === 'string' ? entry.alt : '',
-  };
-}

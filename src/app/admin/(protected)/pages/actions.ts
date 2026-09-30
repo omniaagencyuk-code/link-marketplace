@@ -5,8 +5,15 @@ import { requireAdminSession } from '@/lib/auth/admin-access';
 import { pageContentService } from '@/lib/services/page-content-service';
 import { getRegisteredPage } from '@/lib/cms/registry';
 import { customPageService } from '@/lib/services/custom-page-service';
-import { checkSlug, customPageDefinition, readTemplate, slugify } from '@/lib/cms/custom-page';
+import {
+  checkSlug,
+  customPageDefaults,
+  customPageDefinition,
+  readTemplate,
+  slugify,
+} from '@/lib/cms/custom-page';
 import { readStarter } from '@/lib/cms/starters';
+import { blueprintFor, canConvert } from '@/lib/cms/migrate/page-to-sections';
 import { cleanSectionValues, getComponent } from '@/lib/cms/components/schema';
 import { pageSectionService } from '@/lib/services/page-section-service';
 import { sanitiseText } from '@/lib/import/normalise';
@@ -146,9 +153,22 @@ function revalidateFor(definition: PageDef) {
   revalidatePath('/sitemap.xml');
 }
 
+/**
+ * Save a page's content.
+ *
+ * `only` names the sections this form is responsible for, and is the reason
+ * one page can be edited by two forms at once: the page's settings panel
+ * holds SEO and the marketplace category, the content editor holds the copy,
+ * and neither wipes the other's half. Without it the second form to save
+ * would rebuild every section from what it submitted, which for the sections
+ * it never showed is nothing - and nothing cleans to an empty string.
+ *
+ * Omitting it saves the whole page, which is what a single form means.
+ */
 export async function savePageContentAction(
   slug: string,
   submitted: unknown,
+  only?: string[],
 ): Promise<SavePageResult> {
   const session = await requireAdminSession();
 
@@ -159,9 +179,19 @@ export async function savePageContentAction(
   }
 
   const source = submitted as Record<string, unknown>;
+  // Everything already saved, so the sections this form did not show survive
+  // it. Read from the store rather than from the browser: a form cannot be
+  // trusted to send back content it never displayed.
+  const existing = await savedValues(slug, page.isCustom);
   const values: PageValues = {};
 
   for (const section of page.definition.sections) {
+    if (only && !only.includes(section.key)) {
+      const kept = existing[section.key];
+      if (kept !== undefined) values[section.key] = kept;
+      continue;
+    }
+
     const sectionSource = (source[section.key] ?? {}) as Record<string, unknown>;
     const sectionValues: Record<string, FieldValue> = {};
     for (const field of section.fields) {
@@ -182,11 +212,45 @@ export async function savePageContentAction(
   return { ok: true };
 }
 
-export async function resetPageContentAction(slug: string): Promise<SavePageResult> {
+/** What has been saved for a page, whichever store holds it. */
+async function savedValues(slug: string, isCustom: boolean): Promise<PageValues> {
+  if (isCustom) {
+    const custom = await customPageService.getForAdmin(slug);
+    return custom?.values ?? {};
+  }
+  const record = await pageContentService.getOverrides(slug);
+  return record?.values ?? {};
+}
+
+/**
+ * Put a page's copy back to what shipped.
+ *
+ * `only` narrows it to the sections one form owns, for the same reason saving
+ * takes it: a settings panel's reset must not take the page's copy with it.
+ */
+export async function resetPageContentAction(
+  slug: string,
+  only?: string[],
+): Promise<SavePageResult> {
   const session = await requireAdminSession();
 
   const page = await editablePage(slug);
   if (!page) return { ok: false, error: 'That page does not exist.' };
+
+  if (only) {
+    const existing = await savedValues(slug, page.isCustom);
+    const kept: PageValues = {};
+    for (const [key, value] of Object.entries(existing)) {
+      if (!only.includes(key)) kept[key] = value;
+    }
+    if (page.isCustom) {
+      await customPageService.saveValues(slug, kept, session.email);
+    } else {
+      await pageContentService.save(slug, kept, session.email);
+    }
+    revalidateFor(page.definition);
+    return { ok: true };
+  }
 
   if (page.isCustom) {
     await customPageService.resetValues(slug, session.email);
@@ -252,9 +316,32 @@ export async function createPageAction(formData: FormData): Promise<CreatePageRe
     Sections are added one at a time because each needs its component's own
     defaults through the whitelist - and this runs once, when a page is
     created, so the count is a handful rather than a page's worth.
+
+    The niche starter is the exception, and a deliberate one: it is the whole
+    of a niche page, so it is built from that template's own starting copy
+    rather than from nine components' separate defaults. A new page then opens
+    reading like a page somebody began writing, not like a set of placeholders.
   */
   const starter = readStarter(formData.get('starter'), template);
+  const written = new Set<string>();
+
+  if (starter.sections.length > 0 && canConvert(template)) {
+    for (const blueprint of blueprintFor(template, customPageDefaults(label, template))) {
+      if (!starter.sections.includes(blueprint.component)) continue;
+      written.add(blueprint.component);
+      await pageSectionService.create({
+        pageSlug: slug,
+        component: blueprint.component,
+        variant: blueprint.variant,
+        values: blueprint.values,
+        locked: blueprint.locked,
+        updatedBy: admin.email,
+      });
+    }
+  }
+
   for (const key of starter.sections) {
+    if (written.has(key)) continue;
     const component = getComponent(key);
     if (!component) continue;
     await pageSectionService.create({

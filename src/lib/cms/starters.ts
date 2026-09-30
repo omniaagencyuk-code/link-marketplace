@@ -24,7 +24,15 @@ export interface Starter {
   help: string;
   /** Which designs this starter suits. */
   templates: PageTemplate[];
-  /** Component keys, in order. Empty means an empty page. */
+  /**
+   * Component keys, in order. Empty means an empty page.
+   *
+   * On a template that renders from its sections - the niche one - a starter
+   * is the whole page, so it has to begin with that page's first screen. On a
+   * template that has not been converted yet, sections are still an addition
+   * to what the template draws, so its starters do not carry a hero: the
+   * template is already drawing one, and two H1s is worse than none.
+   */
   sections: string[];
 }
 
@@ -32,7 +40,7 @@ export const STARTERS: Starter[] = [
   {
     key: 'blank',
     label: 'Empty page',
-    help: 'Just the page and its own fields. Add sections yourself.',
+    help: 'No sections. The page renders from its template until you convert it.',
     templates: ['service', 'niche'],
     sections: [],
   },
@@ -40,7 +48,7 @@ export const STARTERS: Starter[] = [
     key: 'seo-landing',
     label: 'SEO landing page',
     help: 'Copy, a comparison, a checklist and questions. For a page that has to rank before it sells.',
-    templates: ['service', 'niche'],
+    templates: ['service'],
     sections: [
       'rich-text',
       'marketplace-search',
@@ -55,19 +63,18 @@ export const STARTERS: Starter[] = [
   {
     key: 'niche-landing',
     label: 'Niche link building page',
-    help: 'The shape of the gambling page: the marketplace up front, then the argument.',
+    help: 'The shape of the gambling page, block for block.',
     templates: ['niche'],
     sections: [
-      'marketplace-stats',
-      'marketplace-preview',
-      'feature-cards',
-      'rich-text',
-      'parrot-says',
-      'checklist',
-      'marketplace-cta',
-      'related-pages',
+      'niche-hero',
+      'niche-preview',
+      'topic-pills',
+      'benefit-cards',
+      'journey-steps',
+      'article-body',
+      'content-upsell',
       'faq',
-      'signup-cta',
+      'cta',
     ],
   },
   {

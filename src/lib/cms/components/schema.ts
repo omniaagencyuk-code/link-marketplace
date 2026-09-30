@@ -29,7 +29,8 @@ export type ComponentGroup =
   | 'visual'
   | 'parrot'
   | 'conversion'
-  | 'seo';
+  | 'seo'
+  | 'niche';
 
 export const GROUP_LABELS: Record<ComponentGroup, string> = {
   content: 'Content',
@@ -38,6 +39,7 @@ export const GROUP_LABELS: Record<ComponentGroup, string> = {
   parrot: 'Press Parrot',
   conversion: 'Conversion',
   seo: 'SEO',
+  niche: 'Niche landing page',
 };
 
 export interface ComponentVariant {
@@ -176,7 +178,10 @@ const COMPONENTS: ComponentDef[] = [
     group: 'seo',
     description: 'Questions and answers, with the structured data Google reads.',
     animatable: true,
-    variants: [{ key: 'default', label: 'Standard' }],
+    variants: [
+      { key: 'default', label: 'Standard', help: 'On the page background.' },
+      { key: 'wide', label: 'Wide', help: 'White band, wider measure. What the niche pages use.' },
+    ],
     fields: [
       text('heading', 'Heading', { maxLength: 160 }),
       list(
@@ -683,6 +688,192 @@ const COMPONENTS: ComponentDef[] = [
       ),
     ],
     defaults: { heading: '', body: '', items: [] },
+  },
+
+
+  // --------------------------------------------------------------- niche pages
+  //
+  // The blocks a niche landing page is made of. They exist because the
+  // gambling page was a hand-written template, and converting it into generic
+  // text boxes would have thrown the design away to gain the ordering. These
+  // are that design, registered - so the page can be reordered, hidden and
+  // added to without being redrawn.
+  //
+  // Notice what none of them has a field for: the marketplace category. That
+  // is page-level configuration, set once in the page's settings, so a section
+  // never has to be told which niche it is on.
+
+  {
+    key: 'niche-hero',
+    label: 'Niche Hero',
+    group: 'niche',
+    description: 'The first screen of a landing page: headline, buttons, mascot or banner.',
+    animatable: false,
+    structural: true,
+    variants: [{ key: 'default', label: 'Standard' }],
+    fields: [
+      text('eyebrow', 'Eyebrow', { maxLength: 60 }),
+      text('heading', 'Headline', { maxLength: 120, help: 'The page\'s H1. There is only one.' }),
+      textarea('intro', 'Intro paragraph', { rows: 4, maxLength: 500 }),
+      list('trust', 'Trust indicators', [text('label', 'Label', { maxLength: 40 })], {
+        itemLabelKey: 'label',
+        maxItems: 4,
+      }),
+      link('primaryCta', 'Primary button'),
+      link('secondaryCta', 'Second button'),
+      text('microcopy', 'Reassurance line', { maxLength: 160 }),
+      image('mascot', 'Mascot artwork', {
+        help: 'Beside the headline on phones and tablets, and on desktop when there is no banner.',
+      }),
+      image('banner', 'Hero banner', {
+        help:
+          'Wide artwork behind the whole first screen on desktop, replacing the mascot there. ' +
+          'About 2000x700 with the subject on the right, because the headline sits over the left half.',
+      }),
+    ],
+    defaults: {
+      eyebrow: '',
+      heading: '',
+      intro: '',
+      trust: [],
+      primaryCta: { label: 'Browse Websites', href: '/marketplace' },
+      secondaryCta: { label: 'Create Free Account', href: '/signup' },
+      microcopy: 'Free account - No subscription - Pay only for what you order',
+      mascot: { src: '', alt: '' },
+      banner: { src: '', alt: '' },
+    },
+  },
+
+  {
+    key: 'niche-preview',
+    label: 'Niche Marketplace Preview',
+    group: 'niche',
+    description: 'Live count and redacted listings for this page\'s category.',
+    animatable: true,
+    variants: [{ key: 'default', label: 'Standard' }],
+    fields: [
+      text('heading', 'Heading', { maxLength: 160 }),
+      text('countSuffix', 'Wording after the live count', {
+        maxLength: 60,
+        help: 'The number itself is counted from the marketplace and cannot be edited here.',
+      }),
+      textarea('body', 'Supporting copy', { rows: 3, maxLength: 600 }),
+      text('lockNote', 'Line above the button', { maxLength: 200 }),
+      link('cta', 'Button'),
+    ],
+    defaults: {
+      heading: 'See what a placement actually costs',
+      countSuffix: 'websites listed right now',
+      body: '',
+      lockNote: 'Website names and prices are shown to members.',
+      cta: { label: 'Unlock the Marketplace', href: '/marketplace' },
+    },
+  },
+
+  {
+    key: 'topic-pills',
+    label: 'Publisher Coverage',
+    group: 'niche',
+    description: 'A row of shortcuts into the marketplace, each one a real search.',
+    animatable: true,
+    variants: [{ key: 'default', label: 'Standard' }],
+    fields: [
+      text('heading', 'Heading', { maxLength: 160 }),
+      textarea('body', 'Supporting copy', { rows: 2, maxLength: 400 }),
+      list(
+        'items',
+        'Shortcuts',
+        [
+          text('label', 'Label', { maxLength: 40 }),
+          text('href', 'Marketplace link', {
+            maxLength: 200,
+            help: 'A real marketplace query, e.g. /marketplace?niche=igaming&q=casino',
+          }),
+        ],
+        { itemLabelKey: 'label', maxItems: 12 },
+      ),
+    ],
+    defaults: { heading: 'What publishers cover', body: '', items: [] },
+  },
+
+  {
+    key: 'benefit-cards',
+    label: 'Why Press Parrot',
+    group: 'niche',
+    description: 'Four cards with a mark, a claim and a sentence.',
+    animatable: true,
+    variants: [{ key: 'default', label: 'Standard' }],
+    fields: [text('heading', 'Heading', { maxLength: 160 }), cardList('Points')],
+    defaults: { heading: 'Why Press Parrot', items: [] },
+  },
+
+  {
+    key: 'journey-steps',
+    label: 'How It Works',
+    group: 'niche',
+    description: 'The shared four-step journey. The steps come from the site, not the page.',
+    animatable: true,
+    variants: [{ key: 'default', label: 'Standard' }],
+    fields: [
+      text('heading', 'Heading', {
+        maxLength: 160,
+        help: 'The steps themselves are shared across the site, so this page cannot contradict it.',
+      }),
+    ],
+    defaults: { heading: 'How it works' },
+  },
+
+  {
+    key: 'article-body',
+    label: 'Article Body',
+    group: 'niche',
+    description: 'The editorial body, with related links in a sticky sidebar.',
+    animatable: false,
+    variants: [
+      { key: 'default', label: 'With sidebar' },
+      { key: 'full-width', label: 'No sidebar' },
+    ],
+    fields: [
+      list(
+        'sections',
+        'Content sections',
+        [text('heading', 'Heading', { maxLength: 120 }), richtext('content', 'Content', { rows: 10 })],
+        { itemLabelKey: 'heading', maxItems: 12 },
+      ),
+      text('relatedHeading', 'Sidebar heading', { maxLength: 40 }),
+      list(
+        'related',
+        'Related links',
+        [
+          text('label', 'Label', { maxLength: 60 }),
+          text('href', 'Path', { maxLength: 200 }),
+          text('description', 'One line about it', { maxLength: 200 }),
+        ],
+        { itemLabelKey: 'label', maxItems: 8 },
+      ),
+    ],
+    defaults: { sections: [], relatedHeading: 'Related', related: [] },
+  },
+
+  {
+    key: 'content-upsell',
+    label: 'Content Upsell',
+    group: 'niche',
+    description: 'A small band with the mascot, pointing at content ordering.',
+    animatable: true,
+    variants: [{ key: 'default', label: 'Standard' }],
+    fields: [
+      text('heading', 'Heading', { maxLength: 160 }),
+      textarea('body', 'Supporting copy', { rows: 3, maxLength: 400 }),
+      link('cta', 'Button'),
+      image('mascot', 'Mascot artwork'),
+    ],
+    defaults: {
+      heading: 'Need the article written too?',
+      body: '',
+      cta: { label: 'Order Content', href: '/content-writing' },
+      mascot: { src: '', alt: '' },
+    },
   },
 
   // -------------------------------------------------------------------- hero

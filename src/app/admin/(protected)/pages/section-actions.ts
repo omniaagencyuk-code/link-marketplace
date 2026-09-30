@@ -10,6 +10,13 @@ import {
 } from '@/lib/cms/components/schema';
 import { readAnimation } from '@/lib/cms/sections';
 import { sanitiseText } from '@/lib/import/normalise';
+import { blueprintFor, canConvert } from '@/lib/cms/migrate/page-to-sections';
+import { getRegisteredPage } from '@/lib/cms/registry';
+import { customPageService } from '@/lib/services/custom-page-service';
+import { customPageDefaults, customPageDefinition, readTemplate } from '@/lib/cms/custom-page';
+import { pageContentService } from '@/lib/services/page-content-service';
+import { resolvePage } from '@/lib/cms/resolve';
+import type { PageValues } from '@/lib/cms/types';
 
 /**
  * Building a page out of sections.
@@ -50,7 +57,28 @@ export async function addSectionAction(
   const component = getComponent(key);
   if (!pageSlug || !component) return { error: 'That is not a section type.' };
 
-  await pageSectionService.create({
+  /*
+    The first section on a page that still renders from a template would take
+    the whole page over - sections are the page, so one section is the whole
+    of it. That is a page blanked by an editor who meant to add a band to the
+    bottom of it, so it is refused: convert first, which brings every band
+    across, then add to the result.
+
+    Only where there is something to convert to. A page whose template has no
+    section layout yet keeps the old behaviour, because for it the sections
+    are still an addition rather than a replacement.
+  */
+  const page = await convertible(pageSlug);
+  if (page && canConvert(page.template)) {
+    const existing = await pageSectionService.allForPage(pageSlug);
+    if (existing.length === 0) {
+      return {
+        error: 'Convert this page to sections first - otherwise this one section becomes the whole page.',
+      };
+    }
+  }
+
+  const created = await pageSectionService.create({
     pageSlug,
     component: component.key,
     variant: component.variants[0]?.key ?? 'default',
@@ -64,8 +92,109 @@ export async function addSectionAction(
     updatedBy: admin.email,
   });
 
+  /*
+    Where it goes. `create` appends, which is right for the button at the
+    bottom of the list and wrong for the one between two sections - somebody
+    inserting a band halfway down a page means halfway down the page, and
+    having to drag it there afterwards is the sort of thing that makes a page
+    builder tiring to use.
+  */
+  const after = String(formData.get('after') ?? '').trim();
+  if (after) {
+    const page = await pageSectionService.allForPage(pageSlug);
+    const order = page.map((section) => section.id).filter((id) => id !== created.id);
+    const at = order.indexOf(after);
+    if (at !== -1) {
+      order.splice(at + 1, 0, created.id);
+      await pageSectionService.reorder(pageSlug, order);
+    }
+  }
+
   refresh(pageSlug);
   return { message: `${component.label} added.` };
+}
+
+/**
+ * Turn a page that renders from a template into a page that renders from its
+ * sections.
+ *
+ * Additive, and that is the whole safety story. It writes rows and changes
+ * nothing else: the page's existing content stays in `page_content` exactly
+ * as it was, so the conversion can be compared against the live page and
+ * undone by deleting the rows it made. The template stops being used when the
+ * rows are right - which is a look at the page, not a migration running.
+ *
+ * Refused on a page that already has sections, because "convert" on a page
+ * somebody has already built would append a second copy of it.
+ */
+export async function convertPageToSectionsAction(
+  _previous: SectionActionState,
+  formData: FormData,
+): Promise<SectionActionState> {
+  const admin = await requireAdminSession();
+
+  const pageSlug = String(formData.get('pageSlug') ?? '').trim();
+  const page = await convertible(pageSlug);
+  if (!page) return { error: 'That page cannot be converted.' };
+
+  if (!canConvert(page.template)) {
+    return { error: `There is no section layout for a ${page.template} page yet.` };
+  }
+
+  const existing = await pageSectionService.allForPage(pageSlug);
+  if (existing.length > 0) {
+    return { error: 'This page already has sections. Delete them first to convert again.' };
+  }
+
+  const blueprints = blueprintFor(page.template, page.values);
+  if (blueprints.length === 0) return { error: 'This page has no content to convert.' };
+
+  // In order, one at a time: `create` appends to the end of the page, so the
+  // order they are written in is the order they end up in.
+  for (const blueprint of blueprints) {
+    await pageSectionService.create({
+      pageSlug,
+      component: blueprint.component,
+      variant: blueprint.variant,
+      values: blueprint.values,
+      locked: blueprint.locked,
+      updatedBy: admin.email,
+    });
+  }
+
+  refresh(pageSlug, page.path);
+  return {
+    message: `${blueprints.length} sections created. Check the live page against them before relying on it.`,
+  };
+}
+
+/** A page's template, resolved content and path, whichever kind it is. */
+async function convertible(
+  slug: string,
+): Promise<{ template: string; values: PageValues; path: string } | null> {
+  if (!slug) return null;
+
+  const registered = getRegisteredPage(slug);
+  if (registered) {
+    const saved = await pageContentService.getOverrides(slug);
+    const resolved = resolvePage(registered.definition, registered.defaults, saved?.values);
+    return {
+      template: registered.definition.template ?? 'service',
+      values: resolved.values,
+      path: registered.definition.path,
+    };
+  }
+
+  const custom = await customPageService.getForAdmin(slug);
+  if (!custom) return null;
+
+  const template = readTemplate(custom.template);
+  const resolved = resolvePage(
+    customPageDefinition(custom),
+    customPageDefaults(custom.label, template),
+    custom.values,
+  );
+  return { template, values: resolved.values, path: `/${slug}` };
 }
 
 export async function saveSectionAction(
@@ -194,6 +323,19 @@ export async function addGlobalAction(
 
   const added = await pageSectionService.addGlobal(pageSlug, globalId, admin.email);
   if (!added) return { error: 'That section no longer exists.' };
+
+  // Below the section it was inserted under, when it was inserted rather than
+  // appended. Same rule as adding a new one.
+  const after = String(formData.get('after') ?? '').trim();
+  if (after) {
+    const page = await pageSectionService.allForPage(pageSlug);
+    const order = page.map((section) => section.id).filter((id) => id !== added.id);
+    const at = order.indexOf(after);
+    if (at !== -1) {
+      order.splice(at + 1, 0, added.id);
+      await pageSectionService.reorder(pageSlug, order);
+    }
+  }
 
   refresh(pageSlug);
   return { message: 'Added.' };

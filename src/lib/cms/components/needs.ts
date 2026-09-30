@@ -23,6 +23,7 @@ export type SectionNeed = 'preview' | 'niches' | 'totals';
 /** What each component asks for. Absent means it needs nothing. */
 const NEEDS: Record<string, SectionNeed[]> = {
   'marketplace-preview': ['preview'],
+  'niche-preview': ['preview'],
   'marketplace-stats': ['totals'],
   'niche-categories': ['niches'],
   'parrot-view': ['totals'],

@@ -37,16 +37,46 @@ export default async function Page() {
     gambling_site_count: preview.totalWebsites,
   });
 
+  /*
+    The page's own configuration, read by every section that draws the
+    marketplace. Set once here rather than on each of them: the preview, the
+    live count and every link out are all about the same category, and a page
+    that had to be told "igaming" nine times would eventually be told it
+    wrong once.
+  */
+  const config = {
+    niche: NICHE,
+    label: 'Gambling',
+    path: '/gambling-link-building',
+    breadcrumbParent: { label: 'Link Building', href: '/link-building' },
+  };
+
+  /*
+    Sections are the page. The template below is what renders while this page
+    has none - which is how the conversion stays reversible and checkable, and
+    it goes when every niche page has been converted.
+  */
   return (
-    <NicheLandingPage
-      content={content}
-      preview={preview.rows}
-      listingCount={preview.totalWebsites}
-      highlightIcons={highlightIcons}
-      path="/gambling-link-building"
-      breadcrumbLabel="Gambling"
-      breadcrumbParent={{ label: 'Link Building', href: '/link-building' }}
-      extra={<PageSections slug={SLUG} />}
+    <PageSections
+      slug={SLUG}
+      // A string, formatted exactly as the accessors format it for the
+      // template below, so a converted page reads the same as an unconverted one.
+      tokens={{ gambling_site_count: String(preview.totalWebsites) }}
+      config={config}
+      // Already fetched above for the fallback, so the sections do not fetch
+      // the same rows again.
+      provided={{ preview: preview.rows, listingCount: preview.totalWebsites }}
+      fallback={
+        <NicheLandingPage
+          content={content}
+          preview={preview.rows}
+          listingCount={preview.totalWebsites}
+          highlightIcons={highlightIcons}
+          path="/gambling-link-building"
+          breadcrumbLabel="Gambling"
+          breadcrumbParent={{ label: 'Link Building', href: '/link-building' }}
+        />
+      }
     />
   );
 }

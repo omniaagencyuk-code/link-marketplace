@@ -75,16 +75,30 @@ export default async function CustomPage({ params }: { params: Promise<{ slug: s
   const preview = await websiteService.getPublicPreview(6, niche);
 
   if (page.record.template === 'niche') {
+    // Sections are the page; the template renders while it has none. The
+    // category, the breadcrumb and the path are page-level configuration, so
+    // no section on it has to be told which niche it is about.
     return (
-      <NicheLandingPage
-        content={content}
-        preview={preview.rows}
-        listingCount={preview.totalWebsites}
-        highlightIcons={highlightIcons}
-        path={`/${slug}`}
-        breadcrumbLabel={page.record.label}
-        breadcrumbParent={{ label: 'Link Building', href: '/link-building' }}
-        extra={<PageSections slug={slug} />}
+      <PageSections
+        slug={slug}
+        config={{
+          niche,
+          label: page.record.label,
+          path: `/${slug}`,
+          breadcrumbParent: { label: 'Link Building', href: '/link-building' },
+        }}
+        provided={{ preview: preview.rows, listingCount: preview.totalWebsites }}
+        fallback={
+          <NicheLandingPage
+            content={content}
+            preview={preview.rows}
+            listingCount={preview.totalWebsites}
+            highlightIcons={highlightIcons}
+            path={`/${slug}`}
+            breadcrumbLabel={page.record.label}
+            breadcrumbParent={{ label: 'Link Building', href: '/link-building' }}
+          />
+        }
       />
     );
   }

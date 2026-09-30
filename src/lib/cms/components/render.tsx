@@ -1,6 +1,9 @@
 import {
+  ArticleBodySection,
+  BenefitCardsSection,
   ChecklistSection,
   ComparisonSection,
+  ContentUpsellSection,
   CtaSection,
   ExpandableSection,
   FaqSection,
@@ -8,10 +11,13 @@ import {
   HeroSection,
   IconGridSection,
   ImageSection,
+  JourneyStepsSection,
   MarketplacePreviewSection,
   MarketplaceSearchSection,
   MarketplaceStatsSection,
   NicheCategoriesSection,
+  NicheHeroSection,
+  NichePreviewSection,
   ParrotChecklistSection,
   ParrotCtaSection,
   ParrotFlightPathSection,
@@ -23,6 +29,7 @@ import {
   StepsSection,
   TableSection,
   TextImageSection,
+  TopicPillsSection,
   TrustBarSection,
   TwoColumnSection,
   type SectionProps,
@@ -53,6 +60,15 @@ const RENDERERS: Record<string, SectionRenderer> = {
   image: ImageSection,
   table: TableSection,
   hero: HeroSection,
+
+  // niche landing pages - the blocks the gambling page is made of
+  'niche-hero': NicheHeroSection,
+  'niche-preview': NichePreviewSection,
+  'topic-pills': TopicPillsSection,
+  'benefit-cards': BenefitCardsSection,
+  'journey-steps': JourneyStepsSection,
+  'article-body': ArticleBodySection,
+  'content-upsell': ContentUpsellSection,
 
   // marketplace
   'marketplace-preview': MarketplacePreviewSection,
@@ -119,6 +135,10 @@ export function renderableComponents(): string[] {
  */
 const ANIMATABLE = new Set([
   'text-image', 'two-column', 'image',
+  // The niche hero is absent for the same reason the generic one is: it holds
+  // the Largest Contentful Paint, and an element at opacity 0 is unpainted.
+  // The article body is absent because it is long-form reading.
+  'niche-preview', 'topic-pills', 'benefit-cards', 'journey-steps', 'content-upsell',
   'marketplace-preview', 'marketplace-stats', 'niche-categories', 'marketplace-search',
   'feature-cards', 'stats', 'checklist', 'comparison', 'icon-grid', 'trust-bar', 'steps',
   'parrot-says', 'parrot-checklist', 'parrot-view', 'parrot-cta', 'parrot-flight-path',

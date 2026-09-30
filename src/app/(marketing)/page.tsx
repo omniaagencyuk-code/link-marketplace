@@ -149,7 +149,7 @@ export default async function HomePage() {
           }}
           variant="accent"
           sectionId="home-parrot-says"
-          data={{}}
+          data={{ page: {} }}
         />
       </Reveal>
 
@@ -163,7 +163,7 @@ export default async function HomePage() {
         }}
         variant="default"
         sectionId="home-search"
-        data={{}}
+        data={{ page: {} }}
       />
 
       <ComparisonSection
@@ -177,7 +177,7 @@ export default async function HomePage() {
         }}
         variant="default"
         sectionId="home-comparison"
-        data={{}}
+        data={{ page: {} }}
       />
 
       <Reveal animation={{ entrance: 'stagger', speed: 'normal', delay: 'none' }}>
@@ -189,7 +189,7 @@ export default async function HomePage() {
           }}
           variant="default"
           sectionId="home-checklist"
-          data={{}}
+          data={{ page: {} }}
         />
       </Reveal>
 

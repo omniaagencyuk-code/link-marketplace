@@ -734,15 +734,39 @@ console.log('\n--- a niche page is something somebody makes, not something someb
   is('and the niche template is real', readTemplate('niche'), 'niche');
 
   /*
-    The niche template takes a slot rather than importing the page builder.
-    That is what keeps this file the design it always was: it knows nothing
-    about sections, and a page with none passes nothing and renders what it
-    rendered before.
+    The niche template is the fallback now, not the page.
+
+    It used to take a slot - sections rendered at one fixed point inside it -
+    which meant a page had two shapes at once and the template's won. A page
+    with sections renders from them and never reaches this file; a page
+    without renders from it exactly as before, which is what keeps a
+    conversion reversible.
+
+    The slot going away is the check. Its presence was the bug.
   */
-  yes('the niche template takes a slot', template.includes('extra?: ReactNode'));
-  yes('and does not import the builder', !template.includes('page-sections'));
-  yes('the gambling route fills it', read('src/app/(marketing)/gambling-link-building/page.tsx').includes('extra={<PageSections'));
-  yes('and so does the custom route', route.includes('extra={<PageSections'));
+  const gamblingRoute = read('src/app/(marketing)/gambling-link-building/page.tsx');
+  yes('the niche template no longer takes a slot', !template.includes('extra?: ReactNode'));
+  yes('and still does not import the builder', !template.includes('page-sections'));
+  yes('the gambling route renders sections first', gamblingRoute.includes('<PageSections'));
+  yes('with the template as its fallback', gamblingRoute.includes('fallback={'));
+  yes('and never as a slot', !gamblingRoute.includes('extra={'));
+  yes('the custom niche route does the same', route.includes('fallback={'));
+
+  /*
+    The category is page-level configuration, passed once, rather than a field
+    on every component that draws the marketplace. A section with a niche
+    field is a page that has to be told "igaming" nine times, and told it
+    wrong once.
+  */
+  yes('the gambling route configures the page', gamblingRoute.includes('config={config}'));
+  yes('and names its category once', count(gamblingRoute, "NICHE: NicheSlug = 'igaming'") === 1);
+  for (const component of listComponents()) {
+    if (component.group !== 'niche') continue;
+    yes(
+      `${component.label} has no category field of its own`,
+      !component.fields.some((field) => /niche|category/i.test(field.key)),
+    );
+  }
 
   /*
     A niche page scoped to a category nobody recognises shows the whole
@@ -778,25 +802,193 @@ console.log('\n--- a page in code cannot be shadowed by a page in the admin ---'
 
 console.log('\n--- every page can grow without a deploy ---');
 {
-  // The slot is on both templates, so every public marketing page has one -
-  // the five service pages, the two niche pages, and everything created in
-  // the admin. A page with no sections passes nothing and is unchanged.
+  /*
+    Two states, and which one a page is in is not a guess.
+
+    The niche template has been converted: its bands are registered sections,
+    its routes render from those and fall back to the template. The service
+    template has not, so it still takes a slot and sections are an addition to
+    what it draws rather than a replacement for it. Mixing those two up is how
+    a page gets blanked, so each is asserted as itself.
+  */
   const service = read('src/components/marketing/service-page.tsx');
-  yes('the service template takes a slot', service.includes('extra?: ReactNode'));
+  yes('the service template still takes a slot', service.includes('extra?: ReactNode'));
   yes('and does not import the builder', !service.includes('page-sections'));
 
-  const routes = [
+  const slotted = [
     'src/app/(marketing)/buy-backlinks/page.tsx',
     'src/app/(marketing)/guest-posts/page.tsx',
     'src/app/(marketing)/niche-edits/page.tsx',
     'src/app/(marketing)/link-building/page.tsx',
     'src/app/(marketing)/digital-pr/page.tsx',
     'src/app/(marketing)/link-building-agencies/page.tsx',
+  ];
+  for (const route of slotted) {
+    yes(`${route.split('/').at(-2)} can still grow`, read(route).includes('extra={<PageSections'));
+  }
+
+  const unified = [
     'src/app/(marketing)/gambling-link-building/page.tsx',
     'src/app/(marketing)/[slug]/page.tsx',
   ];
-  for (const route of routes) {
-    yes(`${route.split('/').at(-2)} fills it`, read(route).includes('extra={<PageSections'));
+  for (const route of unified) {
+    yes(
+      `${route.split('/').at(-2)} renders its sections as the page`,
+      read(route).includes('fallback={'),
+    );
+  }
+
+  /*
+    A page that renders from a template cannot be given one section at a
+    time: sections are the page, so the first one would be the whole of it,
+    and an editor who meant to add a band to the bottom would have blanked
+    it. The action refuses it and says to convert instead.
+  */
+  const actions = read('src/app/admin/(protected)/pages/section-actions.ts');
+  const addBody = actions.slice(
+    actions.indexOf('export async function addSectionAction'),
+    actions.indexOf('export async function convertPageToSectionsAction'),
+  );
+  yes('adding the first section to an unconverted page is refused', addBody.includes('canConvert('));
+  yes('and it is refused where the page is convertible', addBody.includes('existing.length === 0'));
+}
+
+console.log('\n--- a page converts into its sections without losing anything ---');
+{
+  /*
+    The conversion is the whole point of this phase, and the way it fails is
+    quiet: a band that has no section, a field that is silently truncated, or
+    a live figure baked into a heading at the moment somebody pressed the
+    button. All three look fine on the day and are wrong later.
+
+    So it is checked against the real gambling page, resolved the way the
+    route resolves it.
+  */
+  const { blueprintFor, canConvert, nichePageBlueprint } = await import(
+    '../src/lib/cms/migrate/page-to-sections'
+  );
+  const { resolvePage } = await import('../src/lib/cms/resolve');
+  const gambling = await import('../src/lib/cms/pages/gambling-link-building');
+
+  const resolved = resolvePage(gambling.definition, gambling.defaults, undefined);
+  const blueprint = blueprintFor('niche', resolved.values);
+
+  yes('the niche template can be converted', canConvert('niche'));
+  yes('an unknown template cannot', !canConvert('elementor'));
+  is('the gambling page becomes nine sections', blueprint.length, 9);
+
+  is('the first is the hero', blueprint[0]?.component, 'niche-hero');
+  is('the last is the closing call to action', blueprint.at(-1)?.component, 'cta');
+  is('and it is the dark one', blueprint.at(-1)?.variant, 'dark');
+
+  /*
+    Every band of the template has somewhere to go. Checked from the schema
+    rather than from a list written here, so a field added to the niche
+    template later fails this until somebody decides where it belongs -
+    which is the point at which the decision is cheap.
+
+    The two settings groups are not sections and never become sections.
+  */
+  const SETTINGS = ['seo', 'marketplace'];
+  const source = readFileSync(
+    new URL('../src/lib/cms/migrate/page-to-sections.ts', import.meta.url),
+    'utf8',
+  );
+  for (const section of gambling.definition.sections) {
+    if (SETTINGS.includes(section.key)) {
+      yes(`"${section.key}" stays a page setting`, !source.includes(`'${section.key}'`));
+      continue;
+    }
+    yes(`"${section.key}" has somewhere to go`, source.includes(`'${section.key}'`));
+  }
+
+  /*
+    Nothing is truncated on the way across. A heading that arrives one
+    character short of the original is a heading nobody notices is wrong, and
+    the schemas each declare their own maxLength.
+  */
+  const strings = (value: unknown): string[] => {
+    if (typeof value === 'string') return [value];
+    if (Array.isArray(value)) return value.flatMap(strings);
+    if (value && typeof value === 'object') return Object.values(value).flatMap(strings);
+    return [];
+  };
+  const before = new Set(
+    Object.entries(resolved.values)
+      .filter(([key]) => !SETTINGS.includes(key))
+      .flatMap(([, group]) => strings(group))
+      .map((text) => text.replace(/\s+/g, ' ').trim())
+      .filter((text) => text.length > 0),
+  );
+  const after = new Set(strings(blueprint.map((entry) => entry.values)).map((t) => t.replace(/\s+/g, ' ').trim()));
+  const lost = [...before].filter((text) => !after.has(text));
+  yes(`every string survives the conversion${lost.length ? `: lost ${JSON.stringify(lost.slice(0, 3))}` : ''}`, lost.length === 0);
+
+  /*
+    A live figure is copied as its token, never as the number it happened to
+    be. This is the failure that takes a year to show up: a page claiming 247
+    publishers long after there are 900.
+
+    The gambling page offers the token and does not currently use it, so this
+    is asserted against a page that does - which is also what proves the
+    check rather than the page: it fails if the conversion ever resolves a
+    token on the way across.
+  */
+  const quoted = resolvePage(gambling.definition, gambling.defaults, {
+    preview: { countSuffix: 'of {{gambling_site_count}} gambling websites' },
+  });
+  const withToken = blueprintFor('niche', quoted.values);
+  yes(
+    'a live figure is copied as its token, not as a number',
+    strings(withToken.map((entry) => entry.values)).some((text) =>
+      text.includes('{{gambling_site_count}}'),
+    ),
+  );
+  yes(
+    'and nothing else picked up a resolved figure',
+    !strings(blueprint.map((entry) => entry.values)).some((text) => /\b\d{3,}\+? (websites|publishers|listings)/.test(text)),
+  );
+
+  /*
+    Locking. The hero cannot be moved or deleted because it holds the page's
+    only H1 and its breadcrumb. Nothing else is locked - a migrated page an
+    editor cannot rearrange would have missed the point of migrating it.
+  */
+  is('the hero arrives locked', blueprint[0]?.locked, true);
+  is(
+    'and nothing else does',
+    blueprint.slice(1).filter((entry) => entry.locked).length,
+    0,
+  );
+
+  /*
+    Proved by breaking it: a blueprint built from an empty page must not
+    invent nine sections out of defaults. Two survive - the hero and the
+    preview, which every niche page has - and the rest are absent rather
+    than present and blank.
+  */
+  const empty = nichePageBlueprint({});
+  is('an empty page becomes only the bands every niche page has', empty.length, 3);
+  yes(
+    'and none of them is a band with nothing in it',
+    empty.every((entry) => ['niche-hero', 'niche-preview', 'journey-steps'].includes(entry.component)),
+  );
+
+  /*
+    Every component the blueprint names is one the registry can draw. A
+    blueprint naming a component that does not exist writes rows that render
+    as gaps, which nothing reports.
+  */
+  for (const entry of blueprint) {
+    const component = getComponent(entry.component);
+    yes(`"${entry.component}" is a real component`, component !== null);
+    if (component) {
+      is(
+        `and "${entry.variant}" is one of its layouts`,
+        resolveVariant(component, entry.variant),
+        entry.variant,
+      );
+    }
   }
 }
 

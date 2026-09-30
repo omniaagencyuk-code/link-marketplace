@@ -26,7 +26,16 @@ export function PageEditor({
   saved,
   updatedAt,
   updatedBy,
+  summary = true,
 }: {
+  /**
+   * The sections this form shows.
+   *
+   * A page can be edited by two of these at once - a settings panel and a
+   * content editor - by handing each a definition narrowed to its own
+   * sections. Each save then names the sections it owns, so neither form
+   * blanks the other's half.
+   */
   definition: PageDef;
   defaults: PageValues;
   /** Existing overrides, or an empty object for an untouched page. */
@@ -34,6 +43,8 @@ export function PageEditor({
   /** When this page's copy was last saved, if it ever has been. */
   updatedAt?: string;
   updatedBy?: string;
+  /** The strip naming the page. Off for a second form on the same page. */
+  summary?: boolean;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -48,6 +59,10 @@ export function PageEditor({
   ]);
   const [values, setValues] = useState<PageValues>(initial);
   const [activeSection, setActiveSection] = useState(definition.sections[0]?.key ?? '');
+
+  // Which sections this form is responsible for. Everything else the page
+  // holds is left exactly as it was found.
+  const scope = useMemo(() => definition.sections.map((section) => section.key), [definition]);
 
   const dirty = JSON.stringify(values) !== JSON.stringify(initial);
   const edited = Object.keys(saved).length > 0;
@@ -66,7 +81,7 @@ export function PageEditor({
   function save() {
     setStatus(null);
     startTransition(async () => {
-      const result = await savePageContentAction(definition.slug, values);
+      const result = await savePageContentAction(definition.slug, values, scope);
       if (!result.ok) {
         setStatus({ kind: 'error', message: result.error ?? 'Could not save.' });
         return;
@@ -79,7 +94,7 @@ export function PageEditor({
   function resetAll() {
     setStatus(null);
     startTransition(async () => {
-      await resetPageContentAction(definition.slug);
+      await resetPageContentAction(definition.slug, scope);
       setValues(mergeForEditing(definition, defaults, {}));
       setStatus({ kind: 'ok', message: 'Reset to the original copy.' });
       router.refresh();
@@ -88,6 +103,8 @@ export function PageEditor({
 
   return (
     <>
+      {summary ? (
+      <>
       {/* ------------------------------------------------- page summary --
           What an editor wants to know before they start typing: what this is,
           where it lives, whether anyone has touched it, and how to look at it.
@@ -125,10 +142,6 @@ export function PageEditor({
                 <dd className="inline font-medium text-ink-soft">{updatedBy}</dd>
               </div>
             ) : null}
-            <div>
-              <dt className="inline text-muted">Sections </dt>
-              <dd className="inline font-medium text-ink-soft">{definition.sections.length}</dd>
-            </div>
           </dl>
         </div>
 
@@ -153,6 +166,8 @@ export function PageEditor({
           </div>
         ) : null}
       </div>
+      </>
+      ) : null}
 
     <div className="grid gap-6 lg:grid-cols-[minmax(0,14rem)_minmax(0,1fr)]">
       <nav aria-label="Page sections" className="lg:sticky lg:top-6 lg:self-start">
@@ -209,7 +224,7 @@ export function PageEditor({
               disabled={pending}
             >
               <RotateCcw className="h-3.5 w-3.5" />
-              Reset whole page
+              {summary ? 'Reset whole page' : 'Reset these settings'}
             </Button>
           ) : null}
         </div>

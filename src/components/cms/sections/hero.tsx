@@ -4,7 +4,7 @@ import { ArrowRight, Check } from 'lucide-react';
 import { Container } from '@/components/layout/container';
 import { Button } from '@/components/ui/button';
 import { formatNumber } from '@/lib/utils/format';
-import { link, rows, str, type SectionProps } from './shared';
+import { image, link, rows, str, type SectionProps } from './shared';
 
 /**
  * The first screen.
@@ -36,7 +36,7 @@ export function HeroSection({ values, variant, data }: SectionProps) {
   const heading = str(values, 'heading');
   if (!heading) return null;
 
-  const image = heroImage(values);
+  const artwork = image(values, 'image');
   const primary = link(values, 'primaryCta');
   const secondary = link(values, 'secondaryCta');
   const points = rows<{ label?: string }>(values, 'points');
@@ -106,11 +106,11 @@ export function HeroSection({ values, variant, data }: SectionProps) {
             ) : null}
           </div>
 
-          {image.src ? (
+          {artwork.src ? (
             <div className="min-w-0">
               <Image
-                src={image.src}
-                alt={image.alt}
+                src={artwork.src}
+                alt={artwork.alt}
                 width={1200}
                 height={900}
                 priority
@@ -125,12 +125,3 @@ export function HeroSection({ values, variant, data }: SectionProps) {
   );
 }
 
-function heroImage(values: Record<string, unknown>): { src: string; alt: string } {
-  const raw = values.image;
-  if (typeof raw !== 'object' || raw === null) return { src: '', alt: '' };
-  const entry = raw as { src?: unknown; alt?: unknown };
-  return {
-    src: typeof entry.src === 'string' ? entry.src : '',
-    alt: typeof entry.alt === 'string' ? entry.alt : '',
-  };
-}

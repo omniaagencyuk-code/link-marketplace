@@ -7,8 +7,12 @@ import { applyTokens, type TokenValues } from '@/lib/cms/tokens';
 import { neededBy } from '@/lib/cms/components/needs';
 import { websiteService } from '@/lib/services';
 import { acceptedNiches } from '@/lib/config/accepted-niches';
-import type { SectionData } from './sections/shared';
+import { siteUrl } from '@/lib/config/brand';
+import type { PageConfig, SectionData } from './sections/shared';
 import type { SectionValues } from '@/lib/cms/sections';
+import type { NicheSlug } from '@/lib/types';
+
+export type { PageConfig };
 
 /**
  * A page built from sections.
@@ -39,23 +43,140 @@ export async function PageSections({
   slug,
   fallback = null,
   tokens = {},
+  config = {},
+  provided,
 }: {
   slug: string;
   /** What the page renders while it has no sections of its own. */
   fallback?: ReactNode;
   /** Live figures for `{{marketplace_site_count}}` and friends. */
   tokens?: TokenValues;
+  /**
+   * What the page *is*: its category, its breadcrumb, its path.
+   *
+   * Set once here rather than on every component that draws the marketplace,
+   * which is the difference between configuring "gambling" once and
+   * configuring it nine times.
+   */
+  config?: PageConfig;
+  /**
+   * Data the route has already fetched, so it is not fetched twice.
+   *
+   * A route that still renders a fallback has to read the marketplace before
+   * it knows whether the fallback is needed. Handing the result in keeps that
+   * to one query rather than two; it goes away with the fallback.
+   */
+  provided?: { preview?: SectionData['preview']; listingCount?: number };
 }) {
   const sections = await pageSectionService.forPage(slug);
   if (sections.length === 0) return <>{fallback}</>;
 
-  const data = await gather(sections.map((section) => resolveSection(section).component));
+  const resolved = sections.map((section) => ({ section, ...resolveSection(section) }));
+  const data = await gather(
+    resolved.map((entry) => entry.component),
+    config,
+    provided,
+  );
 
   return (
     <>
+      <PageStructuredData config={config} sections={resolved} tokens={tokens} />
       {sections.map((section) => (
         <Section key={section.id} section={section} tokens={tokens} data={data} />
       ))}
+    </>
+  );
+}
+
+/**
+ * The structured data a built page publishes.
+ *
+ * It lives here rather than in a section because both kinds are statements
+ * about the *page*: a breadcrumb trail describes where the page sits, and a
+ * FAQPage describes the questions the page answers, wherever on it they
+ * happen to sit. A section emitting its own would mean two FAQ blocks
+ * publishing two FAQPage objects and Google trusting neither.
+ *
+ * The breadcrumb needs a path and a label to be true, so a page without them
+ * publishes nothing rather than publishing a trail to itself.
+ */
+function PageStructuredData({
+  config,
+  sections,
+  tokens,
+}: {
+  config: PageConfig;
+  sections: { component: string; values: SectionValues }[];
+  tokens: TokenValues;
+}) {
+  const faqs = sections
+    .filter((entry) => entry.component === 'faq')
+    .flatMap((entry) => {
+      const items = fillTokens(entry.values, tokens).items;
+      return Array.isArray(items) ? (items as { question?: unknown; answer?: unknown }[]) : [];
+    })
+    .filter(
+      (item): item is { question: string; answer: string } =>
+        typeof item.question === 'string' &&
+        typeof item.answer === 'string' &&
+        item.question !== '' &&
+        item.answer !== '',
+    );
+
+  const crumbs =
+    config.path && config.label
+      ? [
+          { '@type': 'ListItem', position: 1, name: 'Home', item: siteUrl },
+          ...(config.breadcrumbParent
+            ? [
+                {
+                  '@type': 'ListItem',
+                  position: 2,
+                  name: config.breadcrumbParent.label,
+                  item: `${siteUrl}${config.breadcrumbParent.href}`,
+                },
+              ]
+            : []),
+          {
+            '@type': 'ListItem',
+            position: config.breadcrumbParent ? 3 : 2,
+            name: config.label,
+            item: `${siteUrl}${config.path}`,
+          },
+        ]
+      : [];
+
+  return (
+    <>
+      {crumbs.length ? (
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{
+            __html: JSON.stringify({
+              '@context': 'https://schema.org',
+              '@type': 'BreadcrumbList',
+              itemListElement: crumbs,
+            }),
+          }}
+        />
+      ) : null}
+
+      {faqs.length ? (
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{
+            __html: JSON.stringify({
+              '@context': 'https://schema.org',
+              '@type': 'FAQPage',
+              mainEntity: faqs.map((faq) => ({
+                '@type': 'Question',
+                name: faq.question,
+                acceptedAnswer: { '@type': 'Answer', text: faq.answer },
+              })),
+            }),
+          }}
+        />
+      ) : null}
     </>
   );
 }
@@ -73,14 +194,34 @@ export async function PageSections({
  * the result of a query, which is what keeps editorial content away from the
  * inventory.
  */
-async function gather(components: string[]): Promise<SectionData> {
+async function gather(
+  components: string[],
+  config: PageConfig,
+  provided?: { preview?: SectionData['preview']; listingCount?: number },
+): Promise<SectionData> {
   const needed = neededBy(components);
-  if (needed.size === 0) return {};
+  if (needed.size === 0) return { page: config };
 
-  const [preview, counts] = await Promise.all([
-    needed.has('preview') ? websiteService.getPublicPreview(6).then((result) => result.rows) : undefined,
+  /*
+    Scoped to the page's category, so a page about gambling shows gambling
+    listings and quotes the gambling count. An unknown slug scopes to nothing
+    rather than to something wrong: the whole marketplace is obviously the
+    whole marketplace, where a finance page quietly showing gambling
+    publishers is not obviously anything.
+  */
+  const niche = acceptedNiches.some((entry) => entry.slug === config.niche)
+    ? (config.niche as NicheSlug)
+    : undefined;
+
+  const [fetched, counts] = await Promise.all([
+    needed.has('preview') && provided?.preview === undefined
+      ? websiteService.getPublicPreview(6, niche)
+      : undefined,
     needed.has('niches') || needed.has('totals') ? websiteService.countByNiche() : undefined,
   ]);
+
+  const preview = provided?.preview ?? fetched?.rows;
+  const listingCount = provided?.listingCount ?? fetched?.totalWebsites;
 
   const niches = counts
     ? acceptedNiches
@@ -95,7 +236,9 @@ async function gather(components: string[]): Promise<SectionData> {
     : undefined;
 
   return {
+    page: config,
     preview,
+    listingCount,
     niches: needed.has('niches') ? niches : undefined,
     totals: needed.has('totals') && niches
       ? {

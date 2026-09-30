@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { ArrowRight } from 'lucide-react';
 import { Container } from '@/components/layout/container';
 import { Button } from '@/components/ui/button';
 import { RichText, type RichTextValue } from '@/lib/cms/rich-text-render';
@@ -30,6 +31,7 @@ export * from './visual';
 export * from './marketplace';
 export * from './parrot';
 export * from './hero';
+export * from './niche';
 
 // --------------------------------------------------------------- rich text
 
@@ -101,7 +103,13 @@ export function CtaSection({ values, variant }: SectionProps) {
         <div className="mt-7 flex flex-wrap items-center justify-center gap-3">
           {primary.label && primary.href ? (
             <Button asChild variant="accent" size="lg">
-              <Link href={primary.href}>{primary.label}</Link>
+              <Link href={primary.href}>
+                {primary.label}
+                {/* The same arrow every primary call to action on the site
+                    carries. It was missing here only because this component
+                    predates any page rendering it. */}
+                <ArrowRight className="h-4 w-4" aria-hidden="true" />
+              </Link>
             </Button>
           ) : null}
 
@@ -173,7 +181,7 @@ export function FeatureCardsSection({ values, variant }: SectionProps) {
 
 // -------------------------------------------------------------------- FAQ
 
-export function FaqSection({ values, sectionId }: SectionProps) {
+export function FaqSection({ values, variant, sectionId }: SectionProps) {
   const items = rows<{ question?: string; answer?: string }>(values, 'items')
     // Both halves, because the pair becomes a FAQPage entry and a question
     // with an empty answer makes Google distrust the markup on the whole page.
@@ -181,10 +189,15 @@ export function FaqSection({ values, sectionId }: SectionProps) {
 
   if (items.length === 0) return null;
 
+  // The band the niche and service templates draw: white, deeper, and a
+  // wider measure. It exists so a converted page keeps the questions it had
+  // rather than gaining a differently-sized version of them.
+  const wide = variant === 'wide';
+
   return (
-    <section className="border-b border-line bg-surface">
-      <Container size="wide" className="py-14 lg:py-16">
-        <div className="mx-auto max-w-2xl">
+    <section className={cn('border-b border-line', wide ? 'bg-white' : 'bg-surface')}>
+      <Container size="wide" className={wide ? 'py-14 lg:py-20' : 'py-14 lg:py-16'}>
+        <div className={cn('mx-auto', wide ? 'max-w-3xl' : 'max-w-2xl')}>
           {/* Faq brings its own heading and its own accordion markup - a
               second <h2> around it would announce the section twice. */}
           <Faq

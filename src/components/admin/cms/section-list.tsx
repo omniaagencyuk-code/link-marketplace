@@ -78,7 +78,11 @@ export function SectionList({
   globals?: GlobalSection[];
 }) {
   const [open, setOpen] = useState<string | null>(null);
-  const [adding, setAdding] = useState(false);
+  /**
+   * Where the library is open: the id to insert after, `'end'` for the button
+   * at the bottom, or nothing.
+   */
+  const [adding, setAdding] = useState<string | null>(null);
   const [dragging, setDragging] = useState<string | null>(null);
 
   /** Send the whole order, because renumbering happens in one statement. */
@@ -98,8 +102,9 @@ export function SectionList({
     <div className="space-y-3">
       {sections.length === 0 ? (
         <p className="rounded-[var(--radius-card)] border border-dashed border-line-strong px-5 py-8 text-center text-[13px] text-muted">
-          This page has no sections yet, so it still renders the version built in code.
-          Add one and this page starts being built here instead.
+          This page has no sections yet, so it still renders from its template.
+          Converting brings every band of it across at once; adding one section at a
+          time builds the page from scratch instead.
         </p>
       ) : null}
 
@@ -231,15 +236,40 @@ export function SectionList({
                   </>
                 )
               ) : null}
+
+              {/* An insertion point after every section. A band that belongs
+                  halfway down a page is added halfway down the page, rather
+                  than at the bottom and then dragged. */}
+              {adding === section.id ? (
+                <div className="border-t border-line p-3">
+                  <SectionLibrary
+                    pageSlug={pageSlug}
+                    globals={globals}
+                    after={section.id}
+                    onClose={() => setAdding(null)}
+                  />
+                </div>
+              ) : (
+                <div className="flex justify-center border-t border-line">
+                  <button
+                    type="button"
+                    onClick={() => setAdding(section.id)}
+                    className="-my-2.5 flex items-center gap-1 rounded-full border border-line bg-white px-2.5 py-1 text-[11px] font-medium text-muted transition-colors hover:border-accent-500 hover:text-accent-700"
+                  >
+                    <Plus className="h-3 w-3" aria-hidden="true" />
+                    Insert below
+                  </button>
+                </div>
+              )}
             </li>
           );
         })}
       </ul>
 
-      {adding ? (
-        <SectionLibrary pageSlug={pageSlug} globals={globals} onClose={() => setAdding(false)} />
+      {adding === 'end' ? (
+        <SectionLibrary pageSlug={pageSlug} globals={globals} onClose={() => setAdding(null)} />
       ) : (
-        <Button type="button" variant="outline" className="w-full" onClick={() => setAdding(true)}>
+        <Button type="button" variant="outline" className="w-full" onClick={() => setAdding('end')}>
           <Plus className="h-3.5 w-3.5" aria-hidden="true" />
           Add section
         </Button>
@@ -411,10 +441,13 @@ function ShareSection({ section }: { section: PageSection }) {
 function SectionLibrary({
   pageSlug,
   globals,
+  after,
   onClose,
 }: {
   pageSlug: string;
   globals: GlobalSection[];
+  /** Put the new section directly below this one. Absent means the end. */
+  after?: string;
   onClose: () => void;
 }) {
   const [state, formAction] = useActionState<SectionActionState, FormData>(addSectionAction, {});
@@ -427,7 +460,9 @@ function SectionLibrary({
   return (
     <div className="rounded-[var(--radius-card)] border border-line bg-white p-4 shadow-[var(--shadow-card)]">
       <div className="flex items-center justify-between gap-3">
-        <h3 className="text-[14px] font-semibold text-ink">Add a section</h3>
+        <h3 className="text-[14px] font-semibold text-ink">
+          {after ? 'Insert a section here' : 'Add a section'}
+        </h3>
         <Button type="button" variant="ghost" size="sm" onClick={onClose}>
           Cancel
         </Button>
@@ -453,6 +488,7 @@ function SectionLibrary({
               {globals.map((global) => (
                 <form key={global.id} action={globalAction}>
                   <input type="hidden" name="pageSlug" value={pageSlug} />
+                  <input type="hidden" name="after" value={after ?? ''} />
                   <input type="hidden" name="globalId" value={global.id} />
                   <button
                     type="submit"
@@ -481,6 +517,7 @@ function SectionLibrary({
               {components.map((component) => (
                 <form key={component.key} action={formAction}>
                   <input type="hidden" name="pageSlug" value={pageSlug} />
+                  <input type="hidden" name="after" value={after ?? ''} />
                   <input type="hidden" name="component" value={component.key} />
                   <button
                     type="submit"

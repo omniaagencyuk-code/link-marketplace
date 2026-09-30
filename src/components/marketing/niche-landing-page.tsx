@@ -13,7 +13,6 @@ import { journeySteps } from '@/lib/config/how-it-works';
 import { siteUrl } from '@/lib/config/brand';
 import { formatNumber } from '@/lib/utils/format';
 import { cn } from '@/lib/utils/cn';
-import type { ReactNode } from 'react';
 import type { ContentAccessors } from '@/lib/cms/resolve';
 import type { PreviewRow } from '@/lib/services/marketplace-preview';
 
@@ -32,6 +31,18 @@ import type { PreviewRow } from '@/lib/services/marketplace-preview';
  * This is a separate template rather than a branch of that one because the
  * shape genuinely differs, and because the next niche page should reuse this
  * rather than adding a seventh set of optional props over there.
+ *
+ * ## This is now the fallback, not the page
+ *
+ * Every band below has been registered as a section - `niche-hero`,
+ * `niche-preview`, `topic-pills`, `benefit-cards`, `journey-steps`,
+ * `article-body`, `content-upsell`, and the shared FAQ and call to action.
+ * A niche page that has been converted renders from those, in whatever order
+ * an editor put them in, and never reaches this file.
+ *
+ * It stays because a conversion has to be reversible to be safe: delete a
+ * page's sections and it renders from here again, exactly as it did. It goes
+ * when every niche page has been converted and checked, and not before.
  */
 
 interface TrustItem extends Record<string, unknown> {
@@ -74,14 +85,6 @@ export interface NicheLandingPageProps {
   listingCount: number;
   /** Icons for the value cards, positionally matched. Not editable. */
   highlightIcons: LucideIcon[];
-  /**
-   * Anything built in the admin, rendered between the body copy and the FAQ.
-   *
-   * A slot rather than a component, so this file stays the design it always
-   * was and knows nothing about the page builder. A page that has added no
-   * sections passes nothing and renders exactly what it rendered before.
-   */
-  extra?: ReactNode;
   path: string;
   breadcrumbLabel: string;
   /** The parent crumb, e.g. Link Building. */
@@ -108,7 +111,6 @@ export function NicheLandingPage({
   path,
   breadcrumbLabel,
   breadcrumbParent,
-  extra,
 }: NicheLandingPageProps) {
   const trust = content.list<TrustItem>('hero', 'trust');
   const categories = content
@@ -484,13 +486,6 @@ export function NicheLandingPage({
           </div>
         </Container>
       </section>
-
-      {/*
-        Anything built in the admin, between the page's own copy and the
-        questions. A page that has added no sections passes nothing here and
-        renders exactly what it rendered before the builder existed.
-      */}
-      {extra}
 
       {/* --------------------------------------------------------------- faq */}
       {faqs.length ? (
