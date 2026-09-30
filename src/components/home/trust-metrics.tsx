@@ -45,19 +45,31 @@ export function TrustMetrics({
       {metrics.map((metric, index) => {
         const Icon = icons[index % icons.length] as LucideIcon;
         return (
-          <div key={metric.label || index} className="flex items-center gap-3">
-            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-accent-600 text-white">
-              <Icon className="h-4.5 w-4.5" aria-hidden="true" />
-            </span>
-            <div className="min-w-0">
-              <dt className="sr-only">{metric.label}</dt>
-              <dd>
+          /*
+            This <div> holds a <dt> and a <dd> and nothing else.
+
+            Two goes at getting that right. The figures originally sat one
+            level deeper, inside a layout wrapper, so every one was announced
+            as an orphaned list item; moving them up left the icon as a third
+            child of the group, which a description list may not have either.
+
+            So the icon lives inside the <dd>, where it is decoration beside
+            the value rather than a sibling of it - which is what it always
+            was visually.
+          */
+          <div key={metric.label || index}>
+            <dt className="sr-only">{metric.label}</dt>
+            <dd className="flex items-center gap-3">
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-accent-700 text-white">
+                <Icon className="h-4.5 w-4.5" aria-hidden="true" />
+              </span>
+              <span className="min-w-0">
                 <span className="tabular block text-[17px] leading-tight font-semibold text-ink">
                   {metric.value}
                 </span>
                 <span className="block text-[13px] text-muted">{metric.label}</span>
-              </dd>
-            </div>
+              </span>
+            </dd>
           </div>
         );
       })}

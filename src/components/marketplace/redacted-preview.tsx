@@ -67,7 +67,21 @@ export function RedactedPreview({
         ))}
       </div>
 
-      <div className="overflow-x-auto">
+      {/*
+        Focusable, because it scrolls.
+
+        A region that scrolls sideways and contains nothing focusable cannot
+        be scrolled from a keyboard at all - and nothing in this table is a
+        link, because every value in it is redacted. tabindex puts it in the
+        tab order so the arrow keys work, and the label says what has been
+        reached.
+      */}
+      <div
+        className="overflow-x-auto"
+        tabIndex={0}
+        role="region"
+        aria-label="Example marketplace listings"
+      >
         <table className="w-full min-w-[22rem] table-fixed">
           <caption className="sr-only">
             An illustration of the marketplace table. Website names are not shown to signed-out

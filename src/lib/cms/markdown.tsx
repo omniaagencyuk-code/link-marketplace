@@ -84,7 +84,7 @@ function renderInline(source: string, keyPrefix: string): ReactNode[] {
       const isInternal = token.href.startsWith('/');
       if (isInternal) {
         return (
-          <Link key={key} href={token.href} className="text-accent-700 hover:underline">
+          <Link key={key} href={token.href} className="text-accent-700 underline decoration-accent-700/40 underline-offset-2 hover:decoration-accent-700">
             {token.text}
           </Link>
         );
@@ -94,7 +94,7 @@ function renderInline(source: string, keyPrefix: string): ReactNode[] {
           key={key}
           href={token.href}
           rel="noreferrer noopener"
-          className="text-accent-700 hover:underline"
+          className="text-accent-700 underline decoration-accent-700/40 underline-offset-2 hover:decoration-accent-700"
         >
           {token.text}
         </a>

@@ -879,5 +879,88 @@ console.log('\n--- a shared section is edited where it lives ---');
   yes('before it unlinks', detach.indexOf('values: global.values') < detach.indexOf('this.link(id, null)'));
 }
 
+console.log('\n--- the primary button is readable ---');
+{
+  /*
+    White on accent-600 is 3.77:1. AA wants 4.5:1 for text below 18.66px, and
+    the button's label is 15px - so the main call to action on every page of
+    the site failed, and had since it was built. It is accent-700 now, at
+    5.48:1.
+
+    Computed from the stylesheet rather than asserted as a hex, because the
+    failure mode is somebody adjusting the palette and not thinking about the
+    button that sits on it.
+  */
+  const css = read('src/app/globals.css');
+  const button = read('src/components/ui/button.tsx');
+
+  const hex = (name: string) => {
+    const match = css.match(new RegExp(`--color-${name}:\\s*(#[0-9a-f]{6})`, 'i'));
+    if (!match) throw new Error(`globals.css has no --color-${name}`);
+    return match[1];
+  };
+
+  const luminance = (colour: string) => {
+    const parts = [1, 3, 5]
+      .map((at) => parseInt(colour.slice(at, at + 2), 16) / 255)
+      .map((v) => (v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4));
+    return 0.2126 * parts[0] + 0.7152 * parts[1] + 0.0722 * parts[2];
+  };
+
+  const contrast = (a: string, b: string) => {
+    const [light, dark] = [luminance(a), luminance(b)].sort((x, y) => y - x);
+    return (light + 0.05) / (dark + 0.05);
+  };
+
+  // Whichever shade the accent button actually uses.
+  const shade = button.match(/bg-(accent-\d+) text-white/)?.[1];
+  yes('the accent button names a shade from the palette', Boolean(shade));
+
+  const ratio = contrast(hex(shade ?? 'accent-700'), '#ffffff');
+  yes(
+    `white on ${shade} is ${ratio.toFixed(2)}:1, which clears 4.5:1`,
+    ratio >= 4.5,
+  );
+
+  // The hover shade has to be readable too - it is the same label.
+  const hover = button.match(/hover:bg-(accent-\d+)/)?.[1];
+  if (hover) {
+    const hoverRatio = contrast(hex(hover), '#ffffff');
+    yes(`and ${hover} on hover is ${hoverRatio.toFixed(2)}:1`, hoverRatio >= 4.5);
+  }
+}
+
+console.log('\n--- links in prose are not distinguished by colour alone ---');
+{
+  /*
+    Against body text the accent green is 1.15:1, so a link marked only by
+    colour is invisible to a reader who cannot tell the two apart. Underlined
+    by default - `hover:underline` alone means the cue appears only for
+    somebody already pointing at it.
+  */
+  for (const file of ['src/lib/cms/rich-text-render.tsx', 'src/lib/cms/markdown.tsx']) {
+    const source = read(file);
+    const links = source.match(/className="text-accent-700[^"]*"/g) ?? [];
+    yes(`${file.split('/').at(-1)} has prose links to check`, links.length > 0);
+    /*
+      The class token exactly, not the word.
+
+      The first version tested for /\\bunderline\\b/ and passed with the fix
+      reverted, because `hover:underline` contains it - the cue appears only
+      for somebody already pointing at the link, which is the failure. Split
+      into tokens and look for a bare one.
+    */
+    yes(
+      `and every one is underlined without hovering`,
+      links.every((className) =>
+        className
+          .replace(/^className="|"$/g, '')
+          .split(/\s+/)
+          .includes('underline'),
+      ),
+    );
+  }
+}
+
 console.log(failed ? `\n  ${failed} FAILED\n` : '\n  all passed\n');
 process.exit(failed ? 1 : 0);

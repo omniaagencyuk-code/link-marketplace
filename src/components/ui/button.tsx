@@ -15,8 +15,17 @@ export type ButtonSize = 'sm' | 'md' | 'lg' | 'icon' | 'icon-sm';
 const variants: Record<ButtonVariant, string> = {
   primary:
     'bg-navy-900 text-white hover:bg-navy-800 active:bg-navy-950 shadow-[var(--shadow-card)]',
+  /*
+    accent-700, not accent-600.
+
+    White on accent-600 is 3.77:1, and AA wants 4.5:1 for text under 18.66px -
+    which this is, at 15px. It failed on every page with a primary button,
+    which is every page. accent-700 is 5.48:1 and was already the hover
+    colour, so the button is now the shade it used to turn into and darkens
+    further on hover.
+  */
   accent:
-    'bg-accent-600 text-white hover:bg-accent-700 active:bg-accent-700 shadow-[var(--shadow-card)]',
+    'bg-accent-700 text-white hover:bg-accent-800 active:bg-accent-800 shadow-[var(--shadow-card)]',
   secondary: 'bg-surface-sunken text-ink hover:bg-line',
   outline: 'border border-line-strong bg-white text-ink hover:bg-surface hover:border-muted-soft',
   ghost: 'text-ink-soft hover:bg-surface-sunken hover:text-ink',

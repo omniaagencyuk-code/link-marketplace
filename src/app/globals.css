@@ -23,6 +23,7 @@
   --color-accent-500: #10b981;
   --color-accent-600: #059669;
   --color-accent-700: #047857;
+  --color-accent-800: #065f46;
 
   /* Secondary accent - the parrot's beak. Used sparingly. */
   --color-coral-50: #fff4f0;
@@ -235,6 +236,18 @@
 }
 .cms-prose a {
   color: var(--color-accent-700);
+  /*
+    Underlined, not only coloured.
+
+    Against body text the accent green is 1.15:1, and a link distinguished by
+    colour alone fails for anybody who cannot see the difference - which is
+    the majority of the "links must be distinguishable" rule's reason for
+    existing. Offset so descenders stay readable.
+  */
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
+  text-decoration-color: color-mix(in oklab, var(--color-accent-700) 40%, transparent);
   text-decoration: underline;
 }
 .cms-prose code {

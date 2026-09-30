@@ -265,11 +265,11 @@ function renderText(node: RichTextNode, key: string): ReactNode {
     const href = link.attrs.href;
     const internal = href.startsWith('/') || href.startsWith('#');
     return internal ? (
-      <Link key={key} href={href} className="text-accent-700 hover:underline">
+      <Link key={key} href={href} className="text-accent-700 underline decoration-accent-700/40 underline-offset-2 hover:decoration-accent-700">
         {content}
       </Link>
     ) : (
-      <a key={key} href={href} rel="noreferrer noopener" className="text-accent-700 hover:underline">
+      <a key={key} href={href} rel="noreferrer noopener" className="text-accent-700 underline decoration-accent-700/40 underline-offset-2 hover:decoration-accent-700">
         {content}
       </a>
     );

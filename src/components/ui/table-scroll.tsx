@@ -213,9 +213,20 @@ export function TableScroll({
         </div>
       ) : null}
 
+      {/*
+        Focusable, because it scrolls.
+
+        A scrolling region whose contents are not focusable cannot be scrolled
+        from a keyboard. The admin's tables are full of links and checkboxes
+        so they are reachable anyway, but the same component renders editorial
+        tables on public pages, where nothing inside is focusable at all.
+      */}
       <div
         ref={body}
         onScroll={() => sync(body.current, top.current)}
+        tabIndex={0}
+        role="region"
+        aria-label={label}
         // A dragged height is exact; the default is a cap the table may not
         // reach, so a short table stays short.
         style={height == null ? { maxHeight } : { height }}

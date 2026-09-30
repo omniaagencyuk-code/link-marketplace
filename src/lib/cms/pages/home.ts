@@ -519,7 +519,10 @@ export const defaults: PageValues = {
     heading: 'Built to Scale With SEO Agencies',
     body: 'Running links for a dozen clients is a different problem from running links for one. One marketplace, one set of prices and one order queue across every account you manage.',
     primaryCta: { label: 'Create Agency Account', href: '/signup' },
-    secondaryCta: { label: 'Read more', href: '/link-building-agencies' },
+    // Not 'Read more'. A link announced out of context has to say where it
+    // goes, and a screen reader reading a page's links as a list gets a
+    // dozen of them saying nothing.
+    secondaryCta: { label: 'How agencies use Press Parrot', href: '/link-building-agencies' },
     items: [
       { label: 'Multiple clients from one account' },
       { label: 'Consistent prices you can quote from' },
