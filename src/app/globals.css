@@ -277,6 +277,111 @@
   pointer-events: none;
 }
 
+/* ---------------------------------------------------------------- reveal --
+
+   Sections arriving as you scroll to them. Driven by `Reveal`, which sets
+   data-armed and then data-revealed; see that component for why nothing is
+   hidden until JavaScript says so.
+
+   Two properties only - opacity and transform - because those are the two the
+   compositor can animate without asking the layout engine anything. Animating
+   height, top or margin here would make scrolling stutter on exactly the
+   phones this needs to be smooth on.
+
+   The armed state is the only thing that hides anything, and only JavaScript
+   ever sets it. Without JavaScript there is no data-armed, so every section is
+   simply visible - which is the correct page, not a degraded one. */
+
+[data-reveal][data-armed]:not([data-revealed]) {
+  opacity: 0;
+}
+
+[data-reveal='fade-up'][data-armed]:not([data-revealed]) {
+  transform: translate3d(0, 1rem, 0);
+}
+
+[data-reveal='slide-left'][data-armed]:not([data-revealed]) {
+  transform: translate3d(1.5rem, 0, 0);
+}
+
+[data-reveal='slide-right'][data-armed]:not([data-revealed]) {
+  transform: translate3d(-1.5rem, 0, 0);
+}
+
+[data-reveal='scale-in'][data-armed]:not([data-revealed]) {
+  transform: scale3d(0.97, 0.97, 1);
+}
+
+[data-reveal][data-armed] {
+  transition-property: opacity, transform;
+  transition-timing-function: cubic-bezier(0.22, 0.61, 0.36, 1);
+  transition-duration: var(--reveal-speed, 500ms);
+  transition-delay: var(--reveal-delay, 0ms);
+  will-change: opacity, transform;
+}
+
+[data-reveal][data-revealed] {
+  opacity: 1;
+  transform: none;
+  /* The hint is worth its cost while something is moving and is a standing
+     tax on the compositor afterwards. */
+  will-change: auto;
+}
+
+[data-reveal][data-speed='subtle'] { --reveal-speed: 350ms; }
+[data-reveal][data-speed='normal'] { --reveal-speed: 500ms; }
+[data-reveal][data-speed='slow'] { --reveal-speed: 750ms; }
+
+[data-reveal][data-delay='small'] { --reveal-delay: 80ms; }
+[data-reveal][data-delay='medium'] { --reveal-delay: 180ms; }
+
+/* Stagger: the section holds still and its items arrive in turn.
+
+   Which elements are "the items" is a question only the section can answer.
+   The first version of this guessed - `> * > :nth-child(n)` and a list of tag
+   names - and got both halves wrong: the cards sit four levels down, so every
+   delay resolved to zero and they all arrived at once, and the tag list caught
+   six wrapper divs as well as the three cards.
+
+   So the component marks its own repeating group with data-reveal-items. The
+   frontend owns its DOM; a stylesheet reaching into it by shape is a rule that
+   silently stops working the day somebody adds a wrapper.
+
+   The steps are capped rather than open-ended. A grid of thirty cards at 60ms
+   a step is still arriving nearly two seconds later, by which time the reader
+   has scrolled past - so after ten, everything left comes together. */
+
+[data-reveal='stagger'][data-armed]:not([data-revealed]) {
+  opacity: 1;
+}
+
+[data-reveal='stagger'][data-armed]:not([data-revealed]) [data-reveal-items] > * {
+  opacity: 0;
+  transform: translate3d(0, 0.75rem, 0);
+}
+
+[data-reveal='stagger'][data-armed] [data-reveal-items] > * {
+  transition-property: opacity, transform;
+  transition-timing-function: cubic-bezier(0.22, 0.61, 0.36, 1);
+  transition-duration: var(--reveal-speed, 500ms);
+}
+
+[data-reveal='stagger'][data-revealed] [data-reveal-items] > * {
+  opacity: 1;
+  transform: none;
+}
+
+[data-reveal-items] > :nth-child(1) { transition-delay: calc(var(--reveal-delay, 0ms) + 0ms); }
+[data-reveal-items] > :nth-child(2) { transition-delay: calc(var(--reveal-delay, 0ms) + 60ms); }
+[data-reveal-items] > :nth-child(3) { transition-delay: calc(var(--reveal-delay, 0ms) + 120ms); }
+[data-reveal-items] > :nth-child(4) { transition-delay: calc(var(--reveal-delay, 0ms) + 180ms); }
+[data-reveal-items] > :nth-child(5) { transition-delay: calc(var(--reveal-delay, 0ms) + 240ms); }
+[data-reveal-items] > :nth-child(6) { transition-delay: calc(var(--reveal-delay, 0ms) + 300ms); }
+[data-reveal-items] > :nth-child(7) { transition-delay: calc(var(--reveal-delay, 0ms) + 360ms); }
+[data-reveal-items] > :nth-child(8) { transition-delay: calc(var(--reveal-delay, 0ms) + 420ms); }
+[data-reveal-items] > :nth-child(9) { transition-delay: calc(var(--reveal-delay, 0ms) + 480ms); }
+[data-reveal-items] > :nth-child(n + 10) { transition-delay: calc(var(--reveal-delay, 0ms) + 540ms); }
+
 @media (prefers-reduced-motion: reduce) {
   html {
     scroll-behavior: auto;
@@ -288,5 +393,16 @@
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
+  }
+
+  /* Killing the duration is not enough for the reveals: a transition of no
+     length still starts from opacity 0 and stays there until something
+     changes the attribute. Reduced motion has to mean the content is simply
+     present, so the hidden state is undone rather than hurried. */
+  [data-reveal],
+  [data-reveal-items] > * {
+    opacity: 1 !important;
+    transform: none !important;
+    transition: none !important;
   }
 }

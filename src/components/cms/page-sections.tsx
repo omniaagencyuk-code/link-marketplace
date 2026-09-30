@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import { pageSectionService } from '@/lib/services/page-section-service';
-import { getRenderer } from '@/lib/cms/components/render';
+import { getRenderer, isAnimatable } from '@/lib/cms/components/render';
+import { Reveal } from './reveal';
 import { resolveSection, type PageSection } from '@/lib/cms/sections';
 import { applyTokens, type TokenValues } from '@/lib/cms/tokens';
 import type { SectionValues } from '@/lib/cms/sections';
@@ -54,7 +55,7 @@ export async function PageSections({
 }
 
 function Section({ section, tokens }: { section: PageSection; tokens: TokenValues }) {
-  const { component, variant, values } = resolveSection(section);
+  const { component, variant, values, animation } = resolveSection(section);
   const render = getRenderer(component);
   if (!render) return null;
 
@@ -72,7 +73,17 @@ function Section({ section, tokens }: { section: PageSection; tokens: TokenValue
     map carries 'use client'. The day one needs to, this has to become JSX
     again, and the check will say so rather than the page misbehaving.
   */
-  return render({ values: fillTokens(values, tokens), variant, sectionId: section.id });
+  const drawn = render({ values: fillTokens(values, tokens), variant, sectionId: section.id });
+
+  /*
+    Wrapped only where there is something to do. `Reveal` is the one client
+    component on a built page, so a page whose sections are all still costs
+    nothing for the feature - and a component the registry says is not worth
+    animating cannot be animated by a row that asks for it.
+  */
+  if (animation.entrance === 'none' || !isAnimatable(component)) return drawn;
+
+  return <Reveal animation={animation}>{drawn}</Reveal>;
 }
 
 /**

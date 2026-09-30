@@ -22,7 +22,7 @@ export function Faq({
       <h2 id={id} className="text-2xl font-semibold tracking-tight text-ink">
         {title}
       </h2>
-      <dl className="mt-6 divide-y divide-line overflow-hidden rounded-[var(--radius-card)] border border-line bg-white shadow-[var(--shadow-card)]">
+      <dl data-reveal-items="" className="mt-6 divide-y divide-line overflow-hidden rounded-[var(--radius-card)] border border-line bg-white shadow-[var(--shadow-card)]">
         {items.map((item) => (
           <div key={item.question}>
             <details className="group">

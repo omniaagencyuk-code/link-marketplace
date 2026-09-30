@@ -46,3 +46,21 @@ export function getRenderer(component: string): SectionRenderer | null {
 export function renderableComponents(): string[] {
   return Object.keys(RENDERERS);
 }
+
+/**
+ * Which components may carry an entrance animation.
+ *
+ * Kept here rather than read from the schema, because the public renderer
+ * must not import the schema - that separation is what keeps the admin's
+ * bundle off a public page. The two lists agreeing is checked in
+ * verify:sections, which can import both.
+ *
+ * Rich text is absent deliberately. Animating a wall of paragraphs as
+ * somebody scrolls into it is the thing that makes a site feel like a
+ * template, and long-form copy is what the reader came for.
+ */
+const ANIMATABLE = new Set(['cta', 'feature-cards', 'faq']);
+
+export function isAnimatable(component: string): boolean {
+  return ANIMATABLE.has(component);
+}

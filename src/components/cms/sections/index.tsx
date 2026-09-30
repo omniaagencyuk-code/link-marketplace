@@ -157,7 +157,11 @@ export function FeatureCardsSection({ values, variant }: SectionProps) {
           </div>
         ) : null}
 
+        {/* The section names its own repeating group. A stylesheet that
+            guessed at the shape got it wrong in both directions: the cards
+            are four levels down, so every stagger delay resolved to zero. */}
         <div
+          data-reveal-items=""
           className={cn(
             'grid gap-5 sm:grid-cols-2',
             heading && 'mt-10',

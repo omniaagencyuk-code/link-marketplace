@@ -14,6 +14,7 @@ import {
   resolveVariant,
 } from '../src/lib/cms/components/schema';
 import { applyTokens, unknownTokens, TOKENS } from '../src/lib/cms/tokens';
+import { isAnimatable, renderableComponents } from '../src/lib/cms/components/render';
 import {
   DELAYS,
   ENTRANCES,
@@ -358,6 +359,113 @@ console.log('\n--- live numbers inside copy ---');
   is('a typo is reported', unknownTokens('{{marketplace_site_cont}}').length, 1);
   is('a real token is not', unknownTokens('{{marketplace_site_count}}').length, 0);
   yes('every token is explained to whoever types it', TOKENS.every((token) => token.help.length > 10));
+}
+
+console.log('\n--- what may animate, and what may not ---');
+{
+  /*
+    The list lives twice: `animatable` in the schema, which the admin reads to
+    decide whether to offer the setting, and ANIMATABLE in the renderer, which
+    decides whether to wrap. It has to live twice because the two halves of
+    the registry must not import each other - so the thing to check is that
+    they agree.
+
+    Disagreeing one way offers a setting that does nothing. Disagreeing the
+    other animates a section whose editor never mentioned it.
+  */
+  for (const component of listComponents()) {
+    is(
+      `"${component.key}" animates in both halves or neither`,
+      isAnimatable(component.key),
+      component.animatable,
+    );
+  }
+
+  // Long-form copy is what the reader came for. Animating paragraphs as
+  // somebody scrolls into them is the thing that makes a site feel generic.
+  is('rich text does not animate', isAnimatable('rich-text'), false);
+  is('a component with no renderer does not animate', isAnimatable('nope'), false);
+  yes('every renderable key is a real component', renderableComponents().every((key) => getComponent(key) !== null));
+}
+
+console.log('\n--- nothing is hidden unless JavaScript hid it ---');
+{
+  const reveal = read('src/components/cms/reveal.tsx');
+  const css = read('src/app/globals.css');
+
+  /*
+    The failure being prevented: a marketing page whose copy is invisible
+    because a bundle failed, or because the reader is a crawler. Every hiding
+    rule is behind [data-armed], and only the client component ever sets that
+    attribute - so no script means no attribute means nothing hidden.
+  */
+  const hidingRules = css
+    .split('\n')
+    .filter((line) => /^\[data-reveal/.test(line) && /opacity: 0|transform: (translate|scale)/.test(line + css));
+
+  yes('the armed attribute is set only from the client component', reveal.includes("dataset.armed"));
+  yes(
+    'every rule that hides something requires it',
+    css
+      .split('}')
+      .filter((block) => /opacity:\s*0(?!\.)/.test(block) && block.includes('[data-reveal'))
+      .every((block) => block.includes('[data-armed]')),
+  );
+  is('and there is at least one such rule to check', hidingRules.length > 0, true);
+
+  // Largest Contentful Paint measures when content is painted, and an element
+  // at opacity zero has not been. Anything already on screen is revealed
+  // rather than armed, so the top of the page is never hidden for a frame.
+  yes('an element already on screen is never armed', reveal.includes('getBoundingClientRect'));
+  yes('reduced motion returns before arming anything', /prefers-reduced-motion[\s\S]{0,200}return/.test(reveal));
+
+  // Killing transition durations does not undo an opacity of zero. Reduced
+  // motion has to put the content back, not hurry the animation.
+  const reducedBlock = css.slice(css.indexOf('@media (prefers-reduced-motion: reduce)'));
+  yes('reduced motion restores the hidden state', reducedBlock.includes('[data-reveal]') && reducedBlock.includes('opacity: 1 !important'));
+}
+
+console.log('\n--- only the compositor is asked to do anything ---');
+{
+  const css = read('src/app/globals.css');
+  const revealCss = css.slice(css.indexOf('[data-reveal][data-armed]'), css.indexOf('@media (prefers-reduced-motion: reduce)'));
+
+  // Animating height, top, margin or width makes the browser re-lay-out the
+  // page on every frame, which is what turns a scroll into a stutter on the
+  // phones this most needs to be smooth on.
+  for (const property of ['height', 'width', 'margin', 'padding', 'top:', 'left:']) {
+    yes(`nothing animates ${property.replace(':', '')}`, !revealCss.includes(`transition-property: ${property}`) && !new RegExp(`transition:[^;]*${property}`).test(revealCss));
+  }
+  yes('transitions name opacity and transform only', /transition-property: opacity, transform/.test(revealCss));
+  yes('the will-change hint is dropped once the movement is over', /\[data-revealed\][\s\S]{0,200}will-change: auto/.test(revealCss));
+
+  // A grid of thirty cards with an open-ended step would still be arriving
+  // two seconds later, by which time the reader has scrolled past.
+  yes('the stagger stops stepping after ten', revealCss.includes('nth-child(n + 10)'));
+
+  /*
+    The stagger targets a group the component marks, not a shape the
+    stylesheet guesses at.
+
+    The first version guessed twice and was wrong twice: `> * > :nth-child(n)`
+    put every delay at zero, because the cards sit four levels down, and a
+    list of tag names hid six wrapper divs as well as the three cards. Both
+    were invisible failures - the animation ran, it just all arrived at once.
+  */
+  yes('the stagger targets a marked group', revealCss.includes('[data-reveal-items] > *'));
+  yes('and never a list of tag names', !/\[data-reveal='stagger'\][^{]*:is\(li, article/.test(revealCss));
+
+  // A component that can stagger but marks no group animates nothing at all,
+  // silently. Anything with a repeatable list is a candidate.
+  const rendered = read('src/components/cms/sections/index.tsx') + read('src/components/shared/faq.tsx');
+  for (const component of listComponents()) {
+    if (!component.animatable) continue;
+    if (!component.fields.some((field) => field.type === 'list')) continue;
+    yes(
+      `"${component.key}" marks the group that staggers`,
+      rendered.includes('data-reveal-items'),
+    );
+  }
 }
 
 console.log(failed ? `\n  ${failed} FAILED\n` : '\n  all passed\n');
