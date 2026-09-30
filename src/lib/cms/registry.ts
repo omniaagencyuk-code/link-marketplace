@@ -7,6 +7,7 @@ import * as agencies from './pages/link-building-agencies';
 import * as gambling from './pages/gambling-link-building';
 import * as pricing from './pages/pricing';
 import * as howItWorks from './pages/how-it-works';
+import * as metrics from './pages/link-building-metrics';
 import * as contentWriting from './pages/content-writing';
 import * as terms from './pages/terms';
 import * as privacy from './pages/privacy';
@@ -37,6 +38,7 @@ export const pageRegistry: RegisteredPage[] = [
   contentWriting,
   pricing,
   howItWorks,
+  metrics,
   terms,
   privacy,
   cookies,

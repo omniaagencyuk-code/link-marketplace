@@ -12,6 +12,9 @@ import { NicheGrid } from '@/components/home/niche-grid';
 import { TrustedBy } from '@/components/home/trusted-by';
 import { TrustMetrics } from '@/components/home/trust-metrics';
 import { PageSections } from '@/components/cms/page-sections';
+import { Reveal } from '@/components/cms/reveal';
+import { ChecklistSection, ComparisonSection, ParrotSaysSection } from '@/components/cms/sections';
+import { MetricCards } from '@/components/home/metric-cards';
 import { FinalCta } from '@/components/home/final-cta';
 import { Faq, type FaqItem } from '@/components/shared/faq';
 import { websiteService } from '@/lib/services';
@@ -121,7 +124,58 @@ export default async function HomePage() {
       <PlatformFeatures content={content} />
       <AgenciesSection content={content} />
 
+      {/*
+        The editorial half, broken up rather than run together.
+
+        A three-thousand-word block is a wall nobody reads and a page nobody
+        scrolls. The prose alternates with something to look at: an aside, two
+        lists side by side, a checklist, the metric cards. The components are
+        the ones from the section library, fed from this page's own CMS fields
+        - so they are editable here and identical to the ones an admin can add
+        further down.
+      */}
       <SeoEditorial content={content} />
+
+      <Reveal animation={{ entrance: 'slide-right', speed: 'subtle', delay: 'none' }}>
+        <ParrotSaysSection
+          values={{
+            label: content.text('parrotSays', 'label'),
+            body: content.text('parrotSays', 'body'),
+          }}
+          variant="accent"
+          sectionId="home-parrot-says"
+          data={{}}
+        />
+      </Reveal>
+
+      <ComparisonSection
+        values={{
+          heading: content.text('comparison', 'heading'),
+          body: content.text('comparison', 'body'),
+          goodTitle: content.text('comparison', 'goodTitle'),
+          good: content.list('comparison', 'good'),
+          badTitle: content.text('comparison', 'badTitle'),
+          bad: content.list('comparison', 'bad'),
+        }}
+        variant="default"
+        sectionId="home-comparison"
+        data={{}}
+      />
+
+      <Reveal animation={{ entrance: 'stagger', speed: 'normal', delay: 'none' }}>
+        <ChecklistSection
+          values={{
+            heading: content.text('checklist', 'heading'),
+            body: content.text('checklist', 'body'),
+            items: content.list('checklist', 'items'),
+          }}
+          variant="default"
+          sectionId="home-checklist"
+          data={{}}
+        />
+      </Reveal>
+
+      <MetricCards content={content} />
 
       {/*
         Anything built in the admin, between the editorial and the questions.

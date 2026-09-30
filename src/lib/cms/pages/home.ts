@@ -216,6 +216,74 @@ export const definition: PageDef = {
     ),
 
     section(
+      'parrotSays',
+      'Parrot aside',
+      [
+        text('label', 'Label', { maxLength: 40 }),
+        textarea('body', 'What the parrot says', { rows: 3, maxLength: 600 }),
+      ],
+      'The short aside that breaks up the editorial. One opinion, not a summary.',
+    ),
+
+    section(
+      'comparison',
+      'Good opportunity vs site to avoid',
+      [
+        text('heading', 'Heading', { maxLength: 140 }),
+        textarea('body', 'Supporting copy', { rows: 3, maxLength: 400 }),
+        text('goodTitle', 'Left column heading', { maxLength: 80 }),
+        list('good', 'Left column points', [text('text', 'Point', { maxLength: 200 })], {
+          itemLabelKey: 'text',
+          maxItems: 8,
+        }),
+        text('badTitle', 'Right column heading', { maxLength: 80 }),
+        list('bad', 'Right column points', [text('text', 'Point', { maxLength: 200 })], {
+          itemLabelKey: 'text',
+          maxItems: 8,
+        }),
+      ],
+      'Two lists rather than a table - the sides are opposites, not the same rows with different values.',
+    ),
+
+    section(
+      'checklist',
+      'How to choose a website',
+      [
+        text('heading', 'Heading', { maxLength: 140 }),
+        textarea('body', 'Supporting copy', { rows: 3, maxLength: 400 }),
+        list('items', 'Points', [text('text', 'Point', { maxLength: 200 })], {
+          itemLabelKey: 'text',
+          maxItems: 10,
+        }),
+      ],
+      'The checklist under the editorial.',
+    ),
+
+    section(
+      'metricCards',
+      'What metrics to look at',
+      [
+        text('heading', 'Heading', { maxLength: 140 }),
+        textarea('body', 'Supporting copy', { rows: 3, maxLength: 400 }),
+        list(
+          'items',
+          'Metrics',
+          [
+            text('title', 'Name', { maxLength: 60 }),
+            textarea('body', 'One or two lines', { rows: 2, maxLength: 240 }),
+            text('href', 'Link', {
+              maxLength: 120,
+              help: 'An anchor on the metrics page, e.g. /link-building-metrics#organic-traffic',
+            }),
+          ],
+          { itemLabelKey: 'title', maxItems: 6 },
+        ),
+        link('cta', 'Link under the cards'),
+      ],
+      'The metric cards. Each one links to its own section of the metrics page.',
+    ),
+
+    section(
       'faqs',
       'FAQs',
       [
@@ -520,6 +588,81 @@ A single marketplace with fixed prices removes most of that overhead: the same i
 Links get a page considered. The page itself has to do the rest: answer the question the searcher arrived with, cover the follow-ups, and give somebody a reason to stay. [SEO content writing](/content-writing) and link building are usually treated as separate budgets, and they work considerably better when they are planned together.`,
       },
     ],
+  },
+
+  parrotSays: {
+    label: 'Parrot says',
+    body: 'A high domain rating is the easiest number on a listing to manufacture, and the first one anybody selling a bad link will quote you. Look at whether the traffic is real and whether it is in your country before you look at anything else.',
+  },
+
+  comparison: {
+    heading: 'What a good opportunity looks like',
+    body: 'The difference is rarely in the headline metrics. It is in what the site publishes when nobody is paying it to.',
+    goodTitle: 'Worth buying',
+    good: [
+      { text: 'Organic traffic that has held steady or grown for a year or more' },
+      { text: 'That traffic is in the countries you sell in' },
+      { text: 'Articles with named authors and a publishing history behind them' },
+      { text: 'Editorial content alongside whatever is sponsored' },
+      { text: 'One or two outbound commercial links in a long article, not seven' },
+      { text: 'The subject matter overlaps yours without you having to argue it' },
+    ],
+    badTitle: 'Walk away',
+    bad: [
+      { text: 'A strong domain rating and almost no organic traffic' },
+      { text: 'Traffic that halved in the last year with no explanation' },
+      { text: 'Every recent post is sponsored, or reads as though it was' },
+      { text: 'A "we cover every niche" site with sections for all of them' },
+      { text: 'Dozens of outbound links to unrelated businesses on every page' },
+      { text: 'Nothing published in the months before it started selling placements' },
+    ],
+  },
+
+  checklist: {
+    heading: 'How to choose websites for link building',
+    body: 'Use the metrics to get from thousands of sites to a shortlist, then spend ten minutes on the shortlist. That order round saves the most money.',
+    items: [
+      { text: 'Rule out anything with no organic traffic at all, whatever its domain rating' },
+      { text: 'Rule out anything whose audience is in countries you do not sell in' },
+      { text: 'Rule out anything whose traffic has fallen sharply in the last year' },
+      { text: 'Of what is left, prefer sites that genuinely cover your subject' },
+      { text: 'Among relevant sites, use domain rating to decide the order' },
+      { text: 'Before ordering, open two articles and count the outbound commercial links' },
+      { text: 'Check the link policy - dofollow, sponsored tagging, in-content placement' },
+    ],
+  },
+
+  metricCards: {
+    heading: 'What metrics should you look at?',
+    body: 'Every listing carries the same figures. These are the five that decide most buying decisions, and none of them decides one on its own.',
+    items: [
+      {
+        title: 'Domain Rating',
+        body: 'How strong the backlink profile is. A good first filter, and the easiest number on the page to inflate.',
+        href: '/link-building-metrics#domain-rating',
+      },
+      {
+        title: 'Organic Traffic',
+        body: 'Whether anybody actually reads the site. The hardest figure to manufacture cheaply, and the most useful.',
+        href: '/link-building-metrics#organic-traffic',
+      },
+      {
+        title: 'Niche Relevance',
+        body: 'Whether the site covers your subject. The thing every other metric is a proxy for.',
+        href: '/link-building-metrics#niche-relevance',
+      },
+      {
+        title: 'Traffic Geography',
+        body: 'Where the readers are. Fifty thousand visitors in the wrong country is not your audience.',
+        href: '/link-building-metrics#traffic-geography',
+      },
+      {
+        title: 'Outbound Links',
+        body: 'How many businesses each article already links to. The quickest way to tell a publisher from a link farm.',
+        href: '/link-building-metrics#outbound-links',
+      },
+    ],
+    cta: { label: 'Learn more about metrics', href: '/link-building-metrics' },
   },
 
   faqs: {

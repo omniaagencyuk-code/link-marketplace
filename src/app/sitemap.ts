@@ -47,6 +47,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     { path: '/link-building-agencies', priority: 0.8, changeFrequency: 'monthly' },
     { path: '/marketplace', priority: 0.8, changeFrequency: 'weekly' },
     { path: '/how-it-works', priority: 0.7, changeFrequency: 'monthly' },
+    { path: '/link-building-metrics', priority: 0.7, changeFrequency: 'monthly' },
     { path: '/pricing', priority: 0.7, changeFrequency: 'monthly' },
     { path: '/resources', priority: 0.7, changeFrequency: 'weekly' },
     { path: '/terms', priority: 0.3, changeFrequency: 'monthly' },

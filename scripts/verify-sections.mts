@@ -660,5 +660,52 @@ console.log('\n--- the homepage counts rather than claims ---');
   yes('and still fetches its data once', (page.match(/await Promise\.all/g) ?? []).length === 1);
 }
 
+console.log('\n--- the homepage links into the metrics page, and lands ---');
+{
+  /*
+    A cross-page contract that breaks in silence.
+
+    The homepage's metric cards link to /link-building-metrics#organic-traffic
+    and four others. Those fragments are anchor ids on the metrics page, and
+    renaming one there does nothing visible here - the link still works, it
+    just lands at the top of a three-thousand-word page instead of at the
+    paragraph that answers the question. Nobody would notice for months.
+  */
+  const home = await import('../src/lib/cms/pages/home');
+  const metrics = await import('../src/lib/cms/pages/link-building-metrics');
+
+  const anchors = new Set(
+    (metrics.defaults.metrics as { items: { id: string }[] }).items.map((metric) => metric.id),
+  );
+  const cards = (home.defaults.metricCards as { items: { title: string; href: string }[] }).items;
+
+  is('the metrics page has anchors to link to', anchors.size >= 8, true);
+  is('and the homepage has cards pointing at them', cards.length >= 4, true);
+
+  for (const card of cards) {
+    const fragment = card.href.split('#')[1];
+    yes(`"${card.title}" points at an anchor that exists`, Boolean(fragment) && anchors.has(fragment));
+  }
+
+  // Every anchor id has to be usable as one.
+  yes(
+    'every anchor is a valid fragment',
+    [...anchors].every((id) => /^[a-z0-9]+(-[a-z0-9]+)*$/.test(id)),
+  );
+
+  /*
+    And every metric says what it cannot tell you.
+    
+    That is the editorial rule the page exists for: a reference presenting
+    Domain Rating as a verdict teaches people to buy bad links confidently,
+    which is worse than teaching them nothing. It is a field rather than a
+    convention so that it cannot be quietly dropped from one entry.
+  */
+  const items = (metrics.defaults.metrics as { items: { heading: string; limit: string }[] }).items;
+  for (const metric of items) {
+    yes(`"${metric.heading}" says what it cannot tell you`, (metric.limit ?? '').length > 30);
+  }
+}
+
 console.log(failed ? `\n  ${failed} FAILED\n` : '\n  all passed\n');
 process.exit(failed ? 1 : 0);
