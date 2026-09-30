@@ -57,21 +57,40 @@ export async function finishImportAction(summary: {
 }) {
   const session = await requireAdminSession();
 
-  await importHistoryService.record({
-    fileName: sanitiseText(summary.fileName, 120),
-    adminEmail: session.email,
-    duplicateMode: summary.duplicateMode === 'update' ? 'update' : 'skip',
-    rowsUploaded: Math.max(0, Math.trunc(summary.rowsUploaded)),
-    rowsAdded: Math.max(0, Math.trunc(summary.rowsAdded)),
-    rowsUpdated: Math.max(0, Math.trunc(summary.rowsUpdated)),
-    rowsSkipped: Math.max(0, Math.trunc(summary.rowsSkipped)),
-    rowsFailed: Math.max(0, Math.trunc(summary.rowsFailed)),
-  });
+  /*
+    The listings are already written by the time this runs, so a history that
+    cannot be recorded must not be reported as an import that failed. It is
+    caught, named and handed back as a warning: the rows are in, and the line
+    in the history is not.
+
+    Not swallowed either. Silence is how the history came to be empty in the
+    first place.
+  */
+  let warning: string | null = null;
+  try {
+    await importHistoryService.record({
+      fileName: sanitiseText(summary.fileName, 120),
+      adminEmail: session.email,
+      duplicateMode: summary.duplicateMode === 'update' ? 'update' : 'skip',
+      rowsUploaded: Math.max(0, Math.trunc(summary.rowsUploaded)),
+      rowsAdded: Math.max(0, Math.trunc(summary.rowsAdded)),
+      rowsUpdated: Math.max(0, Math.trunc(summary.rowsUpdated)),
+      rowsSkipped: Math.max(0, Math.trunc(summary.rowsSkipped)),
+      rowsFailed: Math.max(0, Math.trunc(summary.rowsFailed)),
+    });
+  } catch (error) {
+    console.error('Could not record the import run', error);
+    warning =
+      'The listings were imported, but this run could not be written to the ' +
+      'import history, so it will not appear in the list below.';
+  }
 
   revalidatePath('/admin/websites');
   revalidatePath('/marketplace');
   revalidatePath('/');
   revalidatePath('/sitemap.xml');
+
+  return { warning };
 }
 
 /** Domains already in the marketplace, for duplicate detection in the browser. */

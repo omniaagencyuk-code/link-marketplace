@@ -47,6 +47,8 @@ export function ImportWizard({ currencySymbol }: { currencySymbol: string }) {
   const [existingDomains, setExistingDomains] = useState<Map<string, string>>(new Map());
   const [duplicateMode, setDuplicateMode] = useState<DuplicateMode>('skip');
   const [error, setError] = useState<string | null>(null);
+  /* Something worth knowing about a run that nonetheless worked. */
+  const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState({ done: 0, total: 0 });
   const [outcome, setOutcome] = useState<ImportOutcome | null>(null);
@@ -224,7 +226,7 @@ export function ImportWizard({ currencySymbol }: { currencySymbol: string }) {
         duplicateMode === 'skip' ? counts.existing : 0;
       totals.skipped += skippedExisting;
 
-      await finishImportAction({
+      const finished = await finishImportAction({
         fileName: totals.fileName,
         duplicateMode,
         rowsUploaded: rows.length,
@@ -234,6 +236,9 @@ export function ImportWizard({ currencySymbol }: { currencySymbol: string }) {
         rowsFailed: totals.failed.length,
       });
 
+      // A history that could not be written is worth saying, but it is not
+      // an import that failed - the rows are in.
+      setNotice(finished?.warning ?? null);
       setOutcome(totals);
       setStep(4);
       router.refresh();
@@ -258,6 +263,7 @@ export function ImportWizard({ currencySymbol }: { currencySymbol: string }) {
     setRows([]);
     setOutcome(null);
     setError(null);
+    setNotice(null);
     setProgress({ done: 0, total: 0 });
   }
 
@@ -356,6 +362,11 @@ export function ImportWizard({ currencySymbol }: { currencySymbol: string }) {
           {error ? (
             <p role="alert" className="rounded-md bg-red-50 px-3 py-2 text-[13px] text-red-700">
               {error}
+            </p>
+          ) : null}
+          {notice ? (
+            <p role="status" className="rounded-md bg-amber-50 px-3 py-2 text-[13px] text-amber-800">
+              {notice}
             </p>
           ) : null}
           <ImportResults outcome={outcome} onImportAnother={reset} />

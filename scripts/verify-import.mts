@@ -12,6 +12,7 @@ import { prepareRows } from '../src/lib/import/prepare';
 import { toWebsitePatch } from '../src/lib/import/to-website';
 import { matchAcceptedNiches } from '../src/lib/config/accepted-niches';
 import { findCollisions, findUnnormalised } from '../src/lib/import/duplicates';
+import { toRun } from '../src/lib/services/supabase/import-history-repository';
 
 let failures = 0;
 function check(label: string, actual: unknown, expected: unknown) {
@@ -216,6 +217,49 @@ check('a normalised row is not reported',
   findUnnormalised([listing('1', 'example.com')]), []);
 check('nor is one that cannot be parsed at all',
   findUnnormalised([listing('1', '')]), []);
+
+// ------------------------------------------------------- the import history
+/*
+  `import_runs` was created in migration 0006 and then never written to: the
+  service kept its runs in a module-level array, which lives in one server
+  process and is emptied by every deploy. The panel showed nothing nearly
+  always, which reads as "no imports yet" rather than "this cannot remember" -
+  and when the history was wanted as evidence there was none.
+
+  Now it writes to the table, the mapping between the two spellings is the
+  thing that can be quietly wrong. Every field is given a distinct value, so
+  a swap shows up as a wrong number rather than as a coincidence.
+*/
+const historyRow = {
+  id: 'run-1',
+  file_name: 'publishers-sept.csv',
+  run_by: 'james@omniaagency.co',
+  duplicate_mode: 'update',
+  total_rows: 1400,
+  created: 120,
+  updated: 1050,
+  skipped: 7,
+  failed: 230,
+  created_at: '2026-09-18T10:00:00Z',
+};
+
+check('the file name carries across', toRun(historyRow).fileName, 'publishers-sept.csv');
+check('run_by is the admin who ran it', toRun(historyRow).adminEmail, 'james@omniaagency.co');
+check('total_rows is what was uploaded', toRun(historyRow).rowsUploaded, 1400);
+check('created is rows added', toRun(historyRow).rowsAdded, 120);
+check('updated is rows updated', toRun(historyRow).rowsUpdated, 1050);
+check('skipped is rows skipped', toRun(historyRow).rowsSkipped, 7);
+check('failed is rows failed', toRun(historyRow).rowsFailed, 230);
+check('the mode comes back as it went in', toRun(historyRow).duplicateMode, 'update');
+
+// Anything that is not 'update' is 'skip'. A third value arriving from the
+// column would otherwise reach the UI as a mode that does not exist.
+check('an unknown mode reads as skip',
+  toRun({ ...historyRow, duplicate_mode: 'something-else' }).duplicateMode, 'skip');
+
+// A run recorded before run_by was set should read as blank, not "null".
+check('a missing admin is blank, not the word null', toRun({ ...historyRow, run_by: null }).adminEmail, '');
+check('missing counts are zero, not NaN', toRun({ id: 'x' }).rowsFailed, 0);
 
 console.log(failures ? `\n${failures} FAILED` : '\nall passed');
 process.exit(failures ? 1 : 0);
