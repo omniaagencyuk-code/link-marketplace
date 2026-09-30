@@ -3,6 +3,7 @@ import { ExternalLink, FileText, PencilLine, Plus } from 'lucide-react';
 import { PageTitle } from '@/components/dashboard/page-title';
 import { Badge } from '@/components/ui/badge';
 import { MockStorageNotice } from '@/components/admin/mock-storage-notice';
+import { DuplicatePage } from '@/components/admin/cms/duplicate-page';
 import { pageContentService } from '@/lib/services/page-content-service';
 import { customPageService } from '@/lib/services/custom-page-service';
 import { customPageDefinition } from '@/lib/cms/custom-page';
@@ -48,7 +49,7 @@ function Card({ page }: { page: PageCard }) {
         </p>
       ) : null}
 
-      <div className="mt-4 flex gap-2">
+      <div className="mt-4 flex flex-wrap gap-2">
         <Link
           href={`/admin/pages/${page.slug}`}
           className="inline-flex h-8 items-center gap-1.5 rounded-md bg-navy-900 px-3 text-[13px] font-medium text-white hover:bg-navy-800"
@@ -67,6 +68,7 @@ function Card({ page }: { page: PageCard }) {
             View
           </Link>
         ) : null}
+        <DuplicatePage from={page.slug} label={page.label} />
       </div>
     </li>
   );

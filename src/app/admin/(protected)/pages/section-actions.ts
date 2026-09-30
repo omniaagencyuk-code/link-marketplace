@@ -9,6 +9,7 @@ import {
   resolveVariant,
 } from '@/lib/cms/components/schema';
 import { readAnimation } from '@/lib/cms/sections';
+import { sanitiseText } from '@/lib/import/normalise';
 
 /**
  * Building a page out of sections.
@@ -153,6 +154,67 @@ export async function deleteSectionAction(formData: FormData): Promise<void> {
  * statement and a statement needs the finished order. Ids that do not belong
  * to this page are refused by the database function rather than trusted.
  */
+/**
+ * Save a section for use on other pages.
+ *
+ * Nothing visibly changes on the page it was saved from - the global starts
+ * as a copy of what was already there. What changes is where future edits go.
+ */
+export async function saveAsGlobalAction(
+  _previous: SectionActionState,
+  formData: FormData,
+): Promise<SectionActionState> {
+  const admin = await requireAdminSession();
+
+  const id = String(formData.get('id') ?? '');
+  const name = sanitiseText(String(formData.get('name') ?? ''), 120).trim();
+  if (!name) return { error: 'Give it a name so you can find it on other pages.' };
+
+  const section = await pageSectionService.find(id);
+  if (!section) return { error: 'That section no longer exists.' };
+  if (section.globalId) return { error: 'This section already comes from a global one.' };
+
+  const global = await pageSectionService.saveAsGlobal(id, name, admin.email);
+  if (!global) return { error: 'That could not be saved.' };
+
+  refresh(section.pageSlug);
+  return { message: `Saved as “${name}”. Editing it changes every page using it.` };
+}
+
+/** Add a copy of a global section to this page. */
+export async function addGlobalAction(
+  _previous: SectionActionState,
+  formData: FormData,
+): Promise<SectionActionState> {
+  const admin = await requireAdminSession();
+
+  const pageSlug = String(formData.get('pageSlug') ?? '').trim();
+  const globalId = String(formData.get('globalId') ?? '').trim();
+  if (!pageSlug || !globalId) return { error: 'Choose a section to add.' };
+
+  const added = await pageSectionService.addGlobal(pageSlug, globalId, admin.email);
+  if (!added) return { error: 'That section no longer exists.' };
+
+  refresh(pageSlug);
+  return { message: 'Added.' };
+}
+
+/**
+ * Make a section this page's own.
+ *
+ * The content comes down with it, so the page renders exactly what it
+ * rendered a moment ago. Only where the next edit lands has changed.
+ */
+export async function detachGlobalAction(formData: FormData): Promise<void> {
+  const admin = await requireAdminSession();
+  const id = String(formData.get('id') ?? '');
+  const section = await pageSectionService.find(id);
+  if (!section) return;
+
+  await pageSectionService.detach(id, admin.email);
+  refresh(section.pageSlug);
+}
+
 export async function reorderSectionsAction(formData: FormData): Promise<void> {
   await requireAdminSession();
 

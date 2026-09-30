@@ -11,7 +11,7 @@ import { pageContentService } from '@/lib/services/page-content-service';
 import { customPageService } from '@/lib/services/custom-page-service';
 import { pageSectionService } from '@/lib/services/page-section-service';
 import { SectionList } from '@/components/admin/cms/section-list';
-import type { PageSection } from '@/lib/cms/sections';
+import type { GlobalSection, PageSection } from '@/lib/cms/sections';
 
 export const dynamic = 'force-dynamic';
 
@@ -23,9 +23,10 @@ export default async function EditPagePage({ params }: { params: Promise<{ slug:
   const registered = getRegisteredPage(slug);
 
   if (registered) {
-    const [saved, sections] = await Promise.all([
+    const [saved, sections, globals] = await Promise.all([
       pageContentService.getOverrides(slug),
       pageSectionService.allForPage(slug),
+      pageSectionService.listGlobals(),
     ]);
 
     return (
@@ -33,7 +34,7 @@ export default async function EditPagePage({ params }: { params: Promise<{ slug:
         <BackLink />
         <PageTitle title={registered.definition.label} description={registered.definition.description} />
         <MockStorageNotice what="Page edits" />
-        <Sections slug={slug} sections={sections} />
+        <Sections slug={slug} sections={sections} globals={globals} />
         <PageEditor
           definition={registered.definition}
           defaults={registered.defaults}
@@ -45,9 +46,10 @@ export default async function EditPagePage({ params }: { params: Promise<{ slug:
     );
   }
 
-  const [custom, sections] = await Promise.all([
+  const [custom, sections, globals] = await Promise.all([
     customPageService.getForAdmin(slug),
     pageSectionService.allForPage(slug),
+    pageSectionService.listGlobals(),
   ]);
   if (!custom) notFound();
 
@@ -65,7 +67,7 @@ export default async function EditPagePage({ params }: { params: Promise<{ slug:
       />
 
       <div className="mt-6">
-        <Sections slug={slug} sections={sections} />
+        <Sections slug={slug} sections={sections} globals={globals} />
       </div>
 
       <div className="mt-6">
@@ -91,7 +93,15 @@ export default async function EditPagePage({ params }: { params: Promise<{ slug:
  * state says. That is how a page moves across: build its sections, compare the
  * two renders, and only then retire the code.
  */
-function Sections({ slug, sections }: { slug: string; sections: PageSection[] }) {
+function Sections({
+  slug,
+  sections,
+  globals,
+}: {
+  slug: string;
+  sections: PageSection[];
+  globals: GlobalSection[];
+}) {
   return (
     <section className="mb-6" aria-labelledby="sections-heading">
       <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
@@ -104,7 +114,7 @@ function Sections({ slug, sections }: { slug: string; sections: PageSection[] })
             : `${sections.length} ${sections.length === 1 ? 'section' : 'sections'}, top to bottom.`}
         </p>
       </div>
-      <SectionList pageSlug={slug} sections={sections} />
+      <SectionList pageSlug={slug} sections={sections} globals={globals} />
     </section>
   );
 }

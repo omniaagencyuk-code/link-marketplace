@@ -8,7 +8,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input, Textarea } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { createPageAction } from '@/app/admin/(protected)/pages/actions';
-import { PAGE_TEMPLATES, checkSlug, slugify } from '@/lib/cms/custom-page';
+import { PAGE_TEMPLATES, checkSlug, slugify, type PageTemplate } from '@/lib/cms/custom-page';
+import { startersFor } from '@/lib/cms/starters';
 
 /**
  * Creating a page.
@@ -28,6 +29,7 @@ export function NewPageForm() {
   // Until the URL is edited by hand it follows the name, which is what most
   // people want and nobody wants to type twice.
   const [slugTouched, setSlugTouched] = useState(false);
+  const [template, setTemplate] = useState<PageTemplate>(PAGE_TEMPLATES[0].key);
   const [description, setDescription] = useState('');
 
   const effectiveSlug = slugTouched ? slugify(slug) : slugify(label);
@@ -75,7 +77,7 @@ export function NewPageForm() {
             <fieldset className="mb-5">
               <legend className="mb-2 text-[13px] font-medium text-ink">Design</legend>
               <div className="space-y-2">
-                {PAGE_TEMPLATES.map((option, index) => (
+                {PAGE_TEMPLATES.map((option) => (
                   <label
                     key={option.key}
                     className="flex cursor-pointer gap-3 rounded-md border border-line p-3 transition-colors hover:border-accent-500 has-[:checked]:border-accent-500 has-[:checked]:bg-accent-50"
@@ -84,7 +86,8 @@ export function NewPageForm() {
                       type="radio"
                       name="template"
                       value={option.key}
-                      defaultChecked={index === 0}
+                      checked={template === option.key}
+                      onChange={() => setTemplate(option.key)}
                       className="mt-0.5 h-3.5 w-3.5 shrink-0 border-line-strong text-accent-600 focus:ring-accent-500/30"
                     />
                     <span className="min-w-0">
@@ -100,6 +103,44 @@ export function NewPageForm() {
                 This decides which fields the page has, so it cannot be changed afterwards.
                 Duplicating a page of the right kind is usually easier than starting over.
               </p>
+            </fieldset>
+
+            {/*
+              What is already on the page the first time it opens. A structure
+              rather than a template: everything in it can be reordered, hidden
+              or deleted, and an empty page is a harder brief than a wrong one.
+            */}
+            <fieldset className="mb-5">
+              <legend className="mb-2 text-[13px] font-medium text-ink">Start with</legend>
+              <div className="space-y-2">
+                {startersFor(template).map((starter, index) => (
+                  <label
+                    key={starter.key}
+                    className="flex cursor-pointer gap-3 rounded-md border border-line p-3 transition-colors hover:border-accent-500 has-[:checked]:border-accent-500 has-[:checked]:bg-accent-50"
+                  >
+                    <input
+                      type="radio"
+                      name="starter"
+                      value={starter.key}
+                      defaultChecked={index === 0}
+                      className="mt-0.5 h-3.5 w-3.5 shrink-0 border-line-strong text-accent-600 focus:ring-accent-500/30"
+                    />
+                    <span className="min-w-0">
+                      <span className="block text-[13px] font-medium text-ink">
+                        {starter.label}
+                        {starter.sections.length ? (
+                          <span className="ml-2 font-normal text-muted">
+                            {starter.sections.length} sections
+                          </span>
+                        ) : null}
+                      </span>
+                      <span className="mt-0.5 block text-[12px] leading-relaxed text-muted">
+                        {starter.help}
+                      </span>
+                    </span>
+                  </label>
+                ))}
+              </div>
             </fieldset>
 
             <Label htmlFor="slug">URL</Label>

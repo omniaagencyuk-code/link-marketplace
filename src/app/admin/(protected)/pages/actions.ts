@@ -6,6 +6,9 @@ import { pageContentService } from '@/lib/services/page-content-service';
 import { getRegisteredPage } from '@/lib/cms/registry';
 import { customPageService } from '@/lib/services/custom-page-service';
 import { checkSlug, customPageDefinition, readTemplate, slugify } from '@/lib/cms/custom-page';
+import { readStarter } from '@/lib/cms/starters';
+import { cleanSectionValues, getComponent } from '@/lib/cms/components/schema';
+import { pageSectionService } from '@/lib/services/page-section-service';
 import { sanitiseText } from '@/lib/import/normalise';
 import { cleanRichTextDoc, isRichTextDoc } from '@/lib/cms/rich-text';
 import type { FieldDef, FieldValue, ImageValue, LinkValue, PageDef, PageValues } from '@/lib/cms/types';
@@ -211,7 +214,7 @@ export interface CreatePageResult extends SavePageResult {
  * anything is written.
  */
 export async function createPageAction(formData: FormData): Promise<CreatePageResult> {
-  await requireAdminSession();
+  const admin = await requireAdminSession();
 
   const label = sanitiseText(String(formData.get('label') ?? ''), 80).trim();
   if (!label) return { ok: false, error: 'Give the page a name.' };
@@ -242,6 +245,58 @@ export async function createPageAction(formData: FormData): Promise<CreatePageRe
     // an unfinished page is never briefly live.
     published: false,
   });
+
+  /*
+    The starting structure, if one was chosen.
+
+    Sections are added one at a time because each needs its component's own
+    defaults through the whitelist - and this runs once, when a page is
+    created, so the count is a handful rather than a page's worth.
+  */
+  const starter = readStarter(formData.get('starter'), template);
+  for (const key of starter.sections) {
+    const component = getComponent(key);
+    if (!component) continue;
+    await pageSectionService.create({
+      pageSlug: slug,
+      component: component.key,
+      variant: component.variants[0]?.key ?? 'default',
+      values: cleanSectionValues(component, component.defaults),
+      locked: component.structural ?? false,
+      updatedBy: admin.email,
+    });
+  }
+
+  revalidatePath('/admin/pages');
+  return { ok: true, slug };
+}
+
+/**
+ * Copy a page into a new one.
+ *
+ * Reachable for any page, registered or custom, because the case worth having
+ * is duplicating /gambling-link-building into a sports version - which is the
+ * one page nobody can edit the shape of otherwise.
+ */
+export async function duplicatePageAction(formData: FormData): Promise<CreatePageResult> {
+  const admin = await requireAdminSession();
+
+  const from = String(formData.get('from') ?? '').trim();
+  if (!from) return { ok: false, error: 'That page no longer exists.' };
+
+  const label = sanitiseText(String(formData.get('label') ?? ''), 80).trim();
+  if (!label) return { ok: false, error: 'Give the new page a name.' };
+
+  const slug = slugify(String(formData.get('slug') ?? '').trim() || label);
+  const check = checkSlug(slug);
+  if (!check.ok) return { ok: false, error: check.error };
+
+  const created = await customPageService.duplicate(from, {
+    slug,
+    label,
+    updatedBy: admin.email,
+  });
+  if (!created) return { ok: false, error: 'That page could not be copied.' };
 
   revalidatePath('/admin/pages');
   return { ok: true, slug };

@@ -283,6 +283,82 @@ export const supabasePageSectionRepository = {
     return data ? mapSection(data as unknown as SectionRow) : null;
   },
 
+  /** Create a global from a section's current content. */
+  async createGlobal(input: {
+    name: string;
+    component: string;
+    variant: string;
+    values: SectionValues;
+    updatedBy?: string;
+  }): Promise<GlobalSection> {
+    const supabase = getAdminScopedClient();
+    const { data, error } = await supabase
+      .from('global_sections')
+      .insert({
+        name: input.name,
+        component: input.component,
+        variant: input.variant,
+        values: input.values,
+        updated_by: input.updatedBy ?? null,
+      })
+      .select(GLOBAL_SELECT)
+      .single();
+
+    if (error) throw new Error(`Failed to save the global section: ${error.message}`);
+    return mapGlobal(data as unknown as GlobalRow);
+  },
+
+  async updateGlobal(
+    id: string,
+    patch: { name?: string; variant?: string; values?: SectionValues },
+    updatedBy?: string,
+  ): Promise<void> {
+    const supabase = getAdminScopedClient();
+    const row: Record<string, unknown> = { updated_by: updatedBy ?? null };
+    if (patch.name !== undefined) row.name = patch.name;
+    if (patch.variant !== undefined) row.variant = patch.variant;
+    if (patch.values !== undefined) row.values = patch.values;
+
+    const { error } = await supabase.from('global_sections').update(row).eq('id', id);
+    if (error) throw new Error(`Failed to save the global section: ${error.message}`);
+  },
+
+  /** Point a page's section at a global, or stop pointing at one. */
+  async setGlobal(id: string, globalId: string | null): Promise<void> {
+    const supabase = getAdminScopedClient();
+    const { error } = await supabase
+      .from('page_sections')
+      .update({ global_id: globalId })
+      .eq('id', id);
+    if (error) throw new Error(`Failed to link the section: ${error.message}`);
+  },
+
+  /**
+   * How many pages use each global.
+   *
+   * One query for all of them, because the editor shows the count beside
+   * every global in the list - asking per global would be a query per row in
+   * a list that exists to be scanned.
+   */
+  async globalUsage(): Promise<Record<string, number>> {
+    const supabase = getAdminScopedClient();
+    const { data, error } = await supabase
+      .from('page_sections')
+      .select('global_id, page_slug')
+      .not('global_id', 'is', null);
+    if (error) throw new Error(`Failed to count global usage: ${error.message}`);
+
+    // Counted by page rather than by section: the same global twice on one
+    // page is one page that changes when it changes.
+    const pages = new Map<string, Set<string>>();
+    for (const row of (data ?? []) as { global_id: string; page_slug: string }[]) {
+      const seen = pages.get(row.global_id) ?? new Set<string>();
+      seen.add(row.page_slug);
+      pages.set(row.global_id, seen);
+    }
+    return Object.fromEntries([...pages].map(([id, slugs]) => [id, slugs.size]));
+  },
+
   async listGlobals(): Promise<GlobalSection[]> {
     const supabase = getAdminScopedClient();
     const { data, error } = await supabase

@@ -125,6 +125,15 @@ export interface PageDef {
   /** One line describing what the page is for. */
   description: string;
   sections: SectionDef[];
+  /**
+   * Which frontend design draws this page, for duplication.
+   *
+   * A page registered in code carries its design in its route, so this is
+   * only read when somebody copies the page into one created in the admin -
+   * a duplicate of the gambling page has to come out as a niche page rather
+   * than as a service page wearing its copy.
+   */
+  template?: 'service' | 'niche';
   /** Live values this page can resolve inside its copy. */
   tokens?: TokenDef[];
   /** Page metadata is editable too - it is the highest-leverage copy on site. */

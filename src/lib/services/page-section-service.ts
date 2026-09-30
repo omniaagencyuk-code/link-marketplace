@@ -172,10 +172,139 @@ export const pageSectionService = {
     });
   },
 
+  /**
+   * Copy every section of one page onto another, in order.
+   *
+   * The copies are local even where the originals were global. A duplicated
+   * page pointing at the same global sections looks right and is a trap: the
+   * whole point of duplicating a niche page is to change its copy, and
+   * editing what looks like this page's call to action would silently rewrite
+   * it on every page sharing that global.
+   *
+   * Locks come across, because a locked hero on the original is a locked hero
+   * on the copy for the same reason it was locked in the first place.
+   */
+  async copyPage(from: string, to: string, updatedBy?: string): Promise<number> {
+    const sections = await this.allForPage(from);
+
+    for (const section of sections) {
+      const source = section.global ?? section;
+      const copy = await this.create({
+        pageSlug: to,
+        component: source.component,
+        variant: source.variant,
+        values: source.values,
+        locked: section.locked,
+        updatedBy,
+      });
+      if (section.animation.entrance !== 'none') {
+        await this.update(copy.id, { animation: section.animation }, updatedBy);
+      }
+    }
+
+    return sections.length;
+  },
+
   /** One section by id, whatever page it is on. */
   async find(id: string): Promise<PageSection | null> {
     if (isSupabaseEnabled()) return supabasePageSectionRepository.find(id);
     return sections.get(id) ?? null;
+  },
+
+  /**
+   * Turn a section into one shared across pages.
+   *
+   * The section keeps its place and starts rendering the global's content -
+   * which is the same content it had a moment ago, so nothing visibly changes
+   * on the page it was saved from. That is the point: saving as global is a
+   * decision about reuse, not an edit.
+   */
+  async saveAsGlobal(id: string, name: string, updatedBy?: string): Promise<GlobalSection | null> {
+    const section = await this.find(id);
+    if (!section) return null;
+
+    const global = isSupabaseEnabled()
+      ? await supabasePageSectionRepository.createGlobal({
+          name,
+          component: section.component,
+          variant: section.variant,
+          values: section.values,
+          updatedBy,
+        })
+      : (() => {
+          const created: GlobalSection = {
+            id: `global-${Date.now()}`,
+            name,
+            component: section.component,
+            variant: section.variant,
+            animation: section.animation,
+            values: section.values,
+            updatedAt: new Date().toISOString(),
+            updatedBy,
+          };
+          globals.set(created.id, created);
+          return created;
+        })();
+
+    await this.link(id, global.id);
+    return global;
+  },
+
+  /** Point a section at a global, or stop pointing at one. */
+  async link(id: string, globalId: string | null): Promise<void> {
+    if (isSupabaseEnabled()) return supabasePageSectionRepository.setGlobal(id, globalId);
+    const current = sections.get(id);
+    if (current) sections.set(id, { ...current, globalId: globalId ?? undefined });
+  },
+
+  /**
+   * Make a section its own again.
+   *
+   * The global's content is copied down first, so the page keeps rendering
+   * exactly what it rendered - detaching is about where future edits go, not
+   * about losing what is there now.
+   */
+  async detach(id: string, updatedBy?: string): Promise<boolean> {
+    const section = await this.find(id);
+    if (!section?.globalId) return false;
+
+    const global = (await this.listGlobals()).find((entry) => entry.id === section.globalId);
+    if (global) {
+      await this.update(id, { variant: global.variant, values: global.values }, updatedBy);
+    }
+    await this.link(id, null);
+    return true;
+  },
+
+  /** Add a section that renders a global, at the end of a page. */
+  async addGlobal(pageSlug: string, globalId: string, updatedBy?: string): Promise<PageSection | null> {
+    const global = (await this.listGlobals()).find((entry) => entry.id === globalId);
+    if (!global) return null;
+
+    const created = await this.create({
+      pageSlug,
+      component: global.component,
+      variant: global.variant,
+      values: {},
+      locked: false,
+      updatedBy,
+    });
+    await this.link(created.id, globalId);
+    return created;
+  },
+
+  /** How many pages use each global. One query, not one per global. */
+  async globalUsage(): Promise<Record<string, number>> {
+    if (isSupabaseEnabled()) return supabasePageSectionRepository.globalUsage();
+
+    const pages = new Map<string, Set<string>>();
+    for (const section of sections.values()) {
+      if (!section.globalId) continue;
+      const seen = pages.get(section.globalId) ?? new Set<string>();
+      seen.add(section.pageSlug);
+      pages.set(section.globalId, seen);
+    }
+    return Object.fromEntries([...pages].map(([id, slugs]) => [id, slugs.size]));
   },
 
   async listGlobals(): Promise<GlobalSection[]> {

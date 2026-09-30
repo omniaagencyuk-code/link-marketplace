@@ -800,5 +800,84 @@ console.log('\n--- every page can grow without a deploy ---');
   }
 }
 
+console.log('\n--- a starting structure only names sections that exist ---');
+{
+  /*
+    A typo in a starter is a page created with a section that renders nothing:
+    the row is written, the admin lists it, and the renderer skips it because
+    no component has that key. Nothing reports it, and the person who created
+    the page assumes the section is empty rather than broken.
+  */
+  const { STARTERS, readStarter, startersFor } = await import('../src/lib/cms/starters');
+
+  for (const starter of STARTERS) {
+    for (const key of starter.sections) {
+      yes(`"${starter.label}" can draw its ${key}`, getComponent(key) !== null);
+    }
+  }
+
+  yes('there is an empty option', STARTERS.some((starter) => starter.sections.length === 0));
+  yes('every starter explains itself', STARTERS.every((starter) => starter.help.length > 15));
+
+  // A starter is only offered where its sections suit the design, and a
+  // starter posted for the wrong one falls back rather than being applied.
+  yes('the niche starter is not offered to a service page',
+    !startersFor('service').some((starter) => starter.key === 'niche-landing'));
+  is('and is refused if posted anyway', readStarter('niche-landing', 'service').sections.length, 0);
+  is('an unknown starter is the empty one', readStarter('nope', 'niche').sections.length, 0);
+  is('a real one is kept', readStarter('niche-landing', 'niche').key, 'niche-landing');
+}
+
+console.log('\n--- duplicating a page does not duplicate its identity ---');
+{
+  /*
+    Three things a copy must not inherit, and all three fail silently.
+
+    A duplicated meta description is two pages telling Google they are the
+    same page. A duplicated marketplace category is a sports page listing
+    gambling publishers under a sports headline. And a copy that starts
+    published is live for a moment carrying both.
+  */
+  const service = read('src/lib/services/custom-page-service.ts');
+  const duplicate = service.slice(service.indexOf('async duplicate('), service.indexOf('async readForDuplication('));
+
+  yes('the search engine listing is cleared', duplicate.includes('delete values.seo'));
+  yes('the marketplace category is cleared', /marketplace[\s\S]{0,120}niche: ''/.test(duplicate));
+  yes('and the copy starts as a draft', duplicate.includes('published: false'));
+
+  // The copies are local even where the originals were shared. A duplicated
+  // page pointing at the same globals looks right and is a trap: editing what
+  // looks like this page's CTA would rewrite it everywhere.
+  const sectionService = read('src/lib/services/page-section-service.ts');
+  const copyPage = sectionService.slice(sectionService.indexOf('async copyPage('), sectionService.indexOf('/** One section by id'));
+  yes('copied sections are this page\'s own', copyPage.includes('section.global ?? section'));
+  yes('and never references', !copyPage.includes('globalId:'));
+
+  // The editor says all of this before the button, not after.
+  const form = read('src/components/admin/cms/duplicate-page.tsx');
+  yes('the form warns about the listing', /Does not copy the search engine listing/.test(form));
+  yes('and about the category', /Does not copy the marketplace category/.test(form));
+}
+
+console.log('\n--- a shared section is edited where it lives ---');
+{
+  /*
+    Editing a shared section from inside one of the pages using it is how
+    somebody changes a call to action on nine pages believing they are
+    changing it on one. So opening one shows where its content lives and what
+    detaching does - not its fields.
+  */
+  const list = read('src/components/admin/cms/section-list.tsx');
+  yes('opening a shared section warns instead of editing', list.includes('GlobalNotice'));
+  yes('and says how many pages it reaches', /changes every page using it/.test(list));
+  yes('detaching is offered', list.includes('detachGlobalAction'));
+
+  // Detaching brings the content down, so the page renders what it rendered.
+  const service = read('src/lib/services/page-section-service.ts');
+  const detach = service.slice(service.indexOf('async detach('), service.indexOf('async addGlobal('));
+  yes('detaching copies the content down first', detach.includes('values: global.values'));
+  yes('before it unlinks', detach.indexOf('values: global.values') < detach.indexOf('this.link(id, null)'));
+}
+
 console.log(failed ? `\n  ${failed} FAILED\n` : '\n  all passed\n');
 process.exit(failed ? 1 : 0);

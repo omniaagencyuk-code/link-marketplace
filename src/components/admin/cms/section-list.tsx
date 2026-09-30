@@ -8,7 +8,9 @@ import {
   Copy,
   Eye,
   EyeOff,
+  Globe,
   GripVertical,
+  Link2Off,
   Lock,
   Plus,
   Trash2,
@@ -24,9 +26,12 @@ import {
   type ComponentDef,
   type ComponentGroup,
 } from '@/lib/cms/components/schema';
-import { DELAYS, ENTRANCES, SPEEDS, type PageSection } from '@/lib/cms/sections';
+import { DELAYS, ENTRANCES, SPEEDS, type GlobalSection, type PageSection } from '@/lib/cms/sections';
 import {
+  addGlobalAction,
   addSectionAction,
+  detachGlobalAction,
+  saveAsGlobalAction,
   deleteSectionAction,
   duplicateSectionAction,
   reorderSectionsAction,
@@ -62,7 +67,16 @@ const ENTRANCE_LABELS: Record<string, string> = {
   stagger: 'Stagger the items',
 };
 
-export function SectionList({ pageSlug, sections }: { pageSlug: string; sections: PageSection[] }) {
+export function SectionList({
+  pageSlug,
+  sections,
+  globals = [],
+}: {
+  pageSlug: string;
+  sections: PageSection[];
+  /** Sections saved for use across pages, for the add menu. */
+  globals?: GlobalSection[];
+}) {
   const [open, setOpen] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
   const [dragging, setDragging] = useState<string | null>(null);
@@ -144,6 +158,12 @@ export function SectionList({ pageSlug, sections }: { pageSlug: string; sections
                     Locked
                   </Badge>
                 ) : null}
+                {section.globalId ? (
+                  <Badge tone="muted">
+                    <Globe className="h-3 w-3" aria-hidden="true" />
+                    {section.global?.name ?? 'Shared'}
+                  </Badge>
+                ) : null}
 
                 {/* Up and down as well as dragging, because a drag is not
                     reachable from a keyboard and this is the only way to
@@ -200,7 +220,16 @@ export function SectionList({ pageSlug, sections }: { pageSlug: string; sections
               </div>
 
               {open === section.id && component ? (
-                <SectionEditor section={section} component={component} />
+                section.globalId ? (
+                  <GlobalNotice section={section} />
+                ) : (
+                  <>
+                    <SectionEditor section={section} component={component} />
+                    <div className="px-4 pb-4">
+                      <ShareSection section={section} />
+                    </div>
+                  </>
+                )
               ) : null}
             </li>
           );
@@ -208,7 +237,7 @@ export function SectionList({ pageSlug, sections }: { pageSlug: string; sections
       </ul>
 
       {adding ? (
-        <SectionLibrary pageSlug={pageSlug} onClose={() => setAdding(false)} />
+        <SectionLibrary pageSlug={pageSlug} globals={globals} onClose={() => setAdding(false)} />
       ) : (
         <Button type="button" variant="outline" className="w-full" onClick={() => setAdding(true)}>
           <Plus className="h-3.5 w-3.5" aria-hidden="true" />
@@ -310,13 +339,86 @@ function SectionEditor({ section, component }: { section: PageSection; component
         {state.error ? <p className="text-[13px] text-negative">{state.error}</p> : null}
         {state.message ? <p className="text-[13px] text-muted">{state.message}</p> : null}
       </div>
+
     </form>
   );
 }
 
+/**
+ * Save this section for use on other pages.
+ *
+ * Deliberately at the bottom and closed by default. It is a decision about
+ * reuse rather than a property of the section, and most sections are not
+ * shared - putting it beside the fields would suggest every one is a
+ * candidate.
+ *
+ * Its own form, nested inside the editor's, would be invalid HTML, so it
+ * renders as a sibling and the editor's form tag closes above it.
+ */
+function ShareSection({ section }: { section: PageSection }) {
+  const [state, formAction] = useActionState<SectionActionState, FormData>(saveAsGlobalAction, {});
+  const [open, setOpen] = useState(false);
+
+  if (state.message) {
+    return <p className="border-t border-line pt-3 text-[13px] text-muted">{state.message}</p>;
+  }
+
+  if (!open) {
+    return (
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="inline-flex items-center gap-1.5 border-t border-line pt-3 text-[12px] text-muted hover:text-ink"
+      >
+        <Globe className="h-3.5 w-3.5" aria-hidden="true" />
+        Save this for use on other pages
+      </button>
+    );
+  }
+
+  return (
+    <div className="space-y-2 border-t border-line pt-3">
+      <form id={`share-form-${section.id}`} action={formAction}>
+        <input type="hidden" name="id" value={section.id} />
+      </form>
+      <Label htmlFor={`share-${section.id}`}>Name it</Label>
+      <div className="flex flex-wrap items-center gap-2">
+        <input
+          id={`share-${section.id}`}
+          name="name"
+          form={`share-form-${section.id}`}
+          placeholder="Main signup CTA"
+          maxLength={120}
+          className="h-9 min-w-0 flex-1 rounded-md border border-line-strong bg-white px-3 text-sm text-ink focus:border-accent-500 focus:ring-2 focus:ring-accent-500/20 focus:outline-none"
+        />
+        <Button type="submit" form={`share-form-${section.id}`} variant="outline" size="sm">
+          Save as shared
+        </Button>
+        <Button type="button" variant="ghost" size="sm" onClick={() => setOpen(false)}>
+          Cancel
+        </Button>
+      </div>
+      <p className="text-[12px] text-muted">
+        Nothing changes on this page. Other pages can then add it, and editing it later changes
+        all of them at once.
+      </p>
+      {state.error ? <p className="text-[13px] text-negative">{state.error}</p> : null}
+    </div>
+  );
+}
+
 /** The "add section" library, grouped so it can be read rather than scanned. */
-function SectionLibrary({ pageSlug, onClose }: { pageSlug: string; onClose: () => void }) {
+function SectionLibrary({
+  pageSlug,
+  globals,
+  onClose,
+}: {
+  pageSlug: string;
+  globals: GlobalSection[];
+  onClose: () => void;
+}) {
   const [state, formAction] = useActionState<SectionActionState, FormData>(addSectionAction, {});
+  const [globalState, globalAction] = useActionState<SectionActionState, FormData>(addGlobalAction, {});
   const groups = new Map<ComponentGroup, ComponentDef[]>();
   for (const component of listComponents()) {
     groups.set(component.group, [...(groups.get(component.group) ?? []), component]);
@@ -334,6 +436,42 @@ function SectionLibrary({ pageSlug, onClose }: { pageSlug: string; onClose: () =
       {state.error ? <p className="mt-2 text-[13px] text-negative">{state.error}</p> : null}
 
       <div className="mt-4 space-y-5">
+        {/*
+          Shared sections first, because reaching for one is a different
+          decision from building one: an editor who has a signup call to
+          action saved should find it before they build a second.
+        */}
+        {globals.length ? (
+          <div>
+            <p className="text-[11px] font-semibold tracking-[0.12em] text-muted uppercase">
+              Shared across pages
+            </p>
+            {globalState.error ? (
+              <p className="mt-2 text-[13px] text-negative">{globalState.error}</p>
+            ) : null}
+            <div className="mt-2 grid gap-2 sm:grid-cols-2">
+              {globals.map((global) => (
+                <form key={global.id} action={globalAction}>
+                  <input type="hidden" name="pageSlug" value={pageSlug} />
+                  <input type="hidden" name="globalId" value={global.id} />
+                  <button
+                    type="submit"
+                    className="w-full rounded-md border border-line px-3 py-2.5 text-left transition-colors hover:border-accent-500 hover:bg-accent-50"
+                  >
+                    <span className="flex items-center gap-1.5 text-[13px] font-medium text-ink">
+                      <Globe className="h-3.5 w-3.5 text-muted" aria-hidden="true" />
+                      {global.name}
+                    </span>
+                    <span className="mt-0.5 block text-[12px] text-muted">
+                      Edits reach every page using it.
+                    </span>
+                  </button>
+                </form>
+              ))}
+            </div>
+          </div>
+        ) : null}
+
         {[...groups.entries()].map(([group, components]) => (
           <div key={group}>
             <p className="text-[11px] font-semibold tracking-[0.12em] text-muted uppercase">
@@ -359,6 +497,38 @@ function SectionLibrary({ pageSlug, onClose }: { pageSlug: string; onClose: () =
           </div>
         ))}
       </div>
+    </div>
+  );
+}
+
+/**
+ * What an editor sees when they open a section that comes from a global one.
+ *
+ * Not the fields. Editing a shared section from inside one of the pages using
+ * it is how somebody changes the call to action on nine pages while believing
+ * they are changing it on one - so this says where the content lives and
+ * offers the two things that are safe from here: go and edit it knowingly, or
+ * make this page's copy its own.
+ */
+function GlobalNotice({ section }: { section: PageSection }) {
+  return (
+    <div className="space-y-3 border-t border-line px-4 py-4">
+      <p className="text-[13px] leading-relaxed text-ink-soft">
+        This section is shared. Its content lives in{' '}
+        <span className="font-medium text-ink">{section.global?.name ?? 'a saved section'}</span>,
+        and changing it changes every page using it.
+      </p>
+      <p className="text-[12px] text-muted">
+        To change it only here, detach it first — the content comes with it, so the page keeps
+        rendering exactly what it renders now.
+      </p>
+      <form action={detachGlobalAction}>
+        <input type="hidden" name="id" value={section.id} />
+        <Button type="submit" variant="outline" size="sm">
+          <Link2Off className="h-3.5 w-3.5" aria-hidden="true" />
+          Detach from shared
+        </Button>
+      </form>
     </div>
   );
 }

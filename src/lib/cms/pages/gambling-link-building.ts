@@ -27,6 +27,7 @@ export const definition: PageDef = {
       description: 'Live count of active iGaming listings in the marketplace.',
     },
   ],
+  template: 'niche',
   sections: nicheSections(),
 };
 
