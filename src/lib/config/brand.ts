@@ -70,8 +70,15 @@ export const brand: BrandConfig = {
   legalNameShort: 'Press Parrot',
   domain: 'pressparrot.com',
   tagline: 'The link building marketplace for serious SEOs',
+  /*
+    No figure. This string is the site's fallback meta description, its
+    Organization structured data and the paragraph under the footer logo, so a
+    number typed here is a claim made everywhere at once - and it said "5,000+
+    manually vetted websites" against a real number nearer nine hundred. The
+    counted figure belongs on the homepage, where it is counted.
+  */
   description:
-    'Buy high quality guest posts, niche edits and digital PR placements on 5,000+ manually vetted websites. Transparent metrics, fixed pricing and fast turnaround.',
+    'Buy high quality guest posts, niche edits and digital PR placements on manually vetted websites with real organic traffic. Transparent metrics, fixed pricing and fast turnaround.',
   logo: { light: '/logo.svg', dark: '/logo-dark.svg', useInlineMark: true },
   favicon: '/icon.png',
   colours: {

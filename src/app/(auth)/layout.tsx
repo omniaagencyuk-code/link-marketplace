@@ -3,8 +3,15 @@ import { Check } from 'lucide-react';
 import { Logo } from '@/components/layout/logo';
 import { brand } from '@/lib/config/brand';
 
+/*
+  No counts here. This list sits beside the signup form on every account
+  page, and it claimed "5,000+ manually vetted websites across 20+ niches"
+  against a marketplace nearer nine hundred sites and sixteen categories. The
+  homepage carries the real figures, counted on every render; a page that
+  cannot count them says something true instead.
+*/
 const highlights = [
-  '5,000+ manually vetted websites across 20+ niches',
+  'Manually vetted websites across every major niche',
   'Live domain rating, traffic and referring domain data',
   'Fixed prices with no negotiation or hidden fees',
   'Average turnaround of 24 to 72 hours',

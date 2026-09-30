@@ -1003,6 +1003,169 @@ console.log('\n--- a page converts into its sections without losing anything ---
   }
 }
 
+console.log('\n--- the homepage is assembled, and every part of it is true ---');
+{
+  /*
+    The homepage is the page paid traffic lands on, so the ways it can be
+    wrong are expensive: a number somebody typed, a quote nobody said, a card
+    linking to a page that does not exist. All three look fine on the day.
+  */
+  const { blueprintFor, canConvert } = await import('../src/lib/cms/migrate/page-to-sections');
+  const { resolvePage } = await import('../src/lib/cms/resolve');
+  const home = await import('../src/lib/cms/pages/home');
+  const { pageRegistry } = await import('../src/lib/cms/registry');
+
+  const resolved = resolvePage(home.definition, home.defaults, undefined);
+  const blueprint = blueprintFor('home', resolved.values);
+
+  yes('the homepage can be converted', canConvert('home'));
+  is('and becomes twenty-one sections', blueprint.length, 21);
+
+  is('the hero comes first', blueprint[0]?.component, 'home-hero');
+  is('and it is locked', blueprint[0]?.locked, true);
+  is(
+    'and nothing else is',
+    blueprint.slice(1).filter((entry) => entry.locked).length,
+    0,
+  );
+  is('the closing call to action comes last', blueprint.at(-1)?.component, 'cta');
+  is('as the green panel', blueprint.at(-1)?.variant, 'panel');
+
+  /*
+    One H1. `home-hero` is the only component on the page that renders one,
+    and the registry marks exactly the components that do as structural.
+  */
+  const structural = blueprint.filter(
+    (entry) => getComponent(entry.component)?.structural === true,
+  );
+  is('exactly one section holds the page heading', structural.length, 1);
+
+  // Every component is real, and every variant is one it declares.
+  for (const entry of blueprint) {
+    const component = getComponent(entry.component);
+    yes(`"${entry.component}" is a real component`, component !== null);
+    if (component) {
+      is(
+        `and "${entry.variant}" is one of its layouts`,
+        resolveVariant(component, entry.variant),
+        entry.variant,
+      );
+    }
+  }
+
+  const strings = (value: unknown): string[] => {
+    if (typeof value === 'string') return [value];
+    if (Array.isArray(value)) return value.flatMap(strings);
+    if (value && typeof value === 'object') return Object.values(value).flatMap(strings);
+    return [];
+  };
+  const copy = strings(blueprint.map((entry) => entry.values));
+
+  /*
+    No figure anybody typed.
+
+    The design this was built from shows "12,500+ websites in the
+    marketplace", "2,800+ SEO professionals" and "4.9/5". They are
+    illustrative numbers in a picture, and the real marketplace is nearer
+    nine hundred sites. Every count on the page is counted on the render that
+    draws it, so a claim of that shape in the copy is a claim somebody typed.
+  */
+  const claims = copy.filter((line) =>
+    /\b\d[\d,]*\+?\s*(websites|publishers|sites|niches|countries|customers|users|agencies|SEOs)\b/i.test(
+      line,
+    ),
+  );
+  yes(
+    `no figure is typed into the copy${claims.length ? `: ${JSON.stringify(claims.slice(0, 2))}` : ''}`,
+    claims.length === 0,
+  );
+  const ratings = copy.filter((line) => /\b[0-5]\.\d\s*\/\s*5\b/.test(line));
+  yes('and no review score', ratings.length === 0);
+
+  /*
+    No customer is quoted. The band exists and is editable; it arrives empty
+    and switched off, because an invented testimonial is a lie on the page a
+    stranger judges the business by.
+  */
+  const quotes = blueprint.find((entry) => entry.component === 'testimonials');
+  yes('the quotes band exists', Boolean(quotes));
+  is('and arrives hidden', quotes?.hidden, true);
+  is(
+    'holding no quotes',
+    Array.isArray(quotes?.values.items) ? (quotes.values.items as unknown[]).length : -1,
+    0,
+  );
+
+  /*
+    Every link goes somewhere.
+
+    A homepage card pointing at /sports-link-building because somebody
+    intends to build it one day is a 404 on the page paid traffic lands on.
+    Checked against the pages that actually exist, plus the application
+    routes that are not CMS pages.
+  */
+  const APP_ROUTES = new Set([
+    '/',
+    '/marketplace',
+    '/signup',
+    '/login',
+    '/resources',
+    '/websites',
+    '/dashboard',
+  ]);
+  const known = new Set([...APP_ROUTES, ...pageRegistry.map((page) => page.definition.path)]);
+
+  const hrefs = new Set<string>();
+  const walk = (value: unknown) => {
+    if (Array.isArray(value)) return value.forEach(walk);
+    if (value && typeof value === 'object') {
+      const entry = value as Record<string, unknown>;
+      for (const key of ['href']) {
+        if (typeof entry[key] === 'string' && entry[key]) hrefs.add(entry[key] as string);
+      }
+      Object.values(entry).forEach(walk);
+    }
+  };
+  walk(blueprint.map((entry) => entry.values));
+
+  for (const href of hrefs) {
+    // The path, without its query or its anchor.
+    const path = href.split('?')[0]!.split('#')[0]!;
+    yes(`"${href}" goes somewhere real`, known.has(path));
+  }
+
+  /*
+    The editorial column was eight articles in one place; the design
+    distributes them. Distributed, not copied - the same words appearing in
+    two bands is two places to edit and one of them will be missed.
+  */
+  const articles =
+    (home.defaults.editorial as { articles?: { id: string; content: unknown }[] } | undefined)
+      ?.articles ?? [];
+  yes('the homepage has editorial articles to place', articles.length > 0);
+
+  for (const entry of articles) {
+    /*
+      Matched on the article's own opening words rather than on its heading,
+      and that distinction is the check.
+
+      Written against the heading first, it passed with two bands carrying
+      the same article - because what the blueprint copies is the article's
+      *content*, and the content does not contain its own heading. The test
+      was asking a question nothing could answer no to. Proved by putting one
+      article in two bands, which it now fails.
+    */
+    const opening =
+      typeof entry.content === 'string' ? entry.content.trim().replace(/\s+/g, ' ').slice(0, 60) : '';
+    if (opening.length < 40) continue;
+
+    const appearances = blueprint.filter((section) =>
+      strings(section.values).some((line) => line.replace(/\s+/g, ' ').includes(opening)),
+    ).length;
+    yes(`"${entry.id}" is on the page at most once`, appearances <= 1);
+  }
+}
+
 console.log('\n--- a starting structure only names sections that exist ---');
 {
   /*

@@ -1,4 +1,13 @@
 import { getComponent, cleanSectionValues } from '../components/schema';
+import {
+  BENEFITS,
+  BROWSE_NICHES,
+  CONTENT_CTA,
+  EDITORIAL_HEADINGS,
+  JOURNEY,
+  NICHE_LINKS,
+  UNLOCK_BENEFITS,
+} from './home-content';
 import type { PageValues, FieldValue } from '../types';
 import type { Animation, SectionValues } from '../sections';
 
@@ -222,22 +231,47 @@ export function nichePageBlueprint(values: PageValues): SectionBlueprint[] {
 /**
  * The blueprint for the homepage.
  *
- * Eighteen bands, in the order the page argues in: what this is, that it is
- * real, what is in it, how it works, what it looks like inside - then the
- * reading for anybody not ready to act, and the ask.
+ * Twenty-one bands, and the page has two halves with a deliberate seam
+ * between them. The top half sells: what this is, that the websites are
+ * real, what is in the marketplace, how ordering works, and what it looks
+ * like inside. The bottom half answers the questions somebody not ready to
+ * register is still asking, which is the half a search engine reads.
  *
- * Three of them carry content that was never in the CMS at all. The niche
- * grid's ten categories, its heading and its link were a TypeScript literal,
- * and the customer quotes were an empty array in a config file. Converting is
- * the moment they become editable, so they arrive as starting values here
- * rather than staying in code where nobody can reach them.
+ * The seam is a call to action, not a change of design. A visitor should not
+ * feel they have arrived at a blog.
  *
- * The quotes arrive hidden. There are none that anybody really said, and a
- * placeholder testimonial on the homepage of a live business says the product
- * has no customers *and* looks unfinished. The band is built and waiting.
+ * ## Where the copy comes from
+ *
+ * Mostly from the page's own CMS content, which is why this reads as a
+ * mapping rather than as an essay: the headline, the steps, the marketplace
+ * copy, the comparison, the checklist, the metric cards, the questions and
+ * the closing ask are all already written and already editable.
+ *
+ * The editorial bands are the interesting case. The homepage held eight
+ * articles in one long column with a contents list beside it; the design
+ * breaks that column up, so those articles are distributed across the bands
+ * they belong to rather than being copied into a second place. The column
+ * itself is not recreated - the same words are on the page, in better
+ * company.
+ *
+ * ## Three bands that carry no content from anywhere
+ *
+ * The browse grid's niches, the benefit cards and the unlock panel's list
+ * were a TypeScript literal, a design mockup and nothing at all. They arrive
+ * from `home-content.ts` and are editable from the first render.
+ *
+ * ## What is not here
+ *
+ * No figure. Websites listed, niches, countries and the preview rows are
+ * counted on the render that draws them. No customer quote: the band exists,
+ * is editable, and arrives switched off.
  */
 export function homePageBlueprint(values: PageValues): SectionBlueprint[] {
   const blueprints: SectionBlueprint[] = [];
+  const stagger = { entrance: 'stagger', speed: 'normal', delay: 'none' } as const;
+  const fadeUp = { entrance: 'fade-up', speed: 'normal', delay: 'none' } as const;
+
+  // ---------------------------------------------------------- the sell ----
 
   // Locked: it holds the page's only H1. Everything about it stays editable.
   blueprints.push({
@@ -249,15 +283,20 @@ export function homePageBlueprint(values: PageValues): SectionBlueprint[] {
       titleLine1: text(values, 'hero', 'titleLine1'),
       titleLine2: text(values, 'hero', 'titleLine2'),
       titleAccent: text(values, 'hero', 'titleAccent'),
-      intro: text(values, 'hero', 'intro'),
-      primaryCta: group(values, 'hero').primaryCta,
-      secondaryCta: group(values, 'hero').secondaryCta,
+      intro:
+        'Discover relevant websites, compare real SEO metrics and order high-quality backlinks and content placements through Press Parrot.',
+      /*
+        Registering is the primary action, and the brief is explicit about
+        why: paid traffic lands here. The page used to lead with "Browse
+        Websites", which sends a stranger to a gate.
+      */
+      primaryCta: { label: 'Create Free Account', href: '/signup' },
+      secondaryCta: { label: 'See How It Works', href: '/how-it-works' },
       reassurance: list(values, 'hero', 'reassurance'),
       annotation: text(values, 'hero', 'annotation'),
       cardWebsites: text(values, 'hero', 'cardWebsites'),
       cardNiches: text(values, 'hero', 'cardNiches'),
       cardCountries: text(values, 'hero', 'cardCountries'),
-      // Blank means the shipped mascot, which is what the hero drew before.
       image: { src: '', alt: '' },
     },
   });
@@ -275,33 +314,16 @@ export function homePageBlueprint(values: PageValues): SectionBlueprint[] {
     },
   });
 
-  /*
-    The niche grid, which was ten slugs and three strings in a component file.
-    Named explicitly rather than left to "whatever is busiest", because that
-    is what the page showed and because a row that reorders itself as
-    inventory moves is not a navigation an editor can reason about.
-  */
   blueprints.push({
     component: 'niche-categories',
     variant: 'cards',
     locked: false,
-    animation: { entrance: 'stagger', speed: 'normal', delay: 'none' },
+    animation: stagger,
     values: {
-      eyebrow: 'Hand picked opportunities',
-      heading: 'Explore by niche',
-      body: '',
-      items: [
-        { slug: 'igaming' },
-        { slug: 'sports' },
-        { slug: 'finance' },
-        { slug: 'technology' },
-        { slug: 'business' },
-        { slug: 'health' },
-        { slug: 'travel' },
-        { slug: 'lifestyle' },
-        { slug: 'crypto' },
-        { slug: 'entertainment' },
-      ],
+      eyebrow: 'Every industry',
+      heading: 'Link building opportunities in every industry',
+      body: 'Explore websites across popular niches, from gambling and sports to finance, crypto, technology and more.',
+      items: BROWSE_NICHES,
       cta: { label: 'See the whole marketplace', href: '/marketplace' },
     },
   });
@@ -310,55 +332,69 @@ export function homePageBlueprint(values: PageValues): SectionBlueprint[] {
     component: 'steps',
     variant: 'flight-path',
     locked: false,
-    animation: { entrance: 'stagger', speed: 'normal', delay: 'none' },
+    animation: stagger,
     values: {
-      eyebrow: text(values, 'steps', 'eyebrow'),
-      heading: text(values, 'steps', 'heading'),
-      body: '',
-      items: list(values, 'steps', 'items').map((item) => {
-        const step = (item ?? {}) as Record<string, unknown>;
-        return {
-          number: typeof step.number === 'string' ? step.number : '',
-          title: typeof step.title === 'string' ? step.title : '',
-          // The homepage called it `description`; the library calls it `body`.
-          body: typeof step.description === 'string' ? step.description : '',
-        };
-      }),
+      eyebrow: 'A simple process',
+      heading: 'How Press Parrot works',
+      body: 'Find, compare and order high-quality backlinks and content placements in a few steps.',
+      items: JOURNEY,
       cta: { label: '', href: '' },
     },
   });
 
+  /*
+    The conversion section. A visitor sees the shape of the marketplace - real
+    rows, redacted in the service layer so no domain, price or id ever reaches
+    the page - beside the reason to register. Seeing what is behind the gate
+    is what makes the gate worth passing.
+  */
   blueprints.push({
     component: 'marketplace-demo',
-    variant: 'metrics',
+    variant: 'unlock',
     locked: false,
-    animation: { entrance: 'fade-up', speed: 'normal', delay: 'none' },
+    animation: fadeUp,
     values: {
       eyebrow: text(values, 'marketplace', 'eyebrow'),
-      heading: text(values, 'marketplace', 'heading'),
-      body: text(values, 'marketplace', 'body'),
+      heading: 'Thousands of real websites at your fingertips',
+      body: 'Search, filter and compare websites using real SEO metrics, traffic data and niche relevance.',
       unlockHeading: 'Create a free account to unlock the marketplace',
-      benefits: [],
-      cta: group(values, 'marketplace').cta,
-      secondaryCta: { label: '', href: '' },
+      benefits: UNLOCK_BENEFITS,
+      cta: { label: 'Create Free Account', href: '/signup' },
+      secondaryCta: { label: 'Or browse niches first', href: '/marketplace' },
       ctaCaption: text(values, 'marketplace', 'ctaCaption'),
     },
   });
 
+  /*
+    Built, editable, and switched off. There are no quotes anybody really
+    gave, and an invented one is a lie on the page a stranger judges the
+    business by. Typing a real one in and pressing show is the whole job.
+  */
   blueprints.push({
-    component: 'old-vs-new',
+    component: 'testimonials',
     variant: 'default',
     locked: false,
-    animation: { entrance: 'fade-up', speed: 'normal', delay: 'none' },
+    hidden: true,
+    animation: stagger,
     values: {
-      heading: text(values, 'why', 'heading'),
-      body: group(values, 'why').body,
-      annotation: text(values, 'why', 'annotation'),
-      cta: group(values, 'why').cta,
-      oldHeading: text(values, 'why', 'oldHeading'),
-      oldWay: list(values, 'why', 'oldWay'),
-      newHeading: text(values, 'why', 'newHeading'),
-      newWay: list(values, 'why', 'newWay'),
+      eyebrow: 'Trusted by SEOs and agencies',
+      heading: 'What our customers say',
+      body: '',
+      items: [],
+    },
+  });
+
+  blueprints.push({
+    component: 'benefit-cards',
+    variant: 'with-art',
+    locked: false,
+    animation: stagger,
+    values: {
+      eyebrow: 'Why Press Parrot',
+      heading: 'A better way to build backlinks',
+      body: 'Everything you need to find, evaluate and order high-quality link building opportunities.',
+      items: BENEFITS,
+      image: { src: '/images/press-parrot-hero.webp', alt: '' },
     },
   });
 
@@ -366,7 +402,7 @@ export function homePageBlueprint(values: PageValues): SectionBlueprint[] {
     component: 'service-cards',
     variant: 'default',
     locked: false,
-    animation: { entrance: 'stagger', speed: 'normal', delay: 'none' },
+    animation: stagger,
     values: {
       heading: text(values, 'services', 'heading'),
       intro: text(values, 'services', 'intro'),
@@ -374,41 +410,19 @@ export function homePageBlueprint(values: PageValues): SectionBlueprint[] {
     },
   });
 
-  blueprints.push({
-    component: 'feature-list',
-    variant: 'default',
-    locked: false,
-    animation: { entrance: 'stagger', speed: 'normal', delay: 'none' },
-    values: {
-      heading: text(values, 'features', 'heading'),
-      intro: text(values, 'features', 'intro'),
-      items: list(values, 'features', 'items'),
-    },
-  });
+  // ------------------------------------------------------- the reading ----
+  //
+  // The seam. From here the page answers rather than sells, in the same
+  // design system - cards, asides, checklists and the marketplace itself
+  // breaking the prose up, so nobody feels they have wandered into a blog.
 
   blueprints.push({
-    component: 'agency-panel',
-    variant: 'default',
-    locked: false,
-    animation: { entrance: 'fade-up', speed: 'normal', delay: 'none' },
-    values: {
-      eyebrow: text(values, 'agencies', 'eyebrow'),
-      heading: text(values, 'agencies', 'heading'),
-      body: text(values, 'agencies', 'body'),
-      primaryCta: group(values, 'agencies').primaryCta,
-      secondaryCta: group(values, 'agencies').secondaryCta,
-      items: list(values, 'agencies', 'items'),
-    },
-  });
-
-  blueprints.push({
-    component: 'editorial',
+    component: 'rich-text',
     variant: 'default',
     locked: false,
     values: {
-      eyebrow: text(values, 'editorial', 'eyebrow'),
-      heading: text(values, 'editorial', 'heading'),
-      articles: list(values, 'editorial', 'articles'),
+      heading: EDITORIAL_HEADINGS.simple,
+      body: article(values, 'what-is-link-building'),
     },
   });
 
@@ -427,12 +441,33 @@ export function homePageBlueprint(values: PageValues): SectionBlueprint[] {
     component: 'marketplace-search',
     variant: 'default',
     locked: false,
+    animation: fadeUp,
     values: {
       heading: text(values, 'search', 'heading'),
       body: text(values, 'search', 'body'),
       placeholder: text(values, 'search', 'placeholder'),
-      cta: group(values, 'search').cta,
+      cta: { label: 'Create Free Account to Search Websites', href: '/signup' },
       note: text(values, 'search', 'note'),
+    },
+  });
+
+  /*
+    Expandable, not lazy-loaded. Every word behind the link is in the page
+    source - the disclosure changes how it looks, not whether it is there -
+    which is the only version of this pattern a search engine reads.
+  */
+  blueprints.push({
+    component: 'expandable',
+    variant: 'default',
+    locked: false,
+    values: {
+      heading: EDITORIAL_HEADINGS.buying,
+      intro: article(values, 'high-quality-backlink'),
+      label: EDITORIAL_HEADINGS.buyingLabel,
+      more: joinArticles(values, [
+        ['How Press Parrot vets websites', 'how-we-vet'],
+        ['Why link building still matters', 'why-link-building-matters'],
+      ]),
     },
   });
 
@@ -440,7 +475,7 @@ export function homePageBlueprint(values: PageValues): SectionBlueprint[] {
     component: 'comparison',
     variant: 'default',
     locked: false,
-    animation: { entrance: 'fade-up', speed: 'normal', delay: 'none' },
+    animation: fadeUp,
     values: {
       heading: text(values, 'comparison', 'heading'),
       body: text(values, 'comparison', 'body'),
@@ -452,12 +487,48 @@ export function homePageBlueprint(values: PageValues): SectionBlueprint[] {
   });
 
   blueprints.push({
+    component: 'expandable',
+    variant: 'default',
+    locked: false,
+    values: {
+      heading: EDITORIAL_HEADINGS.guestPosts,
+      intro: article(values, 'guest-posts-vs-niche-edits'),
+      label: EDITORIAL_HEADINGS.guestPostsLabel,
+      more: joinArticles(values, [['Content and link building', 'content-and-links']]),
+    },
+  });
+
+  blueprints.push({
+    component: 'cta',
+    variant: 'light',
+    locked: false,
+    animation: fadeUp,
+    values: CONTENT_CTA,
+  });
+
+  blueprints.push({
+    component: 'rich-text',
+    variant: 'default',
+    locked: false,
+    values: {
+      heading: EDITORIAL_HEADINGS.choosing,
+      body: article(values, 'choosing-opportunities'),
+    },
+  });
+
+  /*
+    The checklist is the second half of the band above it, so it carries no
+    heading of its own: the page said "How to choose websites for link
+    building" twice otherwise, once over the copy and once over the list of
+    what to check.
+  */
+  blueprints.push({
     component: 'checklist',
     variant: 'default',
     locked: false,
-    animation: { entrance: 'stagger', speed: 'normal', delay: 'none' },
+    animation: { entrance: 'stagger', speed: 'subtle', delay: 'none' },
     values: {
-      heading: text(values, 'checklist', 'heading'),
+      heading: '',
       body: text(values, 'checklist', 'body'),
       items: list(values, 'checklist', 'items'),
     },
@@ -467,7 +538,7 @@ export function homePageBlueprint(values: PageValues): SectionBlueprint[] {
     component: 'metric-cards',
     variant: 'default',
     locked: false,
-    animation: { entrance: 'stagger', speed: 'normal', delay: 'none' },
+    animation: stagger,
     values: {
       heading: text(values, 'metricCards', 'heading'),
       body: text(values, 'metricCards', 'body'),
@@ -476,22 +547,15 @@ export function homePageBlueprint(values: PageValues): SectionBlueprint[] {
     },
   });
 
-  /*
-    Built, editable, and switched off. There are no quotes anybody really
-    gave, and an invented one is a lie on the page a stranger judges the
-    business by. Typing a real one in and pressing show is the whole job.
-  */
   blueprints.push({
-    component: 'testimonials',
+    component: 'related-pages',
     variant: 'default',
     locked: false,
-    hidden: true,
-    animation: { entrance: 'stagger', speed: 'normal', delay: 'none' },
+    animation: stagger,
     values: {
-      eyebrow: 'Trusted by SEOs and agencies',
-      heading: 'What our customers say',
-      body: '',
-      items: [],
+      heading: 'Link building across different niches',
+      body: 'Relevance is the metric that matters most, so start with the publishers who already write about what you do.',
+      items: NICHE_LINKS,
     },
   });
 
@@ -501,7 +565,7 @@ export function homePageBlueprint(values: PageValues): SectionBlueprint[] {
       component: 'faq',
       variant: 'wide-muted',
       locked: false,
-      values: { heading: 'Frequently asked questions', items: faqs },
+      values: { heading: 'Link building FAQs', items: faqs },
     });
   }
 
@@ -509,7 +573,7 @@ export function homePageBlueprint(values: PageValues): SectionBlueprint[] {
     component: 'cta',
     variant: 'panel',
     locked: false,
-    animation: { entrance: 'fade-up', speed: 'normal', delay: 'none' },
+    animation: fadeUp,
     values: {
       heading: text(values, 'finalCta', 'heading'),
       body: text(values, 'finalCta', 'body'),
@@ -520,6 +584,38 @@ export function homePageBlueprint(values: PageValues): SectionBlueprint[] {
   });
 
   return blueprints;
+}
+
+/** One of the homepage's editorial articles, by its anchor id. */
+function article(values: PageValues, id: string): unknown {
+  const found = list(values, 'editorial', 'articles').find(
+    (row) => isRecord(row) && row.id === id,
+  );
+  return isRecord(found) ? (found.content ?? '') : '';
+}
+
+/**
+ * Several articles as one document, each under its own subheading.
+ *
+ * Markdown is what ships, so joining is concatenation. An article somebody
+ * has edited in the rich text editor is a document rather than a string and
+ * cannot be concatenated with one; in that case the first article is used
+ * alone and the rest stay where they already are, which loses nothing - they
+ * are still in `page_content` and still render on the template.
+ */
+function joinArticles(values: PageValues, wanted: [string, string][]): unknown {
+  const parts = wanted.map(([heading, id]) => ({ heading, content: article(values, id) }));
+  const strings = parts.filter((part) => typeof part.content === 'string' && part.content.trim());
+
+  if (strings.length !== parts.length) return parts[0]?.content ?? '';
+
+  return strings
+    .map((part) => `## ${part.heading}\n\n${(part.content as string).trim()}`)
+    .join('\n\n');
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 /** Which templates can be converted, and how. */
