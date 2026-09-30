@@ -25,7 +25,8 @@
     "verify:admin": "tsx scripts/verify-admin.mts",
     "verify:majestic": "tsx scripts/verify-majestic.mts",
     "verify:blog": "tsx scripts/verify-blog.mts",
-    "verify:sections": "tsx scripts/verify-sections.mts"
+    "verify:sections": "tsx scripts/verify-sections.mts",
+    "verify:paging": "tsx scripts/verify-paging.mts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.128.0",

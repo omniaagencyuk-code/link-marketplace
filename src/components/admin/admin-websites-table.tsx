@@ -533,7 +533,11 @@ export function AdminWebsitesTable({
             ))}
           </Select>
         </div>
-        <p className="tabular text-[13px] text-muted">{rows.length} websites</p>
+        <p className="tabular text-[13px] text-muted">
+          {rows.length === websites.length
+            ? `${websites.length.toLocaleString('en-GB')} websites`
+            : `${rows.length.toLocaleString('en-GB')} of ${websites.length.toLocaleString('en-GB')} websites`}
+        </p>
       </div>
 
       {losing.size > 0 ? (

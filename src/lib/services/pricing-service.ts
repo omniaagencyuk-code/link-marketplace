@@ -2,6 +2,7 @@ import { getAdminScopedClient } from '@/lib/supabase/server';
 import type { TrueCostIndex } from '@/lib/utils/margin';
 import { chunk } from '@/lib/utils/chunk';
 import { isSupabaseEnabled } from '@/lib/supabase/config';
+import { readAllPages } from './supabase/paged';
 import { fxService } from './fx-service';
 import {
   computePrice,
@@ -59,16 +60,6 @@ const DEFAULT_RULES: PricingRules = {
   agencyDiscountPoints: 10,
 };
 
-/**
- * How many rows one request may return before the server truncates it.
- *
- * Conservative on purpose. The cost of an extra round trip is a few
- * milliseconds; the cost of one truncated read is a listing that comes back
- * from approval with a cost and no sell price, and nothing anywhere saying
- * why.
- */
-const PAGE = 1000;
-
 /** How many listings' rows to ask for at once. */
 const WEBSITES_PER_READ = 200;
 
@@ -86,18 +77,6 @@ const ROWS_PER_WRITE = 500;
 const WRITES_AT_ONCE = 10;
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
-/** Every row a query matches, in pages, rather than the first page of them. */
-async function readPaged<T>(build: () => any): Promise<T[]> {
-  const all: T[] = [];
-  for (let from = 0; ; from += PAGE) {
-    const { data, error } = await build().range(from, from + PAGE - 1);
-    if (error) break;
-    const rows = (data ?? []) as T[];
-    all.push(...rows);
-    if (rows.length < PAGE) break;
-  }
-  return all;
-}
 
 /**
  * Rows for a set of listings, asked for in batches.
@@ -108,13 +87,18 @@ async function readPaged<T>(build: () => any): Promise<T[]> {
  * failure this exists to prevent.
  */
 async function readByWebsite<T>(
+  what: string,
   websiteIds: string[],
   build: (group: string[]) => any,
 ): Promise<T[]> {
   const all: T[] = [];
   for (const group of chunk(websiteIds, WEBSITES_PER_READ)) {
     const { data, error } = await build(group);
-    if (error) continue;
+    // Throws rather than skipping the batch. A skipped batch is a few hundred
+    // listings priced from costs that were never read - the sell price comes
+    // out wrong and the run reports success, which is the failure this file
+    // is full of comments about.
+    if (error) throw new Error(`Failed to load ${what}: ${error.message}`);
     all.push(...((data ?? []) as T[]));
   }
   return all;
@@ -292,31 +276,31 @@ export const pricingService = {
       would leave the listings in the tail showing no cost and no margin,
       which is the same table lying quietly that this whole change is about.
     */
-    const PAGE = 1000;
-    for (let from = 0; ; from += PAGE) {
+    const rows = await readAllPages<Record<string, unknown>>('the true costs', (from, to) => {
       let query = supabase
         .from('price_calculations')
         .select('website_id, link_type, niche, true_cost_minor')
+        // `website_id` alone is not unique here - there is a row per topic per
+        // placement - and an offset walk over an order with ties the database
+        // may break differently each request skips rows. Ordering by the key
+        // as well makes the walk total.
         .order('website_id', { ascending: true })
-        .range(from, from + PAGE - 1);
+        .order('niche', { ascending: true })
+        .order('link_type', { ascending: true })
+        .range(from, to);
       if (websiteIds?.length) query = query.in('website_id', websiteIds);
+      return query;
+    });
 
-      const { data, error } = await query;
-      if (error) break;
-
-      const rows = (data ?? []) as Record<string, unknown>[];
-      for (const row of rows) {
-        const websiteId = String(row.website_id);
-        const linkType = String(row.link_type);
-        // The general rate is stored with an empty niche, which is the key
-        // the margin helpers look under.
-        const niche = String(row.niche ?? '');
-        const cost = Number(row.true_cost_minor);
-        if (!Number.isFinite(cost)) continue;
-        ((byWebsite[websiteId] ??= {})[niche] ??= {})[linkType] = cost;
-      }
-
-      if (rows.length < PAGE) break;
+    for (const row of rows) {
+      const websiteId = String(row.website_id);
+      const linkType = String(row.link_type);
+      // The general rate is stored with an empty niche, which is the key
+      // the margin helpers look under.
+      const niche = String(row.niche ?? '');
+      const cost = Number(row.true_cost_minor);
+      if (!Number.isFinite(cost)) continue;
+      ((byWebsite[websiteId] ??= {})[niche] ??= {})[linkType] = cost;
     }
 
     return byWebsite;
@@ -376,36 +360,32 @@ export const pricingService = {
       small enough that no batch can be truncated.
     */
     /* eslint-disable @typescript-eslint/no-explicit-any */
-    const websites = await readPaged<any>(() =>
-      websiteIds?.length
-        ? supabase
-            .from('websites')
-            .select('id, domain, status, website_commercials (cost_currency, payment_methods, prices_exclude_vat, vat_rate_pct)')
-            .neq('status', 'archived')
-            .in('id', websiteIds)
-            .order('id')
-        : supabase
-            .from('websites')
-            .select('id, domain, status, website_commercials (cost_currency, payment_methods, prices_exclude_vat, vat_rate_pct)')
-            .neq('status', 'archived')
-            .order('id'),
-    );
+    const websites = await readAllPages<any>('the listings to price', (from, to) => {
+      let query = supabase
+        .from('websites')
+        .select('id, domain, status, website_commercials (cost_currency, payment_methods, prices_exclude_vat, vat_rate_pct)')
+        .neq('status', 'archived')
+        .order('id', { ascending: true })
+        .range(from, to);
+      if (websiteIds?.length) query = query.in('id', websiteIds);
+      return query;
+    });
 
     const ids = websites.map((site) => String(site.id));
     const [services, nicheCosts, nichePrices] = await Promise.all([
-      readByWebsite<any>(ids, (group) =>
+      readByWebsite<any>('the services', ids, (group) =>
         supabase
           .from('services')
           .select('id, website_id, type, price_minor, price_override, service_costs (cost_price_minor)')
           .in('website_id', group),
       ),
-      readByWebsite<any>(ids, (group) =>
+      readByWebsite<any>('the niche costs', ids, (group) =>
         supabase
           .from('website_niche_costs')
           .select('website_id, niche, link_type, cost_minor, assumed')
           .in('website_id', group),
       ),
-      readByWebsite<any>(ids, (group) =>
+      readByWebsite<any>('the niche prices', ids, (group) =>
         supabase
           .from('website_niche_prices')
           .select('website_id, niche, link_type, price_minor, price_override')

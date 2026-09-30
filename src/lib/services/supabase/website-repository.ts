@@ -1,4 +1,5 @@
 import { getServerClient, getAdminClient, getAdminScopedClient } from '@/lib/supabase/server';
+import { readAllPages } from './paged';
 import {
   WEBSITE_SELECT,
   WEBSITE_SELECT_ADMIN,
@@ -37,15 +38,40 @@ import type {
  */
 
 /**
- * Upper bound on a full marketplace read.
+ * How many listings the marketplace ships to the browser comfortably.
  *
  * The marketplace filters client-side over the whole dataset, which is fast
- * and keeps the UI instant, but it does mean the page ships every active
+ * and keeps the UI instant, but it does mean the page carries every active
  * listing. That is fine into the low thousands and wrong beyond it. When the
  * inventory outgrows this, `search()` below is the replacement: it already
  * pushes filtering into the database.
+ *
+ * It is not a query limit, and the distinction is the whole of this change.
+ * It used to be one - `.limit(2000)` on four reads here - and PostgREST
+ * answered every one of them with a thousand rows and no error, so the admin
+ * table counted a thousand websites against a larger inventory, the
+ * marketplace showed buyers the strongest thousand and hid the rest, and the
+ * homepage niche cards were counted from the same truncated array. The reads
+ * page now; this is only the number at which somebody should be told the
+ * design has been outgrown.
  */
-const MAX_LIST_ROWS = 2000;
+const COMFORTABLE_LIST_SIZE = 5000;
+
+/**
+ * Says so when a full read has outgrown the design that ships it whole.
+ *
+ * Deliberately not a cap. Truncating here would put back the exact bug this
+ * change removes, at a number chosen by us instead of by PostgREST. The page
+ * stays correct and gets slow, and the log says the marketplace needs to
+ * start filtering in the database.
+ */
+function warnIfOutgrown(what: string, rows: number) {
+  if (rows <= COMFORTABLE_LIST_SIZE) return;
+  console.warn(
+    `${what} returned ${rows} rows, past the ${COMFORTABLE_LIST_SIZE} this page ` +
+      'ships to the browser comfortably. Move it onto the database-side search.',
+  );
+}
 
 
 /**
@@ -287,27 +313,41 @@ async function syncCostCurrency(
 export const supabaseWebsiteRepository = {
   async getAll(): Promise<WebsiteListItem[]> {
     const supabase = await getServerClient();
-    const { data, error } = await supabase
-      .from('websites')
-      .select(WEBSITE_SELECT)
-      .eq('status', 'active')
-      .order('domain_rating', { ascending: false })
-      .limit(MAX_LIST_ROWS);
 
-    if (error) throw new Error(`Failed to load websites: ${error.message}`);
-    return (data as unknown as WebsiteRow[]).map((row) => toListItem(mapWebsite(row)));
+    // Ordered by `id` as well as by rank. Domain ratings tie constantly - a
+    // hundred listings share a DR of 40 - and paging by offset over an order
+    // the database is free to break ties in differently on each request
+    // skips some rows and returns others twice.
+    const rows = await readAllPages<WebsiteRow>('the marketplace', (from, to) =>
+      supabase
+        .from('websites')
+        .select(WEBSITE_SELECT)
+        .eq('status', 'active')
+        .order('domain_rating', { ascending: false })
+        .order('id', { ascending: true })
+        .range(from, to),
+    );
+
+    warnIfOutgrown('the marketplace', rows.length);
+    return rows.map((row) => toListItem(mapWebsite(row)));
   },
 
   async getAllForAdmin(): Promise<WebsiteListItem[]> {
     const supabase = getAdminScopedClient();
-    const { data, error } = await supabase
-      .from('websites')
-      .select(WEBSITE_SELECT_ADMIN)
-      .order('updated_at', { ascending: false })
-      .limit(MAX_LIST_ROWS);
 
-    if (error) throw new Error(`Failed to load websites: ${error.message}`);
-    return (data as unknown as WebsiteRow[]).map((row) => toListItem(mapWebsite(row)));
+    // This is the read behind the count in the corner of the websites page,
+    // which sat on "1000 websites" while the inventory grew past it.
+    const rows = await readAllPages<WebsiteRow>('the website list', (from, to) =>
+      supabase
+        .from('websites')
+        .select(WEBSITE_SELECT_ADMIN)
+        .order('updated_at', { ascending: false })
+        .order('id', { ascending: true })
+        .range(from, to),
+    );
+
+    warnIfOutgrown('the admin website list', rows.length);
+    return rows.map((row) => toListItem(mapWebsite(row)));
   },
 
   /** Admin only - the public site looks listings up by slug, not id. */
@@ -383,18 +423,27 @@ export const supabaseWebsiteRepository = {
 
   async countByNiche(): Promise<Record<NicheSlug, number>> {
     const supabase = await getServerClient();
-    const { data } = await supabase
-      .from('websites')
-      .select('primary_category:categories!websites_primary_category_id_fkey (slug)')
-      .eq('status', 'active')
-      .limit(MAX_LIST_ROWS);
 
     // PostgREST returns an embedded one-to-one as an object, but the generated
     // types describe it as an array. Accept either rather than trusting one.
     type CategoryJoin = { slug: string } | { slug: string }[] | null;
+    // One small column, paged. These counts are the figures on the homepage's
+    // niche cards, so a truncated read here is a wrong number on the page a
+    // stranger judges the business by. `id` is selected only to order on.
+    const data = await readAllPages<{ primary_category: CategoryJoin }>(
+      'the niche counts',
+      (from, to) =>
+        supabase
+          .from('websites')
+          .select('id, primary_category:categories!websites_primary_category_id_fkey (slug)')
+          .eq('status', 'active')
+          .order('id', { ascending: true })
+          .range(from, to),
+    );
+
     const counts = {} as Record<NicheSlug, number>;
 
-    for (const row of (data ?? []) as unknown as { primary_category: CategoryJoin }[]) {
+    for (const row of data) {
       const joined = row.primary_category;
       const slug = (Array.isArray(joined) ? joined[0]?.slug : joined?.slug) as
         | NicheSlug
@@ -443,21 +492,43 @@ export const supabaseWebsiteRepository = {
     const admin = getAdminClient();
     const supabase = admin ?? (await getServerClient());
 
-    // A niche landing page needs every listing in its niche counted, not the
-    // first 120 by rank, so the read widens when one is asked for. The
-    // filtering happens here rather than in the query because a listing's
-    // niche lives in a join table and its secondary niches in another row -
-    // the same reason `countByNiche` counts in JavaScript.
-    const { data } = await supabase
-      .from('websites')
-      .select(WEBSITE_SELECT)
-      .eq('status', 'active')
-      .order('domain_rating', { ascending: false })
-      .limit(niche ? MAX_LIST_ROWS : 120);
+    /*
+      A niche landing page needs every listing in its niche counted, so the
+      read pages rather than taking a first page of it - the count under that
+      heading is the one number on the page nobody can check by eye, and it
+      was being drawn from a thousand rows however many there were.
 
-    const all = ((data as unknown as WebsiteRow[] | null) ?? []).map((row) =>
-      toListItem(mapWebsite(row)),
-    );
+      The filtering happens here rather than in the query because a listing's
+      niche lives in a join table and its secondary niches in another row -
+      the same reason `countByNiche` counts in JavaScript.
+
+      Without a niche only a sample is wanted, and 120 by rank is plenty to
+      draw six rows from, so that read stays a single page on purpose.
+    */
+    const data = niche
+      ? await readAllPages<WebsiteRow>('the marketplace preview', (from, to) =>
+          supabase
+            .from('websites')
+            .select(WEBSITE_SELECT)
+            .eq('status', 'active')
+            .order('domain_rating', { ascending: false })
+            .order('id', { ascending: true })
+            .range(from, to),
+        )
+      : await (async () => {
+          const { data: page, error } = await supabase
+            .from('websites')
+            .select(WEBSITE_SELECT)
+            .eq('status', 'active')
+            .order('domain_rating', { ascending: false })
+            .limit(120);
+          // This read used to discard its error and count the empty array,
+          // which showed a live marketplace as holding no listings at all.
+          if (error) throw new Error(`Failed to load the marketplace preview: ${error.message}`);
+          return (page ?? []) as unknown as WebsiteRow[];
+        })();
+
+    const all = data.map((row) => toListItem(mapWebsite(row)));
     const websites = niche ? all.filter((website) => matchesNiche(website, niche)) : all;
 
     // Spread across the inventory rather than taking the strongest few, so the
@@ -548,10 +619,23 @@ export const supabaseWebsiteRepository = {
     const supabase = getAdminScopedClient();
     // Only two columns - the importer compares millions of rows in the worst
     // case and does not need the rest.
-    const { data } = await supabase.from('websites').select('id, domain').limit(50_000);
+    // Paged, not `.limit(50_000)`: PostgREST answered that with the first
+    // thousand and no error, so an import past the thousandth domain found no
+    // match and created a duplicate listing instead of updating the one that
+    // was already there. Of the five truncated reads this is the only one
+    // that wrote bad data rather than displaying it.
+    const data = await readAllPages<{ id: string; domain: string }>(
+      'the domain index',
+      (from, to) =>
+        supabase
+          .from('websites')
+          .select('id, domain')
+          .order('id', { ascending: true })
+          .range(from, to),
+    );
 
     const index: Record<string, string> = {};
-    for (const row of (data ?? []) as { id: string; domain: string }[]) {
+    for (const row of data) {
       const domain = normaliseDomain(row.domain);
       if (domain) index[domain] = row.id;
     }

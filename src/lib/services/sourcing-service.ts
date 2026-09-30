@@ -1,5 +1,6 @@
 import { getAdminScopedClient } from '@/lib/supabase/server';
 import { isSupabaseEnabled } from '@/lib/supabase/config';
+import { readAllPages } from './supabase/paged';
 import { readMbox, readPastedEmail, type ParsedMessage } from '@/lib/sourcing/mbox';
 import { gmailSearchUrl, gmailThreadUrl, type ReadThread } from '@/lib/gmail/thread';
 import { extractLinks, type FoundLink } from '@/lib/sourcing/links';
@@ -1175,15 +1176,22 @@ async function contestedDrafts(): Promise<Map<string, Offer[]>> {
   if (!isSupabaseEnabled()) return new Map();
   const supabase = getAdminScopedClient();
 
-  const { data } = await supabase
-    .from('listing_drafts')
-    .select('id, domain, status, proposed, inbound_emails (from_address, sent_at)')
-    .in('status', ['pending', 'approved'])
-    .limit(5000);
+  // Paged rather than `.limit(5000)`, which PostgREST answered with the first
+  // thousand and no error. Two offers for one domain are only contested if
+  // both are in the array, so a truncated read here does not show fewer
+  // duplicates - it shows none at all for the drafts in the tail.
+  const data = await readAllPages<Record<string, unknown>>('the open drafts', (from, to) =>
+    supabase
+      .from('listing_drafts')
+      .select('id, domain, status, proposed, inbound_emails (from_address, sent_at)')
+      .in('status', ['pending', 'approved'])
+      .order('id', { ascending: true })
+      .range(from, to),
+  );
 
   const byDomain = new Map<string, Offer[]>();
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  for (const row of (data ?? []) as any[]) {
+  for (const row of data as any[]) {
     const email = Array.isArray(row.inbound_emails) ? row.inbound_emails[0] : row.inbound_emails;
     const proposed = (row.proposed ?? {}) as Record<string, unknown>;
     const offers = byDomain.get(row.domain) ?? [];
