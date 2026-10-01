@@ -337,26 +337,34 @@
   opacity: 0;
 }
 
+/* How far a section travels on its way in.
+   
+   These were half this - 1rem up, 1.5rem across - and the movement was
+   lost on anything wider than a card. A section the width of the page
+   shifting 24px reads as a plain fade, which is what it was mistaken for.
+   Doubled, and the durations below lengthened to match, so the extra
+   distance arrives unhurried rather than snapping into place. */
 [data-reveal='fade-up'][data-armed]:not([data-revealed]) {
-  transform: translate3d(0, 1rem, 0);
+  transform: translate3d(0, 2rem, 0);
 }
 
 [data-reveal='slide-left'][data-armed]:not([data-revealed]) {
-  transform: translate3d(1.5rem, 0, 0);
+  transform: translate3d(3rem, 0, 0);
 }
 
 [data-reveal='slide-right'][data-armed]:not([data-revealed]) {
-  transform: translate3d(-1.5rem, 0, 0);
+  transform: translate3d(-3rem, 0, 0);
 }
 
 [data-reveal='scale-in'][data-armed]:not([data-revealed]) {
-  transform: scale3d(0.97, 0.97, 1);
+  transform: scale3d(0.94, 0.94, 1);
 }
 
 [data-reveal][data-armed] {
   transition-property: opacity, transform;
   transition-timing-function: cubic-bezier(0.22, 0.61, 0.36, 1);
-  transition-duration: var(--reveal-speed, 500ms);
+  /* The fallback matches 'normal', which is NO_ANIMATION's speed. */
+  transition-duration: var(--reveal-speed, 750ms);
   transition-delay: var(--reveal-delay, 0ms);
   will-change: opacity, transform;
 }
@@ -369,9 +377,13 @@
   will-change: auto;
 }
 
-[data-reveal][data-speed='subtle'] { --reveal-speed: 350ms; }
-[data-reveal][data-speed='normal'] { --reveal-speed: 500ms; }
-[data-reveal][data-speed='slow'] { --reveal-speed: 750ms; }
+/* Longer than they were - 350/500/750 - because the same duration over
+   twice the distance reads as faster, and the point of the distance was
+   to be noticed rather than to be hurried. The three remain relative: a
+   section set to Subtle is still the quickest thing on the page. */
+[data-reveal][data-speed='subtle'] { --reveal-speed: 500ms; }
+[data-reveal][data-speed='normal'] { --reveal-speed: 750ms; }
+[data-reveal][data-speed='slow'] { --reveal-speed: 1000ms; }
 
 [data-reveal][data-delay='small'] { --reveal-delay: 80ms; }
 [data-reveal][data-delay='medium'] { --reveal-delay: 180ms; }
@@ -398,7 +410,10 @@
 
 [data-reveal='stagger'][data-armed]:not([data-revealed]) [data-reveal-items] > * {
   opacity: 0;
-  transform: translate3d(0, 0.75rem, 0);
+  /* Less than a whole section travels. Ten of these move one after another,
+     so the distance that reads as deliberate on one block reads as restless
+     repeated down a grid. */
+  transform: translate3d(0, 1.25rem, 0);
 }
 
 [data-reveal='stagger'][data-armed] [data-reveal-items] > * {
