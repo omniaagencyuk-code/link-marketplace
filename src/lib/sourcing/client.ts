@@ -108,13 +108,20 @@ function requestBody(request: ExtractionRequest, model: string) {
       Room for the answer, not a guess at it.
 
       A thread read whole is a longer input than a single message, and a
-      network reply expands into one listing per domain - thirty-odd fields
+      network reply expands into one listing per domain - forty-odd fields
       each. At 8000 the JSON was being cut off mid-object, which arrives as
       unparseable text rather than as an error, and the reply is charged for
-      either way. Batch billing is on tokens actually produced, so a higher
-      ceiling costs nothing until it is needed.
+      either way.
+
+      16000 was not enough either. One listing serialises to about 440
+      tokens, so that ceiling held thirty-six domains - and a Danish network
+      rate card pasted in as a table ran to a hundred and twenty, each with
+      its own price. 64000 holds that with room to spare. Billing is on
+      tokens actually produced, so the ceiling costs nothing until it is
+      needed; what it costs is the right to use a plain request, since the
+      SDK needs streaming at this size to avoid the HTTP timeout.
     */
-    max_tokens: 16000,
+    max_tokens: 64000,
     system: [
       {
         type: 'text' as const,
@@ -149,25 +156,17 @@ export async function extractNow(
   model: string,
 ): Promise<ExtractionOutcome> {
   try {
-    const response = await getClient().messages.parse(requestBody(request, model));
+    /*
+      Streamed, not because anybody watches it arrive, but because the SDK
+      needs it at this output ceiling: a plain request holding 64000 tokens
+      open runs past the HTTP timeout and fails with nothing to show for the
+      tokens it has already been charged for. `finalMessage()` waits for the
+      whole thing and hands back the same message a plain call would.
+    */
+    const stream = getClient().messages.stream(requestBody(request, model));
+    const message = await stream.finalMessage();
 
-    if (!response.parsed_output) {
-      return {
-        emailId: request.emailId,
-        error: `The model did not return usable JSON (stop reason: ${response.stop_reason ?? 'unknown'}).`,
-      };
-    }
-
-    return {
-      emailId: request.emailId,
-      // Sentinels back to nulls at the boundary, so nothing downstream ever
-      // sees the shape the wire forced on us.
-      result: fromWire(response.parsed_output),
-      usage: {
-        inputTokens: response.usage.input_tokens + (response.usage.cache_read_input_tokens ?? 0),
-        outputTokens: response.usage.output_tokens,
-      },
-    };
+    return readMessage(message, request.emailId);
   } catch (error) {
     return { emailId: request.emailId, error: messageFor(error) };
   }
@@ -224,56 +223,76 @@ export async function collectBatch(providerBatchId: string): Promise<ExtractionO
     }
 
     const message = entry.result.message;
-    const text = message.content
-      .filter((block): block is Anthropic.TextBlock => block.type === 'text')
-      .map((block) => block.text)
-      .join('');
-
-    /*
-      Two different failures, told apart.
-
-      `safeJson` returns null when the text is not JSON at all, and a null
-      root fails the schema with "expected object, received null" and an empty
-      path. Reported as a schema mismatch it sends whoever reads it to look at
-      the schema, which is fine - the actual cause is usually that the model
-      ran out of output tokens half way through an object, and `stop_reason`
-      has been saying so all along.
-    */
-    const json = safeJson(text);
-    if (json === null) {
-      const truncated = message.stop_reason === 'max_tokens';
-      outcomes.push({
-        emailId,
-        error: truncated
-          ? 'The model ran out of room before finishing its JSON. This reply needs a higher output limit, or it lists more domains than one response can hold.'
-          : `The model did not return JSON (stop reason: ${message.stop_reason ?? 'unknown'}). It produced ${text.trim().length} characters.`,
-      });
-      continue;
-    }
-
-    const parsed = wireResultSchema.safeParse(json);
-    if (!parsed.success) {
-      outcomes.push({
-        emailId,
-        error: `The model's JSON did not match the schema: ${parsed.error.issues
-          .slice(0, 3)
-          .map((issue) => `${issue.path.length > 0 ? issue.path.join('.') : 'the result'} ${issue.message}`)
-          .join('; ')}`,
-      });
-      continue;
-    }
-
-    outcomes.push({
-      emailId,
-      result: fromWire(parsed.data),
-      usage: {
-        inputTokens: message.usage.input_tokens + (message.usage.cache_read_input_tokens ?? 0),
-        outputTokens: message.usage.output_tokens,
-      },
-    });
+    outcomes.push(readMessage(message, emailId));
   }
 
   return outcomes;
+}
+
+/**
+ * A finished message, turned into an outcome.
+ *
+ * Shared by the real-time path and the batch collector, because they were
+ * doing the same four things and only one of them had learned to tell a
+ * truncated answer from a malformed one. The other reported "did not return
+ * usable JSON" and left whoever read it to work out that the reply simply
+ * listed more domains than the response could hold.
+ */
+function readMessage(
+  message: {
+    content: { type: string }[];
+    stop_reason: string | null;
+    usage: { input_tokens: number; output_tokens: number; cache_read_input_tokens?: number | null };
+  },
+  emailId: string,
+): ExtractionOutcome {
+  const text = message.content
+    .filter((block): block is Anthropic.TextBlock => block.type === 'text')
+    .map((block) => block.text)
+    .join('');
+
+  /*
+    Two different failures, told apart.
+
+    `safeJson` returns null when the text is not JSON at all, and a null root
+    fails the schema with "expected object, received null" and an empty path.
+    Reported as a schema mismatch it sends whoever reads it to look at the
+    schema, which is fine - the actual cause is usually that the model ran
+    out of output tokens half way through an object, and `stop_reason` has
+    been saying so all along.
+  */
+  const json = safeJson(text);
+  if (json === null) {
+    return {
+      emailId,
+      error:
+        message.stop_reason === 'max_tokens'
+          ? 'The model ran out of room before finishing its JSON. This reply lists more domains than one response can hold - paste it in two halves.'
+          : `The model did not return JSON (stop reason: ${message.stop_reason ?? 'unknown'}). It produced ${text.trim().length} characters.`,
+    };
+  }
+
+  const parsed = wireResultSchema.safeParse(json);
+  if (!parsed.success) {
+    return {
+      emailId,
+      error: `The model's JSON did not match the schema: ${parsed.error.issues
+        .slice(0, 3)
+        .map((issue) => `${issue.path.length > 0 ? issue.path.join('.') : 'the result'} ${issue.message}`)
+        .join('; ')}`,
+    };
+  }
+
+  return {
+    emailId,
+    // Sentinels back to nulls at the boundary, so nothing downstream ever
+    // sees the shape the wire forced on us.
+    result: fromWire(parsed.data),
+    usage: {
+      inputTokens: message.usage.input_tokens + (message.usage.cache_read_input_tokens ?? 0),
+      outputTokens: message.usage.output_tokens,
+    },
+  };
 }
 
 function safeJson(text: string): unknown {

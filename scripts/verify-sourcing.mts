@@ -873,6 +873,44 @@ console.log('\n--- bulk approve cannot walk past a contested domain ---');
   is('and leaves them out', action.includes('!contested.has('), true);
 }
 
+console.log('\n--- a network table bigger than one response ---');
+{
+  /*
+    A real Danish rate card pasted as a table: 120 domains, each with its own
+    price and its own per-niche prices. One listing serialises to around 440
+    tokens, so the old 16000 ceiling held about thirty-six of them and the
+    rest arrived as JSON cut off mid-object - which reads as a schema error
+    rather than as "this was too long".
+
+    Measured rather than guessed: the number below is the width of a real
+    listing with every field the schema requires.
+  */
+  const TOKENS_PER_LISTING = 444;
+  const clientSource = fs.readFileSync(path.join(process.cwd(), 'src/lib/sourcing/client.ts'), 'utf8');
+  const ceiling = Number(/max_tokens: (\d+)/.exec(clientSource)?.[1] ?? 0);
+
+  is('the output ceiling is set', ceiling > 0, true);
+  is(
+    `the ceiling holds a 120-domain network (${Math.floor(ceiling / TOKENS_PER_LISTING)} listings)`,
+    Math.floor(ceiling / TOKENS_PER_LISTING) >= 120,
+    true,
+  );
+
+  // The SDK needs streaming above its non-streaming timeout, and a ceiling
+  // this high without it fails having already been charged for the tokens.
+  is('a ceiling that large is streamed', /messages\.stream\(/.test(clientSource), true);
+  is('and not sent as a plain request', /messages\.parse\(/.test(clientSource), false);
+
+  // Both paths read the answer the same way, so only one of them can learn
+  // to tell a truncated reply from a malformed one.
+  is(
+    'one reader for the live path and the batch',
+    (clientSource.match(/readMessage\(/g) ?? []).length >= 3,
+    true,
+  );
+  is('and it names truncation for what it is', clientSource.includes('ran out of room'), true);
+}
+
 console.log('\n--- reading a rate card out of a picture ---');
 {
   /*
