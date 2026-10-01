@@ -1,6 +1,7 @@
 import { getAdminScopedClient } from '@/lib/supabase/server';
 import { isSupabaseEnabled } from '@/lib/supabase/config';
 import { chunk } from '@/lib/utils/chunk';
+import { waitingForReview } from '@/lib/sourcing/queue';
 import { readAllPages } from './supabase/paged';
 import { readMbox, readPastedEmail, type ParsedMessage } from '@/lib/sourcing/mbox';
 import { gmailSearchUrl, gmailThreadUrl, type ReadThread } from '@/lib/gmail/thread';
@@ -79,6 +80,17 @@ export interface NoDraftEmail {
   gmailUrl: string | null;
   /** A search by Message-ID, which works for uploaded emails too. */
   findUrl: string | null;
+}
+
+/** One draft as the review queue shows it. */
+export interface PendingDraft {
+  id: string;
+  domain: string;
+  fromAddress: string;
+  sentAt: string | null;
+  matched: boolean;
+  lowConfidenceCount: number;
+  flags: string[];
 }
 
 export interface DuplicateGroup {
@@ -512,6 +524,76 @@ export const sourcingService = {
     return groups
       .filter((group) => group.pending > 0)
       .sort((a, b) => b.offers.length - a.offers.length || a.domain.localeCompare(b.domain));
+  },
+
+  /**
+   * The drafts a human still has to look at, and how many there are.
+   *
+   * Read in pages and filtered afterwards, which is the opposite of the order
+   * it used to be in and the whole of the fix. The queue page asked for the
+   * first two hundred pending drafts and then dropped the contested ones from
+   * what came back - so with several hundred domains offered twice, most of
+   * that two hundred was discarded and the table showed whatever few
+   * survived. Approving those cleared them, the next read surfaced another
+   * few, and the queue appeared to refill forever. Fifty-eight waiting,
+   * twenty approved, again, and again.
+   *
+   * Ordered by `id` as well as by confidence, because the confidence count is
+   * one of three values across hundreds of rows and an offset walk over an
+   * order the database may break ties in differently each request skips some
+   * and repeats others.
+   *
+   * `total` is every draft waiting that a person could actually approve here,
+   * not the length of the slice being shown. The two were the same number
+   * before this, and that is why neither of them was right.
+   */
+  async pendingDrafts(limit = 200): Promise<{ rows: PendingDraft[]; total: number }> {
+    if (!isSupabaseEnabled()) return { rows: [], total: 0 };
+    const supabase = getAdminScopedClient();
+
+    const contested = await sourcingService.domainsWithCompetingOffers().catch(() => new Set<string>());
+
+    const all = await readAllPages<Record<string, unknown>>('the drafts waiting', (from, to) =>
+      supabase
+        .from('listing_drafts')
+        .select(
+          'id, domain, matched_website_id, low_confidence_count, flags, created_at, inbound_emails (from_address, sent_at)',
+        )
+        .eq('status', 'pending')
+        .order('low_confidence_count', { ascending: true })
+        .order('id', { ascending: true })
+        .range(from, to),
+    );
+
+    /*
+      A domain two replies offer is a comparison rather than review work, and
+      it has a page of its own. Kept out of this list rather than flagged in
+      it: the flag was right and useless - it sat in a queue somebody wanted
+      to tick straight through, and bulk approve walked past it anyway,
+      overwriting one offer's price and contact with the other's.
+    */
+    const { rows: mine, total } = waitingForReview(
+      all.map((row) => ({ ...row, domain: String(row.domain) }) as Record<string, unknown> & { domain: string }),
+      contested,
+      limit,
+    );
+
+    const rows = mine.map((row) => {
+      const email = Array.isArray(row.inbound_emails)
+        ? (row.inbound_emails as Record<string, unknown>[])[0]
+        : (row.inbound_emails as Record<string, unknown> | null);
+      return {
+        id: String(row.id),
+        domain: String(row.domain),
+        fromAddress: String(email?.from_address ?? ''),
+        sentAt: (email?.sent_at as string | null) ?? null,
+        matched: Boolean(row.matched_website_id),
+        lowConfidenceCount: Number(row.low_confidence_count ?? 0),
+        flags: ((row.flags as string[] | null) ?? []) as string[],
+      };
+    });
+
+    return { rows, total };
   },
 
   // --------------------------------------------------------- no-draft work

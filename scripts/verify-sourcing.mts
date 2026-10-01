@@ -14,6 +14,7 @@ import { applyGeneralPriceToNiches, assumedNicheCosts, countLowConfidence, expan
 import { sensitiveNicheSlugs } from '../src/lib/config/accepted-niches';
 import { extractLinks, looksLikeRateCardLead } from '../src/lib/sourcing/links';
 import { offersAgree, offersNote, rankOffers, senderSignal } from '../src/lib/sourcing/offers';
+import { waitingForReview } from '../src/lib/sourcing/queue';
 import { healthOf, progressMessage, runProgress, type BatchRow } from '../src/lib/sourcing/batch-health';
 import { describeSkip, nightlySkipReason, type NightlyState } from '../src/lib/sourcing/schedule';
 import { extractionLimit } from '../src/lib/sourcing/limits';
@@ -865,6 +866,49 @@ console.log('\n--- bulk approve cannot walk past a contested domain ---');
     true,
   );
   is('and leaves them out', action.includes('!contested.has('), true);
+}
+
+console.log('\n--- the queue that appeared to refill forever ---');
+{
+  /*
+    The review queue asked for the first two hundred pending drafts and then
+    dropped the contested ones from what came back. Several hundred domains
+    were offered twice, so most of that two hundred was spent on rows that
+    were then discarded, and the table showed whatever few survived.
+    Approving those cleared them, the next read surfaced another few, and it
+    looked like a queue that would not empty. Fifty-eight waiting, twenty
+    approved, again, and again.
+
+    The fix is the order of two steps, so the order of two steps is what is
+    checked. The case below is the one that tells them apart: everything the
+    limit would have covered is contested, and everything a person could
+    actually approve is behind it.
+  */
+  const draft = (domain: string) => ({ domain });
+  const contested = new Set(Array.from({ length: 200 }, (_, i) => `taken${i}.com`));
+  const all = [
+    ...Array.from({ length: 200 }, (_, i) => draft(`taken${i}.com`)),
+    ...Array.from({ length: 50 }, (_, i) => draft(`mine${i}.com`)),
+  ];
+
+  const got = waitingForReview(all, contested, 200);
+  is('a queue behind 200 contested drafts is not empty', got.rows.length, 50);
+  is('and the count is what is waiting, not what is shown', got.total, 50);
+  is('the rows are the ones a person can approve', got.rows[0]?.domain, 'mine0.com');
+
+  // The slice still applies - it is a page, not a promise to render
+  // everything - but it is taken after the filter rather than before it.
+  const capped = waitingForReview(all, contested, 20);
+  is('a smaller page shows fewer rows', capped.rows.length, 20);
+  is('while still reporting everything waiting', capped.total, 50);
+
+  // Nothing contested means nothing is removed.
+  is('an uncontested queue is untouched', waitingForReview(all, new Set(), 500).total, 250);
+  is('and nothing is waiting when nothing is pending', waitingForReview([], contested, 200).total, 0);
+
+  // A limit of zero shows nothing and still counts honestly, which is the
+  // combination a header reading "0 drafts" over a full queue came from.
+  is('a zero page still knows what is behind it', waitingForReview(all, contested, 0).total, 50);
 }
 
 console.log('\n--- settling a contested domain from the list ---');

@@ -51,12 +51,10 @@ async function load() {
     sourcingService.spentThisMonthUsd().catch(() => 0),
     sourcingService.noDraftEmails(200).catch(() => []),
     sourcingService.duplicateGroups().catch(() => []),
-    supabase
-      .from('listing_drafts')
-      .select('id, domain, matched_website_id, low_confidence_count, flags, created_at, inbound_emails (from_address, sent_at)')
-      .eq('status', 'pending')
-      .order('low_confidence_count', { ascending: true })
-      .limit(200),
+    // Paged and filtered inside the service. Asking for a page and dropping
+    // the contested rows afterwards is what made this queue appear to refill
+    // forever.
+    sourcingService.pendingDrafts(200).catch(() => ({ rows: [], total: 0 })),
     // batch_id too: an email in a running batch is still 'new', and counting
     // it as waiting told the owner 50 were waiting while 25 were in flight -
     // and put 50 on a button that would only ever send the unclaimed ones.
@@ -97,24 +95,7 @@ async function load() {
     somebody wanted to tick straight through, and bulk approve walked past it
     anyway, overwriting one offer's price and contact with the other's.
   */
-  const contested = new Set(duplicates.map((group) => group.domain));
-
-  /* eslint-disable @typescript-eslint/no-explicit-any */
-  const draftRows: DraftRow[] = ((drafts.data ?? []) as any[])
-    .filter((row) => !contested.has(row.domain))
-    .map((row) => {
-      const email = Array.isArray(row.inbound_emails) ? row.inbound_emails[0] : row.inbound_emails;
-      return {
-        id: row.id,
-        domain: row.domain,
-        fromAddress: email?.from_address ?? '',
-        sentAt: email?.sent_at ?? null,
-        matched: Boolean(row.matched_website_id),
-        lowConfidenceCount: row.low_confidence_count ?? 0,
-        flags: (row.flags ?? []) as string[],
-      };
-    });
-  /* eslint-enable @typescript-eslint/no-explicit-any */
+  const draftRows: DraftRow[] = drafts.rows;
 
   return {
     ready: true as const,
@@ -126,9 +107,10 @@ async function load() {
     duplicateDrafts: duplicates.reduce((total, group) => total + group.pending, 0),
     counts,
     drafts: draftRows,
+    draftsWaiting: drafts.total,
     problems: (problems.data ?? []) as Record<string, unknown>[],
     batches: (batches.data ?? []) as Record<string, unknown>[],
-    schemaError: drafts.error?.message ?? emails.error?.message ?? null,
+    schemaError: emails.error?.message ?? null,
   };
 }
 
@@ -201,7 +183,7 @@ export default async function SourcingPage() {
     );
   }
 
-  const { settings, counts, drafts, schemaError } = state;
+  const { settings, counts, drafts, draftsWaiting, schemaError } = state;
 
   return (
     <div className="space-y-5">
@@ -266,7 +248,13 @@ export default async function SourcingPage() {
           <CardTitle>
             Waiting for review
             <span className="ml-2 text-[13px] font-normal text-muted">
-              {drafts.length} {drafts.length === 1 ? 'draft' : 'drafts'}
+              {/* The number waiting, and the number on screen when those
+                  differ. They used to be one number, which was the length of
+                  a list that had already been cut down - so the queue never
+                  admitted how much was behind it. */}
+              {draftsWaiting > drafts.length
+                ? `${drafts.length} of ${draftsWaiting} drafts`
+                : `${drafts.length} ${drafts.length === 1 ? 'draft' : 'drafts'}`}
             </span>
           </CardTitle>
           {counts.ignored ? (
