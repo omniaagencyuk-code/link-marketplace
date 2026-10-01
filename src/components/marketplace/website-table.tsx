@@ -13,7 +13,7 @@ import { FavouriteButton } from './favourite-button';
 import { AddToOrderButton } from './add-to-order-button';
 import { WebsiteSnippet } from './website-snippet';
 import { nicheName } from '@/lib/data/categories';
-import { countryShortName } from '@/lib/data/countries';
+import { countryShortNameOrUnknown } from '@/lib/data/countries';
 import { formatCompactNumber, formatPrice, formatTurnaround } from '@/lib/utils/format';
 import { cn } from '@/lib/utils/cn';
 import type { SortKey, WebsiteListItem } from '@/lib/types';
@@ -162,7 +162,7 @@ export function WebsiteTable({
                   <Td className="truncate text-[13px] text-ink-soft" title={nicheName(website.niche)}>
                     {nicheName(website.niche)}
                   </Td>
-                  <Td className="text-[13px] text-ink-soft">{countryShortName(website.country)}</Td>
+                  <Td className="text-[13px] text-ink-soft">{countryShortNameOrUnknown(website.country)}</Td>
                   <Td>
                     <DomainRating value={website.metrics.domainRating} />
                   </Td>

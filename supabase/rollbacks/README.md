@@ -19,3 +19,4 @@ back-this-feature-out operation but a restore-from-backup one.
 | Rollback | Undoes | Destroys |
 |---|---|---|
 | `0019_publisher_sourcing_down.sql` | `0019_publisher_sourcing.sql` | Imported emails, unapproved drafts, extraction history, publisher cost and commercial terms. Listings already approved from drafts are ordinary listings and survive. |
+| `0043_country_nobody_stated_down.sql` | `0043_country_nobody_stated.sql` | Every market the backfill established, and every one an administrator has set since. The column goes back to `not null`, so unknown has to become something: everything unknown becomes `GB` again, which is the state 0043 was written to fix. |

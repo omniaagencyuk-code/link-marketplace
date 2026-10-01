@@ -48,7 +48,7 @@ import {
 } from '@/lib/admin/bulk';
 import { acceptedNicheLabel } from '@/lib/config/accepted-niches';
 import { nicheName } from '@/lib/data/categories';
-import { countryShortName } from '@/lib/data/countries';
+import { countryShortNameOrUnknown } from '@/lib/data/countries';
 import { formatCompactNumber, formatPrice, formatTurnaround } from '@/lib/utils/format';
 import {
   generalMargin,
@@ -804,7 +804,7 @@ export function AdminWebsitesTable({
                   <p className="truncate text-[11px] text-muted">{website.title}</p>
                 </Td>
                 <Td className="text-[13px] text-ink-soft">{nicheName(website.niche)}</Td>
-                <Td className="text-[13px] text-ink-soft">{countryShortName(website.country)}</Td>
+                <Td className="text-[13px] text-ink-soft">{countryShortNameOrUnknown(website.country)}</Td>
                 <Td className="tabular text-[13px] text-ink-soft">
                   {website.metrics.domainRating}
                 </Td>

@@ -109,16 +109,25 @@ export function WebsiteSections({ website }: { website: Website }) {
               {measured.share}% of the audience is based in {countryName(measured.country)}, with
               the remainder spread across the publisher&rsquo;s secondary markets.
             </>
-          ) : typeof metrics.topCountryShare === 'number' ? (
+          ) : typeof metrics.topCountryShare === 'number' && website.country ? (
             <>
               {metrics.topCountryShare}% of the audience is based in{' '}
               {countryName(website.country)}, with the remainder spread across the
               publisher&rsquo;s secondary markets.
             </>
-          ) : (
+          ) : website.country ? (
             <>
               The publisher&rsquo;s primary market is {countryName(website.country)}.
             </>
+          ) : (
+            /*
+              Nobody has said, and nothing has measured it. Saying so is the
+              only honest branch: this used to read "the primary market is the
+              United Kingdom" for every listing, because that was the default
+              a listing was created with rather than anything a publisher told
+              us.
+            */
+            <>The publisher has not stated a primary market, and none has been measured.</>
           )}
         </p>
         <ul className="mt-4 space-y-2.5">

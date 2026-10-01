@@ -9,7 +9,7 @@ import { AddToOrderButton } from './add-to-order-button';
 import { WebsiteSnippet } from './website-snippet';
 import { nicheName } from '@/lib/data/categories';
 import { FlowMetrics, TopicChips } from './majestic-badges';
-import { countryShortName } from '@/lib/data/countries';
+import { countryShortNameOrUnknown } from '@/lib/data/countries';
 import { formatCompactNumber, formatPrice, formatTurnaround } from '@/lib/utils/format';
 import { linkTypeLabels } from '@/lib/utils/labels';
 import { cn } from '@/lib/utils/cn';
@@ -99,7 +99,7 @@ export function WebsiteCard({
       <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2 text-[12px] text-muted">
         <span>{nicheName(website.niche)}</span>
         <span aria-hidden="true">&middot;</span>
-        <span>{countryShortName(website.country)}</span>
+        <span>{countryShortNameOrUnknown(website.country)}</span>
         <LinkTypeList types={website.availableLinkTypes} />
         {/* Nothing renders where nothing has been measured, so a card without
             a Majestic reading looks exactly as it did before. */}

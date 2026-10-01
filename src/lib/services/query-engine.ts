@@ -62,7 +62,12 @@ export function matchesQuery(item: WebsiteListItem, query: WebsiteQuery) {
     if (!inPrimary && !inSecondary) return false;
   }
 
-  if (query.countries?.length && !query.countries.includes(item.country)) return false;
+  // A listing with no stated market is excluded by a country filter, not
+  // included in every one. "Publishers in the United States" has to mean
+  // publishers somebody has placed in the United States.
+  if (query.countries?.length) {
+    if (!item.country || !query.countries.includes(item.country)) return false;
+  }
   if (query.languages?.length && !query.languages.includes(item.language)) return false;
 
   if (query.linkTypes?.length) {

@@ -44,3 +44,23 @@ export function countryName(code: CountryCode) {
 export function countryShortName(code: CountryCode) {
   return countryByCode.get(code)?.shortName ?? code;
 }
+
+/**
+ * How an unknown country reads.
+ *
+ * Shared so a table cell, a card and an export all say the same thing. Most
+ * listings do not know their market - a publisher list rarely has a country
+ * column and an email never does - and the honest answer is a dash, not a
+ * country nobody named.
+ */
+export const COUNTRY_UNKNOWN = '—';
+
+/** A country for display, or a dash when nobody has said. */
+export function countryNameOrUnknown(code: CountryCode | undefined) {
+  return code ? countryName(code) : COUNTRY_UNKNOWN;
+}
+
+/** The compact form, or a dash when nobody has said. */
+export function countryShortNameOrUnknown(code: CountryCode | undefined) {
+  return code ? countryShortName(code) : COUNTRY_UNKNOWN;
+}

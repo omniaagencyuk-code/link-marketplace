@@ -4,6 +4,7 @@ import { legacyAcceptanceFlags, matchAcceptedNiches } from '@/lib/config/accepte
 import { nicheFromPriceFieldKey, type ImportFieldKey } from './fields';
 import type { RowValues } from './types';
 import type { LinkTypeSlug, NichePrice, Service, Website } from '@/lib/types';
+import { countryFromDomain } from '@/lib/data/cctld';
 
 /**
  * Translate normalised CSV values into the existing website model.
@@ -306,7 +307,11 @@ export function newWebsiteDefaults(domain: string): Partial<Website> {
     overview: '',
     niche: 'business',
     secondaryNiches: [],
-    country: 'GB',
+    // What the domain's own suffix names, and nothing where it names nothing.
+    // This used to be a flat 'GB': the column could not be null, so every
+    // listing created without a stated country claimed the United Kingdom,
+    // and filtering the marketplace for anywhere else found nobody.
+    country: countryFromDomain(domain),
     language: 'en',
     metrics: emptyMetrics(),
     services: [],

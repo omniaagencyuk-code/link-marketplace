@@ -1,3 +1,4 @@
+import { countryShortNameOrUnknown } from '@/lib/data/countries';
 import { currencySymbol } from '@/lib/utils/format';
 import type { NicheSlug, WebsiteListItem } from '@/lib/types';
 
@@ -24,6 +25,7 @@ export interface PreviewRow {
   /** e.g. "••••••••.com" - the TLD only, which identifies nothing. */
   maskedDomain: string;
   niche: NicheSlug;
+  /** A dash where the publisher's market is unknown, which is most of them. */
   country: string;
   /** Rounded to the nearest 5 so an exact DR cannot be matched against a tool. */
   domainRating: number;
@@ -87,7 +89,7 @@ export function toPreviewRows(websites: WebsiteListItem[], limit = 6): PreviewRo
     key: `preview-${index}`,
     maskedDomain: maskDomain(website.domain, index),
     niche: website.niche,
-    country: website.country,
+    country: countryShortNameOrUnknown(website.country),
     domainRating: Math.round(website.metrics.domainRating / 5) * 5,
     traffic: bandTraffic(website.metrics.organicTraffic),
     priceBand: bandPrice(website.lowestPriceMinor),

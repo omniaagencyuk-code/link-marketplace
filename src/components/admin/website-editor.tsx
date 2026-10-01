@@ -10,7 +10,7 @@ import { Label } from '@/components/ui/label';
 import { Select } from '@/components/ui/select';
 import { saveWebsiteAction } from '@/app/admin/actions';
 import { categories } from '@/lib/data/categories';
-import { countries } from '@/lib/data/countries';
+import { countries, countryByCode, countryName } from '@/lib/data/countries';
 import { languageLabels } from '@/lib/utils/labels';
 import { isSupabaseEnabled } from '@/lib/supabase/config';
 import { AcceptedNichesPicker } from './accepted-niches-picker';
@@ -136,12 +136,23 @@ export function WebsiteEditor({
             />
           </Field>
           <Field label="Country" htmlFor="country">
-            <Select id="country" name="country" defaultValue={website?.country}>
+            <Select id="country" name="country" defaultValue={website?.country ?? ''}>
+              {/* Blank comes first and is a real answer. Without it the select
+                  showed the first country as though it had been chosen, and
+                  saving a listing whose market nobody knows wrote that country
+                  in - which is how the whole marketplace came to say UK. */}
+              <option value="">Not stated</option>
               {countries.map((country) => (
                 <option key={country.code} value={country.code}>
                   {country.name}
                 </option>
               ))}
+              {/* A stored code outside the curated list - Denmark, say, read
+                  from the domain - keeps its own option, so opening the editor
+                  and saving cannot quietly change it to something else. */}
+              {website?.country && !countryByCode.has(website.country) ? (
+                <option value={website.country}>{countryName(website.country)}</option>
+              ) : null}
             </Select>
           </Field>
           <Field label="Language" htmlFor="language">

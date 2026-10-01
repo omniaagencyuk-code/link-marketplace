@@ -195,7 +195,16 @@ export interface Website {
   overview: string;
   niche: NicheSlug;
   secondaryNiches: NicheSlug[];
-  country: CountryCode;
+  /**
+   * The publisher's primary market, where it is known.
+   *
+   * Optional because most of the time nobody has said. A publisher list rarely
+   * carries a country column and an email never does, and the listing used to
+   * be created claiming the United Kingdom regardless - so the whole
+   * marketplace said "UK" and filtering for anywhere else found nothing.
+   * Undefined means unknown, and unknown displays as unknown.
+   */
+  country?: CountryCode;
   language: LanguageCode;
   metrics: WebsiteMetrics;
   services: Service[];

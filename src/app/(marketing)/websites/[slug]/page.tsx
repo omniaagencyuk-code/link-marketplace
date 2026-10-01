@@ -31,9 +31,12 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
 
   const lowest = Math.min(...website.services.map((service) => service.priceMinor));
   const title = `${website.domain} - ${nicheName(website.niche)} guest posts and niche edits`;
+  // The country is named only when it is known. A search snippet reading
+  // "a sports website in -" is worse than one that never mentions a market.
+  const market = website.country ? ` in ${countryName(website.country)}` : '';
   const description = `Buy placements on ${website.domain}, a ${nicheName(
     website.niche,
-  ).toLowerCase()} website in ${countryName(website.country)} with DR ${
+  ).toLowerCase()} website${market} with DR ${
     website.metrics.domainRating
   } and ${website.metrics.organicTraffic.toLocaleString('en-GB')} monthly organic visits. From ${formatPrice(
     lowest,

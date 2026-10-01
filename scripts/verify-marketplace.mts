@@ -15,6 +15,9 @@ import {
   sensitiveNicheSlugs,
 } from '../src/lib/config/accepted-niches';
 import { sellableNiches } from '../src/lib/sourcing/review';
+import { countryFromDomain } from '../src/lib/data/cctld';
+import { runQuery } from '../src/lib/services/query-engine';
+import { cctldPairs } from './cctld-sql.mts';
 import { readFileSync } from 'node:fs';
 import type { WebsiteListItem } from '../src/lib/types';
 
@@ -36,6 +39,20 @@ function site(over: Partial<any> = {}): WebsiteListItem {
     id: over.id ?? 'w1',
     domain: over.domain ?? 'example.com',
     rules: { acceptedNiches: over.accepted ?? [] },
+    country: over.country,
+    language: over.language ?? 'en',
+    // runQuery reads metrics and rules; the topic helpers do not. One shape
+    // serves both so a test cannot pass against a listing the marketplace
+    // would never have accepted.
+    metrics: over.metrics ?? {
+      domainRating: 50,
+      organicTraffic: 10000,
+      referringDomains: 500,
+      trafficTrend: [],
+      audienceSplit: [],
+    },
+    secondaryNiches: over.secondaryNiches ?? [],
+    niche: over.niche ?? 'business',
     services,
     nichePrices: over.nichePrices ?? [],
     headlineService: services[0] ?? null,
@@ -178,6 +195,90 @@ console.log('\n--- a link built before the picker shrank ---');
   );
   is('a topic nobody can answer is not buyable', isBuyableTopic('sports'), false);
   is('one the picker offers is', isBuyableTopic('gambling'), true);
+}
+
+console.log('\n--- a market nobody stated ---');
+{
+  /*
+    Every listing said United Kingdom. `country_code` was `not null` with no
+    default, so something had to supply one, and the only thing supplying one
+    was `newWebsiteDefaults` with a hard-coded 'GB'. A publisher list rarely
+    carries a country and an email never does, so almost every listing claimed
+    a market nobody had named - and ticking "United States" found nothing.
+  */
+  const defaults = readFileSync(
+    new URL('../src/lib/import/to-website.ts', import.meta.url),
+    'utf8',
+  ).replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+  is(
+    'a new listing is not born British',
+    /country:\s*'GB'/.test(defaults),
+    false,
+  );
+  is(
+    'it takes the country its domain names',
+    /country:\s*countryFromDomain\(domain\)/.test(defaults),
+    true,
+  );
+
+  // The suffix is a real signal for exactly these, and worth nothing for the
+  // ones sold as English words. Getting that wrong puts the guess back.
+  is('a Danish domain is Danish', countryFromDomain('mgdk.dk'), 'DK');
+  is('a .co.uk is British, under the ISO code', countryFromDomain('terracetalk.co.uk'), 'GB');
+  is('a .com.au is Australian', countryFromDomain('shop.com.au'), 'AU');
+  is('a .com names nothing', countryFromDomain('plainsite.com'), undefined);
+  is('nor does .net', countryFromDomain('plainsite.net'), undefined);
+  is('.io is not the Indian Ocean Territory', countryFromDomain('devtool.io'), undefined);
+  is('.ai is not Anguilla', countryFromDomain('model.ai'), undefined);
+  is('.co is not Colombia', countryFromDomain('brand.co'), undefined);
+  is('.me is not Montenegro', countryFromDomain('about.me'), undefined);
+  // And the registry-dominated European ones are trusted, because leaving
+  // Italy and Austria unknown costs more coverage than it buys accuracy.
+  is('.it is Italian', countryFromDomain('giornale.it'), 'IT');
+  is('.at is Austrian', countryFromDomain('zeitung.at'), 'AT');
+  is('.be is Belgian', countryFromDomain('krant.be'), 'BE');
+  is('.in is Indian', countryFromDomain('times.in'), 'IN');
+
+  /*
+    The suffix list exists in the migration too, because the backfill runs in
+    the database. A list kept in two places drifts, and the stale copy is the
+    one that decides a publisher's market - so the migration's copy is
+    generated from the module and this is what stops them parting.
+  */
+  const migration = readFileSync(
+    new URL('../supabase/migrations/0043_country_nobody_stated.sql', import.meta.url),
+    'utf8',
+  );
+  const inSql = [...migration.matchAll(/\('([a-z]{2})', '([A-Z]{2})'\)/g)].map(
+    (match) => `${match[1]}=${match[2]}`,
+  );
+  const inCode = cctldPairs.map(([suffix, country]) => `${suffix}=${country}`);
+  is('the migration carries every suffix the code trusts', inSql.length, inCode.length);
+  is(
+    'and exactly the same ones',
+    inSql.slice().sort().join(',') === inCode.slice().sort().join(','),
+    true,
+  );
+}
+
+console.log('\n--- filtering by a country ---');
+{
+  const american = site({ country: 'US' });
+  const unknown = site({ country: undefined });
+
+  /*
+    A listing whose market nobody has established is excluded by a country
+    filter, not included in every one. "Publishers in the United States" has to
+    mean publishers somebody has placed there - matching the unknowns would
+    hand a buyer a shortlist that only looks like it answers their question.
+  */
+  is('a country filter keeps the listings in it', runQuery([american, unknown], { countries: ['US'] } as never).items.length, 1);
+  is(
+    'and the one it keeps is the one with the market',
+    runQuery([american, unknown], { countries: ['US'] } as never).items[0]?.country,
+    'US',
+  );
+  is('no country filter keeps both', runQuery([american, unknown], {} as never).items.length, 2);
 }
 
 console.log(failed ? `\n  ${failed} FAILED\n` : '\n  all passed\n');

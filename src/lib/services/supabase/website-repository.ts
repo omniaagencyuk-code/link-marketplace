@@ -548,7 +548,7 @@ export const supabaseWebsiteRepository = {
         rows,
         totalWebsites: websites.length,
         totalNiches: 1,
-        totalCountries: new Set(websites.map((website) => website.country)).size,
+        totalCountries: new Set(websites.map((website) => website.country).filter(Boolean)).size,
       };
     }
 

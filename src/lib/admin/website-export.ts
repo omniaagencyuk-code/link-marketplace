@@ -63,7 +63,7 @@ export function websiteExportColumns(
     { header: 'Status', value: (w) => w.status },
     { header: 'Niche', value: (w) => nicheName(w.niche) },
     { header: 'Secondary niches', value: (w) => w.secondaryNiches.map(nicheName).join('; ') },
-    { header: 'Country', value: (w) => countryShortName(w.country) },
+    { header: 'Country', value: (w) => (w.country ? countryShortName(w.country) : '') },
     { header: 'Language', value: (w) => w.language },
 
     { header: 'DR', value: (w) => w.metrics.domainRating },

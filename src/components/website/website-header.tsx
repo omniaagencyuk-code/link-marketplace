@@ -4,7 +4,7 @@ import { Container } from '@/components/layout/container';
 import { Badge } from '@/components/ui/badge';
 import { VerifiedBadge } from '@/components/shared/verified-badge';
 import { nicheName } from '@/lib/data/categories';
-import { countryName } from '@/lib/data/countries';
+import { countryNameOrUnknown } from '@/lib/data/countries';
 import { languageLabels } from '@/lib/utils/labels';
 import type { Website } from '@/lib/types';
 
@@ -50,7 +50,7 @@ export function WebsiteHeader({ website }: { website: Website }) {
           </span>
           <span className="flex items-center gap-1.5">
             <MapPin className="h-4 w-4 text-muted" aria-hidden="true" />
-            {countryName(website.country)}
+            {countryNameOrUnknown(website.country)}
           </span>
           <span className="flex items-center gap-1.5">
             <Languages className="h-4 w-4 text-muted" aria-hidden="true" />

@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import { RangeFilter } from './range-filter';
 import { categories } from '@/lib/data/categories';
-import { countries } from '@/lib/data/countries';
+import { countryName } from '@/lib/data/countries';
 import { languageLabels, linkTypeLabels } from '@/lib/utils/labels';
 import { currencySymbol } from '@/lib/utils/format';
 import type { MarketplaceFilters } from '@/lib/hooks/use-marketplace-filters';
@@ -37,12 +37,21 @@ export function FilterSidebar({
   onReset,
   activeFilterCount,
   availableLanguages,
+  countryCounts,
 }: {
   filters: MarketplaceFilters;
   onChange: (next: Partial<MarketplaceFilters>) => void;
   onReset: () => void;
   activeFilterCount: number;
   availableLanguages: LanguageCode[];
+  /**
+   * Countries that have listings, biggest first, and how many state no market.
+   *
+   * Passed in rather than read from the curated list: a filter that offers a
+   * country nothing is in empties the screen with no hint why, which is the
+   * same failure the topic picker had.
+   */
+  countryCounts: { countries: [CountryCode, number][]; unstated: number };
 }) {
   const symbol = currencySymbol();
 
@@ -92,19 +101,38 @@ export function FilterSidebar({
       </Section>
 
       <Section title="Country">
-        <div className="hide-scrollbar max-h-48 space-y-1.5 overflow-y-auto pr-1">
-          {countries.map((country) => (
-            <CheckRow
-              key={country.code}
-              id={`country-${country.code}`}
-              label={country.name}
-              checked={filters.countries.includes(country.code)}
-              onChange={() =>
-                onChange({ countries: toggleValue<CountryCode>(filters.countries, country.code) })
-              }
-            />
-          ))}
-        </div>
+        {countryCounts.countries.length === 0 ? (
+          <p className="text-[12px] text-muted">
+            No listing states a market yet, so there is nothing to filter on.
+          </p>
+        ) : (
+          <div className="hide-scrollbar max-h-48 space-y-1.5 overflow-y-auto pr-1">
+            {countryCounts.countries.map(([code, count]) => (
+              <CheckRow
+                key={code}
+                id={`country-${code}`}
+                label={`${countryName(code)} (${count})`}
+                checked={filters.countries.includes(code)}
+                onChange={() =>
+                  onChange({ countries: toggleValue<CountryCode>(filters.countries, code) })
+                }
+              />
+            ))}
+          </div>
+        )}
+        {countryCounts.unstated > 0 ? (
+          /*
+            Said out loud, because it is the thing a buyer needs to know before
+            trusting this filter. Most listings come from a publisher list or an
+            email, neither of which states a market, so filtering by country
+            hides every listing whose market nobody has established - and
+            silently hiding most of the marketplace is how a filter loses trust.
+          */
+          <p className="mt-2 text-[12px] text-muted">
+            {countryCounts.unstated} more {countryCounts.unstated === 1 ? 'listing' : 'listings'} do
+            not state a market and are hidden while a country is ticked.
+          </p>
+        ) : null}
       </Section>
 
       <Section title="Link Type">

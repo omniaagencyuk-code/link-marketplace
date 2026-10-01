@@ -20,7 +20,7 @@ import {
 } from '@/lib/hooks/use-marketplace-filters';
 import { runQuery } from '@/lib/services/query-engine';
 import { forTopic } from '@/lib/marketplace/topic';
-import type { LanguageCode, NicheSlug, WebsiteListItem } from '@/lib/types';
+import type { CountryCode, LanguageCode, NicheSlug, WebsiteListItem } from '@/lib/types';
 
 /**
  * The marketplace.
@@ -90,6 +90,36 @@ export function MarketplaceView({
     [websites],
   );
 
+  /*
+    Countries that actually have listings, biggest first, plus how many have no
+    stated market at all.
+
+    The sidebar used to offer all thirteen curated countries whether or not a
+    single listing was in them, so ticking "United States" emptied the screen
+    with no hint why. Counting from the listings on offer means the filter can
+    only promise what it can deliver, and the number beside a country is the
+    number a buyer gets.
+
+    Counted over `forSale` rather than `websites`, so choosing a topic first
+    updates the counts to that topic - a country with four publishers, none of
+    whom take gambling, should not read "4" to somebody buying for a casino.
+  */
+  const countryCounts = useMemo(() => {
+    const counts = new Map<CountryCode, number>();
+    let unstated = 0;
+    for (const website of forSale) {
+      if (!website.country) {
+        unstated += 1;
+        continue;
+      }
+      counts.set(website.country, (counts.get(website.country) ?? 0) + 1);
+    }
+    return {
+      countries: [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])),
+      unstated,
+    };
+  }, [forSale]);
+
   function patchFilters(patch: Partial<MarketplaceFilters>) {
     setFilters((current) => ({ ...current, ...patch }));
   }
@@ -109,6 +139,7 @@ export function MarketplaceView({
       onReset={reset}
       activeFilterCount={activeFilterCount}
       availableLanguages={availableLanguages}
+      countryCounts={countryCounts}
     />
   );
 

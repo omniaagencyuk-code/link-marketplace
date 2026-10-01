@@ -155,7 +155,7 @@ function buildPatch(formData: FormData, websiteId: string, existing?: Website): 
     overview: readString(formData, 'overview', existing?.overview ?? ''),
     niche: readString(formData, 'niche', 'technology') as NicheSlug,
     secondaryNiches,
-    country: readString(formData, 'country', 'GB') as Website['country'],
+    country: (readString(formData, 'country') || undefined) as Website['country'],
     language: readString(formData, 'language', 'en') as Website['language'],
     status: readString(formData, 'status', 'draft') as WebsiteStatus,
     verified: formData.get('verified') === 'on',

@@ -42,7 +42,7 @@ export interface WebsiteRow {
   description: string | null;
   overview: string | null;
   primary_category_id: string | null;
-  country_code: string;
+  country_code: string | null;
   language_code: string | null;
   status: WebsiteStatus;
   verified: boolean;
@@ -254,7 +254,7 @@ export function mapWebsite(row: WebsiteRow): Website {
     overview: row.overview ?? '',
     niche: primaryNiche,
     secondaryNiches: secondary,
-    country: row.country_code as CountryCode,
+    country: (row.country_code ?? undefined) as CountryCode | undefined,
     language: (row.language_code ?? 'en') as LanguageCode,
     metrics: {
       domainRating: toNumber(row.domain_rating),
@@ -346,7 +346,15 @@ export function websiteToRow(patch: Partial<Website>): Record<string, unknown> {
   set('title', patch.title);
   set('description', patch.description);
   set('overview', patch.overview);
-  set('country_code', patch.country);
+  /*
+    Country is the one field where "not mentioned" and "not known" have to be
+    told apart. `set` skips undefined so an import pass leaves a populated
+    country alone - but the admin editor always submits the field, and clearing
+    it there has to actually clear it. So the key being present is what decides,
+    and an absent value writes null rather than silently keeping a country
+    somebody just removed.
+  */
+  if ('country' in patch) row.country_code = patch.country ?? null;
   set('language_code', patch.language);
   set('status', patch.status);
   set('verified', patch.verified);
@@ -736,5 +744,6 @@ export function postToRow(
 
 /** Used by the seed script's console output. */
 export function describeWebsite(website: Website): string {
-  return `${website.domain} (${nicheName(website.niche)}, ${countryName(website.country)})`;
+  const where = website.country ? `, ${countryName(website.country)}` : '';
+  return `${website.domain} (${nicheName(website.niche)}${where})`;
 }

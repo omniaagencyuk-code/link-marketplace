@@ -88,6 +88,13 @@ function publicItems<
 export interface MarketplaceStats {
   totalWebsites: number;
   totalNiches: number;
+  /**
+   * Markets somebody has established, not including "unknown".
+   *
+   * Most listings do not state one, and counting the absence would have the
+   * headline figure go up by one the first time a listing stopped claiming a
+   * country it had never been given.
+   */
   totalCountries: number;
   medianDomainRating: number;
   lowestPriceMinor: number;
@@ -214,7 +221,7 @@ export const websiteService = {
     return {
       totalWebsites: active.length,
       totalNiches: new Set(active.map((website) => website.niche)).size,
-      totalCountries: new Set(active.map((website) => website.country)).size,
+      totalCountries: new Set(active.map((website) => website.country).filter(Boolean)).size,
       medianDomainRating: ratings.length ? (ratings[middle] as number) : 0,
       lowestPriceMinor: active.length
         ? Math.min(...active.map((website) => website.lowestPriceMinor))
@@ -258,7 +265,7 @@ export const websiteService = {
       // own count rather than the whole marketplace's.
       totalWebsites: active.length,
       totalNiches: niche ? 1 : new Set(active.map((website) => website.niche)).size,
-      totalCountries: new Set(active.map((website) => website.country)).size,
+      totalCountries: new Set(active.map((website) => website.country).filter(Boolean)).size,
     };
   },
 
