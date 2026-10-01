@@ -77,6 +77,26 @@ export const sensitiveNicheSlugs = acceptedNiches
 /** The catch-all topic. Everything not in `sensitiveNicheSlugs` prices as this. */
 export const GENERAL_NICHE = 'general';
 
+/**
+ * What a buyer can say they are buying for.
+ *
+ * Narrower than `acceptedNiches`, and it has to be: a publisher only ever
+ * states a position on the seven sensitive topics, so those seven are the
+ * only ones a listing can be said to accept or refuse. Offering Sports or
+ * Technology as something to buy for asks a question no reply has ever
+ * answered, and the marketplace correctly finds nobody - which reads as an
+ * empty marketplace rather than as an unanswerable question.
+ *
+ * `general` leads, because it is the honest name for "ordinary content":
+ * every publisher takes it, and it is what the standard price buys.
+ */
+export const BUYABLE_TOPICS = [GENERAL_NICHE, ...sensitiveNicheSlugs] as const;
+
+/** Whether a buyer could meaningfully ask for this topic. */
+export function isBuyableTopic(slug: string): boolean {
+  return (BUYABLE_TOPICS as readonly string[]).includes(slug);
+}
+
 const bySlug = new Map(acceptedNiches.map((niche) => [niche.slug, niche]));
 
 export function acceptedNicheLabel(slug: string): string {

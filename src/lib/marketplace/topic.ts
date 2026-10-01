@@ -1,4 +1,5 @@
 import { placementPrice } from '@/lib/utils/pricing';
+import { GENERAL_NICHE } from '@/lib/config/accepted-niches';
 import type { BuyerTier } from '@/lib/utils/pricing';
 import type { AcceptedNicheSlug, WebsiteListItem } from '@/lib/types';
 
@@ -19,11 +20,20 @@ import type { AcceptedNicheSlug, WebsiteListItem } from '@/lib/types';
  * before sorting, so the price being sorted on is the price on the card.
  */
 
-/** Will this publisher take content on that topic at all? */
+/**
+ * Will this publisher take content on that topic at all?
+ *
+ * `general` is everybody. It is the catch-all - ordinary content, at the
+ * standard price - and no publisher has ever had to say they accept it, so
+ * nothing records that they do. Reading it off `acceptedNiches` like the
+ * sensitive topics would mean a buyer asking for ordinary content was told
+ * the marketplace is empty, which is the opposite of true.
+ */
 export function acceptsTopic(
   website: Pick<WebsiteListItem, 'rules'>,
   topic: AcceptedNicheSlug,
 ): boolean {
+  if (topic === GENERAL_NICHE) return true;
   return (website.rules.acceptedNiches ?? []).includes(topic);
 }
 

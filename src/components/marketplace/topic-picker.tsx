@@ -1,7 +1,7 @@
 'use client';
 
 import { Target, X } from 'lucide-react';
-import { acceptedNiches } from '@/lib/config/accepted-niches';
+import { BUYABLE_TOPICS, acceptedNicheLabel } from '@/lib/config/accepted-niches';
 import type { AcceptedNicheSlug } from '@/lib/types';
 
 /**
@@ -46,9 +46,13 @@ export function TopicPicker({
           className="h-9 min-w-[200px] rounded-lg border border-line-strong bg-white px-2.5 text-[13px] text-ink"
         >
           <option value="">Anything (show everything)</option>
-          {acceptedNiches.map((niche) => (
-            <option key={niche.slug} value={niche.slug}>
-              {niche.label}
+          {/* Only the topics a publisher ever states a position on. Offering
+              Sports or Technology here asked a question no reply has ever
+              answered, so the marketplace correctly found nobody - and an
+              unanswerable question reads as an empty marketplace. */}
+          {BUYABLE_TOPICS.map((slug) => (
+            <option key={slug} value={slug}>
+              {acceptedNicheLabel(slug)}
             </option>
           ))}
         </select>

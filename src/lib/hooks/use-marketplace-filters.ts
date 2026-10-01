@@ -2,6 +2,7 @@
 
 import { useCallback, useMemo, useState } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
+import { isBuyableTopic } from '@/lib/config/accepted-niches';
 import type {
   CountryCode,
   LanguageCode,
@@ -63,10 +64,24 @@ function num(value: string | null): number | undefined {
   return Number.isFinite(parsed) ? parsed : undefined;
 }
 
+/**
+ * A topic from the URL, or nothing.
+ *
+ * The picker only offers topics a publisher ever states a position on, but a
+ * link shared before that - `?topic=sports` - still exists. Honouring it would
+ * filter the marketplace down to nobody while the dropdown showed blank,
+ * because no option matches: an empty screen with no visible cause. Dropping
+ * it shows the whole marketplace, which is what "any topic" means anyway.
+ */
+function buyableTopic(value: string | null): AcceptedNicheSlug | undefined {
+  if (!value || !isBuyableTopic(value)) return undefined;
+  return value as AcceptedNicheSlug;
+}
+
 function parseFilters(params: URLSearchParams): MarketplaceFilters {
   return {
     search: params.get('q') ?? '',
-    topic: (params.get('topic') as AcceptedNicheSlug | null) ?? undefined,
+    topic: buyableTopic(params.get('topic')),
     niches: csv(params.get('niche')) as NicheSlug[],
     countries: csv(params.get('country')) as CountryCode[],
     languages: csv(params.get('lang')) as LanguageCode[],
