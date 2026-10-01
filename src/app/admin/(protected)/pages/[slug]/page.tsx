@@ -6,6 +6,7 @@ import { PageEditor } from '@/components/admin/cms/page-editor';
 import { CustomPageSettings } from '@/components/admin/cms/custom-page-settings';
 import { ConvertPage } from '@/components/admin/cms/convert-page';
 import { MockStorageNotice } from '@/components/admin/mock-storage-notice';
+import { AdminLoadError } from '@/components/admin/load-error';
 import { getRegisteredPage } from '@/lib/cms/registry';
 import { customPageDefaults, customPageDefinition, readTemplate } from '@/lib/cms/custom-page';
 import { pageContentService } from '@/lib/services/page-content-service';
@@ -54,11 +55,30 @@ export default async function EditPagePage({ params }: { params: Promise<{ slug:
   const registered = getRegisteredPage(slug);
 
   if (registered) {
-    const [saved, sections, globals] = await Promise.all([
-      pageContentService.getOverrides(slug),
-      pageSectionService.allForPage(slug),
-      pageSectionService.listGlobals(),
-    ]);
+    /*
+      Caught here rather than left to Next, which redacts a server error's
+      message in production and renders a grey box reading "A server error
+      occurred". Correct for a stranger; useless for the only people who can
+      see this page, all of whom are administrators by the time they do.
+
+      The page still fails. What changes is that it says what failed.
+    */
+    let loaded;
+    try {
+      loaded = await Promise.all([
+        pageContentService.getOverrides(slug),
+        pageSectionService.allForPage(slug),
+        pageSectionService.listGlobals(),
+      ]);
+    } catch (error) {
+      return (
+        <div className="space-y-4">
+          <PageTitle title={registered.definition.label} description="" />
+          <AdminLoadError what="This page's sections" error={error} />
+        </div>
+      );
+    }
+    const [saved, sections, globals] = loaded;
 
     return (
       <Editor
@@ -77,11 +97,22 @@ export default async function EditPagePage({ params }: { params: Promise<{ slug:
     );
   }
 
-  const [custom, sections, globals] = await Promise.all([
-    customPageService.getForAdmin(slug),
-    pageSectionService.allForPage(slug),
-    pageSectionService.listGlobals(),
-  ]);
+  let loaded;
+  try {
+    loaded = await Promise.all([
+      customPageService.getForAdmin(slug),
+      pageSectionService.allForPage(slug),
+      pageSectionService.listGlobals(),
+    ]);
+  } catch (error) {
+    return (
+      <div className="space-y-4">
+        <PageTitle title="Page" description="" />
+        <AdminLoadError what="This page's sections" error={error} />
+      </div>
+    );
+  }
+  const [custom, sections, globals] = loaded;
   if (!custom) notFound();
 
   const template = readTemplate(custom.template);

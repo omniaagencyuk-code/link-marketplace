@@ -115,7 +115,23 @@ async function withDrafts(
   if (ids.length === 0) return sections;
 
   const { data, error } = await supabase.from('section_drafts').select(DRAFT_SELECT).in('section_id', ids);
-  if (error) throw new Error(`Failed to read pending changes: ${error.message}`);
+  if (error) {
+    /*
+      Named, because this one failure is a migration that did not run rather
+      than a bug, and because of how it presents: this query is skipped
+      entirely for a page with no sections, so every unconverted page opens
+      perfectly and only the converted ones die. That looks like a problem
+      with one page, and it is a problem with the database.
+    */
+    const missing = /relation .* does not exist|could not find the table|schema cache/i.test(
+      error.message,
+    );
+    throw new Error(
+      missing
+        ? `The section_drafts table is missing, so sections cannot be read. Run migration 0042_section_drafts_table.paste.sql. (${error.message})`
+        : `Failed to read pending changes: ${error.message}`,
+    );
+  }
 
   const drafts = new Map(
     ((data ?? []) as Record<string, unknown>[]).map((row) => [
