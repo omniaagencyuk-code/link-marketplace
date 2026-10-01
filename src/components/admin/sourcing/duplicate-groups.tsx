@@ -10,10 +10,14 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   discardDraftsAction,
   leaveDomainAsIsAction,
+  leaveDomainsAsIsAction,
   resolveDuplicateAction,
+  resolveDuplicatesAction,
 } from "@/app/admin/(protected)/sourcing/actions";
+import { chunk } from "@/lib/utils/chunk";
 import { formatDate, formatPrice } from "@/lib/utils/format";
 import { signalLabel } from "@/lib/sourcing/offers";
+import { defaultChoices } from "@/lib/sourcing/queue";
 import type { DuplicateGroup } from "@/lib/services/sourcing-service";
 import type { RankedOffer } from "@/lib/sourcing/offers";
 
@@ -36,13 +40,42 @@ import type { RankedOffer } from "@/lib/sourcing/offers";
  *
  * Nothing here decides anything on its own. Approve still goes through the
  * one approval path, and "leave as is" goes nowhere near it.
+ *
+ * ## Deciding a hundred of them at a sitting
+ *
+ * One domain at a time was still one domain at a time, and this list runs to
+ * two hundred and fifty. So a card can be ticked instead of acted on, and
+ * the two decisions are taken for everything ticked at once.
+ *
+ * Ticking a card chooses an offer as well as a domain - the cheapest, which
+ * is already marked - because approving needs to know which one wins and
+ * nobody wants to answer that question separately two hundred times. The
+ * radio beside each row changes that choice where it matters.
+ *
+ * Sent in chunks, each one waited for, the same as the review queue and for
+ * the same reason: an approval is around ten sequential round trips, and a
+ * hundred of them in one request runs past the function ceiling with nobody
+ * left to tell.
  */
+
+/** Domains per request when clearing. One query each, so they go in bulk. */
+const LEAVE_CHUNK = 50;
+
+/** Domains per request when approving. Ten round trips each - keep it small. */
+const APPROVE_CHUNK = 10;
 export function DuplicateGroups({ groups }: { groups: DuplicateGroup[] }) {
   const router = useRouter();
   const [busy, startTransition] = useTransition();
   /* Which row is working, so the whole page does not grey out for one click. */
   const [working, setWorking] = useState<string | null>(null);
   const [result, setResult] = useState<string | null>(null);
+  /*
+    Domain -> the draft chosen to win it. Keyed by domain rather than held as
+    a set of drafts, because a domain can only be settled once and the map
+    makes that impossible to express twice.
+  */
+  const [picked, setPicked] = useState<Map<string, string>>(new Map());
+  const [progress, setProgress] = useState<string | null>(null);
 
   function run(key: string, job: () => Promise<string>) {
     setWorking(key);
@@ -54,6 +87,114 @@ export function DuplicateGroups({ groups }: { groups: DuplicateGroup[] }) {
         router.refresh();
       }
     });
+  }
+
+  function setPick(domain: string, draftId: string | null) {
+    setPicked((current) => {
+      const next = new Map(current);
+      if (draftId === null) next.delete(domain);
+      else next.set(domain, draftId);
+      return next;
+    });
+  }
+
+  /** Every group that still has something to decide. */
+  const decidable = groups.filter((group) => firstWaiting(group));
+  const allPicked = decidable.length > 0 && decidable.every((group) => picked.has(group.domain));
+
+  function toggleAll() {
+    if (allPicked) {
+      setPicked(new Map());
+      return;
+    }
+    setPicked(defaultChoices(groups));
+  }
+
+  /**
+   * Run a chunked job over the selection, reporting as it goes.
+   *
+   * The count comes back from the server rather than from the length of what
+   * was sent: a draft reviewed in another tab since this page was drawn is
+   * refused there, and claiming it was approved because it was in the list
+   * is how a queue starts lying about itself.
+   */
+  function runBulk(
+    label: string,
+    total: number,
+    parts: (() => Promise<{ done: number; failures: string[] }>)[],
+  ) {
+    setWorking("bulk");
+    startTransition(async () => {
+      let done = 0;
+      let settled = 0;
+      const failures: string[] = [];
+      for (const part of parts) {
+        setProgress(`${label} - ${done} of ${total} done. Leave this page open.`);
+        try {
+          const outcome = await part();
+          settled += outcome.done;
+          failures.push(...outcome.failures);
+        } catch {
+          failures.push("one batch did not answer");
+        }
+        done = Math.min(total, done + 1);
+      }
+      setPicked(new Map());
+      setProgress(null);
+      setWorking(null);
+      setResult(
+        `${label}: ${settled} of ${total} done.` +
+          (failures.length
+            ? ` ${failures.length} could not be: ${failures.slice(0, 3).join("; ")}${failures.length > 3 ? " and more" : ""}.`
+            : ""),
+      );
+      router.refresh();
+    });
+  }
+
+  function approveSelected() {
+    const ids = [...picked.values()];
+    if (ids.length === 0) return;
+    if (
+      !window.confirm(
+        `Approve the chosen offer on ${ids.length} ${ids.length === 1 ? "domain" : "domains"}? Every other draft waiting on those domains is deleted. Listings already in the marketplace are updated from the reply you chose.`,
+      )
+    ) {
+      return;
+    }
+    const batches = chunk(ids, APPROVE_CHUNK);
+    runBulk(
+      "Approved",
+      ids.length,
+      batches.map((batch) => async () => {
+        const outcome = await resolveDuplicatesAction(batch);
+        return { done: outcome.approved, failures: outcome.failures };
+      }),
+    );
+  }
+
+  function leaveSelected() {
+    const domains = [...picked.keys()];
+    if (domains.length === 0) return;
+    if (
+      !window.confirm(
+        `Leave ${domains.length} ${domains.length === 1 ? "domain" : "domains"} as they are? Every draft waiting on them is deleted and nothing in the marketplace changes. The emails stay, so these replies can be read again.`,
+      )
+    ) {
+      return;
+    }
+    const batches = chunk(domains, LEAVE_CHUNK);
+    runBulk(
+      "Left as they were",
+      domains.length,
+      batches.map((batch) => async () => {
+        const outcome = await leaveDomainsAsIsAction(batch);
+        return {
+          done: outcome.ok ? batch.length : 0,
+          failures: outcome.ok ? [] : [outcome.error ?? "could not clear those drafts"],
+        };
+      }),
+    );
   }
 
   /**
@@ -146,10 +287,76 @@ export function DuplicateGroups({ groups }: { groups: DuplicateGroup[] }) {
         </p>
       ) : null}
 
+      {/* The bar is always here rather than appearing with the first tick, so
+          the page does not jump under the cursor that just ticked something. */}
+      <div className="sticky top-0 z-10 flex flex-wrap items-center gap-3 rounded-lg border border-line bg-surface px-3 py-2">
+        <label className="flex items-center gap-2 text-[13px] text-ink-soft">
+          <input
+            type="checkbox"
+            className="h-4 w-4 accent-[var(--color-accent-700)]"
+            checked={allPicked}
+            onChange={toggleAll}
+            disabled={busy || decidable.length === 0}
+            aria-label="Select every domain on this page"
+          />
+          Select all on this page
+        </label>
+
+        <span className="tabular text-[13px] text-muted">
+          {picked.size} selected
+        </span>
+
+        <span className="ml-auto flex flex-wrap items-center gap-2">
+          <Button
+            variant="accent"
+            size="sm"
+            disabled={busy || picked.size === 0}
+            onClick={approveSelected}
+          >
+            <Check className="h-3.5 w-3.5" aria-hidden="true" />
+            Approve selected
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={busy || picked.size === 0}
+            onClick={leaveSelected}
+          >
+            Leave selected as is
+          </Button>
+          {picked.size > 0 ? (
+            <Button variant="ghost" size="sm" disabled={busy} onClick={() => setPicked(new Map())}>
+              Clear
+            </Button>
+          ) : null}
+        </span>
+      </div>
+
+      {progress ? (
+        <p role="status" className="text-[13px] text-ink-soft">
+          {progress}
+        </p>
+      ) : null}
+
       {groups.map((group) => (
         <Card key={group.domain}>
           <CardHeader className="flex flex-wrap items-center justify-between gap-2">
             <span className="flex flex-wrap items-center gap-2">
+              {firstWaiting(group) ? (
+                <input
+                  type="checkbox"
+                  className="h-4 w-4 accent-[var(--color-accent-700)]"
+                  checked={picked.has(group.domain)}
+                  disabled={busy}
+                  aria-label={`Select ${group.domain}`}
+                  onChange={(event) =>
+                    setPick(
+                      group.domain,
+                      event.target.checked ? ((firstWaiting(group) as RankedOffer).draftId) : null,
+                    )
+                  }
+                />
+              ) : null}
               <CardTitle>{group.domain}</CardTitle>
               {group.listed ? (
                 <Badge tone="neutral">in the marketplace</Badge>
@@ -226,6 +433,20 @@ export function DuplicateGroups({ groups }: { groups: DuplicateGroup[] }) {
                   key={offer.draftId}
                   className="flex flex-col gap-2 px-3 py-2 sm:flex-row sm:flex-wrap sm:items-center"
                 >
+                  {/* Which offer wins, when the domain is approved. Ticking
+                      the card picks the cheapest; this is how to say otherwise. */}
+                  {offer.status === "pending" ? (
+                    <input
+                      type="radio"
+                      name={`winner-${group.domain}`}
+                      className="h-3.5 w-3.5 shrink-0 accent-[var(--color-accent-700)]"
+                      checked={picked.get(group.domain) === offer.draftId}
+                      disabled={busy}
+                      aria-label={`Approve the ${group.domain} offer from ${offer.fromAddress} when this domain is settled`}
+                      onChange={() => setPick(group.domain, offer.draftId)}
+                    />
+                  ) : null}
+
                   <span className="min-w-0 sm:flex-1">
                     <span className="block break-words text-[13px] text-ink">
                       {offer.fromAddress || "No sender recorded"}

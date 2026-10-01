@@ -14,7 +14,7 @@ import { applyGeneralPriceToNiches, assumedNicheCosts, countLowConfidence, expan
 import { sensitiveNicheSlugs } from '../src/lib/config/accepted-niches';
 import { extractLinks, looksLikeRateCardLead } from '../src/lib/sourcing/links';
 import { offersAgree, offersNote, rankOffers, senderSignal } from '../src/lib/sourcing/offers';
-import { waitingForReview } from '../src/lib/sourcing/queue';
+import { defaultChoices, waitingForReview } from '../src/lib/sourcing/queue';
 import { healthOf, progressMessage, runProgress, type BatchRow } from '../src/lib/sourcing/batch-health';
 import { describeSkip, nightlySkipReason, type NightlyState } from '../src/lib/sourcing/schedule';
 import { extractionLimit } from '../src/lib/sourcing/limits';
@@ -911,6 +911,46 @@ console.log('\n--- the queue that appeared to refill forever ---');
   is('a zero page still knows what is behind it', waitingForReview(all, contested, 0).total, 50);
 }
 
+console.log('\n--- ticking a page of contested domains at once ---');
+{
+  /*
+    Two hundred and fifty domains settled one card at a time is the work this
+    replaces, so "select all" has to mean something exact: one chosen draft
+    per domain, defaulting to the offer already marked cheapest, and nothing
+    at all for a domain with no decision left in it.
+  */
+  const group = (domain: string, offers: { draftId: string; status: string }[]) => ({ domain, offers });
+
+  const chosen = defaultChoices([
+    group('newry.ie', [
+      { draftId: 'cheap', status: 'pending' },
+      { draftId: 'dearer', status: 'pending' },
+    ]),
+    group('edinburgh.co.uk', [
+      { draftId: 'done', status: 'approved' },
+      { draftId: 'waiting', status: 'pending' },
+    ]),
+  ]);
+
+  is('one choice per domain, not one per draft', chosen.size, 2);
+  is('and it is the first still waiting, which is the cheapest', chosen.get('newry.ie'), 'cheap');
+  // An approved offer is a listing already. Choosing it would re-approve
+  // something nobody asked about.
+  is('an approved offer is never the default', chosen.get('edinburgh.co.uk'), 'waiting');
+
+  // A domain already dealt with belongs in neither count nor action.
+  const settled = defaultChoices([group('settled.com', [{ draftId: 'x', status: 'approved' }])]);
+  is('a domain with nothing waiting is not selected', settled.size, 0);
+  is('and nothing at all selects nothing', defaultChoices([]).size, 0);
+
+  // Keyed by domain, so a second card for one domain cannot queue it twice.
+  const twice = defaultChoices([
+    group('same.com', [{ draftId: 'first', status: 'pending' }]),
+    group('same.com', [{ draftId: 'second', status: 'pending' }]),
+  ]);
+  is('one domain cannot be settled twice in one run', twice.size, 1);
+}
+
 console.log('\n--- settling a contested domain from the list ---');
 /*
   Two properties of the one-click approve, both of which are about what
@@ -939,29 +979,59 @@ console.log('\n--- settling a contested domain from the list ---');
     .filter((line) => !line.trim().startsWith('//'))
     .join('\n');
 
+  /*
+    A function's own body, exported or not. The two helpers that hold the
+    ordering are module-private on purpose - nothing outside this file should
+    be able to approve without sweeping - so a check that only found exports
+    would report them missing and look like the rule was gone.
+  */
   const body = (name: string) => {
-    const start = code.indexOf(`export async function ${name}`);
-    return start === -1 ? '' : code.slice(start).split('\nexport ')[0];
+    const start = code.search(new RegExp(`(?:export )?async function ${name}\\b`));
+    if (start === -1) return '';
+    const rest = code.slice(start + 10);
+    const end = rest.search(/\n(?:export )?async function /);
+    return end === -1 ? rest : rest.slice(0, end);
   };
 
-  const resolve = body('resolveDuplicateAction');
-  is('the one-click approve exists', resolve.length > 0, true);
-  is('it approves through the one approval path', resolve.includes('approveDraft('), true);
+  /*
+    The settling itself lives in one helper now, because a single domain and
+    a batch of them are the same decision and two copies of this ordering is
+    one copy too many. So the helper is what gets checked, plus the fact that
+    every public way in goes through it.
+  */
+  const settle = body('settleContested');
+  is('the one place a contested domain is settled exists', settle.length > 0, true);
+  is('it approves through the one approval path', settle.includes('approveDraft('), true);
   is(
     'and approves before it deletes anything',
-    resolve.indexOf('approveDraft(') < resolve.indexOf('.delete()'),
+    settle.indexOf('approveDraft(') < settle.indexOf('.delete()'),
     true,
   );
   // The domain it sweeps is read from the winning draft, so the delete
   // cannot be aimed at a domain the reviewer was not looking at.
-  is('the sweep is scoped to pending rows', resolve.includes("eq('status', 'pending')"), true);
-  is('and never deletes the draft it just approved', resolve.includes("neq('id', keepDraftId)"), true);
+  is('the sweep is scoped to pending rows', settle.includes("eq('status', 'pending')"), true);
+  is('and never deletes the draft it just approved', settle.includes("neq('id', keepDraftId)"), true);
 
-  const leave = body('leaveDomainAsIsAction');
-  is('leaving a domain alone exists', leave.length > 0, true);
-  is('and does not go near the approval path', leave.includes('approveDraft'), false);
-  is('nor writes to the websites table', leave.includes("from('websites')"), false);
-  is('it only deletes pending drafts', leave.includes("eq('status', 'pending')"), true);
+  for (const name of ['resolveDuplicateAction', 'resolveDuplicatesAction']) {
+    const action = body(name);
+    is(`"${name}" exists`, action.length > 0, true);
+    is(`"${name}" settles through that one helper`, action.includes('settleContested('), true);
+    // Never its own copy of the ordering - that is how two paths drift.
+    is(`"${name}" has no approval of its own`, action.includes('approveDraft('), false);
+  }
+
+  const clear = body('clearContested');
+  is('clearing drafts has one place too', clear.length > 0, true);
+  is('and it only deletes pending ones', clear.includes("eq('status', 'pending')"), true);
+  is('and never approves anything', clear.includes('approveDraft'), false);
+
+  for (const name of ['leaveDomainAsIsAction', 'leaveDomainsAsIsAction']) {
+    const action = body(name);
+    is(`"${name}" exists`, action.length > 0, true);
+    is(`"${name}" clears through that one helper`, action.includes('clearContested('), true);
+    is(`"${name}" does not go near the approval path`, action.includes('approveDraft'), false);
+    is(`"${name}" nor writes to the websites table`, action.includes("from('websites')"), false);
+  }
 
   // Proving the comment strip has not simply blanked the file.
   is('the strip leaves the code it is checking', code.includes('listing_drafts'), true);

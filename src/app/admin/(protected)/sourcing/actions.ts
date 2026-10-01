@@ -295,8 +295,25 @@ export async function discardDraftsAction(draftIds: string[]) {
  * looking at. Only pending rows go, so a draft approved from another tab
  * between the page rendering and this running is left alone.
  */
-export async function resolveDuplicateAction(keepDraftId: string) {
-  const by = await reviewer();
+/**
+ * One contested domain, settled: approve the chosen offer, clear the rest.
+ *
+ * The body of both the single-domain button and the bulk one, so there is one
+ * place where the order of the two steps is decided and one place to check it.
+ *
+ * Approving first is the whole of the safety. If the approval throws, nothing
+ * is deleted and the domain is exactly as it was - whereas clearing first and
+ * approving second would, on a bad day, leave no drafts and no listing.
+ *
+ * The domain is re-read from the winning draft rather than taken from the
+ * caller, so the delete cannot be pointed at a domain the reviewer was not
+ * looking at. Only pending rows go, so a draft approved from another tab
+ * between the page rendering and this running is left alone.
+ */
+async function settleContested(
+  keepDraftId: string,
+  by: string | undefined,
+): Promise<{ ok: true; domain: string; cleared: number; warning: string | null } | { ok: false; error: string }> {
   const supabase = getAdminScopedClient();
 
   const { data } = await supabase
@@ -305,18 +322,15 @@ export async function resolveDuplicateAction(keepDraftId: string) {
     .eq('id', keepDraftId)
     .maybeSingle();
 
-  if (!data) return { ok: false as const, error: 'That draft no longer exists.' };
+  if (!data) return { ok: false, error: 'That draft no longer exists.' };
   const draft = data as Record<string, unknown>;
   if (draft.status !== 'pending') {
-    return { ok: false as const, error: 'That draft has already been reviewed.' };
+    return { ok: false, error: 'That draft has already been reviewed.' };
   }
 
   const parsed = extractedListingSchema.safeParse(draft.proposed);
   if (!parsed.success) {
-    return {
-      ok: false as const,
-      error: 'That draft cannot be approved from here - open it and fix the values first.',
-    };
+    return { ok: false, error: 'That draft cannot be approved from here - open it and fix the values first.' };
   }
 
   const domain = String(draft.domain);
@@ -329,10 +343,7 @@ export async function resolveDuplicateAction(keepDraftId: string) {
       reviewer: by,
     });
   } catch (error) {
-    return {
-      ok: false as const,
-      error: error instanceof Error ? error.message : 'Could not approve that draft.',
-    };
+    return { ok: false, error: error instanceof Error ? error.message : 'Could not approve that draft.' };
   }
 
   // Everything else still waiting on this domain. A failure here is worth
@@ -346,51 +357,110 @@ export async function resolveDuplicateAction(keepDraftId: string) {
     .neq('id', keepDraftId)
     .select('id');
 
-  revalidatePath('/admin/sourcing');
-  revalidatePath('/admin/sourcing/duplicates');
-  revalidatePath('/admin/websites');
-
   return {
-    ok: true as const,
+    ok: true,
     domain,
     cleared: (cleared ?? []).length,
     warning: error ? `Approved, but the other drafts are still there: ${error.message}` : null,
   };
 }
 
-/**
- * Clear a contested domain without changing anything we sell.
- *
- * For the case the duplicates page had no answer to: a domain already in the
- * marketplace, at a price somebody checked, with a pile of drafts behind it
- * that are the same reseller mailing the same list again. None of them is
- * wrong. None of them is worth approving either, because approving one
- * writes its contact and its cost over a listing that is already right.
- *
- * So this deletes the drafts and touches nothing else. It goes nowhere near
- * `approveDraft`, which remains the only way anything extracted reaches a
- * listing, and the emails stay where they are so the same replies can be
- * read again.
- */
-export async function leaveDomainAsIsAction(domain: string) {
-  await requireAdminSession();
-
-  const wanted = domain.trim().toLowerCase();
-  if (!wanted) return { ok: false as const, error: 'No domain given.', cleared: 0 };
+/** Clear every draft waiting on these domains, touching nothing we sell. */
+async function clearContested(domains: string[]): Promise<{ cleared: number; error: string | null }> {
+  const wanted = domains.map((domain) => domain.trim().toLowerCase()).filter(Boolean);
+  if (wanted.length === 0) return { cleared: 0, error: null };
 
   const supabase = getAdminScopedClient();
   const { data, error } = await supabase
     .from('listing_drafts')
     .delete()
-    .eq('domain', wanted)
+    .in('domain', wanted)
     .eq('status', 'pending')
     .select('id');
 
-  if (error) return { ok: false as const, error: error.message, cleared: 0 };
+  return { cleared: (data ?? []).length, error: error ? error.message : null };
+}
+
+/** Settle one contested domain from its own row. */
+export async function resolveDuplicateAction(keepDraftId: string) {
+  const by = await reviewer();
+  const outcome = await settleContested(keepDraftId, by);
 
   revalidatePath('/admin/sourcing');
   revalidatePath('/admin/sourcing/duplicates');
-  return { ok: true as const, cleared: (data ?? []).length };
+  revalidatePath('/admin/websites');
+  return outcome;
+}
+
+/**
+ * Settle a batch of them, one chosen draft per domain.
+ *
+ * The browser sends these in chunks and waits for each answer, the same way
+ * the review queue does, because an approval is around ten sequential round
+ * trips and two hundred of them in one request runs past the function
+ * ceiling with nobody left to tell.
+ *
+ * Each domain is settled on its own terms. One that cannot be approved is
+ * named and the rest carry on, rather than a single bad draft taking down a
+ * batch somebody has just spent a minute ticking.
+ */
+export async function resolveDuplicatesAction(keepDraftIds: string[]) {
+  const by = await reviewer();
+  if (keepDraftIds.length === 0) return { ok: true as const, approved: 0, cleared: 0, failures: [] as string[] };
+
+  let approved = 0;
+  let cleared = 0;
+  const failures: string[] = [];
+
+  for (const id of keepDraftIds.slice(0, 100)) {
+    const outcome = await settleContested(id, by);
+    if (outcome.ok) {
+      approved += 1;
+      cleared += outcome.cleared;
+    } else {
+      failures.push(outcome.error);
+    }
+  }
+
+  revalidatePath('/admin/sourcing');
+  revalidatePath('/admin/sourcing/duplicates');
+  revalidatePath('/admin/websites');
+  return { ok: true as const, approved, cleared, failures };
+}
+
+/**
+ * Clear a batch of domains without changing anything we sell.
+ *
+ * The common case on this page by a wide margin: a domain already in the
+ * marketplace at a price somebody checked, with a reseller mailing the same
+ * list again. None of those drafts is wrong and none is worth approving,
+ * because approving one writes its contact and cost over a listing that is
+ * already right.
+ *
+ * It goes nowhere near `approveDraft`, which remains the only way anything
+ * extracted reaches a listing, and the emails stay where they are.
+ */
+export async function leaveDomainsAsIsAction(domains: string[]) {
+  await requireAdminSession();
+  if (domains.length === 0) return { ok: true as const, cleared: 0 };
+
+  const { cleared, error } = await clearContested(domains.slice(0, 200));
+  if (error) return { ok: false as const, error, cleared: 0 };
+
+  revalidatePath('/admin/sourcing');
+  revalidatePath('/admin/sourcing/duplicates');
+  return { ok: true as const, cleared };
+}
+
+export async function leaveDomainAsIsAction(domain: string) {
+  await requireAdminSession();
+
+  const { cleared, error } = await clearContested([domain]);
+  if (error) return { ok: false as const, error, cleared: 0 };
+
+  revalidatePath('/admin/sourcing');
+  revalidatePath('/admin/sourcing/duplicates');
+  return { ok: true as const, cleared };
 }
 
 export async function collectBatchesAction() {

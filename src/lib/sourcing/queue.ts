@@ -36,3 +36,31 @@ export function waitingForReview<T extends { domain: string }>(
   const mine = all.filter((row) => !contested.has(row.domain));
   return { rows: mine.slice(0, Math.max(0, limit)), total: mine.length };
 }
+
+/**
+ * What "select all" means on the duplicates page.
+ *
+ * One chosen draft per domain, which is the shape the approval takes: a
+ * domain can only be settled once, so the selection is a map keyed by domain
+ * rather than a set of drafts, and picking a second offer for a domain
+ * replaces the first rather than queueing both.
+ *
+ * The choice defaults to the first offer still waiting. The offers arrive
+ * cheapest-convertible first, so that is the cheapest - the one already
+ * marked on the card - and the radio beside each row is how to say
+ * otherwise.
+ *
+ * A group with nothing waiting is left out entirely. It has already been
+ * dealt with, and including it would put a domain in the count that neither
+ * button could do anything about.
+ */
+export function defaultChoices<
+  T extends { domain: string; offers: readonly { draftId: string; status: string }[] },
+>(groups: readonly T[]): Map<string, string> {
+  const chosen = new Map<string, string>();
+  for (const group of groups) {
+    const waiting = group.offers.find((offer) => offer.status === 'pending');
+    if (waiting) chosen.set(group.domain, waiting.draftId);
+  }
+  return chosen;
+}
