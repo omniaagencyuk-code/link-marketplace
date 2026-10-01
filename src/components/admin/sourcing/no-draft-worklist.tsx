@@ -74,12 +74,30 @@ export function NoDraftWorklist({
   }
 
   async function takeFiles(files: FileList | File[], emailId: string) {
-    const taken = (await Promise.all([...files].map(asImage))).filter(Boolean) as {
+    const offered = [...files];
+    const taken = (await Promise.all(offered.map(asImage))).filter(Boolean) as {
       name: string;
       mediaType: string;
       data: string;
     }[];
-    if (taken.length === 0) return;
+
+    /*
+      Say so rather than doing nothing. A PDF is the commonest thing to drop
+      here - half the rate cards on this page are one - and it is not an
+      image the model reads. Silently ignoring it looks exactly like a broken
+      button, which is how somebody concludes the feature does not work.
+    */
+    if (taken.length === 0) {
+      const names = offered.map((file) => file.type || file.name).join(', ');
+      setMessage({
+        id: emailId,
+        tone: 'bad',
+        text: offered.some((file) => file.type === 'application/pdf')
+          ? 'A PDF cannot be read here. Open it, screenshot the rates, and paste the screenshot.'
+          : `Nothing readable in that (${names}). Paste a screenshot - PNG, JPEG, GIF or WebP.`,
+      });
+      return;
+    }
     setImages((current) => {
       const next = [...current, ...taken].slice(0, MAX_IMAGES);
       if (current.length + taken.length > MAX_IMAGES) {
