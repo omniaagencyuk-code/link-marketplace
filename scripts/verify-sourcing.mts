@@ -15,6 +15,11 @@ import { sensitiveNicheSlugs } from '../src/lib/config/accepted-niches';
 import { extractLinks, looksLikeRateCardLead } from '../src/lib/sourcing/links';
 import { offersAgree, offersNote, rankOffers, senderSignal } from '../src/lib/sourcing/offers';
 import { defaultChoices, waitingForReview } from '../src/lib/sourcing/queue';
+import {
+  MAX_IMAGES,
+  TRANSCRIPTION_RULES,
+  checkImages,
+} from '../src/lib/sourcing/rate-card-image';
 import { healthOf, progressMessage, runProgress, type BatchRow } from '../src/lib/sourcing/batch-health';
 import { describeSkip, nightlySkipReason, type NightlyState } from '../src/lib/sourcing/schedule';
 import { extractionLimit } from '../src/lib/sourcing/limits';
@@ -866,6 +871,56 @@ console.log('\n--- bulk approve cannot walk past a contested domain ---');
     true,
   );
   is('and leaves them out', action.includes('!contested.has('), true);
+}
+
+console.log('\n--- reading a rate card out of a picture ---');
+{
+  /*
+    A publisher's prices arrive as a screenshot often enough that typing them
+    out was the slowest thing on the no-draft list. The picture is now read
+    into text, which the reviewer checks, and the ordinary extraction runs on
+    that text afterwards - two steps, each one checkable, rather than one
+    prompt doing transcription and judgement at once.
+
+    These are the limits the server applies. A browser can be told anything;
+    the action is an endpoint.
+  */
+  const png = (bytes: number) => ({ mediaType: 'image/png', data: 'A'.repeat(Math.ceil((bytes * 4) / 3)) });
+
+  is('nothing to read is refused', checkImages([]), 'Paste an image first.');
+  is('one small image is fine', checkImages([png(1000)]), null);
+  is(`${MAX_IMAGES} is still fine`, checkImages(Array.from({ length: MAX_IMAGES }, () => png(1000))), null);
+  has(
+    'one more than that is refused',
+    checkImages(Array.from({ length: MAX_IMAGES + 1 }, () => png(1000))) ?? '',
+    'more than',
+  );
+
+  // A PDF is not an image the API reads, and sending one is a 400 that would
+  // surface as "the image could not be read" with no reason.
+  has('a PDF is refused by type', checkImages([{ mediaType: 'application/pdf', data: 'AAAA' }]) ?? '', 'not an image');
+  is('jpeg is accepted', checkImages([{ mediaType: 'image/jpeg', data: 'AAAA' }]), null);
+  is('webp is accepted', checkImages([{ mediaType: 'image/webp', data: 'AAAA' }]), null);
+
+  // Measured on the bytes, not on the length of the base64 holding them.
+  is('an image just under the ceiling passes', checkImages([png(5 * 1024 * 1024 - 100)]), null);
+  has('and one over it is refused', checkImages([png(6 * 1024 * 1024)]) ?? '', 'larger than');
+
+  // One bad image in a batch stops the batch. Sending the rest would read a
+  // media kit with a page silently missing from it.
+  has('a bad image among good ones still refuses', checkImages([png(100), { mediaType: 'image/bmp', data: 'AAAA' }]) ?? '', 'not an image');
+
+  /*
+    The transcription prompt has one job. If it starts deciding what a price
+    covers, the rules about niches and refusals exist in two places - and
+    AGENTS.md is explicit that they live in one.
+  */
+  has('it is told to transcribe, not interpret', TRANSCRIPTION_RULES, 'Do not interpret');
+  has('currencies are never converted', TRANSCRIPTION_RULES, 'Never convert between currencies');
+  has('nothing is rounded', TRANSCRIPTION_RULES, 'Never round');
+  has('unreadable is written, not guessed', TRANSCRIPTION_RULES, '[unreadable]');
+  is('it does not decide about niches', /niche|gambling|sensitive/i.test(TRANSCRIPTION_RULES), false);
+  is('nor about what to approve', /approve|listing|draft/i.test(TRANSCRIPTION_RULES), false);
 }
 
 console.log('\n--- the queue that appeared to refill forever ---');

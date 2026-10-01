@@ -752,6 +752,19 @@ export async function spreadGeneralPriceAction(values: unknown): Promise<{
  * that crosses into the system here is text a human pasted after reading the
  * rate card themselves.
  */
+/**
+ * Turn pasted images into text, for the reviewer to check before adding.
+ *
+ * Returns the transcription rather than writing it anywhere. Nothing reaches
+ * the email body until a person has read what came back and pressed the
+ * button that was already there - the image path ends up in exactly the same
+ * place the typed path does, which is the point.
+ */
+export async function readRateCardImagesAction(images: { mediaType: string; data: string }[]) {
+  const by = await reviewer();
+  return sourcingService.readRateCardImages(images, by);
+}
+
 export async function addRateCardAction(input: { emailId: string; text: string }) {
   const by = await reviewer();
   const result = await sourcingService.addRateCard(input.emailId, input.text, by);

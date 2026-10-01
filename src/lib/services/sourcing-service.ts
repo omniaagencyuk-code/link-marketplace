@@ -2,6 +2,12 @@ import { getAdminScopedClient } from '@/lib/supabase/server';
 import { isSupabaseEnabled } from '@/lib/supabase/config';
 import { chunk } from '@/lib/utils/chunk';
 import { waitingForReview } from '@/lib/sourcing/queue';
+import {
+  TRANSCRIPTION_VERSION,
+  checkImages,
+  transcribeRateCard,
+  type PastedImage,
+} from '@/lib/sourcing/rate-card-image';
 import { readAllPages } from './supabase/paged';
 import { readMbox, readPastedEmail, type ParsedMessage } from '@/lib/sourcing/mbox';
 import { gmailSearchUrl, gmailThreadUrl, type ReadThread } from '@/lib/gmail/thread';
@@ -754,6 +760,73 @@ export const sourcingService = {
       .eq('status', 'new')
       .is('batch_id', null);
     return count ?? 0;
+  },
+
+  /**
+   * Read a rate card out of pasted images, into text a reviewer can check.
+   *
+   * Transcription, not extraction. The picture becomes the words that were in
+   * it and nothing more; deciding what those words mean for a listing is the
+   * extraction prompt's job and happens afterwards, on text, exactly as it
+   * would for a reply the publisher had typed.
+   *
+   * Behind the same budget as extraction, and recorded against it. A vision
+   * call is cheap - a screenshot is a couple of thousand tokens - but "cheap"
+   * spent without being counted is how a budget stops meaning anything, and
+   * the spend already has one place it lives.
+   *
+   * The images are never stored. They arrive, they are sent once, and the
+   * text is what survives.
+   */
+  async readRateCardImages(
+    images: PastedImage[],
+    by?: string,
+  ): Promise<{ ok: boolean; text?: string; message: string }> {
+    const settings = await sourcingService.getSettings();
+    if (!settings.configured) {
+      return { ok: false, message: settings.reason ?? 'Extraction is not configured.' };
+    }
+
+    const refused = checkImages(images);
+    if (refused) return { ok: false, message: refused };
+
+    const spent = await sourcingService.spentThisMonthUsd();
+    if (spent >= settings.monthlyBudgetUsd) {
+      return {
+        ok: false,
+        message: `This month's extraction budget is spent (${spent.toFixed(2)} of ${settings.monthlyBudgetUsd.toFixed(2)} USD). Raise it in the settings to continue.`,
+      };
+    }
+
+    const outcome = await transcribeRateCard(images, settings.model);
+    if (outcome.error || !outcome.text) {
+      return { ok: false, message: outcome.error ?? 'Nothing came back from the image.' };
+    }
+
+    if (outcome.usage) {
+      // Recorded where every other token this feature spends is recorded, so
+      // the month's spend and the budget guard both see it.
+      const supabase = getAdminScopedClient();
+      await supabase.from('extraction_batches').insert({
+        mode: 'realtime',
+        model: settings.model,
+        prompt_version: TRANSCRIPTION_VERSION,
+        status: 'completed',
+        email_count: 0,
+        succeeded_count: images.length,
+        failed_count: 0,
+        input_tokens: outcome.usage.inputTokens,
+        output_tokens: outcome.usage.outputTokens,
+        submitted_by: by ?? null,
+        completed_at: new Date().toISOString(),
+      });
+    }
+
+    if (outcome.text.trim() === 'NO RATES IN THIS IMAGE') {
+      return { ok: false, message: 'There are no rates in that image.' };
+    }
+
+    return { ok: true, text: outcome.text, message: 'Read. Check it before adding it.' };
   },
 
   /** What has been spent this calendar month, from reported tokens only. */

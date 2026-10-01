@@ -19,7 +19,9 @@ import {
   addRateCardAction,
   dismissNoDraftAction,
   markHandledAction,
+  readRateCardImagesAction,
 } from '@/app/admin/(protected)/sourcing/actions';
+import { ACCEPTED_IMAGE_TYPES, MAX_IMAGES } from '@/lib/sourcing/rate-card-image';
 import { formatDateTime } from '@/lib/utils/format';
 import type { NoDraftEmail } from '@/lib/services/sourcing-service';
 import type { LinkKind } from '@/lib/sourcing/links';
@@ -51,6 +53,56 @@ export function NoDraftWorklist({
   const [message, setMessage] = useState<{ id: string; tone: 'ok' | 'bad'; text: string } | null>(
     null,
   );
+  /*
+    Images pasted into the box, held here and nowhere else. They are sent
+    once to be read and then dropped: what gets stored is the text, after a
+    person has looked at it.
+  */
+  const [images, setImages] = useState<{ name: string; mediaType: string; data: string }[]>([]);
+  const [reading, startReading] = useTransition();
+
+  /** A pasted or dropped file as base64, or null if it is not an image we read. */
+  async function asImage(file: File) {
+    if (!ACCEPTED_IMAGE_TYPES.includes(file.type)) return null;
+    const buffer = await file.arrayBuffer();
+    let binary = '';
+    const bytes = new Uint8Array(buffer);
+    for (let index = 0; index < bytes.length; index += 1) {
+      binary += String.fromCharCode(bytes[index] as number);
+    }
+    return { name: file.name || 'pasted image', mediaType: file.type, data: btoa(binary) };
+  }
+
+  async function takeFiles(files: FileList | File[], emailId: string) {
+    const taken = (await Promise.all([...files].map(asImage))).filter(Boolean) as {
+      name: string;
+      mediaType: string;
+      data: string;
+    }[];
+    if (taken.length === 0) return;
+    setImages((current) => {
+      const next = [...current, ...taken].slice(0, MAX_IMAGES);
+      if (current.length + taken.length > MAX_IMAGES) {
+        setMessage({ id: emailId, tone: 'bad', text: `Only the first ${MAX_IMAGES} are kept.` });
+      }
+      return next;
+    });
+  }
+
+  function readImages(emailId: string) {
+    startReading(async () => {
+      const result = await readRateCardImagesAction(
+        images.map(({ mediaType, data }) => ({ mediaType, data })),
+      );
+      setMessage({ id: emailId, tone: result.ok ? 'ok' : 'bad', text: result.message });
+      if (result.ok && result.text) {
+        // Appended rather than replacing, so a transcription never eats
+        // something already typed into the box.
+        setText((current) => (current.trim() ? `${current.trim()}\n\n${result.text}` : result.text!));
+        setImages([]);
+      }
+    });
+  }
 
   return (
     <div className="space-y-3">
@@ -161,11 +213,73 @@ export function NoDraftWorklist({
                     autoFocus
                     aria-label="Rates from the reply"
                     placeholder={
-                      'Paste the rates from the file, the sheet, or the email itself.\n\nAnything readable works - a copied table, a few lines, the whole thing. It is read exactly like the reply itself, so include the currency and say which topics each price covers.'
+                      'Paste the rates from the file, the sheet, or the email itself.\n\nA table copied from a spreadsheet pastes straight in, columns and all. A screenshot can be pasted here too and read into text first.\n\nIt is read exactly like the reply itself, so include the currency and say which topics each price covers.'
                     }
                     onChange={(event) => setText(event.target.value)}
+                    onPaste={(event) => {
+                      const files = event.clipboardData?.files;
+                      if (files && files.length > 0) {
+                        // Only when the clipboard actually carries a file.
+                        // Text pastes - which is most of them - are left alone.
+                        event.preventDefault();
+                        void takeFiles(files, email.id);
+                      }
+                    }}
+                    onDragOver={(event) => event.preventDefault()}
+                    onDrop={(event) => {
+                      if (event.dataTransfer?.files?.length) {
+                        event.preventDefault();
+                        void takeFiles(event.dataTransfer.files, email.id);
+                      }
+                    }}
                     className="text-[13px]"
                   />
+
+                  {images.length > 0 ? (
+                    <div className="space-y-2 rounded-md border border-line bg-surface-sunken p-3">
+                      <div className="flex flex-wrap gap-2">
+                        {images.map((image, index) => (
+                          <span key={`${image.name}-${index}`} className="relative">
+                            {/* A data: URI preview of something the reviewer
+                                just pasted. next/image optimises remote files
+                                it can fetch; there is no file and no URL. */}
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img
+                              src={`data:${image.mediaType};base64,${image.data}`}
+                              alt={image.name}
+                              className="h-20 w-auto rounded border border-line-strong bg-white object-contain"
+                            />
+                            <button
+                              type="button"
+                              aria-label={`Remove ${image.name}`}
+                              className="absolute -right-1.5 -top-1.5 rounded-full border border-line-strong bg-white p-0.5 text-ink-soft"
+                              onClick={() =>
+                                setImages((current) => current.filter((_, at) => at !== index))
+                              }
+                            >
+                              <X className="h-3 w-3" aria-hidden="true" />
+                            </button>
+                          </span>
+                        ))}
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          disabled={reading || busy}
+                          onClick={() => readImages(email.id)}
+                        >
+                          {reading
+                            ? 'Reading...'
+                            : `Read ${images.length === 1 ? 'the image' : `all ${images.length}`} into text`}
+                        </Button>
+                        <span className="text-[12px] text-muted">
+                          The text lands in the box above for you to check. The image itself is
+                          not kept.
+                        </span>
+                      </div>
+                    </div>
+                  ) : null}
                   <div className="flex flex-wrap gap-2">
                     <Button
                       variant="accent"
