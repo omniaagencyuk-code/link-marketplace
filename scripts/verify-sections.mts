@@ -6,7 +6,7 @@
  * file exists - that rendering a page is a fixed number of queries however
  * many sections the page holds.
  */
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import {
   cleanSectionValues,
   getComponent,
@@ -15,6 +15,7 @@ import {
 } from '../src/lib/cms/components/schema';
 import { applyTokens, unknownTokens, TOKENS } from '../src/lib/cms/tokens';
 import { isAnimatable, renderableComponents } from '../src/lib/cms/components/render';
+import { staggers } from '../src/lib/cms/components/schema';
 import { neededBy, needsOf } from '../src/lib/cms/components/needs';
 import {
   DELAYS,
@@ -456,17 +457,77 @@ console.log('\n--- only the compositor is asked to do anything ---');
   yes('the stagger targets a marked group', revealCss.includes('[data-reveal-items] > *'));
   yes('and never a list of tag names', !/\[data-reveal='stagger'\][^{]*:is\(li, article/.test(revealCss));
 
-  // A component that can stagger but marks no group animates nothing at all,
-  // silently. Anything with a repeatable list is a candidate.
-  const rendered = read('src/components/cms/sections/index.tsx') + read('src/components/shared/faq.tsx');
+  /*
+    Which components can actually stagger.
+
+    This check used to read two files, join them, and then assert for every
+    component that the joined text contained `data-reveal-items` somewhere.
+    The same string, for every component, so it never looked at the component
+    it named - and it passed happily while eighteen of the thirty-eight
+    animatable components marked no group at all. It also read two of the six
+    files the components live in.
+
+    Now each component's own renderer is found and read, and the answer is
+    compared against `staggers()` in the schema. The two lists have to live
+    apart - the schema must not import the renderer - so agreeing is the
+    thing to check, exactly as `animatable` does above.
+  */
+  const renderSource = read('src/lib/cms/components/render.tsx');
+  const rendererFor = new Map<string, string>();
+  for (const match of renderSource.matchAll(
+    /(?:'([a-z0-9-]+)'|\b([a-z][a-zA-Z0-9]*))\s*:\s*([A-Z][A-Za-z0-9_]*),/g,
+  )) {
+    rendererFor.set((match[1] ?? match[2]) as string, match[3] as string);
+  }
+
+  /*
+    Every file the sections live in, read from the directory rather than
+    listed here. A list is what rotted last time: this check named two of the
+    six files and silently had nothing to say about the rest, and a seventh
+    (`content.tsx`) would have been missed again today.
+  */
+  const sectionDir = 'src/components/cms/sections';
+  const sectionSources = [
+    ...readdirSync(sectionDir).filter((name) => name.endsWith('.tsx')).map((name) => read(`${sectionDir}/${name}`)),
+    read('src/components/shared/faq.tsx'),
+  ];
+
+  /** A renderer's own body, up to the next top-level export. */
+  function rendererBody(name: string): string | null {
+    for (const source of sectionSources) {
+      const at = source.indexOf(`export function ${name}(`);
+      if (at === -1) continue;
+      const rest = source.slice(at + 10);
+      const end = rest.indexOf('\nexport function ');
+      return end === -1 ? rest : rest.slice(0, end);
+    }
+    return null;
+  }
+
   for (const component of listComponents()) {
     if (!component.animatable) continue;
-    if (!component.fields.some((field) => field.type === 'list')) continue;
-    yes(
-      `"${component.key}" marks the group that staggers`,
-      rendered.includes('data-reveal-items'),
+    const renderer = rendererFor.get(component.key);
+    yes(`"${component.key}" has a renderer to look at`, Boolean(renderer));
+    if (!renderer) continue;
+
+    const body = rendererBody(renderer);
+    yes(`"${component.key}" renderer source was found`, body !== null);
+    if (body === null) continue;
+
+    is(
+      `"${component.key}" offers stagger only if it marks a group`,
+      staggers(component.key),
+      body.includes('data-reveal-items'),
     );
   }
+
+  // The editor must not offer an entrance the component cannot carry, which
+  // is the whole point of the list above being right.
+  const editor = read('src/components/admin/cms/section-list.tsx');
+  yes(
+    'the editor drops stagger where it would do nothing',
+    /entrance !== 'stagger' \|\| staggers\(component\.key\)/.test(editor),
+  );
 }
 
 console.log('\n--- every way of changing a page checks who is asking ---');

@@ -1377,6 +1377,34 @@ const COMPONENTS: ComponentDef[] = [
 
 const BY_KEY = new Map(COMPONENTS.map((component) => [component.key, component]));
 
+/**
+ * Which components have a repeating group for "Stagger the items" to stagger.
+ *
+ * A separate list rather than a field on every component, because it is about
+ * the markup a renderer emits rather than about what the section means - and
+ * the schema must not import the renderer, which is what keeps the admin's
+ * bundle off a public page. verify:sections imports both and checks they
+ * agree, the same arrangement `animatable` already has.
+ *
+ * It exists because the editor was offering the setting to everything that
+ * could animate at all. Stagger works by delaying each child of a group the
+ * component marks with `data-reveal-items`; a component that marks no group
+ * has nothing to delay, so the entrance quietly collapsed into a plain fade.
+ * Eighteen of the thirty-eight animatable components were in that position,
+ * `marketplace-demo` among them - and nothing anywhere said so.
+ */
+const STAGGERS = new Set([
+  'feature-cards', 'marketplace-stats', 'niche-categories', 'stats', 'checklist',
+  'icon-grid', 'trust-bar', 'steps', 'parrot-checklist', 'parrot-flight-path',
+  'related-pages', 'trust-stats', 'testimonials', 'service-cards', 'feature-list',
+  'agency-panel', 'metric-cards', 'topic-pills', 'benefit-cards', 'journey-steps',
+]);
+
+/** Whether "Stagger the items" would do anything on this component. */
+export function staggers(key: string): boolean {
+  return STAGGERS.has(key);
+}
+
 export function listComponents(): ComponentDef[] {
   return COMPONENTS;
 }

@@ -24,6 +24,7 @@ import {
   GROUP_LABELS,
   getComponent,
   listComponents,
+  staggers,
   stylingFor,
   type ComponentDef,
   type ComponentGroup,
@@ -373,7 +374,12 @@ function SectionEditor({ section, component }: { section: PageSection; component
             <div>
               <Label htmlFor={`entrance-${section.id}`}>Entrance</Label>
               <Select id={`entrance-${section.id}`} name="entrance" defaultValue={section.animation.entrance} className="mt-1.5">
-                {ENTRANCES.map((entrance) => (
+                {/* Stagger is left out where the component marks no group
+                    for it to stagger: it would collapse into a plain fade,
+                    which is a setting that looks as though it works. */}
+                {ENTRANCES.filter(
+                  (entrance) => entrance !== 'stagger' || staggers(component.key),
+                ).map((entrance) => (
                   <option key={entrance} value={entrance}>
                     {ENTRANCE_LABELS[entrance]}
                   </option>
