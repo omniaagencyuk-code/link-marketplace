@@ -911,6 +911,31 @@ console.log('\n--- reading a rate card out of a picture ---');
   has('a bad image among good ones still refuses', checkImages([png(100), { mediaType: 'image/bmp', data: 'AAAA' }]) ?? '', 'not an image');
 
   /*
+    One client, one place the workspace header is set.
+
+    An organisation-level key must name a workspace on every request. The
+    extraction client does that; the image reader built its own
+    `new Anthropic(...)` and did not, so the first real rate card came back
+    as a 400 about workspace scoping with nothing in the UI able to explain
+    it. Checked here rather than remembered, because the next caller will be
+    written the same way.
+  */
+  {
+    const readFile = (at: string) => fs.readFileSync(path.join(process.cwd(), at), 'utf8');
+    const clientSource = readFile('src/lib/sourcing/client.ts');
+    is(
+      'the client factory sets the workspace header',
+      /anthropic-workspace-id/.test(clientSource),
+      true,
+    );
+
+    const imageSource = readFile('src/lib/sourcing/rate-card-image.ts');
+    is('reading an image goes through that factory', imageSource.includes('getClient()'), true);
+    is('and builds no client of its own', /new Anthropic\(/.test(imageSource), false);
+    is('its failures go through the shared describer', imageSource.includes('messageFor('), true);
+  }
+
+  /*
     The transcription prompt has one job. If it starts deciding what a price
     covers, the rules about niches and refusals exist in two places - and
     AGENTS.md is explicit that they live in one.

@@ -1,4 +1,5 @@
-import Anthropic from '@anthropic-ai/sdk';
+import type Anthropic from '@anthropic-ai/sdk';
+import { getClient, isExtractionConfigured, messageFor } from './client';
 
 /**
  * Reading a rate card that arrived as a picture.
@@ -124,11 +125,16 @@ export async function transcribeRateCard(
   images: PastedImage[],
   model: string,
 ): Promise<TranscriptionOutcome> {
-  const key = process.env.ANTHROPIC_API_KEY;
-  if (!key) return { error: 'No ANTHROPIC_API_KEY is configured.' };
+  if (!isExtractionConfigured()) return { error: 'No ANTHROPIC_API_KEY is configured.' };
   if (images.length === 0) return { error: 'No images were sent.' };
 
-  const client = new Anthropic({ apiKey: key });
+  /*
+    The same client the extraction uses, not a second one. An organisation-
+    level key needs the workspace header, and building a client here meant
+    building one without it - a 400 saying so, on the first real rate card,
+    with nothing in the UI able to explain it.
+  */
+  const client = getClient();
 
   try {
     const response = await client.messages.create({
@@ -179,6 +185,8 @@ export async function transcribeRateCard(
       },
     };
   } catch (error) {
-    return { error: error instanceof Error ? error.message : 'The image could not be read.' };
+    // Through the shared describer, so the workspace and credit errors
+    // arrive as instructions rather than as raw API text.
+    return { error: messageFor(error) };
   }
 }

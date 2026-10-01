@@ -61,7 +61,15 @@ export function isExtractionConfigured(): boolean {
   return Boolean(process.env.ANTHROPIC_API_KEY);
 }
 
-function getClient(): Anthropic {
+/**
+ * The configured client.
+ *
+ * Exported because there is now a second caller - reading a rate card out of
+ * an image - and a second `new Anthropic(...)` is a second place to forget
+ * the workspace header. That is not hypothetical: it was forgotten, and the
+ * first real image produced a 400 nobody could act on.
+ */
+export function getClient(): Anthropic {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
     throw new Error(
@@ -276,7 +284,14 @@ function safeJson(text: string): unknown {
   }
 }
 
-function messageFor(error: unknown): string {
+/**
+ * An API failure in words somebody can do something about.
+ *
+ * Exported for the same reason as the client above: the useful sentences -
+ * the workspace one especially - are worth more than the raw message, and
+ * every caller should get them.
+ */
+export function messageFor(error: unknown): string {
   if (error instanceof Anthropic.AuthenticationError) {
     return 'The Anthropic API key was rejected. Check ANTHROPIC_API_KEY in Vercel.';
   }
