@@ -2,6 +2,8 @@ import { getAdminScopedClient } from '@/lib/supabase/server';
 import { isSupabaseEnabled } from '@/lib/supabase/config';
 import { AHREFS_MAX_BATCH, isAhrefsConfigured } from '@/lib/ahrefs/config';
 import { AhrefsError, batchAnalysis, subscriptionInfo, type AhrefsUsage } from '@/lib/ahrefs/client';
+import { outranksCountrySource } from '@/lib/types/country';
+import type { CountrySource } from '@/lib/types';
 
 /**
  * The tiered Ahrefs refresh.
@@ -622,19 +624,31 @@ export async function runRefresh(): Promise<RunOutcome> {
         unitCost = result.unitsCost / slice.length;
       }
 
-      // Country codes for this batch, so an audience share is only ever
-      // written against the market the listing actually claims.
+      /*
+        The country each listing holds for this batch, and where it came from.
+
+        Two uses. An audience share is only ever written against the market the
+        listing actually claims - and the measured breakdown is what establishes
+        that market in the first place, for every listing whose country was not
+        chosen by a person. `country_source` is what keeps those apart.
+      */
       const { data: countryRows } = await supabase
         .from('websites')
-        .select('id, country_code')
+        .select('id, country_code, country_source')
         .in(
           'id',
           slice.map((entry) => entry.id),
         );
       const countryById = new Map(
-        ((countryRows ?? []) as { id: string; country_code: string }[]).map((row) => [
+        (
+          (countryRows ?? []) as {
+            id: string;
+            country_code: string | null;
+            country_source: CountrySource | null;
+          }[]
+        ).map((row) => [
           row.id,
-          row.country_code,
+          { code: row.country_code ?? undefined, source: row.country_source ?? undefined },
         ]),
       );
 
@@ -744,10 +758,17 @@ async function readUsage(): Promise<AhrefsUsage | null> {
  * rather than left standing: a listing that said "78% of the audience is based
  * in the United Kingdom" with no measurable UK traffic is the exact claim this
  * is meant to stop.
+ *
+ * And the breakdown establishes the market. Ahrefs reports which countries a
+ * domain's traffic actually comes from, which is a better answer to "what market
+ * is this publisher in" than anything short of the publisher saying so - so the
+ * largest share becomes the listing's country, and the marketplace can filter on
+ * a measurement rather than on a default. The country a person chose is never
+ * touched; see `outranksCountrySource`.
  */
-function audiencePatch(
+export function audiencePatch(
   metrics: { organicTraffic: number; topCountries: { country: string; traffic: number }[] },
-  countryCode: string | undefined,
+  held: { code?: string; source?: CountrySource } | undefined,
 ): Record<string, unknown> {
   if (metrics.topCountries.length === 0) return {};
 
@@ -761,9 +782,26 @@ function audiencePatch(
     traffic: entry.traffic,
   }));
 
-  const own = countryCode
-    ? split.find((entry) => entry.country === countryCode.toUpperCase())
+  /*
+    The market, measured. `topCountries` arrives sorted by traffic, so the first
+    entry is the largest share.
+
+    Written only where a measurement may replace what is held - so a country an
+    administrator set stands, and one guessed from a domain suffix gives way.
+    Where it is written, `top_country_share` is the share of that same country,
+    because the two have to be about the same place.
+  */
+  const measured = split[0]?.country;
+  const takesMeasured = measured !== undefined && outranksCountrySource('measured', held?.source);
+
+  const country = takesMeasured ? measured : held?.code;
+  const own = country
+    ? split.find((entry) => entry.country === country.toUpperCase())
     : undefined;
 
-  return { audience_split: split, top_country_share: own?.share ?? null };
+  return {
+    audience_split: split,
+    top_country_share: own?.share ?? null,
+    ...(takesMeasured ? { country_code: measured, country_source: 'measured' } : {}),
+  };
 }

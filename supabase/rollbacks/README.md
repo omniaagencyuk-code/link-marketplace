@@ -20,3 +20,4 @@ back-this-feature-out operation but a restore-from-backup one.
 |---|---|---|
 | `0019_publisher_sourcing_down.sql` | `0019_publisher_sourcing.sql` | Imported emails, unapproved drafts, extraction history, publisher cost and commercial terms. Listings already approved from drafts are ordinary listings and survive. |
 | `0043_country_nobody_stated_down.sql` | `0043_country_nobody_stated.sql` | Every market the backfill established, and every one an administrator has set since. The column goes back to `not null`, so unknown has to become something: everything unknown becomes `GB` again, which is the state 0043 was written to fix. |
+| `0044_country_source_down.sql` | `0044_country_source.sql` | The record of where each country came from. The countries survive, but the nightly Ahrefs refresh can no longer tell a country a person chose from one it worked out itself, and the invented United Kingdom marked `default` becomes indistinguishable from a real one. |

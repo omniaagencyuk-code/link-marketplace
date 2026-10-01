@@ -14,6 +14,7 @@
  * type and default.
  */
 import { execFileSync } from 'node:child_process';
+import { readdirSync } from 'node:fs';
 const PGH = '/var/tmp/pgvalidate';
 const DB = 'pp_map';
 
@@ -48,10 +49,23 @@ function psqlFile(file, db = DB) {
 execFileSync('psql', ['-h', PGH, '-p', '55432', '-U', 'postgres', '-c', `drop database if exists ${DB}`], { encoding: 'utf8' });
 execFileSync('psql', ['-h', PGH, '-p', '55432', '-U', 'postgres', '-c', `create database ${DB}`], { encoding: 'utf8' });
 psqlFile(`${PGH}/prelude.sql`);
-for (const file of ['0001_init', '0002_rls', '0003_seed_reference_data', '0004_content_orders', '0005_cms', '0006_gate_marketplace']) {
-  psqlFile(`supabase/migrations/${file}.sql`);
+
+/*
+  Every migration, in order - not a list.
+
+  This was a hard-coded list ending at 0006, which meant the verifier was
+  testing `websiteToRow` against a schema nine years of migrations out of date.
+  It broke the first time a mapped column was added, and the failure read as
+  "column does not exist" rather than as "this list is stale". A glob cannot go
+  stale.
+*/
+const migrations = readdirSync('supabase/migrations')
+  .filter((name) => name.endsWith('.sql') && !name.endsWith('.paste.sql'))
+  .sort();
+for (const file of migrations) {
+  psqlFile(`supabase/migrations/${file}`);
 }
-ok('schema applied');
+check(`every migration applied (${migrations.length})`, migrations.length > 6);
 
 const { websites: seedWebsites } = await import('/home/user/link-marketplace/src/lib/data/websites.ts');
 const { seedPosts } = await import('/home/user/link-marketplace/src/lib/data/blog-posts.ts');
@@ -220,6 +234,74 @@ check(`post title: ${mappedPost.title}`, mappedPost.title === seedPosts[0].title
 check('post body survives', mappedPost.body === seedPosts[0].body);
 check(`post category: ${mappedPost.category}`, mappedPost.category === seedPosts[0].category);
 check(`post status: ${mappedPost.status}`, mappedPost.status === seedPosts[0].status);
+
+console.log('\n== a country, and where it came from ==');
+
+/*
+  The round trip that matters for the country: the database is the only place
+  that enforces a country and its source travelling together, and the mapper is
+  the only place that decides a `default` country is not a country.
+
+  `default` marks the United Kingdom every listing claimed before the column
+  could be null. The value stays in the row - nothing is destroyed - but
+  `mapWebsite` must not surface it, because that is what keeps twelve readers
+  and one filter right without any of them knowing the rule.
+*/
+function readBack(slug) {
+  return mapWebsite(
+    JSON.parse(
+      psql(`
+        select row_to_json(t) from (
+          select w.*, null as primary_category,
+            '[]'::json as website_categories, '[]'::json as services
+          from public.websites w where w.slug = '${slug}'
+        ) t;
+      `),
+    ),
+  );
+}
+
+function insertCountry(slug, code, source) {
+  psql(
+    `insert into public.websites (slug, domain, title, country_code, country_source)
+     values ('${slug}', '${slug}.example', '${slug}', ${code ? `'${code}'` : 'null'}, ${source ? `'${source}'` : 'null'});`,
+  );
+}
+
+insertCountry('vm-stated', 'ES', 'stated');
+insertCountry('vm-measured', 'US', 'measured');
+insertCountry('vm-domain', 'DK', 'domain');
+insertCountry('vm-default', 'GB', 'default');
+insertCountry('vm-none', null, null);
+
+check('a stated country reads back', readBack('vm-stated').country === 'ES');
+check('so does a measured one', readBack('vm-measured').country === 'US');
+check('and one from the domain', readBack('vm-domain').country === 'DK');
+check('the invented GB does not', readBack('vm-default').country === undefined);
+check('but its source still does', readBack('vm-default').countrySource === 'default');
+check('no country reads back as none', readBack('vm-none').country === undefined);
+
+// The database refuses what the application cannot express.
+let rejected = 0;
+for (const bad of [
+  "insert into public.websites (slug, domain, title, country_code) values ('vm-x1','x1.example','x1','US')",
+  "insert into public.websites (slug, domain, title, country_source) values ('vm-x2','x2.example','x2','stated')",
+  "insert into public.websites (slug, domain, title, country_code, country_source) values ('vm-x3','x3.example','x3','US','vibes')",
+]) {
+  try {
+    psql(bad);
+  } catch {
+    rejected += 1;
+  }
+}
+check('a country without a source, a source without a country and an unknown source are all refused', rejected === 3);
+
+// And writing through the mapper satisfies the constraint, which is the whole
+// point of the source travelling with the country in `websiteToRow`.
+const row = websiteToRow({ country: 'FR' });
+check('writing a country writes its source', row.country_source === 'stated');
+const cleared = websiteToRow({ country: undefined });
+check('clearing a country clears its source', cleared.country_code === null && cleared.country_source === null);
 
 console.log('\n== the gate still holds with real data ==');
 psql("grant usage on schema public to anon, authenticated; grant select on all tables in schema public to anon, authenticated;");

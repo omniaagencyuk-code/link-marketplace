@@ -8,6 +8,7 @@ import type {
   ContentOrder,
   ContentOrderItem,
   CountryCode,
+  CountrySource,
   LanguageCode,
   LinkTypeSlug,
   NicheSlug,
@@ -43,6 +44,7 @@ export interface WebsiteRow {
   overview: string | null;
   primary_category_id: string | null;
   country_code: string | null;
+  country_source: string | null;
   language_code: string | null;
   status: WebsiteStatus;
   verified: boolean;
@@ -254,7 +256,20 @@ export function mapWebsite(row: WebsiteRow): Website {
     overview: row.overview ?? '',
     niche: primaryNiche,
     secondaryNiches: secondary,
-    country: (row.country_code ?? undefined) as CountryCode | undefined,
+    /*
+      The established market, which is not quite the stored column.
+
+      A country whose source is `default` is the United Kingdom every listing
+      claimed before the column could be null. It is kept in the database so
+      nothing is destroyed, but it is evidence of nothing, and surfacing it here
+      would put the original bug back - a card saying UK, a filter matching UK -
+      in twelve call sites instead of one. So it is hidden in the one place that
+      reads the row, and every reader is right by default.
+    */
+    country: (row.country_source === 'default'
+      ? undefined
+      : (row.country_code ?? undefined)) as CountryCode | undefined,
+    countrySource: (row.country_source ?? undefined) as CountrySource | undefined,
     language: (row.language_code ?? 'en') as LanguageCode,
     metrics: {
       domainRating: toNumber(row.domain_rating),
@@ -354,7 +369,16 @@ export function websiteToRow(patch: Partial<Website>): Record<string, unknown> {
     and an absent value writes null rather than silently keeping a country
     somebody just removed.
   */
-  if ('country' in patch) row.country_code = patch.country ?? null;
+  if ('country' in patch) {
+    row.country_code = patch.country ?? null;
+    /*
+      The source travels with the country, always. A check constraint requires
+      the two to be null together, so writing one without the other is a failed
+      update - which is the point: there is no way to leave a country behind
+      with nothing to say where it came from.
+    */
+    row.country_source = patch.country ? (patch.countrySource ?? 'stated') : null;
+  }
   set('language_code', patch.language);
   set('status', patch.status);
   set('verified', patch.verified);

@@ -1,8 +1,10 @@
 -- ---------------------------------------------------------------------------
 -- Which markets the marketplace actually knows
 --
--- Run this after 0043. It answers the question 0043 deliberately left open:
--- how many listings still say 'GB' with nothing behind it.
+-- Run this after 0043 and 0044. It says how many listings had a market
+-- established, where each came from, and how many still hold the United Kingdom
+-- nobody claimed - which 0044 marks `country_source = 'default'` and the
+-- application treats as no market at all.
 --
 -- Paste the whole thing and run it. The Supabase editor shows only the last
 -- result set, so the numbers you need are at the bottom.
@@ -71,3 +73,15 @@ select
 from public.websites
 group by 1
 order by listings desc, market;
+
+-- ---------------------------------------------------------------------------
+-- And where each country came from. `default` is the invented United Kingdom:
+-- counted, kept, and surfaced nowhere.
+-- ---------------------------------------------------------------------------
+select
+  coalesce(country_source, '(no market)') as source,
+  count(*) as listings,
+  count(*) filter (where status = 'active') as live
+from public.websites
+group by 1
+order by listings desc, source;

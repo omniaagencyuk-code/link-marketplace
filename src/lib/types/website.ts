@@ -1,4 +1,4 @@
-import type { CountryCode } from './country';
+import type { CountryCode, CountrySource } from './country';
 import type { NicheSlug } from './category';
 
 /** A slug from `lib/config/accepted-niches`. Kept loose so the list can grow
@@ -205,6 +205,23 @@ export interface Website {
    * Undefined means unknown, and unknown displays as unknown.
    */
   country?: CountryCode;
+  /**
+   * Where the country came from.
+   *
+   * Recorded because a country with no provenance is how the whole marketplace
+   * came to claim the United Kingdom with nobody able to say why. It also
+   * decides who may overwrite whom: the Ahrefs refresh measures an audience
+   * every night and should correct a country it worked out from a domain
+   * suffix, but must never quietly undo one a person chose.
+   *
+   *   stated   - a person or a publisher's own list said so. Nothing overwrites
+   *              this; it is the only answer that came from a human.
+   *   measured - the largest share of the Ahrefs traffic breakdown. The best
+   *              evidence there is, short of being told.
+   *   domain   - the country the domain's own suffix names. A fallback for a
+   *              listing with no traffic data yet.
+   */
+  countrySource?: CountrySource;
   language: LanguageCode;
   metrics: WebsiteMetrics;
   services: Service[];

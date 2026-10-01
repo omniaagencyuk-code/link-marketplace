@@ -1,4 +1,4 @@
-import type { Country, CountryCode } from '@/lib/types';
+import type { Country, CountryCode, CountrySource } from '@/lib/types';
 
 export const countries: Country[] = [
   { code: 'GB', name: 'United Kingdom', shortName: 'UK', region: 'UK' },
@@ -63,4 +63,20 @@ export function countryNameOrUnknown(code: CountryCode | undefined) {
 /** The compact form, or a dash when nobody has said. */
 export function countryShortNameOrUnknown(code: CountryCode | undefined) {
   return code ? countryShortName(code) : COUNTRY_UNKNOWN;
+}
+
+/**
+ * Where a country came from, in words.
+ *
+ * Shown on hover in the admin table, because "why does this say UK?" had no
+ * answer for the entire marketplace: the country was a default and nothing
+ * recorded that it was one.
+ */
+export function countrySourceLabel(source: CountrySource | undefined) {
+  if (source === 'stated') return 'Stated - set by hand or supplied by the publisher';
+  if (source === 'measured') return 'Measured - the largest share of the Ahrefs traffic breakdown';
+  if (source === 'domain') return "From the domain's own suffix, until traffic is measured";
+  if (source === 'default')
+    return 'No market - the United Kingdom this listing used to claim by default';
+  return 'No market established';
 }

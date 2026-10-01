@@ -17,6 +17,8 @@ import {
 import { sellableNiches } from '../src/lib/sourcing/review';
 import { countryFromDomain } from '../src/lib/data/cctld';
 import { runQuery } from '../src/lib/services/query-engine';
+import { audiencePatch } from '../src/lib/services/refresh-service';
+import { COUNTRY_SOURCES, outranksCountrySource } from '../src/lib/types/country';
 import { cctldPairs } from './cctld-sql.mts';
 import { readFileSync } from 'node:fs';
 import type { WebsiteListItem } from '../src/lib/types';
@@ -279,6 +281,81 @@ console.log('\n--- filtering by a country ---');
     'US',
   );
   is('no country filter keeps both', runQuery([american, unknown], {} as never).items.length, 2);
+}
+
+console.log('\n--- the country Ahrefs measures ---');
+{
+  /*
+    Ahrefs reports which countries a domain's traffic actually comes from. That
+    is a better answer to "what market is this publisher in" than anything short
+    of the publisher saying so, and it arrives for every domain in a refresh - so
+    it is what establishes the country, rather than only being shown beside it.
+
+    `topCountries` arrives sorted by traffic, so the first entry is the market.
+  */
+  const breakdown = {
+    organicTraffic: 100000,
+    topCountries: [
+      { country: 'US', traffic: 71000 },
+      { country: 'GB', traffic: 9000 },
+    ],
+  };
+
+  const fromNothing = audiencePatch(breakdown, undefined);
+  is('a listing with no market takes the measured one', fromNothing.country_code, 'US');
+  is('and records that it was measured', fromNothing.country_source, 'measured');
+  is('the share is the share of that same country', fromNothing.top_country_share, 71);
+
+  const overGuess = audiencePatch(breakdown, { code: 'DE', source: 'domain' });
+  is('a measurement replaces a country guessed from the domain', overGuess.country_code, 'US');
+
+  /*
+    The one it must never touch. A nightly job quietly undoing an
+    administrator's edit is the same bug as the invented 'GB' - a value changing
+    with nothing to say why - and it would be found weeks later by a buyer.
+  */
+  const overChoice = audiencePatch(breakdown, { code: 'FR', source: 'stated' });
+  is('but never one a person chose', overChoice.country_code, undefined);
+  is('and leaves its source alone too', overChoice.country_source, undefined);
+  is(
+    'while still measuring the share of the country that is held',
+    overChoice.top_country_share,
+    null,
+  );
+
+  const measuredAgain = audiencePatch(breakdown, { code: 'NL', source: 'measured' });
+  is('a newer measurement replaces an older one', measuredAgain.country_code, 'US');
+
+  // No breakdown, no claim. A refresh that measured nothing must not clear a
+  // country it has nothing to say about.
+  const nothingMeasured = audiencePatch(
+    { organicTraffic: 0, topCountries: [] },
+    { code: 'DE', source: 'domain' },
+  );
+  is('a refresh with no breakdown changes nothing', 'country_code' in nothingMeasured, false);
+
+  is('stated outranks measured', outranksCountrySource('measured', 'stated'), false);
+  is('measured outranks domain', outranksCountrySource('measured', 'domain'), true);
+  is('domain does not outrank measured', outranksCountrySource('domain', 'measured'), false);
+  is('anything beats no source at all', outranksCountrySource('domain', undefined), true);
+
+  /*
+    The database has its own copy of this list, in a check constraint. Two
+    copies drift, and the drift shows up as a failed update on a value the
+    application believes is legal.
+  */
+  const migration = readFileSync(
+    new URL('../supabase/migrations/0044_country_source.sql', import.meta.url),
+    'utf8',
+  );
+  const allowed = [...migration.matchAll(/country_source in \(([^)]+)\)/g)].flatMap((match) =>
+    match[1]!.split(',').map((value) => value.trim().replace(/'/g, '')),
+  );
+  is(
+    'the constraint allows exactly the sources the code knows',
+    allowed.slice().sort().join(',') === COUNTRY_SOURCES.slice().sort().join(','),
+    true,
+  );
 }
 
 console.log(failed ? `\n  ${failed} FAILED\n` : '\n  all passed\n');

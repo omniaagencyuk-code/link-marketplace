@@ -155,7 +155,11 @@ function buildPatch(formData: FormData, websiteId: string, existing?: Website): 
     overview: readString(formData, 'overview', existing?.overview ?? ''),
     niche: readString(formData, 'niche', 'technology') as NicheSlug,
     secondaryNiches,
+    // Blank means not stated, and has to survive as not stated rather than
+    // becoming a country the publisher never named. A country chosen here is
+    // the strongest source there is: the nightly refresh leaves it alone.
     country: (readString(formData, 'country') || undefined) as Website['country'],
+    countrySource: readString(formData, 'country') ? 'stated' : undefined,
     language: readString(formData, 'language', 'en') as Website['language'],
     status: readString(formData, 'status', 'draft') as WebsiteStatus,
     verified: formData.get('verified') === 'on',

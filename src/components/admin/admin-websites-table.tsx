@@ -48,7 +48,7 @@ import {
 } from '@/lib/admin/bulk';
 import { acceptedNicheLabel } from '@/lib/config/accepted-niches';
 import { nicheName } from '@/lib/data/categories';
-import { countryShortNameOrUnknown } from '@/lib/data/countries';
+import { countryShortNameOrUnknown, countrySourceLabel } from '@/lib/data/countries';
 import { formatCompactNumber, formatPrice, formatTurnaround } from '@/lib/utils/format';
 import {
   generalMargin,
@@ -804,7 +804,14 @@ export function AdminWebsitesTable({
                   <p className="truncate text-[11px] text-muted">{website.title}</p>
                 </Td>
                 <Td className="text-[13px] text-ink-soft">{nicheName(website.niche)}</Td>
-                <Td className="text-[13px] text-ink-soft">{countryShortNameOrUnknown(website.country)}</Td>
+                <Td className="text-[13px] text-ink-soft">
+                  {/* Hover says where it came from. Added because "why does
+                      this say UK?" had no answer for 1,645 listings: the
+                      country was a default nothing recorded. */}
+                  <span title={countrySourceLabel(website.countrySource)}>
+                    {countryShortNameOrUnknown(website.country)}
+                  </span>
+                </Td>
                 <Td className="tabular text-[13px] text-ink-soft">
                   {website.metrics.domainRating}
                 </Td>

@@ -10,20 +10,28 @@
 -- invented 'GB' and a genuinely British .com are indistinguishable there, so
 -- 0043 left them alone rather than guessing a second time.
 --
--- Run this only if the country was invented - which it was if your import had
--- no country, location, geo or market column. Run
+-- You probably do not need this. 0044 marks those rows `country_source =
+-- 'default'`, and the application does not surface a `default` country: it is
+-- not shown, not filtered on, and the first real evidence - a measured audience,
+-- or an administrator choosing one - replaces it. So the invented United Kingdom
+-- is already invisible, and the value is still there if it turns out to have
+-- been right.
+--
+-- Run this only to delete it outright. Run
 -- `supabase/reports/country-coverage.sql` first and look at the
 -- "nothing behind it" count: that is exactly how many rows this changes.
 --
--- Why clearing beats leaving: a listing that says "United Kingdom" when nobody
--- said so puts a publisher in front of a buyer who asked for British traffic,
--- and the buyer finds out after they have paid. The marketplace already treats
--- an unknown market as unknown - it shows a dash, and a country filter hides
--- it rather than matching it.
+-- What it buys you: a `select country_code from websites` in the SQL editor
+-- stops reading as though the marketplace were British. What it costs you: if
+-- any of those listings genuinely was British, that is gone and nobody can tell
+-- you which it was.
 -- ---------------------------------------------------------------------------
 
 update public.websites
-set country_code = null
+set country_code = null,
+    -- Both, or the check constraint added by 0044 rejects the row: a country
+    -- and its source are null together or not at all.
+    country_source = null
 where country_code = 'GB'
   -- Not a .uk. Those are confirmed by the domain itself.
   and lower(regexp_replace(domain, '^.*\.', '')) <> 'uk'

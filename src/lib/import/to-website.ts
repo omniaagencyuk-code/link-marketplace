@@ -28,7 +28,12 @@ export function toWebsitePatch(
   if (has('description')) patch.description = values.description;
   if (has('primary_niche')) patch.niche = values.primary_niche;
   if (has('secondary_niches')) patch.secondaryNiches = values.secondary_niches;
-  if (has('country')) patch.country = values.country;
+  if (has('country')) {
+    // A country column in a publisher's own list is somebody telling us, so it
+    // outranks anything the refresh measures later.
+    patch.country = values.country;
+    patch.countrySource = 'stated';
+  }
   if (has('language')) patch.language = values.language;
   if (has('status')) patch.status = values.status;
 
@@ -312,6 +317,9 @@ export function newWebsiteDefaults(domain: string): Partial<Website> {
     // listing created without a stated country claimed the United Kingdom,
     // and filtering the marketplace for anywhere else found nobody.
     country: countryFromDomain(domain),
+    // A suffix is the weakest of the three sources, so the nightly refresh
+    // replaces it with a measured market as soon as it has one.
+    countrySource: countryFromDomain(domain) ? 'domain' : undefined,
     language: 'en',
     metrics: emptyMetrics(),
     services: [],

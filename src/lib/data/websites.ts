@@ -283,6 +283,8 @@ function buildWebsite(raw: RawWebsite, index: number): Website {
     niche: raw.n,
     secondaryNiches: raw.s ?? [],
     country: raw.c,
+    // The raw list states one, so it reads as stated rather than as a guess.
+    countrySource: 'stated',
     language: raw.l,
     metrics,
     services,
