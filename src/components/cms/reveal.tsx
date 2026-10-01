@@ -56,9 +56,27 @@ export function Reveal({
       return;
     }
 
-    // Already on screen: reveal without hiding first. This is the branch that
-    // protects the hero - there is no frame in which the element is invisible,
-    // so there is nothing for LCP to wait for and nothing to flash.
+    /*
+      Already on screen: reveal without hiding first. There is no frame in
+      which the element is invisible, so nothing for LCP to wait for and
+      nothing to flash.
+
+      This looks like it is costing something, and it is: a section sitting
+      just inside the first screen never animates, which is where an editor
+      most expects to see the setting work. Measured on the homepage, the
+      sections at 78% and 89% of the first screen are both excluded by it.
+
+      Widening it so those animate was tried and reverted, because there is
+      nowhere to put the hiding that does not show. The page is server
+      rendered, so the browser paints the real content before React hydrates;
+      arming in a layout effect is still after that paint. Measured here:
+      first contentful paint at 1260ms, first arming at 2005ms - three
+      quarters of a second of visible content, then hidden, then animated
+      back. A glitch on the page that takes the paid traffic, traded for an
+      animation nobody asked to see twice.
+
+      The editor says so beside the control rather than pretending otherwise.
+    */
     const box = element.getBoundingClientRect();
     if (box.top < window.innerHeight && box.bottom > 0) {
       element.dataset.revealed = 'true';

@@ -401,9 +401,13 @@ function SectionEditor({ section, component }: { section: PageSection; component
               </Select>
             </div>
           </div>
-          <p className="mt-2 text-[12px] text-muted">
-            Anything already on screen when the page loads appears without animating, and
-            nothing animates for a visitor who has asked their device for less motion.
+          <p className="mt-2 text-[12px] leading-relaxed text-muted">
+            A section already on screen when the page loads appears without animating - that is
+            the first screenful, so an entrance set on one of the first few sections will not
+            play. It cannot: hiding something the reader can already see, to slide it back in,
+            reads as a glitch rather than as an entrance. Move the section further down if the
+            movement matters. Nothing animates at all for a visitor whose device asks for less
+            motion.
           </p>
         </fieldset>
       ) : null}
