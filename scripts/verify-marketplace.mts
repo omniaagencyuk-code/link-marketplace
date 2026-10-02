@@ -437,5 +437,67 @@ console.log('\n--- ordering, both ways ---');
   );
 }
 
+console.log('\n--- referring domains, which the refresh never wrote ---');
+{
+  /*
+    Listings showed 0 referring domains after a refresh and a real figure when
+    the same domain was checked in Ahrefs by hand.
+
+    The cause was not a parsing bug or a bad reading: `refdomains` was never
+    asked for. The batch request selected domain rating, traffic and the country
+    breakdown and nothing else, and the update wrote those three - so the column
+    kept whatever the CSV import left in it, which was zero for most, while
+    everything around it updated. A refreshed listing read as a site with real
+    traffic and no backlinks at all, and the marketplace filters on that column.
+  */
+  const client = readFileSync(
+    new URL('../src/lib/ahrefs/client.ts', import.meta.url),
+    'utf8',
+  );
+
+  is("the batch request asks for it",
+    /'refdomains'/.test(client), true);
+  // On the same request as the rest, so it is a column rather than a call.
+  is(
+    'on the one request that was already being made',
+    (client.match(/batch-analysis\/batch-analysis/g) ?? []).length,
+    1,
+  );
+  // Ahrefs' own guidance: `domain` mode excludes www and other subdomains.
+  is('and still asks about the whole site',
+    /mode: 'subdomains'/.test(client), true);
+
+  const refresh = readFileSync(
+    new URL('../src/lib/services/refresh-service.ts', import.meta.url),
+    'utf8',
+  );
+  is('the refresh writes it',
+    /referring_domains: metrics\.referringDomains/.test(refresh), true);
+
+  /*
+    And writes it only when Ahrefs gave one. A reading it did not give is not a
+    reading of zero - the same rule that decides whether the row is written at
+    all, and the rule whose absence here is what put zeros on the page.
+  */
+  is(
+    'only when Ahrefs reported one',
+    /metrics\.referringDomains == null[\s\S]{0,80}referring_domains/.test(refresh),
+    true,
+  );
+  is(
+    'and the parser leaves it out rather than calling it zero',
+    /row\.refdomains == null \? \{\} : \{ referringDomains/.test(client),
+    true,
+  );
+
+  // A target Ahrefs knows nothing about is still skipped entirely, so a domain
+  // with no data stays due rather than being marked fresh at zero.
+  is(
+    'a target with no data at all is still left alone',
+    /row\.domain_rating == null && row\.org_traffic == null && row\.refdomains == null/.test(client),
+    true,
+  );
+}
+
 console.log(failed ? `\n  ${failed} FAILED\n` : '\n  all passed\n');
 process.exit(failed ? 1 : 0);

@@ -25,6 +25,16 @@ export interface AhrefsCountryTraffic {
 export interface AhrefsMetrics {
   domainRating: number;
   organicTraffic: number;
+  /**
+   * Unique domains linking to the target, where Ahrefs reported it.
+   *
+   * Undefined rather than zero when it did not. The marketplace shows this
+   * figure beside domain rating and buyers filter on it, so a missing reading
+   * written as zero is a listing that looks like it has no backlink profile at
+   * all - which is what was happening, because this was never asked for and
+   * the column kept whatever the CSV import left in it.
+   */
+  referringDomains?: number;
   /** Biggest first. Empty when Ahrefs returned no breakdown. */
   topCountries: AhrefsCountryTraffic[];
 }
@@ -59,6 +69,7 @@ interface AhrefsTargetRow {
   domain_rating?: number | null;
   org_traffic?: number | null;
   org_traffic_top_by_country?: [string, number][] | null;
+  refdomains?: number | null;
 }
 
 export class AhrefsError extends Error {
@@ -167,7 +178,22 @@ export async function batchAnalysis(domains: string[]): Promise<BatchAnalysisRes
   const response = await ahrefsFetch('/batch-analysis/batch-analysis', {
     method: 'POST',
     body: JSON.stringify({
-      select: ['index', 'url', 'domain_rating', 'org_traffic', 'org_traffic_top_by_country'],
+      /*
+        `refdomains` is on this same request, so asking for it is a column on a
+        call already being made rather than another call. It was missing, and
+        the consequence was visible: every listing kept whatever referring
+        domain count the CSV import gave it - zero for most of them - while
+        domain rating and traffic updated around it, so a refreshed listing
+        read as a site with traffic and no backlinks.
+      */
+      select: [
+        'index',
+        'url',
+        'domain_rating',
+        'org_traffic',
+        'org_traffic_top_by_country',
+        'refdomains',
+      ],
       // Without this the breakdown comes back with a single country, which
       // says nothing about how concentrated the audience is.
       top_countries: AHREFS_TOP_COUNTRIES,
@@ -194,12 +220,16 @@ export async function batchAnalysis(domains: string[]): Promise<BatchAnalysisRes
     // A target Ahrefs has no data for comes back with nulls. That is not a
     // reading of zero and must not be written as one - the domain is left
     // alone and reported as missing so it stays due.
-    if (row.domain_rating == null && row.org_traffic == null) continue;
+    if (row.domain_rating == null && row.org_traffic == null && row.refdomains == null) continue;
 
     metrics.set(domain, {
       // Stored as an integer; Ahrefs returns a float.
       domainRating: Math.round(row.domain_rating ?? 0),
       organicTraffic: Math.round(row.org_traffic ?? 0),
+      // Left undefined when Ahrefs said nothing, for the same reason the row
+      // above is skipped entirely when it said nothing at all: absence of a
+      // reading is not a reading of zero.
+      ...(row.refdomains == null ? {} : { referringDomains: Math.round(row.refdomains) }),
       topCountries: parseTopCountries(row.org_traffic_top_by_country),
     });
   }

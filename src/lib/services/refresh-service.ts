@@ -666,6 +666,21 @@ export async function runRefresh(): Promise<RunOutcome> {
           .update({
             domain_rating: metrics.domainRating,
             organic_traffic: metrics.organicTraffic,
+            /*
+              Referring domains, which this never wrote.
+
+              Domain rating and traffic updated on every run while the backlink
+              count kept whatever the CSV import left in it - zero for most -
+              so a refreshed listing read as a site with real traffic and no
+              backlinks at all, and the marketplace filters on that column.
+
+              Written only when Ahrefs reported one. A reading it did not give
+              is not a reading of zero, which is the same rule that decides
+              whether the row is written at all.
+            */
+            ...(metrics.referringDomains == null
+              ? {}
+              : { referring_domains: metrics.referringDomains }),
             last_ahrefs_refresh_at: now,
             ...audiencePatch(metrics, countryById.get(entry.id)),
           })
