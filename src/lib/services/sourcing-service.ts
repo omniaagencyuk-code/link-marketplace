@@ -1,7 +1,7 @@
 import { getAdminScopedClient } from '@/lib/supabase/server';
 import { isSupabaseEnabled } from '@/lib/supabase/config';
 import { chunk } from '@/lib/utils/chunk';
-import { waitingForReview } from '@/lib/sourcing/queue';
+import { DIFFERENT_SELLER, fromADifferentSeller, waitingForReview } from '@/lib/sourcing/queue';
 import {
   TRANSCRIPTION_VERSION,
   checkImages,
@@ -97,6 +97,16 @@ export interface PendingDraft {
   matched: boolean;
   lowConfidenceCount: number;
   flags: string[];
+  /**
+   * The address the listing's current price came from, where one is recorded.
+   *
+   * Only set on an update, and only when the price we hold came from an email
+   * rather than a CSV import. It is what `fromADifferentSeller` compares
+   * against - the question being "is somebody else about to replace the price
+   * we already have", which the duplicates page does not answer because that
+   * only looks at two pending replies competing with each other.
+   */
+  lastQuotedBy?: string | null;
 }
 
 export interface DuplicateGroup {
@@ -584,11 +594,25 @@ export const sourcingService = {
       limit,
     );
 
+    /*
+      Who last quoted us a price for the listings these updates would change.
+
+      Asked only for the slice being shown and only for the matched ones, so
+      it is one small query rather than a read of two tables - and asked at
+      all because an update from a seller we have never heard from is the one
+      thing in this queue that can cost money while looking routine.
+    */
+    const quotedBy = await lastQuotedBy(
+      mine
+        .filter((row) => row.matched_website_id)
+        .map((row) => String(row.matched_website_id)),
+    );
+
     const rows = mine.map((row) => {
       const email = Array.isArray(row.inbound_emails)
         ? (row.inbound_emails as Record<string, unknown>[])[0]
         : (row.inbound_emails as Record<string, unknown> | null);
-      return {
+      const draft = {
         id: String(row.id),
         domain: String(row.domain),
         fromAddress: String(email?.from_address ?? ''),
@@ -596,7 +620,21 @@ export const sourcingService = {
         matched: Boolean(row.matched_website_id),
         lowConfidenceCount: Number(row.low_confidence_count ?? 0),
         flags: ((row.flags as string[] | null) ?? []) as string[],
+        lastQuotedBy: row.matched_website_id
+          ? (quotedBy.get(String(row.matched_website_id)) ?? null)
+          : null,
       };
+
+      /*
+        Added here rather than stored on the draft: who last quoted a listing
+        changes every time another reply is approved, so a flag written at
+        extraction time would be answering a question about a different state
+        of the database. It also has to be in `flags` for "Approve all" to
+        skip it - that button takes the drafts with nothing flagged.
+      */
+      if (fromADifferentSeller(draft)) draft.flags = [...draft.flags, DIFFERENT_SELLER];
+
+      return draft;
     });
 
     return { rows, total };
@@ -1385,6 +1423,45 @@ async function contestedDrafts(): Promise<Map<string, Offer[]>> {
   }
 
   return new Map([...byDomain].filter(([, offers]) => offers.length > 1));
+}
+
+/**
+ * Who last quoted us a price, per website.
+ *
+ * `website_commercials.source_email_id` records the email an approval took its
+ * terms from, so this is "the seller whose price we are holding". Batched on
+ * the ids we hold rather than read whole, for the same reason `listedDomains`
+ * is: a full read is capped at its first page and the rows past it come back
+ * as absent, which here would quietly mean "no previous seller" and unflag the
+ * exact rows the flag exists for.
+ */
+async function lastQuotedBy(websiteIds: string[]): Promise<Map<string, string>> {
+  const found = new Map<string, string>();
+  const wanted = [...new Set(websiteIds.filter(Boolean))];
+  if (wanted.length === 0) return found;
+
+  const supabase = getAdminScopedClient();
+  for (const group of chunk(wanted, 200)) {
+    const { data, error } = await supabase
+      .from('website_commercials')
+      .select('website_id, inbound_emails:source_email_id (from_address)')
+      .in('website_id', group);
+    // Not fatal: without it the flag is absent, which is the state this queue
+    // was in before. Losing the whole page over it would be worse.
+    if (error) continue;
+
+    for (const row of (data ?? []) as Record<string, unknown>[]) {
+      const email = Array.isArray(row.inbound_emails)
+        ? (row.inbound_emails as Record<string, unknown>[])[0]
+        : (row.inbound_emails as Record<string, unknown> | null);
+      const address = email?.from_address;
+      if (typeof address === 'string' && address.trim()) {
+        found.set(String(row.website_id), address);
+      }
+    }
+  }
+
+  return found;
 }
 
 /**

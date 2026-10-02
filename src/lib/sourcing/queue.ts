@@ -64,3 +64,62 @@ export function defaultChoices<
   }
   return chosen;
 }
+
+/**
+ * The drafts that would create a listing, and the ones that would change one.
+ *
+ * Approving these does two different things, and the difference matters more
+ * than the table let on. A new draft creates a listing nobody was selling.
+ * An update overwrites what we pay on a listing already in the marketplace -
+ * its cost price, its per-niche costs, its payment terms, its contact - and
+ * leaves the sell price where it is. So approving a hundred of them in one
+ * press can quietly cut the margin on a hundred listings.
+ *
+ * Splitting the selection is what lets a reviewer take the safe half now and
+ * look at the other half properly.
+ */
+export function splitByKind<T extends { matched: boolean }>(
+  drafts: readonly T[],
+): { created: T[]; updated: T[] } {
+  return {
+    created: drafts.filter((draft) => !draft.matched),
+    updated: drafts.filter((draft) => draft.matched),
+  };
+}
+
+/**
+ * Is this update coming from somebody other than whoever last quoted us?
+ *
+ * The duplicates page holds back a domain two *pending replies* offer. It says
+ * nothing about a reply that competes with a listing already approved - one
+ * draft for the domain is not contested, so it goes in the ordinary queue and
+ * bulk approve walks straight through it, replacing the price one seller gave
+ * us with another seller's.
+ *
+ * Compared against the sender of the email the current price came from, not
+ * against the contact address on the listing: a publisher legitimately writes
+ * from a personal address and signs with a `sales@` one, so comparing those
+ * would flag half the queue. "Who last quoted this to us" is the question
+ * worth asking, and it is the one that costs money to get wrong.
+ *
+ * Unknown means unflagged. A listing imported from a CSV has no email behind
+ * its price, and flagging every one of those would make the flag noise.
+ */
+export function fromADifferentSeller(draft: {
+  matched: boolean;
+  fromAddress: string;
+  lastQuotedBy?: string | null;
+}): boolean {
+  if (!draft.matched) return false;
+  const previous = draft.lastQuotedBy?.trim().toLowerCase();
+  const now = draft.fromAddress.trim().toLowerCase();
+  if (!previous || !now) return false;
+  return previous !== now;
+}
+
+/**
+ * The flag name, shared so the queue that sets it and the table that labels it
+ * cannot disagree about its spelling - a mislabelled flag reads as a raw slug
+ * next to six readable ones, and a misspelled one reads as nothing at all.
+ */
+export const DIFFERENT_SELLER = 'different-seller';

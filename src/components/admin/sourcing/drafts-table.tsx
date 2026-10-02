@@ -7,6 +7,7 @@ import { AlertTriangle, Check, Sparkles, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
+import { DIFFERENT_SELLER, splitByKind } from '@/lib/sourcing/queue';
 import { Table, Td, Th, Tr } from '@/components/ui/table';
 import { TableScroll } from '@/components/ui/table-scroll';
 import { Pagination } from '@/components/ui/pagination';
@@ -30,6 +31,7 @@ const FLAG_LABELS: Record<string, string> = {
   'price-without-currency': 'Price with no currency',
   'terms-from-network': 'Terms from the network reply',
   'replied-again': 'They replied again - re-read',
+  [DIFFERENT_SELLER]: 'Someone else quoted this before',
 };
 
 export function DraftsTable({ drafts }: { drafts: DraftRow[] }) {
@@ -119,6 +121,20 @@ export function DraftsTable({ drafts }: { drafts: DraftRow[] }) {
     (draft) => draft.lowConfidenceCount === 0 && draft.flags.length === 0,
   );
 
+  /*
+    New and update are two different actions wearing one button.
+
+    A new draft creates a listing nobody was selling. An update overwrites what
+    we pay on a listing already in the marketplace - its cost price, its
+    per-niche costs, its payment terms - and leaves the sell price alone, so
+    approving a hundred in one press can cut the margin on a hundred listings
+    without anything on screen changing. Selecting one kind at a time is what
+    lets the safe half go through now.
+  */
+  const { created, updated } = splitByKind(drafts);
+
+  const select = (rows: DraftRow[]) => setSelected(new Set(rows.map((draft) => draft.id)));
+
   return (
     <div className="space-y-3">
       {confident.length > 0 ? (
@@ -141,6 +157,25 @@ export function DraftsTable({ drafts }: { drafts: DraftRow[] }) {
             <Sparkles className="h-3.5 w-3.5" aria-hidden="true" />
             Approve all {confident.length}
           </Button>
+        </div>
+      ) : null}
+
+      {drafts.length > 0 ? (
+        <div className="flex flex-wrap items-center gap-2 text-[13px] text-ink-soft">
+          <span>Select</span>
+          <Button variant="ghost" size="sm" onClick={() => select(drafts)}>
+            all {drafts.length}
+          </Button>
+          <Button variant="ghost" size="sm" disabled={created.length === 0} onClick={() => select(created)}>
+            new {created.length}
+          </Button>
+          <Button variant="ghost" size="sm" disabled={updated.length === 0} onClick={() => select(updated)}>
+            updates {updated.length}
+          </Button>
+          <span className="text-[12px] text-muted">
+            An update replaces what we pay on a listing already in the marketplace. Your sell prices
+            are never changed by approving.
+          </span>
         </div>
       ) : null}
 
@@ -168,9 +203,28 @@ export function DraftsTable({ drafts }: { drafts: DraftRow[] }) {
                 const warning = needsALook
                   ? ` ${needsALook} of them ${needsALook === 1 ? 'has something' : 'have something'} flagged for a human.`
                   : '';
+
+                /*
+                  The question says what each half actually does. It used to
+                  say "creating or updating a listing", which is true and tells
+                  nobody that the update half replaces a price already in the
+                  database with the one in this reply.
+                */
+                const picked = splitByKind(chosen);
+                const effect = [
+                  picked.created.length
+                    ? `${picked.created.length} new ${picked.created.length === 1 ? 'listing' : 'listings'}`
+                    : '',
+                  picked.updated.length
+                    ? `${picked.updated.length} already in the marketplace, where what we pay is replaced by the price in this reply`
+                    : '',
+                ]
+                  .filter(Boolean)
+                  .join(', and ');
+
                 if (
                   !window.confirm(
-                    `Approve ${chosen.length} ${chosen.length === 1 ? 'draft' : 'drafts'}?${warning} Each is approved with its own values, creating or updating a listing.`,
+                    `Approve ${chosen.length} ${chosen.length === 1 ? 'draft' : 'drafts'}?${warning} That is ${effect}. Sell prices are not changed.`,
                   )
                 ) {
                   return;

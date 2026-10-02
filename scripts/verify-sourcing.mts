@@ -14,7 +14,13 @@ import { applyGeneralPriceToNiches, assumedNicheCosts, countLowConfidence, expan
 import { sensitiveNicheSlugs } from '../src/lib/config/accepted-niches';
 import { extractLinks, looksLikeRateCardLead } from '../src/lib/sourcing/links';
 import { offersAgree, offersNote, rankOffers, senderSignal } from '../src/lib/sourcing/offers';
-import { defaultChoices, waitingForReview } from '../src/lib/sourcing/queue';
+import {
+  DIFFERENT_SELLER,
+  defaultChoices,
+  fromADifferentSeller,
+  splitByKind,
+  waitingForReview,
+} from '../src/lib/sourcing/queue';
 import {
   MAX_IMAGES,
   TRANSCRIPTION_RULES,
@@ -1390,6 +1396,107 @@ console.log('\n--- driving the parts, end to end ---');
   is('a failed pass fails the whole read', broken.result, undefined);
   is('and says which part it was', /part 2 of 3/.test(broken.error ?? ''), true);
   is('without running the passes after it', seen, 2);
+}
+
+console.log('\n--- approving new is not the same as approving an update ---');
+{
+  /*
+    They are two different actions wearing one button. A new draft creates a
+    listing nobody was selling; an update overwrites what we pay on a listing
+    already in the marketplace - its cost price, its per-niche costs, its
+    payment terms - and leaves the sell price where it is. So a hundred
+    updates approved in one press can cut the margin on a hundred listings
+    with nothing on the screen changing.
+  */
+  const rows = [
+    { id: '1', matched: false },
+    { id: '2', matched: true },
+    { id: '3', matched: false },
+    { id: '4', matched: true },
+  ];
+  const { created, updated } = splitByKind(rows);
+  is('the new ones are the unmatched ones', created.map((r) => r.id).join(','), '1,3');
+  is('and the updates are the matched ones', updated.map((r) => r.id).join(','), '2,4');
+  is('between them they are every draft', created.length + updated.length, rows.length);
+  is('an empty queue splits into nothing', splitByKind([]).created.length, 0);
+}
+
+console.log('\n--- an update from somebody else ---');
+{
+  /*
+    The duplicates page holds back a domain that two *pending replies* offer.
+    It says nothing about a reply competing with a listing already approved:
+    one draft for that domain is not contested, so it sits in the ordinary
+    queue and bulk approve walks through it, replacing the price one seller
+    gave us with another seller's - which is the case worth catching, because
+    it looks exactly like routine work.
+  */
+  const sameSeller = fromADifferentSeller({
+    matched: true,
+    fromAddress: 'pas@mgdk.dk',
+    lastQuotedBy: 'pas@mgdk.dk',
+  });
+  is('the same publisher requoting is not flagged', sameSeller, false);
+
+  is(
+    'a different address quoting the same listing is',
+    fromADifferentSeller({ matched: true, fromAddress: 'reseller@agency.com', lastQuotedBy: 'pas@mgdk.dk' }),
+    true,
+  );
+  is(
+    'and case or spacing does not make a seller a different one',
+    fromADifferentSeller({ matched: true, fromAddress: '  PAS@MGDK.dk ', lastQuotedBy: 'pas@mgdk.dk' }),
+    false,
+  );
+
+  // A new listing has nothing to overwrite, so there is nothing to warn about.
+  is(
+    'a new listing is never flagged',
+    fromADifferentSeller({ matched: false, fromAddress: 'anyone@x.com', lastQuotedBy: 'other@y.com' }),
+    false,
+  );
+
+  /*
+    Unknown is not suspicious. A listing imported from a CSV has no email
+    behind its price, and flagging every one of those would make the flag
+    noise - which is how a flag stops being read.
+  */
+  is(
+    'a listing with no email behind its price is not flagged',
+    fromADifferentSeller({ matched: true, fromAddress: 'someone@x.com', lastQuotedBy: null }),
+    false,
+  );
+  is(
+    'nor is one where we do not know who is writing',
+    fromADifferentSeller({ matched: true, fromAddress: '', lastQuotedBy: 'pas@mgdk.dk' }),
+    false,
+  );
+
+  /*
+    The flag has to reach `flags`, because "Approve all" takes the drafts with
+    nothing flagged - a warning the bulk button does not read is a warning
+    that changes nothing.
+  */
+  const service = fs.readFileSync(path.join(process.cwd(), 'src/lib/services/sourcing-service.ts'), 'utf8');
+  is(
+    'the queue adds it to the flags the bulk button reads',
+    /flags = \[\.\.\.draft\.flags, DIFFERENT_SELLER\]/.test(service),
+    true,
+  );
+  const table = fs.readFileSync(path.join(process.cwd(), 'src/components/admin/sourcing/drafts-table.tsx'), 'utf8');
+  is('and the table has a label for it', table.includes('[DIFFERENT_SELLER]:'), true);
+  is(
+    'both sides spell it the same way, because they share the constant',
+    DIFFERENT_SELLER,
+    'different-seller',
+  );
+
+  // The one that decides whether any of this runs.
+  is(
+    'the bulk button still skips anything flagged',
+    /lowConfidenceCount === 0 && draft\.flags\.length === 0/.test(table),
+    true,
+  );
 }
 
 console.log(failed ? `\n  ${failed} FAILED\n` : '\n  all passed\n');
