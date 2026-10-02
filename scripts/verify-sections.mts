@@ -864,33 +864,27 @@ console.log('\n--- a page in code cannot be shadowed by a page in the admin ---'
 console.log('\n--- every page can grow without a deploy ---');
 {
   /*
-    Two states, and which one a page is in is not a guess.
+    One state now, where there used to be two.
 
-    The niche template has been converted: its bands are registered sections,
-    its routes render from those and fall back to the template. The service
-    template has not, so it still takes a slot and sections are an addition to
-    what it draws rather than a replacement for it. Mixing those two up is how
-    a page gets blanked, so each is asserted as itself.
+    The service template was the unconverted half: it took a slot, and its
+    sections were an addition to what it drew rather than a replacement for it.
+    That is what put a hero at the top of a section list and halfway down the
+    live page. Both templates render from their sections and fall back to the
+    template while there are none, so a page has one shape rather than two.
   */
   const service = read('src/components/marketing/service-page.tsx');
-  yes('the service template still takes a slot', service.includes('extra?: ReactNode'));
-  yes('and does not import the builder', !service.includes('page-sections'));
+  yes('the service template no longer takes a slot', !service.includes('extra'));
+  yes('and still does not import the builder', !service.includes('page-sections'));
 
-  const slotted = [
+  const unified = [
+    'src/app/(marketing)/gambling-link-building/page.tsx',
+    'src/app/(marketing)/[slug]/page.tsx',
     'src/app/(marketing)/buy-backlinks/page.tsx',
     'src/app/(marketing)/guest-posts/page.tsx',
     'src/app/(marketing)/niche-edits/page.tsx',
     'src/app/(marketing)/link-building/page.tsx',
     'src/app/(marketing)/digital-pr/page.tsx',
     'src/app/(marketing)/link-building-agencies/page.tsx',
-  ];
-  for (const route of slotted) {
-    yes(`${route.split('/').at(-2)} can still grow`, read(route).includes('extra={<PageSections'));
-  }
-
-  const unified = [
-    'src/app/(marketing)/gambling-link-building/page.tsx',
-    'src/app/(marketing)/[slug]/page.tsx',
   ];
   for (const route of unified) {
     yes(
@@ -2072,6 +2066,113 @@ console.log('\n--- links in prose are not distinguished by colour alone ---');
       ),
     );
   }
+}
+
+console.log('\n--- a service page is its sections, hero first ---');
+{
+  /*
+    The bug this block exists for was on a live page. `/crypto-backlinks` had a
+    hero at the top of its section list and halfway down the page, because the
+    service route rendered the whole template and then appended the sections to
+    the bottom of it - the page had two shapes at once and the code's won.
+
+    Two things made that possible, and both are checked here: `service` was the
+    one template `blueprintFor` could not convert, and the route passed its
+    sections as `extra` rather than rendering them as the page.
+  */
+  const { blueprintFor, canConvert } = await import('../src/lib/cms/migrate/page-to-sections');
+  const { customPageDefaults } = await import('../src/lib/cms/custom-page');
+
+  yes('the service template can be converted', canConvert('service'));
+
+  const blueprint = blueprintFor('service', customPageDefaults('Crypto backlinks', 'service'));
+
+  is('the first section is the hero', blueprint[0]?.component, 'hero');
+  yes('and it is locked, so it cannot be dragged down the page', blueprint[0]?.locked === true);
+  is('there is exactly one hero', blueprint.filter((entry) => entry.component === 'hero').length, 1);
+  yes('nothing else is locked', blueprint.slice(1).every((entry) => !entry.locked));
+  is('the last section is the closing call to action', blueprint.at(-1)?.component, 'cta');
+
+  /*
+    The band in the screenshot: the editorial column with the related links
+    sticky beside it. One section and not two - split apart the sidebar
+    becomes a full-width strip and the page has changed, which is the one
+    thing a conversion is not for.
+  */
+  const body = blueprint.find((entry) => entry.component === 'article-body');
+  yes('the main section and the related box are one section', Boolean(body));
+  is('on the variant that has the sidebar', body?.variant, 'default');
+  yes('carrying the page body', Array.isArray(body?.values.sections) && (body!.values.sections as unknown[]).length > 0);
+  yes('and the related links', Array.isArray(body?.values.related) && (body!.values.related as unknown[]).length > 0);
+
+  // The copy arrives as the page's copy, not as a component's placeholder.
+  const hero = blueprint[0]!;
+  is('the hero carries the page heading', hero.values.heading, 'Crypto backlinks');
+  yes('and its intro', String(hero.values.body ?? '').length > 20);
+
+  /*
+    The route. Sections have to BE the page - a fallback the template renders
+    only while there are none - or a hero added in the builder lands under the
+    one the template already drew.
+  */
+  const routes = [
+    'src/app/(marketing)/[slug]/page.tsx',
+    'src/app/(marketing)/guest-posts/page.tsx',
+    'src/app/(marketing)/link-building/page.tsx',
+    'src/app/(marketing)/buy-backlinks/page.tsx',
+    'src/app/(marketing)/niche-edits/page.tsx',
+    'src/app/(marketing)/digital-pr/page.tsx',
+    'src/app/(marketing)/link-building-agencies/page.tsx',
+  ];
+  let appended = 0;
+  let renderFromSections = 0;
+  for (const route of routes) {
+    const source = readFileSync(new URL(`../${route}`, import.meta.url), 'utf8');
+    if (/extra=\{<PageSections/.test(source)) appended += 1;
+    if (/<PageSections[\s\S]*?fallback=\{[\s\S]*?<ServicePage/.test(source)) renderFromSections += 1;
+  }
+  is('no service route appends its sections to the bottom any more', appended, 0);
+  is('every one renders them as the page, with the template as the fallback', renderFromSections, routes.length);
+
+  // The slot they were appended through is gone, so it cannot be used again.
+  const template = readFileSync(
+    new URL('../src/components/marketing/service-page.tsx', import.meta.url),
+    'utf8',
+  );
+  yes('and the template has no slot left to append into', !template.includes('extra'));
+
+  /*
+    Every non-empty starter begins with a hero, which was the opposite of the
+    rule before: sections used to be an addition to a template that already
+    drew one. A starter without a hero now makes a page with no hero at all.
+  */
+  const { STARTERS } = await import('../src/lib/cms/starters');
+  const headless = STARTERS.filter(
+    (starter) => starter.sections.length > 0 && !/hero$/.test(starter.sections[0] ?? ''),
+  );
+  is('no starter builds a page without a hero at the top', headless.length, 0);
+
+  // A new service page and a converted one are the same page, or "new" and
+  // "converted" are quietly two different designs.
+  const starter = STARTERS.find((entry) => entry.key === 'service');
+  /*
+    Every section the blueprint produces appears in the starter, in order.
+
+    Not equality: the blueprint leaves out bands the page has nothing in - a
+    new page has no questions, so it gets no empty FAQ - while the starter
+    offers one to write into. A subsequence is the honest relationship, and it
+    still fails if the two lists disagree about what a service page is.
+  */
+  const offered = starter?.sections ?? [];
+  let at = -1;
+  const inOrder = blueprint.every((entry) => {
+    const found = offered.indexOf(entry.component, at + 1);
+    if (found === -1) return false;
+    at = found;
+    return true;
+  });
+  yes('every section a conversion produces is one the starter offers, in order', inOrder);
+  yes('and the starter adds only empty bands to write into', offered.includes('faq'));
 }
 
 console.log(failed ? `\n  ${failed} FAILED\n` : '\n  all passed\n');

@@ -1,12 +1,12 @@
-import type { Metadata } from 'next';
-import { FileEdit, Filter, PenTool, Timer } from 'lucide-react';
-import { ServicePage } from '@/components/marketing/service-page';
-import { PageSections } from '@/components/cms/page-sections';
-import { metadataForPage } from '@/lib/cms/metadata';
-import { pageContentService } from '@/lib/services/page-content-service';
-import { websiteService } from '@/lib/services';
+import type { Metadata } from "next";
+import { FileEdit, Filter, PenTool, Timer } from "lucide-react";
+import { ServicePage } from "@/components/marketing/service-page";
+import { PageSections } from "@/components/cms/page-sections";
+import { metadataForPage } from "@/lib/cms/metadata";
+import { pageContentService } from "@/lib/services/page-content-service";
+import { websiteService } from "@/lib/services";
 
-const SLUG = 'guest-posts';
+const SLUG = "guest-posts";
 
 /** Icons are fixed in code - editors change copy, not composition. */
 const highlightIcons = [Filter, PenTool, FileEdit, Timer];
@@ -21,14 +21,26 @@ export default async function Page() {
     websiteService.getPublicPreview(6),
   ]);
 
+  /*
+    Sections are the page; the template is what it renders until it has any.
+
+    `extra` drew the whole template and then appended the page's sections to
+    the bottom, so a hero added in the builder sat first in the section list
+    and halfway down the page, under the one the template had already drawn.
+  */
   return (
-    <ServicePage
-      content={content}
-      highlightIcons={highlightIcons}
-      preview={preview.rows}
-      path="/guest-posts"
-      breadcrumbLabel="Guest posts"
-      extra={<PageSections slug={SLUG} />}
+    <PageSections
+      slug={SLUG}
+      provided={{ preview: preview.rows }}
+      fallback={
+        <ServicePage
+          content={content}
+          highlightIcons={highlightIcons}
+          preview={preview.rows}
+          path="/guest-posts"
+          breadcrumbLabel="Guest posts"
+        />
+      }
     />
   );
 }

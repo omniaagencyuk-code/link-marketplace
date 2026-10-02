@@ -641,10 +641,125 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
+/**
+ * The blueprint for a service page, in the order the template draws it.
+ *
+ * This is the template every page created from the admin uses unless it is
+ * told otherwise, and until now it was the one template that could not be
+ * converted. That had a visible consequence: `canConvert('service')` was
+ * false, so the route rendered the template and hung the page's sections off
+ * the end of it. A hero added in the builder sat at the top of the section
+ * list and halfway down the page, because the whole template was above it.
+ *
+ * Six bands, six sections, in the template's own order. Nothing is rephrased
+ * on the way through - the live page's copy arrives as the section's copy.
+ *
+ * The body and the related links are one section and not two, for the reason
+ * the niche blueprint gives: the related box is a sticky sidebar *inside* the
+ * body's grid. Split out it would become a full-width strip and the page would
+ * have changed, which is the one thing a conversion is not for.
+ */
+export function servicePageBlueprint(values: PageValues): SectionBlueprint[] {
+  const blueprints: SectionBlueprint[] = [];
+
+  /*
+    Locked, and first.
+
+    It holds the page's only H1, and a page with two heroes or with its hero
+    in the middle is a mistake the builder should not make available. Nothing
+    else here is locked: a converted page an editor cannot rearrange would
+    have missed the point of converting it.
+  */
+  blueprints.push({
+    component: 'hero',
+    variant: 'default',
+    locked: true,
+    values: {
+      eyebrow: text(values, 'hero', 'eyebrow'),
+      heading: text(values, 'hero', 'title'),
+      body: text(values, 'hero', 'intro'),
+      primaryCta: group(values, 'hero').primaryCta,
+      secondaryCta: group(values, 'hero').secondaryCta,
+      microcopy: text(values, 'hero', 'microcopy'),
+    },
+  });
+
+  // Bands the template hides when they are empty are not created empty. A
+  // section that renders nothing is a row in the editor that looks like
+  // content and is not, and the library puts it back in one click.
+  if (list(values, 'highlights', 'items').length > 0) {
+    blueprints.push({
+      component: 'feature-cards',
+      variant: 'four',
+      locked: false,
+      values: { heading: '', body: '', items: list(values, 'highlights', 'items') },
+    });
+  }
+
+  blueprints.push({
+    component: 'marketplace-preview',
+    variant: 'default',
+    locked: false,
+    values: {
+      heading: text(values, 'preview', 'heading'),
+      body: text(values, 'preview', 'body'),
+      cta: group(values, 'preview').cta,
+      note: text(values, 'preview', 'note'),
+    },
+  });
+
+  /*
+    The body and its sidebar: the band in the screenshot.
+
+    `article-body` already draws exactly this - the editorial column with the
+    related links sticky beside it - and its `default` variant is the one with
+    the sidebar. The sidebar heading was hard-coded as "Related" in the
+    template and is a field here, which is a small gain: it was never editable
+    before.
+  */
+  blueprints.push({
+    component: 'article-body',
+    variant: 'default',
+    locked: false,
+    values: {
+      sections: list(values, 'body', 'sections'),
+      relatedHeading: 'Related',
+      related: list(values, 'related', 'items'),
+    },
+  });
+
+  if (list(values, 'faqs', 'items').length > 0) {
+    blueprints.push({
+      component: 'faq',
+      variant: 'default',
+      locked: false,
+      values: {
+        heading: 'Frequently asked questions',
+        items: list(values, 'faqs', 'items'),
+      },
+    });
+  }
+
+  blueprints.push({
+    component: 'cta',
+    variant: 'dark',
+    locked: false,
+    values: {
+      heading: text(values, 'cta', 'heading'),
+      body: text(values, 'cta', 'body'),
+      primaryCta: group(values, 'cta').primaryCta,
+      secondaryCta: group(values, 'cta').secondaryCta,
+    },
+  });
+
+  return blueprints;
+}
+
 /** Which templates can be converted, and how. */
 const BLUEPRINTS: Record<string, (values: PageValues) => SectionBlueprint[]> = {
   niche: nichePageBlueprint,
   home: homePageBlueprint,
+  service: servicePageBlueprint,
 };
 
 export function canConvert(template: string): boolean {
