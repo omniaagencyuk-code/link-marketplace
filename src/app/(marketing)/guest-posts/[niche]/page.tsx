@@ -27,11 +27,20 @@ import type { NicheSlug } from '@/lib/types';
  * two of our own pages competing for it helps nobody.
  */
 
-export const dynamic = "force-dynamic";
+/*
+  Rendered per request, and therefore not pre-generated.
 
-export async function generateStaticParams() {
-  return (await publishedNiches()).map((niche) => ({ niche }));
-}
+  This had a `generateStaticParams` that called `publishedNiches()` to list the
+  niches at build time. That reads the marketplace, which reads Supabase, which
+  calls `cookies()` - and `generateStaticParams` runs at build time with no HTTP
+  request, so Next refuses it and the whole build fails.
+
+  It also had nothing to do: the route is `force-dynamic`, so every request
+  renders on demand and a pre-generated list of params is never consulted. The
+  niches it would have listed come from the database anyway, which changes
+  between deploys.
+*/
+export const dynamic = 'force-dynamic';
 
 export async function generateMetadata({
   params,

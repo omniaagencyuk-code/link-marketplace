@@ -7,7 +7,7 @@
  * shows them the same thing more politely. Neither announces itself, and both
  * are found by a competitor rather than by us.
  */
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { safeReturnPath, returnPathFor } from '../src/lib/auth/return-to';
 import { spread, toSampleRows, toStats, MIN_LISTINGS_FOR_A_PAGE } from '../src/lib/services/niche-landing';
 import { NICHE_COPY } from '../src/lib/content/niche-guest-posts';
@@ -454,6 +454,59 @@ console.log('\n--- reading what a publisher says about themselves ---');
   yes('requests time out rather than hanging a run', /AbortSignal\.timeout/.test(service));
   yes('the crawler says who it is', /PressParrotBot|USER_AGENT/.test(service));
   yes('and does not open hundreds of connections at once', /AT_ONCE/.test(service));
+}
+
+console.log('\n--- nothing reads the database at build time ---');
+{
+  /*
+    Five production deploys failed in a row and the local build passed every
+    time, because locally Supabase is switched off: the data layer falls back to
+    seed data and never opens a client. With it on - which is every deploy - the
+    repository calls `getServerClient()`, which calls `cookies()`, and Next
+    refuses that outside an HTTP request:
+
+      Route /guest-posts/[niche] used `cookies()` inside `generateStaticParams`.
+
+    `generateStaticParams` is the one place a page runs at build time, so it is
+    the one place a data-layer call turns into a failed deploy rather than a
+    slow page. It is also pointless on a `force-dynamic` route, which is what
+    that one was.
+  */
+  const pages: string[] = [];
+  const walk = (dir: string) => {
+    for (const entry of readdirSync(new URL(`../${dir}`, import.meta.url), { withFileTypes: true })) {
+      if (entry.isDirectory()) walk(`${dir}/${entry.name}`);
+      else if (entry.name === 'page.tsx' || entry.name === 'layout.tsx') pages.push(`${dir}/${entry.name}`);
+    }
+  };
+  walk('src/app');
+
+  yes(`every route was found to check (${pages.length})`, pages.length > 20);
+
+  const offenders: string[] = [];
+  for (const page of pages) {
+    /*
+      Comments stripped first.
+
+      Without that, this flagged the very page it was written for: the comment
+      explaining why `generateStaticParams` was removed names both it and the
+      function it used to call, so the check matched prose describing the
+      absence of the thing it was looking for.
+    */
+    const source = read(page)
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .replace(/^\s*\/\/.*$/gm, '');
+    const at = source.indexOf('generateStaticParams');
+    if (at === -1) continue;
+
+    // The function body, not the file: a page may legitimately read the
+    // database in the component below it, which runs per request.
+    const body = source.slice(at, at + 600);
+    if (/websiteService|publishedNiches|blogService|customPageService|pageContentService|getServerClient|supabase/i.test(body)) {
+      offenders.push(page);
+    }
+  }
+  is('no generateStaticParams reads the data layer', offenders.join(', '), '');
 }
 
 console.log(failed ? `\n  ${failed} FAILED\n` : '\n  all passed\n');
