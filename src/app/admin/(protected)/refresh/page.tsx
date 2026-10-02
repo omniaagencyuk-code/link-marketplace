@@ -4,6 +4,8 @@ import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableWrap, Td, Th, Tr } from '@/components/ui/table';
 import { RefreshControls } from '@/components/admin/refresh-controls';
+import { FillDescriptions } from '@/components/admin/fill-descriptions';
+import { blankDescriptionCount } from '@/lib/services/site-description-service';
 import { RefreshProgress } from '@/components/admin/refresh-progress';
 import { refreshService } from '@/lib/services/refresh-service';
 import { formatDateTime, formatNumber } from '@/lib/utils/format';
@@ -17,11 +19,14 @@ const TIER_LABELS: Record<number, string> = {
 };
 
 export default async function RefreshPage() {
-  const [status, live] = await Promise.all([
+  const [status, live, blankDescriptions] = await Promise.all([
     refreshService.getStatus(),
     // Read on the server too, so a page opened mid-run shows the bar on the
     // first paint rather than three seconds later.
     refreshService.liveRun().catch(() => null),
+    // Zero on a failure rather than taking the page down: the count decides
+    // whether one button is enabled, which is not worth a 500.
+    blankDescriptionCount().catch(() => 0),
   ]);
   const { settings } = status;
 
@@ -74,6 +79,10 @@ export default async function RefreshPage() {
           {/* Nothing at all when nothing is running, so the page is exactly
               as it was the rest of the time. */}
           <RefreshProgress initial={live} />
+
+          {/* A different kind of job on the same page: it brings listings up to
+              date like the refresh above, and spends nothing doing it. */}
+          <FillDescriptions blank={blankDescriptions} />
 
           {/* ------------------------------------------- spend projection */}
           {projectionWarning ? (

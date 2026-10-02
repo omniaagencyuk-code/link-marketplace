@@ -12,6 +12,7 @@ import { safeReturnPath, returnPathFor } from '../src/lib/auth/return-to';
 import { spread, toSampleRows, toStats, MIN_LISTINGS_FOR_A_PAGE } from '../src/lib/services/niche-landing';
 import { NICHE_COPY } from '../src/lib/content/niche-guest-posts';
 import { websiteOverview } from '../src/lib/websites/overview';
+import { describeFromHtml, isUsefulDescription } from '../src/lib/websites/site-description';
 import type { Website, WebsiteListItem } from '../src/lib/types';
 
 let failed = 0;
@@ -351,6 +352,108 @@ console.log('\n--- what a listing overview says ---');
   const panel = read('src/components/website/website-sections.tsx');
   yes('the panel renders the derived overview', panel.includes('websiteOverview(website)'));
   yes('and shows no heading when there is nothing to say', /\{overview \? \(/.test(panel));
+}
+
+console.log('\n--- reading what a publisher says about themselves ---');
+{
+  /*
+    `description` is empty on almost every listing - the importer writes '' and
+    the only thing that has ever filled it is somebody typing into the admin
+    editor. It is also what the overview leads with and what the card, the table
+    row and the snippet print, so one empty column shows in five places.
+
+    A publisher's own meta description fills it, costs nothing but an HTTP
+    request, and is better copy than anything that could be generated: written
+    by them, about them, for strangers.
+  */
+  const found = (html: string) => describeFromHtml(html);
+
+  is(
+    'a plain meta description is read',
+    found('<meta name="description" content="UK casino review desk covering licensing, bonuses and responsible play.">'),
+    'UK casino review desk covering licensing, bonuses and responsible play.',
+  );
+
+  // Real pages put content before name as often as after, and quote it with
+  // either kind of quote or none. A parser that only handles the tidy form
+  // reports half the web as having no description.
+  is(
+    'however the attributes are ordered',
+    found('<meta content="Danish personal finance desk covering mortgages and pensions daily." name="description"/>'),
+    'Danish personal finance desk covering mortgages and pensions daily.',
+  );
+  is(
+    'and whichever quotes are used',
+    found("<meta name='description' content='Independent motoring title covering EV running costs and used buying.'>"),
+    'Independent motoring title covering EV running costs and used buying.',
+  );
+  yes(
+    'entities are decoded rather than printed',
+    found('<meta name="description" content="Film &amp; TV criticism &mdash; reviews and streaming news every single week.">') ===
+      'Film & TV criticism — reviews and streaming news every single week.',
+  );
+
+  yes(
+    'Open Graph is the fallback',
+    found('<meta property="og:description" content="Sports betting strategy, odds comparison and bookmaker reviews for punters.">')?.startsWith('Sports betting strategy'),
+  );
+  yes(
+    'and the title the last resort',
+    found('<title>Allotment growing, soil health and UK planting calendars - Garden Grain</title>')?.startsWith('Allotment growing'),
+  );
+
+  /*
+    The cases that matter most, because each one is grammatical, specific-looking
+    and says nothing about the publication. A WordPress install with no SEO
+    plugin, a parked domain and a block page would all produce a confident
+    sentence on a page somebody spends money from.
+  */
+  for (const [what, html] of [
+    ['a WordPress default', '<meta name="description" content="Just another WordPress site">'],
+    ['a parked domain', '<meta name="description" content="This domain is for sale. Buy it now from our marketplace today.">'],
+    ['a block page', '<title>Attention Required! | Cloudflare</title>'],
+    ['a placeholder', '<meta name="description" content="Your site description goes here and should be replaced">'],
+    ['a holding page', '<meta name="description" content="Coming soon - our brand new website is under construction">'],
+    ['an error page', '<title>404 Not Found - the page you wanted is not here any more</title>'],
+    ['something too short to say anything', '<meta name="description" content="Home page">'],
+    ['a single word', '<meta name="description" content="Bingo">'],
+    ['a page with nothing on it', '<html><body><h1>Hello</h1></body></html>'],
+  ] as const) {
+    is(`${what} contributes nothing`, found(html), undefined);
+  }
+
+  // Long enough to be a sentence about a site, short enough to be a line.
+  yes('a very long description is trimmed', (found(`<meta name="description" content="${'a publication about things '.repeat(40)}">`) ?? '').length <= 321);
+  yes('and a reasonable one is not', !(found('<meta name="description" content="A weekly magazine covering independent film, music and the people who make them.">') ?? '').endsWith('…'));
+
+  is('the floor is a sentence, not a word', isUsefulDescription('Bingo'), false);
+  is('and a real line clears it', isUsefulDescription('A weekly magazine covering independent film and music.'), true);
+
+  /*
+    The run only fills blanks, so it is safe to press repeatedly and cannot undo
+    an edit - which is also why there is no "overwrite" option anywhere in it.
+  */
+  const service = read('src/lib/services/site-description-service.ts');
+
+  /*
+    Scoped to the runner's own body, not the file.
+
+    The filter appears twice - the runner uses it and the counter on the admin
+    page uses it - so a check against the whole file passed with the runner's
+    copy deleted. Which is to say it was not checking anything: it would have
+    let through a pass that overwrote every description in the marketplace.
+  */
+  const runner = service.slice(
+    service.indexOf('export async function fillSiteDescriptions'),
+    service.indexOf('export async function blankDescriptionCount'),
+  );
+  yes('the runner was found to check', runner.length > 400);
+  yes('only listings with no description are looked at', /description\.is\.null,description\.eq\./.test(runner));
+  yes('and only the description is written', /\.update\(\{ description: /.test(runner));
+  yes('nothing else on the row is touched', !/\.update\(\{[^}]*(?:price|status|domain|niche)/.test(runner));
+  yes('requests time out rather than hanging a run', /AbortSignal\.timeout/.test(service));
+  yes('the crawler says who it is', /PressParrotBot|USER_AGENT/.test(service));
+  yes('and does not open hundreds of connections at once', /AT_ONCE/.test(service));
 }
 
 console.log(failed ? `\n  ${failed} FAILED\n` : '\n  all passed\n');
