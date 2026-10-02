@@ -499,5 +499,71 @@ console.log('\n--- referring domains, which the refresh never wrote ---');
   );
 }
 
+console.log('\n--- refreshing one tier ---');
+{
+  /*
+    "Run now" took whatever was due in tier order, which is right for a nightly
+    schedule and wrong for somebody at the screen deciding how to spend the
+    month: five hundred overdue tier 3 domains is tens of thousands of units and
+    it was all or nothing.
+  */
+  const refresh = readFileSync(
+    new URL('../src/lib/services/refresh-service.ts', import.meta.url),
+    'utf8',
+  );
+
+  is('the run takes an optional tier', /runRefresh\(options: RunOptions = \{\}\)/.test(refresh), true);
+  is('and passes it to the selection', /p_tier: options\.tier \?\? null/.test(refresh), true);
+  // Null is every tier, which is what the schedule wants and what the
+  // one-argument form of the function did - so the nightly job is unchanged.
+  is(
+    'the scheduled run still asks for every tier',
+    /runRefresh\(\)/.test(
+      readFileSync(new URL('../src/app/api/cron/ahrefs-refresh/route.ts', import.meta.url), 'utf8'),
+    ),
+    true,
+  );
+
+  /*
+    The tier comes from a browser. A value that is not a real tier would reach
+    the database as a filter nothing matches - a run that spends nothing,
+    refreshes nothing and reports that it completed.
+  */
+  const action = readFileSync(
+    new URL('../src/app/admin/(protected)/refresh/actions.ts', import.meta.url),
+    'utf8',
+  );
+  is(
+    'a tier from the browser is checked before it is used',
+    /tier === 1 \|\| tier === 2 \|\| tier === 3 \? tier : undefined/.test(action),
+    true,
+  );
+
+  // The history is where somebody checks what a run cost, so it has to say
+  // which slice it was.
+  is('the run history records which tier ran', /in tier \$\{options\.tier\}/.test(refresh), true);
+
+  const migration = readFileSync(
+    new URL('../supabase/migrations/0045_refresh_one_tier.sql', import.meta.url),
+    'utf8',
+  );
+  is('the selection filters on it', /p_tier is null or coalesce\(w\.ahrefs_tier, 3\) = p_tier/.test(migration), true);
+  // The one-argument form stays: the database is migrated before the code that
+  // uses it, so the running deploy must keep working through the gap.
+  is(
+    'and the old signature is left in place',
+    !/drop function[^\n]*ahrefs_due_domains\(integer\)/.test(migration),
+    true,
+  );
+
+  const button = readFileSync(
+    new URL('../src/components/admin/run-tier.tsx', import.meta.url),
+    'utf8',
+  );
+  is('the button asks before spending', /window\.confirm/.test(button), true);
+  is('and names the count it will act on', /\$\{overdue\}/.test(button), true);
+  is('a tier with nothing due offers no button', /overdue === 0/.test(button), true);
+}
+
 console.log(failed ? `\n  ${failed} FAILED\n` : '\n  all passed\n');
 process.exit(failed ? 1 : 0);

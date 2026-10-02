@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableWrap, Td, Th, Tr } from '@/components/ui/table';
 import { RefreshControls } from '@/components/admin/refresh-controls';
 import { FillDescriptions } from '@/components/admin/fill-descriptions';
+import { RunTier } from '@/components/admin/run-tier';
 import { blankDescriptionCount } from '@/lib/services/site-description-service';
 import { RefreshProgress } from '@/components/admin/refresh-progress';
 import { refreshService } from '@/lib/services/refresh-service';
@@ -190,6 +191,9 @@ export default async function RefreshPage() {
                         <Th>Interval</Th>
                         <Th className="text-right">Overdue</Th>
                         <Th className="text-right">Total</Th>
+                        <Th className="text-right">
+                          <span className="sr-only">Refresh this tier</span>
+                        </Th>
                       </tr>
                     </thead>
                     <tbody>
@@ -210,6 +214,11 @@ export default async function RefreshPage() {
                           </Td>
                           <Td className="tabular text-right text-[13px] text-muted">
                             {formatNumber(row.total)}
+                          </Td>
+                          {/* One tier at a time, from the row that says how
+                              many of it are overdue. */}
+                          <Td className="text-right">
+                            <RunTier tier={(row.tier as 1 | 2 | 3) ?? 3} overdue={row.overdue} />
                           </Td>
                         </Tr>
                       ))}

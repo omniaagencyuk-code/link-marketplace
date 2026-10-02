@@ -437,7 +437,20 @@ async function finishRun(
  * nothing and records that it did nothing, which is what makes the schedule
  * itself testable before any money is at stake.
  */
-export async function runRefresh(): Promise<RunOutcome> {
+export interface RunOptions {
+  /**
+   * Refresh one tier only, or every tier when absent.
+   *
+   * The nightly job never passes one: it takes whatever is due, in tier order,
+   * which is what a schedule should do. This is for a person at the screen
+   * deciding how to spend the month - five hundred overdue tier 3 domains is
+   * tens of thousands of units, and before this the only way to refresh a
+   * cheaper slice was to wait.
+   */
+  tier?: 1 | 2 | 3;
+}
+
+export async function runRefresh(options: RunOptions = {}): Promise<RunOutcome> {
   const idle = { domainsRefreshed: 0, domainsFailed: 0, batches: 0, unitsSpent: 0 };
 
   if (!isSupabaseEnabled()) {
@@ -553,14 +566,18 @@ export async function runRefresh(): Promise<RunOutcome> {
 
     const { data: due, error: dueError } = await supabase.rpc('ahrefs_due_domains', {
       p_limit: batchBudget * batchSize,
+      // Null is every tier, which is what the schedule wants and what the
+      // one-argument form of this function did.
+      p_tier: options.tier ?? null,
     });
     if (dueError) throw new Error(dueError.message);
 
     const domains = (due ?? []) as { id: string; domain: string; tier: number }[];
 
     if (domains.length === 0) {
-      await finishRun(id, { status: 'completed', reason: 'Nothing due' });
-      return { status: 'completed', reason: 'Nothing due', dryRun: settings.dryRun, runId: id, ...idle };
+      const nothing = options.tier ? `Nothing due in tier ${options.tier}` : 'Nothing due';
+      await finishRun(id, { status: 'completed', reason: nothing });
+      return { status: 'completed', reason: nothing, dryRun: settings.dryRun, runId: id, ...idle };
     }
 
     // Dry run stops here: the selection has been proved without spending.
@@ -710,7 +727,8 @@ export async function runRefresh(): Promise<RunOutcome> {
         .eq('id', id);
     }
 
-    const reason = `Refreshed ${refreshed} of ${domains.length} due`;
+    const scope = options.tier ? ` in tier ${options.tier}` : '';
+    const reason = `Refreshed ${refreshed} of ${domains.length} due${scope}`;
     await finishRun(id, {
       status: 'completed',
       domains_refreshed: refreshed,

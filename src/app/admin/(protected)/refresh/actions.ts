@@ -107,10 +107,18 @@ export async function assignTiersAction(): Promise<RefreshActionResult> {
  * Obeys the same switches as the scheduled run: off means off, dry run means
  * dry run. It is a way to watch the logic work, not a way around the guards.
  */
-export async function runNowAction(): Promise<RefreshActionResult> {
+export async function runNowAction(tier?: 1 | 2 | 3): Promise<RefreshActionResult> {
   await requireAdminSession();
   try {
-    const outcome = await runRefresh();
+    /*
+      A tier, or all of them.
+
+      Checked rather than trusted: this arrives from the browser, and a value
+      that is not a real tier would be passed to the database as a filter
+      nothing matches - a run that refreshes nothing and says it completed.
+    */
+    const scoped = tier === 1 || tier === 2 || tier === 3 ? tier : undefined;
+    const outcome = await runRefresh({ tier: scoped });
     revalidatePath('/admin/refresh');
     return {
       ok: outcome.status !== 'failed',
