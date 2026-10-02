@@ -50,13 +50,27 @@ export const languageLabels: Record<string, string> = {
   sv: 'Swedish',
 };
 
+/*
+  Both ends of every measure.
+
+  A buyer builds a shortlist from one end or the other, and which end depends on
+  what they are doing: spending a budget looks for the strongest sites, filling
+  one looks for the cheapest. DR, traffic and referring domains offered only
+  "highest", so the other half of each question had no answer in the dropdown
+  and no answer from a second click on the column either.
+*/
 export const sortOptions: { value: SortKey; label: string }[] = [
   { value: 'relevance', label: 'Relevance' },
   { value: 'price-asc', label: 'Lowest Price' },
   { value: 'price-desc', label: 'Highest Price' },
   { value: 'dr-desc', label: 'Highest DR' },
+  { value: 'dr-asc', label: 'Lowest DR' },
   { value: 'traffic-desc', label: 'Highest Traffic' },
+  { value: 'traffic-asc', label: 'Lowest Traffic' },
+  { value: 'rd-desc', label: 'Most Ref. Domains' },
+  { value: 'rd-asc', label: 'Fewest Ref. Domains' },
   { value: 'turnaround-asc', label: 'Fastest Turnaround' },
+  { value: 'turnaround-desc', label: 'Slowest Turnaround' },
   { value: 'newest', label: 'Newest' },
 ];
 

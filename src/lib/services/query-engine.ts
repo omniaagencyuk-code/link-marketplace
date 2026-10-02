@@ -117,14 +117,29 @@ export function sortItems(items: WebsiteListItem[], sort: SortKey, term: string)
     case 'price-desc':
       sorted.sort((a, b) => b.headlinePriceMinor - a.headlinePriceMinor);
       break;
+    case 'dr-asc':
+      sorted.sort((a, b) => a.metrics.domainRating - b.metrics.domainRating);
+      break;
     case 'dr-desc':
       sorted.sort((a, b) => b.metrics.domainRating - a.metrics.domainRating);
+      break;
+    case 'traffic-asc':
+      sorted.sort((a, b) => a.metrics.organicTraffic - b.metrics.organicTraffic);
       break;
     case 'traffic-desc':
       sorted.sort((a, b) => b.metrics.organicTraffic - a.metrics.organicTraffic);
       break;
+    case 'rd-asc':
+      sorted.sort((a, b) => a.metrics.referringDomains - b.metrics.referringDomains);
+      break;
+    case 'rd-desc':
+      sorted.sort((a, b) => b.metrics.referringDomains - a.metrics.referringDomains);
+      break;
     case 'turnaround-asc':
       sorted.sort((a, b) => a.fastestTurnaroundDays - b.fastestTurnaroundDays);
+      break;
+    case 'turnaround-desc':
+      sorted.sort((a, b) => b.fastestTurnaroundDays - a.fastestTurnaroundDays);
       break;
     case 'newest':
       sorted.sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));

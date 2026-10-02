@@ -16,7 +16,9 @@ import {
 } from '../src/lib/config/accepted-niches';
 import { sellableNiches } from '../src/lib/sourcing/review';
 import { countryFromDomain } from '../src/lib/data/cctld';
-import { runQuery } from '../src/lib/services/query-engine';
+import { runQuery, sortItems } from '../src/lib/services/query-engine';
+import { flipSort, sortDirection } from '../src/lib/types/query';
+import { sortOptions } from '../src/lib/utils/labels';
 import { audiencePatch } from '../src/lib/services/refresh-service';
 import { COUNTRY_SOURCES, outranksCountrySource } from '../src/lib/types/country';
 import { cctldPairs } from './cctld-sql.mts';
@@ -32,13 +34,14 @@ const bad = (label: string, detail?: string) => {
 const is = (label: string, actual: unknown, expected: unknown) =>
   actual === expected ? ok(label) : bad(label, `expected ${String(expected)}, got ${String(actual)}`);
 
+let seq = 0;
 /* eslint-disable @typescript-eslint/no-explicit-any */
 function site(over: Partial<any> = {}): WebsiteListItem {
   const services = over.services ?? [
     { id: 's1', type: 'guest-post', priceMinor: 20000, available: true },
   ];
   return {
-    id: over.id ?? 'w1',
+    id: over.id ?? `w${(seq += 1)}`,
     domain: over.domain ?? 'example.com',
     rules: { acceptedNiches: over.accepted ?? [] },
     country: over.country,
@@ -47,12 +50,14 @@ function site(over: Partial<any> = {}): WebsiteListItem {
     // serves both so a test cannot pass against a listing the marketplace
     // would never have accepted.
     metrics: over.metrics ?? {
-      domainRating: 50,
-      organicTraffic: 10000,
-      referringDomains: 500,
+      domainRating: over.dr ?? 50,
+      organicTraffic: over.traffic ?? 10000,
+      referringDomains: over.rd ?? 500,
       trafficTrend: [],
       audienceSplit: [],
     },
+    fastestTurnaroundDays: over.turnaround ?? 5,
+    createdAt: over.createdAt ?? '2026-01-01T00:00:00.000Z',
     secondaryNiches: over.secondaryNiches ?? [],
     niche: over.niche ?? 'business',
     services,
@@ -354,6 +359,80 @@ console.log('\n--- the country Ahrefs measures ---');
   is(
     'the constraint allows exactly the sources the code knows',
     allowed.slice().sort().join(',') === COUNTRY_SOURCES.slice().sort().join(','),
+    true,
+  );
+}
+
+console.log('\n--- ordering, both ways ---');
+{
+  /*
+    Every measure a buyer sorts on has to read from both ends. A shortlist is
+    built by looking from one end or the other, and which end depends on whether
+    somebody is spending a budget or filling one.
+
+    DR and traffic were clickable columns whose second click did nothing: the
+    header kept a map of opposites with only price in it. Referring domains was
+    not clickable at all. Both halves now come from the key, so a column cannot
+    be added half-wired.
+  */
+  const weak = site({
+    dr: 20, traffic: 1000, rd: 50, turnaround: 10,
+    services: [{ id: 's1', type: 'guest-post', priceMinor: 9000, available: true }],
+  });
+  const strong = site({
+    dr: 80, traffic: 90000, rd: 9000, turnaround: 2,
+    services: [{ id: 's1', type: 'guest-post', priceMinor: 65000, available: true }],
+  });
+  const pair = [weak, strong];
+
+  const first = (sort: never) => sortItems(pair, sort, '')[0]?.id;
+
+  is('highest DR first', first('dr-desc' as never), strong.id);
+  is('and lowest DR first', first('dr-asc' as never), weak.id);
+  is('highest traffic first', first('traffic-desc' as never), strong.id);
+  is('and lowest traffic first', first('traffic-asc' as never), weak.id);
+  is('most referring domains first', first('rd-desc' as never), strong.id);
+  is('and fewest first', first('rd-asc' as never), weak.id);
+  is('fastest turnaround first', first('turnaround-asc' as never), strong.id);
+  is('and slowest first', first('turnaround-desc' as never), weak.id);
+
+  /*
+    The guard that makes the above a rule rather than eight examples: every
+    order the dropdown offers must have an opposite that is also offered, and
+    sorting by it must actually reverse the list. An order with no opposite is a
+    column whose second click does nothing.
+  */
+  const offered = new Set(sortOptions.map((option) => option.value));
+  let unpaired = 0;
+  let notReversed = 0;
+  for (const option of sortOptions) {
+    const opposite = flipSort(option.value);
+    if (!opposite) continue; // relevance and newest have no other end
+    if (!offered.has(opposite)) unpaired += 1;
+    const forwards = sortItems(pair, option.value, '').map((item) => item.id);
+    const backwards = sortItems(pair, opposite, '').map((item) => item.id);
+    if (forwards.join() === backwards.join()) notReversed += 1;
+  }
+  is('every order the dropdown offers has its opposite offered too', unpaired, 0);
+  is('and sorting the other way actually reverses the list', notReversed, 0);
+
+  // The header reads its arrow off the key, so the arrow cannot disagree with
+  // the order. It used to be a ternary naming two keys by hand.
+  is('a descending key reads as descending', sortDirection('rd-desc' as never), 'descending');
+  is('an ascending one as ascending', sortDirection('turnaround-desc' as never), 'descending');
+  is('relevance has no direction', sortDirection('relevance' as never), undefined);
+  is('and no opposite', flipSort('relevance' as never), undefined);
+
+  // Every sortable column in the table has to be an order the engine handles.
+  const table = readFileSync(
+    new URL('../src/components/marketplace/website-table.tsx', import.meta.url),
+    'utf8',
+  );
+  const columnKeys = [...table.matchAll(/key:\s*'([a-z-]+)'/g)].map((match) => match[1]!);
+  is('the table offers five sortable columns', columnKeys.length, 5);
+  is(
+    'and every one is an order the dropdown offers as well',
+    columnKeys.every((key) => offered.has(key as never)),
     true,
   );
 }

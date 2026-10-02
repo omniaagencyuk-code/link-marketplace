@@ -3,6 +3,7 @@
 import { useCallback, useMemo, useState } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { isBuyableTopic } from '@/lib/config/accepted-niches';
+import { sortOptions } from '@/lib/utils/labels';
 import type {
   CountryCode,
   LanguageCode,
@@ -203,9 +204,15 @@ export function useMarketplaceFilters(defaultPageSize = 25) {
   );
 
   const [filters, setFiltersState] = useState<MarketplaceFilters>(initial);
-  const [sort, setSortState] = useState<SortKey>(
-    (searchParams.get('sort') as SortKey | null) ?? 'relevance',
-  );
+  // Same reasoning as the topic: a sort in the URL is honoured only if it is one
+  // the dropdown offers. An order that no longer exists would otherwise leave
+  // the control blank while the list was ordered by something unnameable.
+  const [sort, setSortState] = useState<SortKey>(() => {
+    const asked = searchParams.get('sort');
+    return sortOptions.some((option) => option.value === asked)
+      ? (asked as SortKey)
+      : 'relevance';
+  });
   const [page, setPageState] = useState(Number(searchParams.get('page') ?? '1') || 1);
   const [pageSize, setPageSizeState] = useState(
     Number(searchParams.get('size') ?? String(defaultPageSize)) || defaultPageSize,

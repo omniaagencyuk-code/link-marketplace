@@ -16,6 +16,7 @@ import { nicheName } from '@/lib/data/categories';
 import { countryShortNameOrUnknown } from '@/lib/data/countries';
 import { formatCompactNumber, formatPrice, formatTurnaround } from '@/lib/utils/format';
 import { cn } from '@/lib/utils/cn';
+import { flipSort, sortDirection } from '@/lib/types/query';
 import type { SortKey, WebsiteListItem } from '@/lib/types';
 
 interface SortableColumn {
@@ -25,9 +26,19 @@ interface SortableColumn {
   align?: 'left' | 'right';
 }
 
+/*
+  `key` is the order a first click gives. The second click gives its opposite,
+  worked out from the key rather than listed anywhere - so a column cannot be
+  added half-wired, which is what DR and traffic were: clickable, but with no
+  pair recorded, so a second click silently re-applied the same order.
+
+  Which end a column starts at is what a buyer means by clicking it. Strongest
+  first for a metric; cheapest and fastest first for a cost.
+*/
 const sortableColumns: Record<string, SortableColumn> = {
   dr: { key: 'dr-desc', label: 'DR' },
   traffic: { key: 'traffic-desc', label: 'Organic Traffic' },
+  rd: { key: 'rd-desc', label: 'Ref. Domains' },
   turnaround: { key: 'turnaround-asc', label: 'Turnaround' },
   price: { key: 'price-asc', label: 'Price', align: 'right' },
 };
@@ -105,7 +116,7 @@ export function WebsiteTable({
             <Th>Country</Th>
             <SortableTh column={sortableColumns.dr!} sort={sort} onSort={onSort} />
             <SortableTh column={sortableColumns.traffic!} sort={sort} onSort={onSort} />
-            <Th>Ref. Domains</Th>
+            <SortableTh column={sortableColumns.rd!} sort={sort} onSort={onSort} />
             <Th>Link Type</Th>
             <SortableTh column={sortableColumns.turnaround!} sort={sort} onSort={onSort} />
             <SortableTh column={sortableColumns.price!} sort={sort} onSort={onSort} align="right" />
@@ -228,18 +239,18 @@ function SortableTh({
   className?: string;
   align?: 'left' | 'right';
 }) {
-  // Price toggles between ascending and descending; the others are descending.
-  const alternate: Partial<Record<SortKey, SortKey>> = {
-    'price-asc': 'price-desc',
-    'price-desc': 'price-asc',
-  };
-  const isActive = sort === column.key || sort === alternate[column.key];
-  const next = isActive && alternate[sort] ? (alternate[sort] as SortKey) : column.key;
-  const ariaSort = !isActive
-    ? 'none'
-    : sort === 'price-asc' || sort === 'turnaround-asc'
-      ? 'ascending'
-      : 'descending';
+  /*
+    Every column reads both ways, and both halves come from the key.
+
+    This was a map with price in it and nothing else, plus a ternary naming two
+    keys for the arrow. Both had to be remembered when a column was added, and
+    neither was: DR and traffic were clickable columns whose second click did
+    nothing, and Ref. Domains was not clickable at all.
+  */
+  const opposite = flipSort(column.key);
+  const isActive = sort === column.key || sort === opposite;
+  const next = (isActive ? flipSort(sort) : undefined) ?? column.key;
+  const ariaSort = isActive ? (sortDirection(sort) ?? 'none') : 'none';
 
   const alignment = align ?? column.align;
 

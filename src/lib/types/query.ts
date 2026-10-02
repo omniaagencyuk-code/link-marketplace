@@ -2,14 +2,48 @@ import type { CountryCode } from './country';
 import type { NicheSlug } from './category';
 import type { LanguageCode, LinkAttribute, LinkTypeSlug } from './website';
 
+/**
+ * How the marketplace is ordered.
+ *
+ * Every measure a buyer sorts on reads both ways. A shortlist is built by
+ * looking from one end or the other - the strongest sites, or the cheapest -
+ * and which end depends on whether somebody is spending a budget or filling
+ * one. DR, traffic and referring domains offered only "highest" until a buyer
+ * asked for the other end of each.
+ *
+ * The suffix is the direction, and it is read rather than listed: `sortedBoth`
+ * flips a key, the table header derives its arrow from it, and `sortItems` is
+ * the only place that has to know what a field means. A column added without
+ * its opposite is a column that silently does nothing on a second click, which
+ * is what DR and traffic did.
+ */
 export type SortKey =
   | 'relevance'
   | 'price-asc'
   | 'price-desc'
+  | 'dr-asc'
   | 'dr-desc'
+  | 'traffic-asc'
   | 'traffic-desc'
+  | 'rd-asc'
+  | 'rd-desc'
   | 'turnaround-asc'
+  | 'turnaround-desc'
   | 'newest';
+
+/** The same measure, the other way round. Undefined where there is no pair. */
+export function flipSort(sort: SortKey): SortKey | undefined {
+  if (sort.endsWith('-asc')) return sort.replace(/-asc$/, '-desc') as SortKey;
+  if (sort.endsWith('-desc')) return sort.replace(/-desc$/, '-asc') as SortKey;
+  return undefined;
+}
+
+/** Which way a key reads, for the header arrow and for `aria-sort`. */
+export function sortDirection(sort: SortKey): 'ascending' | 'descending' | undefined {
+  if (sort.endsWith('-asc')) return 'ascending';
+  if (sort.endsWith('-desc')) return 'descending';
+  return undefined;
+}
 
 export interface NumericRange {
   min?: number;
