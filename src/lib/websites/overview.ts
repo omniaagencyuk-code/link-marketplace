@@ -5,86 +5,75 @@ import { acceptedNicheLabel } from '@/lib/config/accepted-niches';
 import type { Website } from '@/lib/types';
 
 /**
- * What we can honestly say about a listing nobody has written up.
+ * What a listing's overview panel says when nobody has written one.
  *
- * Almost every listing arrived from a CSV or from a publisher's reply, and
- * neither carries an editorial overview - so the "Website Overview" panel on
- * the listing page was a heading with nothing under it for the whole
- * marketplace.
+ * Listings arrive from a CSV or from a publisher's reply and neither carries an
+ * editorial write-up, so "Website Overview" was a heading with nothing under it
+ * across the marketplace.
  *
- * Three rules, and the second is the one that cut this down to half its first
- * draft:
+ * It leads with what the publication is about, because that is what somebody
+ * opening a listing wants and it is what the panel is called. Then the terms a
+ * placement is sold on, then the topics the publisher has agreed to carry.
  *
- * Nothing is invented. The seeded demo overview asserts a site has "been part
- * of the network since 2024" and that "all placements are permanent with no
- * yearly renewal fee". Fine for fabricated demo rows, false claims on a real
- * publisher - permanence is a term we record per publisher and frequently
- * record as something else.
+ * ## What it takes from a default and what it will not
  *
- * Nothing that is only a default. This is the trap, and it is the same one the
- * country column had: `emptyRules()` creates every imported listing with
- * 800-1600 words, one link, `dofollow`, no sponsored label and "either" for who
- * writes it. None of that came from a publisher. The first version of this file
- * read those fields and would have written "links are dofollow" onto seventeen
- * hundred listings on the strength of a default - which is the single claim in
- * this marketplace a buyer is actually paying for. So the word counts, the link
- * count, the link attribute, the sponsored-label policy, who supplies the
- * article and the language are all absent below, and will stay absent until
- * they are recorded rather than defaulted.
+ * The word count, link count, link attribute and sponsored-label policy are
+ * `emptyRules()` defaults on an imported listing - nothing distinguishes them
+ * from a publisher having stated them. They are printed anyway, because they
+ * are the standard terms we sell on and hold a publisher to unless their own
+ * email said otherwise, at which point extraction overwrites them. That is a
+ * decision about the business, not about the data.
  *
- * Nothing that moves. Domain rating, traffic and referring domains are the most
- * quotable numbers we hold and are not written into the prose: they change on
- * every Ahrefs refresh, and text quoting them would be wrong within a week
- * while looking authoritative. The panel directly below renders them live.
+ * Two things are still left out, and for a different reason in each case.
  *
- * Used as a fallback rather than written into the column, so an overview an
- * administrator writes by hand always wins, and a listing whose facts change
- * gets a description that changed with them.
+ * The country, where it came from the old marketplace-wide 'GB' default:
+ * `country` is undefined for those, so a listing nobody has placed says nothing
+ * about where it is read rather than claiming Britain.
+ *
+ * Domain rating, traffic and referring domains: they change on every Ahrefs
+ * refresh, so prose quoting them is wrong within a week while reading as
+ * authoritative. The panel directly below renders them live.
  */
 
-/**
- * A readable list.
- *
- * Semicolons when an item already contains "and", because several niche labels
- * do - "Gambling and iGaming", "Crypto and web3" - and the obvious join
- * produced "gambling and igaming and crypto and web3", which reads as four
- * topics rather than two.
- */
 function sentenceList(items: string[]): string {
   if (items.length <= 1) return items[0] ?? '';
-  const joint = items.some((item) => / and /.test(item)) ? '; ' : ', ';
-  const last = items.some((item) => / and /.test(item)) ? '; and ' : ' and ';
-  return `${items.slice(0, -1).join(joint)}${last}${items.at(-1)}`;
+  return `${items.slice(0, -1).join(', ')} and ${items.at(-1)}`;
 }
 
-/** What the publication is and who reads it. */
-function identity(website: Website): string {
-  const parts: string[] = [`${website.domain} is a ${nicheName(website.niche).toLowerCase()} publication`];
+/**
+ * What the publication is about.
+ *
+ * `description` is the publisher's own line where the import carried one, and
+ * it is the only field here that says anything specific about the site - so it
+ * leads when it exists. Without it there is the category and the market, which
+ * is thin but true; nothing is guessed from the domain name.
+ */
+function subject(website: Website): string {
+  const described = (website.description ?? '').trim();
+  const niche = nicheName(website.niche).toLowerCase();
 
-  const secondary = website.secondaryNiches.filter(Boolean);
-  if (secondary.length > 0) {
-    parts.push(`that also covers ${sentenceList(secondary.map((slug) => nicheName(slug).toLowerCase()))}`);
+  const secondary = (website.secondaryNiches ?? []).filter(Boolean);
+  const also =
+    secondary.length > 0
+      ? ` It also covers ${sentenceList(secondary.map((slug) => nicheName(slug).toLowerCase()))}.`
+      : '';
+
+  const where = website.country ? ` Its readership is mainly in ${countryName(website.country)}.` : '';
+
+  if (described) {
+    const stop = /[.!?]$/.test(described) ? '' : '.';
+    return `${described}${stop}${also}${where}`;
   }
 
-  /*
-    The country is the one of these that is now trustworthy: `country` is
-    undefined when its source is the old default, so a listing nobody has
-    placed says nothing about where it is read rather than claiming Britain.
-
-    The language is not. Every imported listing was created `en` whether or not
-    anybody said so, so it is left out on the same grounds as the link rules.
-  */
-  const where = website.country ? ` Its audience is primarily in ${countryName(website.country)}.` : '';
-
-  return `${parts.join(' ')}.${where}`;
+  return `${website.domain} is a ${niche} publication.${also}${where}`;
 }
 
-/** What you can buy, and how long it takes. */
+/** What can be bought, and how long it takes. */
 function placements(website: Website): string {
-  const available = website.services.filter((service) => service.available);
+  const available = (website.services ?? []).filter((service) => service.available);
   if (available.length === 0) return '';
 
-  // Plural, because a publisher offers guest posts rather than guest post.
+  // Plural: a publisher offers guest posts rather than guest post.
   const kinds = sentenceList(
     available.map((service) => `${(linkTypeLabels[service.type] ?? service.type).toLowerCase()}s`),
   );
@@ -93,31 +82,61 @@ function placements(website: Website): string {
     .map((service) => [service.turnaroundMinDays, service.turnaroundMaxDays] as const)
     .filter(([min, max]) => min > 0 && max > 0);
 
+  // Zero means nobody stated one, so none is invented.
   const turnaround = windows.length
     ? ` Turnaround is typically ${Math.min(...windows.map(([min]) => min))} to ${Math.max(
         ...windows.map(([, max]) => max),
       )} working days from approval.`
     : '';
 
-  // `contentProvidedBy` defaults to 'either' on every import, so who writes the
-  // article is not stated here. It is on the listing's own rules panel, where a
-  // buyer can see it is a default rather than read it as a promise.
   return `This publisher offers ${kinds}.${turnaround}`;
 }
 
-/** Only what the publisher has actually agreed to carry. */
+/** The terms a placement is sold on. */
+function terms(website: Website): string {
+  const { rules } = website;
+  const said: string[] = [];
+
+  const WORDS = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine'];
+  const count = WORDS[rules.maxLinks] ?? String(rules.maxLinks);
+  const links = rules.maxLinks > 0
+    ? ` with up to ${count} ${rules.maxLinks === 1 ? 'link' : 'links'}`
+    : '';
+  if (rules.minWordCount > 0 && rules.maxWordCount > 0) {
+    said.push(`articles run ${rules.minWordCount} to ${rules.maxWordCount} words${links}`);
+  } else if (links) {
+    said.push(`articles take${links}`);
+  }
+  if (rules.linkAttribute) said.push(`links are ${rules.linkAttribute}`);
+  if (rules.sponsoredTag === 'always') said.push('posts carry a sponsored label');
+  if (rules.sponsoredTag === 'never') said.push('posts carry no sponsored label');
+  if (rules.sponsoredTag === 'on-request') said.push('a sponsored label is applied on request');
+
+  if (rules.contentProvidedBy === 'publisher') said.push('the publisher writes the article');
+  if (rules.contentProvidedBy === 'buyer') said.push('the article is supplied by the buyer');
+  if (rules.contentProvidedBy === 'either') said.push('you can supply the article or have it written');
+
+  if (said.length === 0) return '';
+
+  const first = `${said[0]!.charAt(0).toUpperCase()}${said[0]!.slice(1)}`;
+  return said.length === 1 ? `${first}.` : `${first}, ${sentenceList(said.slice(1))}.`;
+}
+
+/**
+ * Only what the publisher has actually agreed to carry.
+ *
+ * A colon list with the labels exactly as the rules panel writes them: several
+ * contain "and" - "Gambling and iGaming", "Crypto and web3" - so an ordinary
+ * list reads as four topics rather than two however it is punctuated.
+ *
+ * Silence is neither. A publisher who has never mentioned gambling has not
+ * agreed to carry it and has not refused it, so nothing is said about the
+ * topics they did not raise - the rule extraction follows, for the same reason.
+ */
 function topics(website: Website): string {
-  const accepted = website.rules.acceptedNiches.filter(Boolean);
-  const restricted = website.rules.restrictedNiches.filter(Boolean);
+  const accepted = (website.rules.acceptedNiches ?? []).filter(Boolean);
+  const restricted = (website.rules.restrictedNiches ?? []).filter(Boolean);
 
-  /*
-    A colon and commas, with the labels left as they are written.
-
-    Several of them contain "and" - "Gambling and iGaming", "Crypto and web3" -
-    so an ordinary list reads as four topics rather than two however it is
-    punctuated. A colon makes the boundary unambiguous without rewriting the
-    labels, which have to keep matching the ones on the rules panel below.
-  */
   const lines: string[] = [];
   if (accepted.length > 0) {
     lines.push(`Topics this publisher has agreed to carry: ${accepted.map(acceptedNicheLabel).join(', ')}.`);
@@ -125,27 +144,20 @@ function topics(website: Website): string {
   if (restricted.length > 0) {
     lines.push(`It has said it will not take: ${restricted.join(', ')}.`);
   }
-
-  /*
-    Silence is not a refusal and is not an acceptance.
-
-    A publisher who has never mentioned gambling has neither agreed to carry it
-    nor refused it, so nothing is said about the topics they did not raise -
-    the same rule the extraction follows, for the same reason.
-  */
   return lines.join(' ');
 }
 
 /**
  * The listing's overview: what was written, or what the record supports.
  *
- * Paragraphs are joined the way the panel splits them, so a hand-written
- * overview and a derived one render identically.
+ * Derived rather than stored, so an overview an administrator writes always
+ * wins and a listing whose facts change gets a description that changed with
+ * them. Paragraphs join the way the panel splits them.
  */
 export function websiteOverview(website: Website): string {
-  if (website.overview.trim()) return website.overview;
+  if ((website.overview ?? '').trim()) return website.overview;
 
-  return [identity(website), placements(website), topics(website)]
+  return [subject(website), placements(website), terms(website), topics(website)]
     .map((paragraph) => paragraph.trim())
     .filter(Boolean)
     .join('\n\n');

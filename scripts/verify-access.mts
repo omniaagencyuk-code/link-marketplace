@@ -254,23 +254,23 @@ console.log('\n--- the copy ---');
   yes(`and thin means fewer than ${MIN_LISTINGS_FOR_A_PAGE}`, MIN_LISTINGS_FOR_A_PAGE >= 10);
 }
 
-console.log('\n--- what a listing overview may claim ---');
+console.log('\n--- what a listing overview says ---');
 {
   /*
-    Almost no listing has a hand-written overview, so the panel was a heading
-    with nothing under it across the marketplace. What goes under it has to come
-    from the record - and the trap is that most of the record is a default.
+    Listings arrive from a CSV or a publisher's reply and neither carries an
+    editorial write-up, so "Website Overview" was a heading with nothing under
+    it across the marketplace.
 
-    `emptyRules()` creates every imported listing with 800-1600 words, one link,
-    `dofollow`, no sponsored label and "either" for who writes the article. None
-    of it came from a publisher. The first version of this read those fields,
-    which would have written "links are dofollow" onto seventeen hundred
-    listings on the strength of a default - the one claim in this marketplace a
-    buyer is actually paying for.
+    The word count, link count, link attribute and sponsored policy printed here
+    are `emptyRules()` defaults on an imported listing, and that is deliberate:
+    they are the standard terms we sell on and hold a publisher to unless their
+    own email said otherwise, at which point extraction overwrites them. A
+    decision about the business rather than about the data.
   */
-  const defaults = {
+  const imported = {
     domain: 'imported.example',
     overview: '',
+    description: '',
     niche: 'technology',
     secondaryNiches: [],
     country: undefined,
@@ -288,61 +288,68 @@ console.log('\n--- what a listing overview may claim ---');
     },
   } as unknown as Website;
 
-  const bare = websiteOverview(defaults);
-  yes('a listing with nothing recorded still gets an overview', bare.length > 0);
-  yes('it names the publication and its subject', bare.includes('imported.example') && bare.includes('technology'));
-
-  for (const [what, claim] of [
-    ['the link attribute', /dofollow|nofollow/i],
-    ['a word count', /\b800\b|\b1600\b|words/i],
-    ['a link count', /links per article/i],
-    ['a sponsored-label policy', /sponsored/i],
-    ['who writes the article', /supply the article|writes the article/i],
-    ['a language', /English/i],
-  ] as const) {
-    yes(`${what} is not claimed from a default`, !claim.test(bare));
-  }
-
-  // And nothing that moves: these change on every refresh, so prose quoting
-  // them would be wrong within a week while looking authoritative.
-  yes('no rating or traffic figure is written into the prose', !/\bDR\b|domain rating|monthly visits/i.test(bare));
+  const bare = websiteOverview(imported);
+  yes('a listing with nothing written still gets an overview', bare.length > 0);
+  yes('it leads with what the publication is', bare.startsWith('imported.example is a technology publication'));
+  yes('it says what can be bought', bare.includes('guest posts'));
+  yes('and the standard terms it sells on', /800 to 1600 words with up to one link/.test(bare));
+  yes('including the link attribute', bare.includes('dofollow'));
 
   /*
-    What it may say is what somebody established. The country is the one field
-    here that is now trustworthy - it is undefined where its source was the old
-    default - and turnaround is zero where nobody stated it.
+    Two things stay out, for different reasons.
+
+    The country, where it came from the marketplace-wide 'GB' default: `country`
+    is undefined for those, so a listing nobody has placed says nothing about
+    where it is read rather than claiming Britain.
   */
-  const stated = {
-    ...defaults,
+  yes('no market is claimed for a listing nobody placed', !/readership is mainly/.test(bare));
+
+  // And the metrics, which change on every refresh - prose quoting them is
+  // wrong within a week while reading as authoritative.
+  yes('no rating or traffic figure is written into the prose', !/\bDR\b|domain rating|monthly visits|organic traffic/i.test(bare));
+
+  // Nothing is guessed from the domain name.
+  yes('and nothing is invented about the subject', !/leading|trusted|popular|authoritative/i.test(bare));
+
+  /*
+    What a listing somebody has actually worked on says. The publisher's own
+    line leads when the import carried one, because it is the only field that
+    says anything specific about the site.
+  */
+  const described = {
+    ...imported,
+    description: 'Danish personal finance desk covering mortgages and pensions.',
     country: 'DK',
     secondaryNiches: ['business'],
     services: [{ type: 'guest-post', available: true, turnaroundMinDays: 2, turnaroundMaxDays: 5 }],
-    rules: { ...defaults.rules, acceptedNiches: ['gambling'], restrictedNiches: ['adult'] },
+    rules: { ...imported.rules, acceptedNiches: ['gambling', 'crypto'], restrictedNiches: ['adult'] },
   } as unknown as Website;
 
-  const full = websiteOverview(stated);
-  yes('a stated market is named', full.includes('Denmark'));
+  const full = websiteOverview(described);
+  yes("the publisher's own line leads", full.startsWith('Danish personal finance desk'));
+  yes('a stated market is named', full.includes('mainly in Denmark'));
   yes('a stated turnaround is given', /2 to 5 working days/.test(full));
-  yes('and a topic the publisher agreed to carry', full.includes('Gambling and iGaming'));
-  yes('as is one they refused', /will not take: adult/.test(full));
+  yes('a topic the publisher agreed to carry', full.includes('Gambling and iGaming'));
+  yes('and one they refused', /will not take: adult/.test(full));
 
-  // The labels contain "and", so an ordinary list reads as four topics.
-  const two = websiteOverview({
-    ...stated,
-    rules: { ...stated.rules, acceptedNiches: ['gambling', 'crypto'] },
-  } as unknown as Website);
-  yes('two topics whose labels contain "and" stay two', two.includes('Gambling and iGaming, Crypto and web3'));
+  // Several labels contain "and", so an ordinary list reads as four topics.
+  yes('two topics whose labels contain "and" stay two', full.includes('Gambling and iGaming, Crypto and web3'));
+  // Silence is neither acceptance nor refusal: nothing is said about a topic
+  // the publisher never raised.
+  yes('a topic nobody mentioned is not mentioned', !/adult content is accepted/i.test(full));
 
   // A turnaround nobody stated is not invented as zero days.
   yes('an unstated turnaround is simply absent', !/working days/.test(bare));
 
   // Anything written by hand wins outright.
-  const written = websiteOverview({ ...stated, overview: 'Written by an editor.' } as unknown as Website);
-  is('a hand-written overview is used as it is', written, 'Written by an editor.');
+  is('a hand-written overview is used as it is', websiteOverview({ ...described, overview: 'Written by an editor.' } as unknown as Website), 'Written by an editor.');
+
+  // The row shapes the mapper coalesces, in case one ever does not.
+  const sparse = { domain: 'x.example', niche: 'business', rules: {} } as unknown as Website;
+  yes('a row missing its optional fields does not throw', typeof websiteOverview(sparse) === 'string');
 
   const panel = read('src/components/website/website-sections.tsx');
   yes('the panel renders the derived overview', panel.includes('websiteOverview(website)'));
-  // A listing with nothing to say shows no empty heading.
   yes('and shows no heading when there is nothing to say', /\{overview \? \(/.test(panel));
 }
 
