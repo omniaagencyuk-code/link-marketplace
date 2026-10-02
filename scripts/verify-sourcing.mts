@@ -23,6 +23,14 @@ import {
 import { healthOf, progressMessage, runProgress, type BatchRow } from '../src/lib/sourcing/batch-health';
 import { describeSkip, nightlySkipReason, type NightlyState } from '../src/lib/sourcing/schedule';
 import { extractionLimit } from '../src/lib/sourcing/limits';
+import {
+  DOMAINS_PER_PASS,
+  MOST_DOMAINS_WORTH_READING,
+  domainsToRead,
+  mergeParts,
+  passes,
+  readInParts,
+} from '../src/lib/sourcing/in-parts';
 import { APPROVE_CHUNK_SIZE, chunk, progressText } from '../src/lib/sourcing/approving';
 import { zodOutputFormat } from '@anthropic-ai/sdk/helpers/zod';
 
@@ -908,7 +916,43 @@ console.log('\n--- a network table bigger than one response ---');
     (clientSource.match(/readMessage\(/g) ?? []).length >= 3,
     true,
   );
-  is('and it names truncation for what it is', clientSource.includes('ran out of room'), true);
+  /*
+    Truncation is a flag, not a phrase.
+
+    This used to assert the wording of the error message - and then the live
+    path learned to retry on truncation, which meant the decision had to be
+    something a caller could branch on. A behaviour asserted by grepping for a
+    sentence breaks the day somebody rewords the sentence, and silently.
+  */
+  is('a truncated answer is flagged as truncated', /truncated: true/.test(clientSource), true);
+  is(
+    'and the live path reads the flag rather than the message',
+    /if \(outcome\.truncated\) return extractInParts\(/.test(clientSource),
+    true,
+  );
+
+  /*
+    The ceiling is now the model's own, so the next reply longer than it cannot
+    be answered by raising a number again. Reading in parts is what answers it,
+    and the email itself is never what gets cut: every pass sees the whole
+    reply and is told which domains to return.
+  */
+  is('the ceiling is the model maximum, not another guess', ceiling, 128000);
+  is(
+    'a reply past it is read in parts rather than refused',
+    clientSource.includes('async function extractInParts('),
+    true,
+  );
+  is(
+    'and every pass is given the whole request, narrowed only by domain',
+    /requestBody\(request, model, domains\)/.test(clientSource),
+    true,
+  );
+  is(
+    'the body is never sliced',
+    /request\.body\.slice\(|splitBody|body\.substring\(/.test(clientSource),
+    false,
+  );
 }
 
 console.log('\n--- reading a rate card out of a picture ---');
@@ -1178,6 +1222,174 @@ console.log('\n--- the claim is honoured everywhere ---');
     unclaimed.length,
     0,
   );
+}
+
+console.log('\n--- a reply listing more sites than one answer can hold ---');
+{
+  /*
+    Five agency replies ran past the output ceiling. The error told whoever
+    read it to paste the email in two halves by hand, which is work the thing
+    that noticed should be doing - and they were publishers worth having.
+
+    The email is never split. A long rate card is a few thousand tokens in and
+    a hundred thousand out, because every domain expands into forty-odd fields,
+    so the input was never the problem. Splitting it would hand the second half
+    to the model without the header row of the table, without the currency
+    stated once at the top, and without the terms that apply to every site
+    below them - and the listings read from it would be quietly wrong rather
+    than visibly missing.
+  */
+  const listed = domainsToRead(['  a.com ', 'B.com', 'a.com', 'A.COM', '', '   ', 'c.com']);
+  is('the domains are trimmed', listed[0], 'a.com');
+  is('the same domain twice is read once', listed.length, 3);
+  is('and case does not make it a different one', listed.includes('A.COM'), false);
+  is('order is the order they appeared', listed.join(','), 'a.com,B.com,c.com');
+
+  const many = Array.from({ length: 95 }, (_, index) => `site${index}.com`);
+  const split = passes(many);
+  is('ninety-five domains become three passes', split.length, 3);
+  is('each full pass asks for the batch size', split[0]?.length, DOMAINS_PER_PASS);
+  is('and the last takes the remainder', split[2]?.length, 95 - DOMAINS_PER_PASS * 2);
+  is(
+    'every domain is asked for exactly once',
+    split.flat().length === many.length && new Set(split.flat()).size === many.length,
+    true,
+  );
+  is('a short list is still one pass', passes(['only.com']).length, 1);
+  is('and no domains means no passes', passes([]).length, 0);
+
+  // The guard that stops this becoming a thousand API calls.
+  is('the ceiling on what is worth reading as an email', MOST_DOMAINS_WORTH_READING > 0, true);
+  is(
+    'which is more passes than any real rate card',
+    Math.ceil(MOST_DOMAINS_WORTH_READING / DOMAINS_PER_PASS),
+    15,
+  );
+}
+
+console.log('\n--- putting the parts back together ---');
+{
+  const part = (over: Partial<ExtractionResult>): ExtractionResult =>
+    ({ usable: false, ignore_reason: null, listings: [], ...over }) as ExtractionResult;
+  const listing = (domain: string) => ({ domain }) as ExtractedListing;
+
+  const merged = mergeParts([
+    part({ usable: true, listings: [listing('a.com'), listing('b.com')] }),
+    part({ usable: true, listings: [listing('c.com')] }),
+  ]);
+  is('every part contributes its listings', merged.listings.length, 3);
+  is('in the order the passes ran', merged.listings.map((l) => l.domain).join(','), 'a.com,b.com,c.com');
+
+  /*
+    A rate card whose first forty domains are all "we stopped doing that" is
+    still a usable email if domain forty-one has a price. Reading usable as
+    "every part was usable" would throw the reply away for being mostly dead.
+  */
+  const mixed = mergeParts([
+    part({ usable: false, ignore_reason: 'No rates in this part.' }),
+    part({ usable: true, listings: [listing('late.com')] }),
+  ]);
+  is('one usable part makes the reply usable', mixed.usable, true);
+  is('and a reason to ignore it no longer applies', mixed.ignore_reason, null);
+  is('the listing from the usable part survives', mixed.listings.length, 1);
+
+  const nothing = mergeParts([
+    part({ ignore_reason: 'Out of office.' }),
+    part({ ignore_reason: 'Still out of office.' }),
+  ]);
+  is('nothing usable keeps the first reason given', nothing.ignore_reason, 'Out of office.');
+  is('and the reply stays unusable', nothing.usable, false);
+
+  // A model asked about domains 41-80 sometimes mentions one from 1-40 again.
+  const repeated = mergeParts([
+    part({ usable: true, listings: [listing('dup.com'), listing('one.com')] }),
+    part({ usable: true, listings: [listing('DUP.com'), listing('two.com')] }),
+  ]);
+  is('a domain repeated across passes is kept once', repeated.listings.length, 3);
+  is('at its first reading', repeated.listings[0]?.domain, 'dup.com');
+  is('no part is empty-domained into the result', mergeParts([part({ listings: [listing('  ')] })]).listings.length, 0);
+}
+
+console.log('\n--- driving the parts, end to end ---');
+{
+  /*
+    The sequence itself, against a fake: name the domains, then ask for them a
+    batch at a time. Checked here rather than reasoned about, because against
+    the real API this would cost money to run and could not assert what was
+    asked - and what was asked is the whole point.
+  */
+  const part = (domains: string[]): ExtractionResult =>
+    ({
+      usable: true,
+      ignore_reason: null,
+      listings: domains.map((domain) => ({ domain }) as ExtractedListing),
+    }) as ExtractionResult;
+  const free = { inputTokens: 0, outputTokens: 0 };
+  const all = Array.from({ length: 95 }, (_, index) => `site${index}.com`);
+
+  const askedFor: string[][] = [];
+  const whole = await readInParts(
+    async () => ({ domains: all, usage: { inputTokens: 500, outputTokens: 900 } }),
+    async (domains) => {
+      askedFor.push(domains);
+      return { result: part(domains), usage: { inputTokens: 2000, outputTokens: 17000 } };
+    },
+    { inputTokens: 1000, outputTokens: 128000 },
+  );
+
+  is('ninety-five domains take three passes', askedFor.length, 3);
+  is('every domain was asked for', askedFor.flat().length, 95);
+  is('none of them twice', new Set(askedFor.flat()).size, 95);
+  is('and every one came back', whole.result?.listings.length, 95);
+  is('in the order the reply listed them', whole.result?.listings[0]?.domain, 'site0.com');
+  is('with no error', whole.error, undefined);
+
+  /*
+    The truncated first attempt is charged for. Those tokens were produced and
+    billed before anything was cut off, so leaving them out of the total would
+    under-report what a long reply actually cost.
+  */
+  is('the abandoned first attempt is still paid for', whole.usage.outputTokens, 128000 + 900 + 17000 * 3);
+  is('and so is every pass that followed', whole.usage.inputTokens, 1000 + 500 + 2000 * 3);
+
+  // A reply whose domains cannot even be listed is a human's problem, said so.
+  const unlistable = await readInParts(async () => ({ domains: null, usage: free }), async () => ({ result: part([]), usage: free }), free);
+  is('a reply whose domains cannot be listed says so', /reading by hand/.test(unlistable.error ?? ''), true);
+  is('and returns no half-answer', unlistable.result, undefined);
+
+  // The guard against a reply that is really a database.
+  const enormous = await readInParts(
+    async () => ({
+      domains: Array.from({ length: MOST_DOMAINS_WORTH_READING + 1 }, (_, i) => `d${i}.com`),
+      usage: free,
+    }),
+    async () => {
+      bad('a reply past the ceiling should never reach a pass');
+      return { result: part([]), usage: free };
+    },
+    free,
+  );
+  is('a reply listing hundreds of domains is refused as a CSV job', /import it as a CSV/.test(enormous.error ?? ''), true);
+
+  /*
+    One failing pass fails the read, naming which. A partial answer would be
+    worse than none: a listing missing from the marketplace is visible, a
+    listing silently absent from a merge is not.
+  */
+  let seen = 0;
+  const broken = await readInParts(
+    async () => ({ domains: all, usage: free }),
+    async (domains) => {
+      seen += 1;
+      return seen === 2
+        ? { error: 'the model returned nothing', usage: free }
+        : { result: part(domains), usage: free };
+    },
+    free,
+  );
+  is('a failed pass fails the whole read', broken.result, undefined);
+  is('and says which part it was', /part 2 of 3/.test(broken.error ?? ''), true);
+  is('without running the passes after it', seen, 2);
 }
 
 console.log(failed ? `\n  ${failed} FAILED\n` : '\n  all passed\n');

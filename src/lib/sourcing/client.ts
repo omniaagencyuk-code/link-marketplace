@@ -1,7 +1,9 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { zodOutputFormat } from '@anthropic-ai/sdk/helpers/zod';
 import { EXTRACTION_RULES, PROMPT_VERSION, buildUserMessage } from './extraction-rules';
+import { z } from 'zod';
 import { fromWire, wireResultSchema, type ExtractionResult } from './schema';
+import { readInParts } from './in-parts';
 
 /**
  * Talking to the model.
@@ -36,6 +38,15 @@ export interface ExtractionOutcome {
   result?: ExtractionResult;
   error?: string;
   usage?: ExtractionUsage;
+  /**
+   * The answer was cut off at the output ceiling, rather than being wrong.
+   *
+   * A separate flag and not a string match on `error`, because this is the one
+   * failure that is worth retrying differently - `extractInParts` reads the
+   * reply in batches - and deciding that by looking for words in a message
+   * meant for a human breaks the day somebody rewords the message.
+   */
+  truncated?: boolean;
 }
 
 /** Cost per million tokens, for the budget guard and the spend shown to an admin. */
@@ -101,7 +112,7 @@ export function getClient(): Anthropic {
  * and anything volatile placed before them would throw the cache away on
  * every email.
  */
-function requestBody(request: ExtractionRequest, model: string) {
+function requestBody(request: ExtractionRequest, model: string, onlyDomains?: string[]) {
   return {
     model,
     /*
@@ -116,12 +127,19 @@ function requestBody(request: ExtractionRequest, model: string) {
       16000 was not enough either. One listing serialises to about 440
       tokens, so that ceiling held thirty-six domains - and a Danish network
       rate card pasted in as a table ran to a hundred and twenty, each with
-      its own price. 64000 holds that with room to spare. Billing is on
-      tokens actually produced, so the ceiling costs nothing until it is
-      needed; what it costs is the right to use a plain request, since the
-      SDK needs streaming at this size to avoid the HTTP timeout.
+      its own price. 64000 held that, and then five agency replies listing
+      several hundred sites each ran past it too.
+
+      128000 is the model's own ceiling, not another guess, so this is the
+      last time this number moves. Billing is on tokens actually produced, so
+      the ceiling costs nothing until it is needed; what it costs is the right
+      to use a plain request, since the SDK needs streaming at this size to
+      avoid the HTTP timeout.
+
+      A ceiling is not a plan, though. `extractInParts` below is what handles
+      a reply longer than any ceiling.
     */
-    max_tokens: 64000,
+    max_tokens: 128000,
     system: [
       {
         type: 'text' as const,
@@ -137,6 +155,7 @@ function requestBody(request: ExtractionRequest, model: string) {
           fromAddress: request.fromAddress,
           subject: request.subject,
           body: request.body,
+          onlyDomains,
         }),
       },
     ],
@@ -166,10 +185,98 @@ export async function extractNow(
     const stream = getClient().messages.stream(requestBody(request, model));
     const message = await stream.finalMessage();
 
-    return readMessage(message, request.emailId);
+    const outcome = readMessage(message, request.emailId);
+
+    /*
+      A reply that lists more sites than one answer can hold.
+
+      Five agency replies hit this, each listing several hundred domains. The
+      error told whoever read it to paste the email in two halves by hand,
+      which is work the thing that noticed should be doing - and these were
+      publishers worth having.
+    */
+    if (outcome.truncated) return extractInParts(request, model, message.usage);
+
+    return outcome;
   } catch (error) {
     return { emailId: request.emailId, error: messageFor(error) };
   }
+}
+
+const domainListSchema = z.object({
+  domains: z.array(z.string()),
+});
+
+/**
+ * Read a reply that is too long for one answer, in parts.
+ *
+ * The sequence lives in `in-parts.ts` and takes its two calls as arguments, so
+ * it can be driven by a fake: what it does - name the domains, then ask for
+ * them a batch at a time, with the whole email in every pass - is the part
+ * worth checking, and against the real API that check would cost money and
+ * could not assert what was asked.
+ */
+async function extractInParts(
+  request: ExtractionRequest,
+  model: string,
+  firstAttempt: { input_tokens: number; output_tokens: number },
+): Promise<ExtractionOutcome> {
+  const client = getClient();
+  const spent = (usage: { input_tokens: number; output_tokens: number }) => ({
+    inputTokens: usage.input_tokens,
+    outputTokens: usage.output_tokens,
+  });
+
+  const parts = await readInParts(
+    // The domains, and nothing else. Ten-odd tokens each, so a reply listing
+    // six hundred of them still answers inside a fraction of the ceiling.
+    async () => {
+      const message = await client.messages
+        .stream({
+          model,
+          max_tokens: 16000,
+          system: [
+            {
+              type: 'text' as const,
+              text: EXTRACTION_RULES,
+              cache_control: { type: 'ephemeral' as const },
+            },
+          ],
+          messages: [
+            {
+              role: 'user' as const,
+              content: `${buildUserMessage({
+                askedAboutDomain: request.askedAboutDomain,
+                fromAddress: request.fromAddress,
+                subject: request.subject,
+                body: request.body,
+              })}
+
+Do not extract anything yet. List every domain this reply offers a placement
+on, in the order they appear, and nothing else.`,
+            },
+          ],
+          output_config: { format: zodOutputFormat(domainListSchema) },
+        })
+        .finalMessage();
+
+      const named = domainListSchema.safeParse(safeJson(textOf(message.content)));
+      return { domains: named.success ? named.data.domains : null, usage: spent(message.usage) };
+    },
+
+    // The whole email every time, and only the answer narrowed.
+    async (domains) => {
+      const message = await client.messages
+        .stream(requestBody(request, model, domains))
+        .finalMessage();
+      const outcome = readMessage(message, request.emailId);
+      return { result: outcome.result, error: outcome.error, usage: spent(message.usage) };
+    },
+
+    spent(firstAttempt),
+  );
+
+  return { emailId: request.emailId, ...parts };
 }
 
 /** Submit a whole run and return the provider's batch id to collect against. */
@@ -246,10 +353,7 @@ function readMessage(
   },
   emailId: string,
 ): ExtractionOutcome {
-  const text = message.content
-    .filter((block): block is Anthropic.TextBlock => block.type === 'text')
-    .map((block) => block.text)
-    .join('');
+  const text = textOf(message.content);
 
   /*
     Two different failures, told apart.
@@ -263,12 +367,17 @@ function readMessage(
   */
   const json = safeJson(text);
   if (json === null) {
+    if (message.stop_reason === 'max_tokens') {
+      return {
+        emailId,
+        truncated: true,
+        error:
+          'This reply lists more sites than one answer can hold. Press "Retry failed" and then Read - read on its own rather than in a batch, it is taken in parts.',
+      };
+    }
     return {
       emailId,
-      error:
-        message.stop_reason === 'max_tokens'
-          ? 'The model ran out of room before finishing its JSON. This reply lists more domains than one response can hold - paste it in two halves.'
-          : `The model did not return JSON (stop reason: ${message.stop_reason ?? 'unknown'}). It produced ${text.trim().length} characters.`,
+      error: `The model did not return JSON (stop reason: ${message.stop_reason ?? 'unknown'}). It produced ${text.trim().length} characters.`,
     };
   }
 
@@ -293,6 +402,14 @@ function readMessage(
       outputTokens: message.usage.output_tokens,
     },
   };
+}
+
+/** The text of a message, which both readers want and neither should repeat. */
+function textOf(content: { type: string }[]): string {
+  return content
+    .filter((block): block is Anthropic.TextBlock => block.type === 'text')
+    .map((block) => block.text)
+    .join('');
 }
 
 function safeJson(text: string): unknown {

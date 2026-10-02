@@ -13,7 +13,7 @@ import { sensitiveNicheSlugs } from '@/lib/config/accepted-niches';
  * the drafts made under the old one can be found and re-extracted.
  */
 
-export const PROMPT_VERSION = '2026-09-24.2';
+export const PROMPT_VERSION = '2026-10-02.1';
 
 export const EXTRACTION_RULES = `You are reading a reply from a website publisher to a cold outreach email asking for their advertising rates. Turn it into structured data.
 
@@ -154,15 +154,35 @@ export function buildUserMessage(input: {
   fromAddress: string;
   subject: string | null;
   body: string;
+  /**
+   * Return listings for these domains only, and no others.
+   *
+   * For a reply listing more sites than one response can hold. The whole email
+   * still goes in - the header row of a rate card, the terms that apply to
+   * every site, the currency stated once at the top - because a listing read
+   * from half an email is a listing missing whatever the other half said. Only
+   * the answer is divided.
+   */
+  onlyDomains?: string[];
 }): string {
   const asked = input.askedAboutDomain
     ? `We wrote to them about: ${input.askedAboutDomain}`
     : `We wrote to them about "your website" without naming a domain. Find it in the reply.`;
 
+  const scope = input.onlyDomains?.length
+    ? `
+This reply lists more sites than one answer can hold, so it is being read in
+parts. Return listings for exactly these domains and no others, reading the
+whole reply for what applies to each - terms stated once at the top apply to
+every site below them:
+${input.onlyDomains.map((domain) => `- ${domain}`).join('\n')}
+`
+    : '';
+
   return `${asked}
 From: ${input.fromAddress}
 Subject: ${input.subject ?? '(none)'}
-
+${scope}
 --- reply ---
 ${input.body}
 --- end of reply ---`;
