@@ -1,16 +1,16 @@
-import type { Metadata } from "next";
-import { notFound } from "next/navigation";
-import { BadgeCheck, Gauge, Receipt, Workflow } from "lucide-react";
-import { ServicePage } from "@/components/marketing/service-page";
-import { NicheLandingPage } from "@/components/marketing/niche-landing-page";
-import { PageSections } from "@/components/cms/page-sections";
-import { categories } from "@/lib/data/categories";
-import type { NicheSlug } from "@/lib/types";
-import { contentAccessors } from "@/lib/cms/resolve";
-import { customPageService } from "@/lib/services/custom-page-service";
-import { websiteService } from "@/lib/services";
-import { brand, siteUrl } from "@/lib/config/brand";
-import { isPreview } from "@/lib/cms/preview";
+import type { Metadata } from 'next';
+import { notFound } from 'next/navigation';
+import { BadgeCheck, Gauge, Receipt, Workflow } from 'lucide-react';
+import { ServicePage } from '@/components/marketing/service-page';
+import { NicheLandingPage } from '@/components/marketing/niche-landing-page';
+import { PageSections } from '@/components/cms/page-sections';
+import { categories } from '@/lib/data/categories';
+import type { NicheSlug } from '@/lib/types';
+import { contentAccessors } from '@/lib/cms/resolve';
+import { customPageService } from '@/lib/services/custom-page-service';
+import { websiteService } from '@/lib/services';
+import { brand, siteUrl } from '@/lib/config/brand';
+import { isPreview } from '@/lib/cms/preview';
 
 /**
  * Pages created from the admin.

@@ -3,6 +3,7 @@ import { siteUrl } from '@/lib/config/brand';
 import { blogService } from '@/lib/services/blog-service';
 import { customPageService } from '@/lib/services/custom-page-service';
 import { pageContentService } from '@/lib/services/page-content-service';
+import { publishedNiches } from '@/lib/services/niche-landing';
 
 /**
  * Public sitemap.
@@ -11,8 +12,15 @@ import { pageContentService } from '@/lib/services/page-content-service';
  * listings are deliberately absent: they are account-only, so publishing their
  * URLs would both leak the inventory and point crawlers at pages that redirect.
  *
- * `/marketplace` is included because its signed-out render is a real public
- * page - the gateway - rather than the listings themselves.
+ * `/marketplace` used to be listed, because its signed-out render was a public
+ * gateway page. It is not any more - the whole segment needs an account and
+ * answers a signed-out request with a 307 and a noindex header - so listing it
+ * would be submitting a URL that is deliberately not indexable, which Search
+ * Console reports back as an error against the file.
+ *
+ * The niche pages under /guest-posts took over that job and are listed here
+ * instead. They are read from the same database and describe the same
+ * inventory, with nothing identifying in them.
  *
  * Blog posts come from the service, which filters drafts and future-dated
  * scheduled posts, so an unpublished post can never appear here. Pages created
@@ -46,7 +54,6 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     { path: '/gambling-link-building', priority: 0.8, changeFrequency: 'monthly' },
     { path: '/digital-pr', priority: 0.8, changeFrequency: 'monthly' },
     { path: '/link-building-agencies', priority: 0.8, changeFrequency: 'monthly' },
-    { path: '/marketplace', priority: 0.8, changeFrequency: 'weekly' },
     { path: '/how-it-works', priority: 0.7, changeFrequency: 'monthly' },
     { path: '/link-building-metrics', priority: 0.7, changeFrequency: 'monthly' },
     { path: '/pricing', priority: 0.7, changeFrequency: 'monthly' },
@@ -79,7 +86,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     }
   };
 
-  const [posts, customPages, editable] = await Promise.all([
+  const [posts, customPages, editable, niches] = await Promise.all([
     soften('blog posts', blogService.getPublishedSlugs(), []),
     soften('pages created in the admin', customPageService.listPublished(), []),
     // Real edited dates for the pages that have one. The sitemap used to stamp
@@ -88,6 +95,9 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     // that a lastmod it finds to be inaccurate gets ignored, which costs us the
     // signal on the pages where it is true.
     soften('page edit dates', pageContentService.list(), []),
+    // The same list the pages themselves are generated from, so the sitemap
+    // cannot offer a niche page that 404s for want of inventory.
+    soften('the niches with a page', publishedNiches(), [] as string[]),
   ]);
 
   const editedAt = new Map(
@@ -105,6 +115,11 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       ...(editedAt.has(route.path) ? { lastModified: editedAt.get(route.path) } : {}),
       changeFrequency: route.changeFrequency,
       priority: route.priority,
+    })),
+    ...niches.map((niche) => ({
+      url: `${siteUrl}/guest-posts/${niche}`,
+      changeFrequency: 'weekly' as const,
+      priority: 0.8,
     })),
     ...customPages.map((page) => ({
       url: `${siteUrl}${page.path}`,

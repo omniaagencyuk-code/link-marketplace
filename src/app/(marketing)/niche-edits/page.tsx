@@ -1,10 +1,10 @@
-import type { Metadata } from "next";
-import { History, Link2, Timer, TrendingUp } from "lucide-react";
-import { ServicePage } from "@/components/marketing/service-page";
-import { PageSections } from "@/components/cms/page-sections";
-import { metadataForPage } from "@/lib/cms/metadata";
-import { pageContentService } from "@/lib/services/page-content-service";
-import { websiteService } from "@/lib/services";
+import type { Metadata } from 'next';
+import { History, Link2, Timer, TrendingUp } from 'lucide-react';
+import { ServicePage } from '@/components/marketing/service-page';
+import { PageSections } from '@/components/cms/page-sections';
+import { metadataForPage } from '@/lib/cms/metadata';
+import { pageContentService } from '@/lib/services/page-content-service';
+import { websiteService } from '@/lib/services';
 
 const SLUG = "niche-edits";
 

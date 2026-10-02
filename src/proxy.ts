@@ -7,6 +7,7 @@ import {
   verifyCustomerSessionToken,
 } from '@/lib/auth/customer-session';
 import { supabaseAnonKey, supabaseUrl, isSupabaseEnabled } from '@/lib/supabase/config';
+import { returnPathFor } from '@/lib/auth/return-to';
 
 /**
  * Gates private areas before any page renders, and keeps the session fresh.
@@ -16,9 +17,11 @@ import { supabaseAnonKey, supabaseUrl, isSupabaseEnabled } from '@/lib/supabase/
  *
  * - /admin      - the internal team area.
  * - marketplace - the publisher inventory, which is a benefit of holding an
- *                 account. `/marketplace` itself stays public because it
- *                 serves a signed-out gateway page; the listings underneath it
- *                 do not.
+ *                 account. All of it: `/marketplace` used to be let through
+ *                 because it served a signed-out gateway, and the gateway's
+ *                 job - being the public, indexable page that explains the
+ *                 inventory - now belongs to /guest-posts and its niche pages,
+ *                 which are built from masked data and have nothing to leak.
  *
  * This is the first of two checks in both cases. Pages and server actions
  * re-check with `requireAdminSession()` / `requireCustomerSession()`, because
@@ -29,8 +32,21 @@ import { supabaseAnonKey, supabaseUrl, isSupabaseEnabled } from '@/lib/supabase/
  * mid-visit and the customer would be signed out for no apparent reason.
  */
 
-/** Paths under /marketplace that render without an account. */
-const PUBLIC_MARKETPLACE_PATHS = new Set(['/marketplace']);
+/**
+ * Keep crawlers off the inventory even while it is redirecting.
+ *
+ * A redirect is only seen by a crawler that follows it, and a page is only
+ * seen as noindex by one that renders it. This header is read on the response
+ * itself, so it applies to the 307 as well as to anything a signed-in request
+ * renders - which is what makes it a backstop rather than a second copy of the
+ * same check.
+ */
+const NO_INDEX = 'noindex, nofollow';
+
+function gated(response: NextResponse): NextResponse {
+  response.headers.set('X-Robots-Tag', NO_INDEX);
+  return response;
+}
 
 /**
  * Is there a Supabase session on this request at all?
@@ -86,15 +102,41 @@ async function gateAdmin(request: NextRequest, pathname: string) {
   return NextResponse.redirect(loginUrl);
 }
 
+/**
+ * Signed out, so: sign up, and come back here afterwards.
+ *
+ * Inventory routes send people to signup rather than login, because somebody
+ * who has arrived at a listing from a search result does not have an account
+ * yet - offering them a login form first asks them to remember a password they
+ * never set. The dashboard is the other way round: you only have a dashboard
+ * if you already signed up.
+ *
+ * The return URL carries the query string. It did not, so somebody who asked
+ * for `/websites?niche=technology` came back to an unfiltered marketplace and
+ * the filter they came for was gone.
+ *
+ * `NextResponse.redirect` is a 307 by default and must stay one: a 301 is
+ * cached by browsers and by Google more or less permanently, so the day this
+ * inventory opens up again every previously-redirected visitor would still be
+ * bounced to signup from their own cache.
+ */
 function signedOutRedirect(request: NextRequest, pathname: string) {
-  // Marketplace routes land on the gateway, which explains the product and
-  // sells the signup. The dashboard goes straight to the login form.
-  const isMarketplace = pathname === '/websites' || pathname.startsWith('/websites/');
+  const isInventory = isInventoryPath(pathname);
   const target = request.nextUrl.clone();
-  target.pathname = isMarketplace ? '/marketplace' : '/login';
+  target.pathname = isInventory ? '/signup' : '/login';
   target.search = '';
-  target.searchParams.set('next', pathname);
-  return NextResponse.redirect(target);
+  target.searchParams.set('next', returnPathFor(pathname, request.nextUrl.search));
+  return gated(NextResponse.redirect(target, 307));
+}
+
+/** The publisher inventory: the listings themselves, and the search over them. */
+function isInventoryPath(pathname: string): boolean {
+  return (
+    pathname === '/marketplace' ||
+    pathname.startsWith('/marketplace/') ||
+    pathname === '/websites' ||
+    pathname.startsWith('/websites/')
+  );
 }
 
 export async function proxy(request: NextRequest) {
@@ -103,13 +145,14 @@ export async function proxy(request: NextRequest) {
 
   if (isAdminPath) return gateAdmin(request, pathname);
 
-  if (!isSupabaseEnabled()) {
-    if (PUBLIC_MARKETPLACE_PATHS.has(pathname)) return NextResponse.next();
+  const inventory = isInventoryPath(pathname);
 
+  if (!isSupabaseEnabled()) {
     const session = await verifyCustomerSessionToken(
       request.cookies.get(CUSTOMER_SESSION_COOKIE)?.value,
     );
-    return session ? NextResponse.next() : signedOutRedirect(request, pathname);
+    if (!session) return signedOutRedirect(request, pathname);
+    return inventory ? gated(NextResponse.next()) : NextResponse.next();
   }
 
   // Supabase writes refreshed tokens onto this response, so it has to be the
@@ -140,10 +183,11 @@ export async function proxy(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser();
 
-  if (PUBLIC_MARKETPLACE_PATHS.has(pathname)) return response;
-  if (user) return response;
+  if (!user) return signedOutRedirect(request, pathname);
 
-  return signedOutRedirect(request, pathname);
+  // Signed in, so the page renders - and still carries the header, because an
+  // inventory page is not for an index whoever is looking at it.
+  return inventory ? gated(response) : response;
 }
 
 export const config = {

@@ -3,6 +3,7 @@ import { AlertCircle } from 'lucide-react';
 import { redirect } from 'next/navigation';
 import { AuthForm } from '@/components/auth/auth-form';
 import { getCurrentUser } from '@/lib/auth/customer-access';
+import { safeReturnPath } from '@/lib/auth/return-to';
 
 export const metadata: Metadata = {
   title: 'Log in',
@@ -11,19 +12,13 @@ export const metadata: Metadata = {
   robots: { index: false, follow: true },
 };
 
-/** Only same-origin paths, so a crafted `next` cannot bounce a user offsite. */
-function safeNext(value: string | string[] | undefined) {
-  const path = typeof value === 'string' ? value : '';
-  return path.startsWith('/') && !path.startsWith('//') ? path : undefined;
-}
-
 export default async function LoginPage({
   searchParams,
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const params = await searchParams;
-  const next = safeNext(params.next);
+  const next = safeReturnPath(params.next);
   // Already signed in: no reason to show the form again.
   if (await getCurrentUser()) redirect(next ?? '/dashboard');
 

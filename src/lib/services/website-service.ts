@@ -1,4 +1,5 @@
 import { websites as seedWebsites } from '@/lib/data/websites';
+import { inNiche } from '@/lib/marketplace/topic';
 import { runQuery, toListItem } from './query-engine';
 import { slugifyDomain } from '@/lib/utils/format';
 import { normaliseDomain } from '@/lib/import/normalise';
@@ -199,6 +200,19 @@ export const websiteService = {
     if (index === -1) return { ok: false, reason: 'No longer exists.' };
     store.splice(index, 1);
     return { ok: true };
+  },
+
+  /**
+   * Every active listing in one niche, for the public niche pages.
+   *
+   * Server-only by use, not by type: what reaches the browser from these pages
+   * is `SampleRow`, which has no field that could carry a domain. The full
+   * listings stop at `niche-landing.ts`.
+   */
+  async listForNiche(niche: NicheSlug): Promise<WebsiteListItem[]> {
+    if (isSupabaseEnabled()) return supabaseWebsiteRepository.listForNiche(niche);
+
+    return publicItems(listItems()).filter((website) => inNiche(website, niche));
   },
 
   async countByNiche(): Promise<Record<NicheSlug, number>> {

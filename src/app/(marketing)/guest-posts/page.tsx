@@ -1,10 +1,11 @@
-import type { Metadata } from "next";
-import { FileEdit, Filter, PenTool, Timer } from "lucide-react";
-import { ServicePage } from "@/components/marketing/service-page";
-import { PageSections } from "@/components/cms/page-sections";
-import { metadataForPage } from "@/lib/cms/metadata";
-import { pageContentService } from "@/lib/services/page-content-service";
-import { websiteService } from "@/lib/services";
+import type { Metadata } from 'next';
+import { FileEdit, Filter, PenTool, Timer } from 'lucide-react';
+import { ServicePage } from '@/components/marketing/service-page';
+import { PageSections } from '@/components/cms/page-sections';
+import { NicheDirectory } from '@/components/marketing/niche-directory';
+import { metadataForPage } from '@/lib/cms/metadata';
+import { pageContentService } from '@/lib/services/page-content-service';
+import { websiteService } from '@/lib/services';
 
 const SLUG = "guest-posts";
 
@@ -24,23 +25,27 @@ export default async function Page() {
   /*
     Sections are the page; the template is what it renders until it has any.
 
-    `extra` drew the whole template and then appended the page's sections to
-    the bottom, so a hero added in the builder sat first in the section list
-    and halfway down the page, under the one the template had already drawn.
+    The niche directory sits under all of that rather than inside it. It is the
+    public route into an inventory that now needs an account, so it belongs on
+    this page specifically - not in the template every service page shares,
+    which is why it is composed here rather than slotted into one.
   */
   return (
-    <PageSections
-      slug={SLUG}
-      provided={{ preview: preview.rows }}
-      fallback={
-        <ServicePage
-          content={content}
-          highlightIcons={highlightIcons}
-          preview={preview.rows}
-          path="/guest-posts"
-          breadcrumbLabel="Guest posts"
-        />
-      }
-    />
+    <>
+      <PageSections
+        slug={SLUG}
+        provided={{ preview: preview.rows }}
+        fallback={
+          <ServicePage
+            content={content}
+            highlightIcons={highlightIcons}
+            preview={preview.rows}
+            path="/guest-posts"
+            breadcrumbLabel="Guest posts"
+          />
+        }
+      />
+      <NicheDirectory />
+    </>
   );
 }

@@ -84,3 +84,20 @@ export function forTopic(
     .filter((website) => acceptsTopic(website, topic))
     .map((website) => pricedForTopic(website, topic, tier));
 }
+
+/**
+ * Is this listing in that niche?
+ *
+ * Primary or secondary, which is what the marketplace's own niche filter means
+ * by it. Defined once because it was defined three times, and two of them
+ * disagreed: the public niche pages selected listings this way while the
+ * sitemap decided which pages existed from a primary-only count, so a niche
+ * with seven primary and ten total listings had a page that rendered and a
+ * sitemap that never mentioned it.
+ */
+export function inNiche(
+  website: Pick<WebsiteListItem, 'niche' | 'secondaryNiches'>,
+  niche: string,
+): boolean {
+  return website.niche === niche || website.secondaryNiches.includes(niche as never);
+}

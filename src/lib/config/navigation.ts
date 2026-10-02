@@ -37,9 +37,15 @@ export interface NavGroup extends NavItem {
 /**
  * Primary marketing navigation.
  *
- * Marketplace stays in the menu deliberately: signed-out visitors clicking it
- * reach the gateway at /marketplace, which is a conversion page rather than a
- * dead end.
+ * "Browse the marketplace" points at /guest-posts rather than /marketplace.
+ * The marketplace needs an account now, so a signed-out visitor clicking it
+ * would be bounced to a signup form by a gate, having been shown nothing - a
+ * menu item that leads to a wall is worse than no menu item. /guest-posts and
+ * its niche pages describe the same inventory, publicly, and end in the same
+ * signup with somewhere to come back to.
+ *
+ * Signed in, the header's own member nav links straight to /marketplace, so
+ * nobody with an account takes the long way round.
  */
 export const mainNav: NavGroup[] = [
   {
@@ -78,7 +84,7 @@ export const mainNav: NavGroup[] = [
       },
     ],
   },
-  { label: 'Marketplace', href: '/marketplace' },
+  { label: 'Browse the marketplace', href: '/guest-posts' },
   { label: 'How It Works', href: '/how-it-works' },
   { label: 'Pricing', href: '/pricing' },
   { label: 'Resources', href: '/resources' },
@@ -131,7 +137,7 @@ export const footerNav: { title: string; items: NavItem[] }[] = [
     items: [
       { label: 'How it works', href: '/how-it-works' },
       { label: 'Pricing', href: '/pricing' },
-      { label: 'Marketplace', href: '/marketplace' },
+      { label: 'Browse the marketplace', href: '/guest-posts' },
       { label: 'For agencies', href: '/link-building-agencies' },
     ],
   },

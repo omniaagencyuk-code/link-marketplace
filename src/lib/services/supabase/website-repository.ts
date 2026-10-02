@@ -1,4 +1,5 @@
 import { getServerClient, getAdminClient, getAdminScopedClient } from '@/lib/supabase/server';
+import { inNiche } from '@/lib/marketplace/topic';
 import { readAllPages } from './paged';
 import {
   WEBSITE_SELECT,
@@ -87,9 +88,9 @@ function warnIfOutgrown(what: string, rows: number) {
 type Client = ReturnType<typeof getAdminScopedClient>;
 
 /** Primary or secondary - the same test the marketplace filter applies. */
-function matchesNiche(website: WebsiteListItem, niche: NicheSlug): boolean {
-  return website.niche === niche || website.secondaryNiches.includes(niche);
-}
+/** Primary or secondary. Shared with the niche pages, which must agree. */
+const matchesNiche = (website: WebsiteListItem, niche: NicheSlug): boolean =>
+  inNiche(website, niche);
 
 /** Category ids for a set of slugs, in one query. */
 async function categoryIds(supabase: Client, slugs: string[]): Promise<Map<string, string>> {
@@ -488,6 +489,38 @@ export const supabaseWebsiteRepository = {
    * function, so what escapes is a masked label and banded metrics - never a
    * domain, slug or id.
    */
+  /**
+   * Every active listing in one niche.
+   *
+   * For the public niche pages, which need the whole set rather than a sample:
+   * the DR range, the country count and the starting price are all claims
+   * about the niche, and a claim drawn from the first page of it would be
+   * wrong in the direction that flatters us.
+   *
+   * Paged for the reason every full read here is paged - a bare limit comes
+   * back truncated at a thousand rows with no error - and filtered in
+   * JavaScript because a listing's niche is in a join table and its secondary
+   * niches in another, which is what `countByNiche` does too.
+   */
+  async listForNiche(niche: NicheSlug): Promise<WebsiteListItem[]> {
+    const admin = getAdminClient();
+    const supabase = admin ?? (await getServerClient());
+
+    const data = await readAllPages<WebsiteRow>('the listings in a niche', (from, to) =>
+      supabase
+        .from('websites')
+        .select(WEBSITE_SELECT)
+        .eq('status', 'active')
+        .order('domain_rating', { ascending: false })
+        .order('id', { ascending: true })
+        .range(from, to),
+    );
+
+    return data
+      .map((row) => toListItem(mapWebsite(row)))
+      .filter((website) => matchesNiche(website, niche));
+  },
+
   async getPublicPreview(limit = 6, niche?: NicheSlug): Promise<MarketplacePreview> {
     const admin = getAdminClient();
     const supabase = admin ?? (await getServerClient());
