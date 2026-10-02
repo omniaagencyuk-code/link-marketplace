@@ -1,4 +1,5 @@
 import { Check, ExternalLink, X } from 'lucide-react';
+import { websiteOverview } from '@/lib/websites/overview';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { countryName } from '@/lib/data/countries';
 import { acceptedNicheLabel } from '@/lib/config/accepted-niches';
@@ -11,6 +12,7 @@ import type { Website } from '@/lib/types';
 
 export function WebsiteSections({ website }: { website: Website }) {
   const { rules, metrics } = website;
+  const overview = websiteOverview(website);
   const available = website.services.filter((service) => service.available);
 
   // The biggest measured market, when the breakdown has been collected. Taken
@@ -36,13 +38,24 @@ export function WebsiteSections({ website }: { website: Website }) {
 
   return (
     <div className="space-y-6">
-      <Section id="overview" title="Website Overview">
-        {website.overview.split('\n\n').map((paragraph) => (
-          <p key={paragraph.slice(0, 32)} className="text-[14px] leading-relaxed text-ink-soft">
-            {paragraph}
-          </p>
-        ))}
-      </Section>
+      {/*
+        Written if somebody wrote one, derived from the record if not.
+
+        Almost no listing has a hand-written overview - they arrive from a CSV
+        or from a publisher's reply, neither of which carries one - so this
+        panel was a heading with nothing under it across the whole marketplace.
+        `websiteOverview` builds one from fields that are actually populated and
+        says nothing it cannot support.
+      */}
+      {overview ? (
+        <Section id="overview" title="Website Overview">
+          {overview.split('\n\n').map((paragraph) => (
+            <p key={paragraph.slice(0, 32)} className="text-[14px] leading-relaxed text-ink-soft">
+              {paragraph}
+            </p>
+          ))}
+        </Section>
+      ) : null}
 
       <Section id="seo-metrics" title="SEO Metrics">
         <dl className="grid grid-cols-2 gap-x-6 gap-y-4 sm:grid-cols-3">

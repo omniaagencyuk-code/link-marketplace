@@ -11,7 +11,8 @@ import { readFileSync } from 'node:fs';
 import { safeReturnPath, returnPathFor } from '../src/lib/auth/return-to';
 import { spread, toSampleRows, toStats, MIN_LISTINGS_FOR_A_PAGE } from '../src/lib/services/niche-landing';
 import { NICHE_COPY } from '../src/lib/content/niche-guest-posts';
-import type { WebsiteListItem } from '../src/lib/types';
+import { websiteOverview } from '../src/lib/websites/overview';
+import type { Website, WebsiteListItem } from '../src/lib/types';
 
 let failed = 0;
 const ok = (label: string) => console.log(`  PASS  ${label}`);
@@ -251,6 +252,98 @@ console.log('\n--- the copy ---');
   yes('the call to action returns to the filtered marketplace', /next=\$\{encodeURIComponent\(`\/marketplace\?niche=/.test(page));
   yes('a niche too thin to describe is a 404', page.includes('if (!landing) notFound()'));
   yes(`and thin means fewer than ${MIN_LISTINGS_FOR_A_PAGE}`, MIN_LISTINGS_FOR_A_PAGE >= 10);
+}
+
+console.log('\n--- what a listing overview may claim ---');
+{
+  /*
+    Almost no listing has a hand-written overview, so the panel was a heading
+    with nothing under it across the marketplace. What goes under it has to come
+    from the record - and the trap is that most of the record is a default.
+
+    `emptyRules()` creates every imported listing with 800-1600 words, one link,
+    `dofollow`, no sponsored label and "either" for who writes the article. None
+    of it came from a publisher. The first version of this read those fields,
+    which would have written "links are dofollow" onto seventeen hundred
+    listings on the strength of a default - the one claim in this marketplace a
+    buyer is actually paying for.
+  */
+  const defaults = {
+    domain: 'imported.example',
+    overview: '',
+    niche: 'technology',
+    secondaryNiches: [],
+    country: undefined,
+    language: 'en',
+    services: [{ type: 'guest-post', available: true, turnaroundMinDays: 0, turnaroundMaxDays: 0 }],
+    rules: {
+      minWordCount: 800,
+      maxWordCount: 1600,
+      maxLinks: 1,
+      linkAttribute: 'dofollow',
+      sponsoredTag: 'never',
+      acceptedNiches: [],
+      restrictedNiches: [],
+      contentProvidedBy: 'either',
+    },
+  } as unknown as Website;
+
+  const bare = websiteOverview(defaults);
+  yes('a listing with nothing recorded still gets an overview', bare.length > 0);
+  yes('it names the publication and its subject', bare.includes('imported.example') && bare.includes('technology'));
+
+  for (const [what, claim] of [
+    ['the link attribute', /dofollow|nofollow/i],
+    ['a word count', /\b800\b|\b1600\b|words/i],
+    ['a link count', /links per article/i],
+    ['a sponsored-label policy', /sponsored/i],
+    ['who writes the article', /supply the article|writes the article/i],
+    ['a language', /English/i],
+  ] as const) {
+    yes(`${what} is not claimed from a default`, !claim.test(bare));
+  }
+
+  // And nothing that moves: these change on every refresh, so prose quoting
+  // them would be wrong within a week while looking authoritative.
+  yes('no rating or traffic figure is written into the prose', !/\bDR\b|domain rating|monthly visits/i.test(bare));
+
+  /*
+    What it may say is what somebody established. The country is the one field
+    here that is now trustworthy - it is undefined where its source was the old
+    default - and turnaround is zero where nobody stated it.
+  */
+  const stated = {
+    ...defaults,
+    country: 'DK',
+    secondaryNiches: ['business'],
+    services: [{ type: 'guest-post', available: true, turnaroundMinDays: 2, turnaroundMaxDays: 5 }],
+    rules: { ...defaults.rules, acceptedNiches: ['gambling'], restrictedNiches: ['adult'] },
+  } as unknown as Website;
+
+  const full = websiteOverview(stated);
+  yes('a stated market is named', full.includes('Denmark'));
+  yes('a stated turnaround is given', /2 to 5 working days/.test(full));
+  yes('and a topic the publisher agreed to carry', full.includes('Gambling and iGaming'));
+  yes('as is one they refused', /will not take: adult/.test(full));
+
+  // The labels contain "and", so an ordinary list reads as four topics.
+  const two = websiteOverview({
+    ...stated,
+    rules: { ...stated.rules, acceptedNiches: ['gambling', 'crypto'] },
+  } as unknown as Website);
+  yes('two topics whose labels contain "and" stay two', two.includes('Gambling and iGaming, Crypto and web3'));
+
+  // A turnaround nobody stated is not invented as zero days.
+  yes('an unstated turnaround is simply absent', !/working days/.test(bare));
+
+  // Anything written by hand wins outright.
+  const written = websiteOverview({ ...stated, overview: 'Written by an editor.' } as unknown as Website);
+  is('a hand-written overview is used as it is', written, 'Written by an editor.');
+
+  const panel = read('src/components/website/website-sections.tsx');
+  yes('the panel renders the derived overview', panel.includes('websiteOverview(website)'));
+  // A listing with nothing to say shows no empty heading.
+  yes('and shows no heading when there is nothing to say', /\{overview \? \(/.test(panel));
 }
 
 console.log(failed ? `\n  ${failed} FAILED\n` : '\n  all passed\n');
