@@ -44,6 +44,10 @@ function amountsFrom(session: Stripe.Checkout.Session) {
     chargedMinor: session.amount_total ?? null,
     taxMinor: session.total_details?.amount_tax ?? null,
     billingCountry: session.customer_details?.address?.country ?? null,
+    // What the coupon took off, as Stripe applied it. Preferred over the
+    // estimate written when checkout opened: Stripe distributed the
+    // percentage across the lines and did the rounding.
+    discountMinor: session.total_details?.amount_discount ?? null,
   };
 }
 

@@ -120,6 +120,9 @@ echo
 echo "--- publisher contacts ---"
 run -f "$ROOT/supabase/tests/09_publisher_contacts.sql" 2>&1 | grep -v '^$'
 echo
+echo "--- promo codes (nobody but the service role may read them) ---"
+run -f "$ROOT/supabase/tests/15_promo_codes.sql" 2>&1 | grep -v '^$'
+echo
 echo "--- gmail import: the allowlist and who can read the mail ---"
 run -f "$ROOT/supabase/tests/13_gmail_import.sql" 2>&1 | grep -v '^$'
 echo

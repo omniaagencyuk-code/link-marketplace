@@ -101,6 +101,10 @@ export interface Order {
   taxMinor?: number;
   /** What Stripe actually took. Undefined until the payment lands. */
   chargedMinor?: number;
+  /** The promo code used, as it was spelled on the day. */
+  promoCode?: string;
+  /** What that code took off. Set together with `promoCode` or not at all. */
+  discountMinor?: number;
   /** Billing country from Stripe, so a zero-VAT order can be judged. */
   billingCountry?: string;
   currency: 'GBP' | 'USD' | 'EUR';

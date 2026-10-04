@@ -3,7 +3,8 @@
 import { useState, useTransition } from 'react';
 import Link from 'next/link';
 import { AlertCircle, ShoppingBag } from 'lucide-react';
-import { startCheckoutAction } from '@/app/dashboard/orders/actions';
+import { startCheckoutAction, type PromoPreview } from '@/app/dashboard/orders/actions';
+import { PromoField } from './promo-field';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
 import { DraftOrderItemCard } from './draft-order-item';
@@ -35,6 +36,7 @@ export function DraftOrder({
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [rejected, setRejected] = useState<{ websiteDomain: string; reason: string }[]>([]);
+  const [promo, setPromo] = useState<PromoPreview | null>(null);
 
   /*
     Lines that still owe an answer about their topic.
@@ -54,7 +56,10 @@ export function DraftOrder({
     setRejected([]);
     startTransition(async () => {
       // On success this redirects to Stripe and never returns.
-      const result = await startCheckoutAction(items);
+      // The code goes with the basket rather than being remembered on the
+      // server: checkout re-validates it against prices it reads itself, so
+      // this is the only place it needs to travel from.
+      const result = await startCheckoutAction(items, promo?.code);
       if (result?.error) setError(result.error);
       if (result?.rejected?.length) setRejected(result.rejected);
     });
@@ -118,9 +123,23 @@ export function DraftOrder({
         <div className="flex flex-wrap items-center justify-between gap-3">
           <p className="tabular text-[14px] text-ink-soft">
             Order total
-            <span className="ml-2 text-[17px] font-semibold text-ink">
-              {formatPrice(totalMinor)}
-            </span>
+            {/* The discounted figure leads, with the original struck through
+                beside it: the number somebody is about to pay should be the
+                biggest thing on the line. */}
+            {promo?.ok ? (
+              <>
+                <span className="ml-2 text-[17px] font-semibold text-ink">
+                  {formatPrice(promo.payableMinor ?? totalMinor)}
+                </span>
+                <span className="ml-2 text-[13px] text-muted line-through">
+                  {formatPrice(totalMinor)}
+                </span>
+              </>
+            ) : (
+              <span className="ml-2 text-[17px] font-semibold text-ink">
+                {formatPrice(totalMinor)}
+              </span>
+            )}
             {/* Not "excluding VAT" flatly: whether any is due depends on the
                 billing address, which Stripe collects at checkout. A UK
                 customer pays 20% on top; an overseas business giving a valid
@@ -177,6 +196,14 @@ export function DraftOrder({
             ))}
           </ul>
         ) : null}
+
+        <PromoField
+          items={items}
+          // Every line, its price and its quantity. A code applied against one
+          // basket must not survive into a different one.
+          signature={`${items.length}:${totalMinor}:${items.map((item) => item.id).join(',')}`}
+          onApplied={setPromo}
+        />
 
         <p className="mt-3 text-[12px] text-muted">
           Your order is saved in this browser. Nothing is charged until you check out, and prices

@@ -4,6 +4,7 @@ import { websiteService } from './website-service';
 import { needsTopic, placementPrice, tierFor, type BuyerTier } from '@/lib/utils/pricing';
 import { mockStore } from './mock-store';
 import { mapOrder, type OrderRow } from '@/lib/supabase/mappers';
+import { promoService } from './promo-service';
 import type { DraftOrderItem, Order, UserProfile } from '@/lib/types';
 
 /**
@@ -139,10 +140,17 @@ const mockOrders = mockStore<Order>('orders');
 /**
  * Write the order. Unpaid, in draft, ready to be sent to Stripe.
  */
+export interface AppliedPromo {
+  codeId: string;
+  code: string;
+  discountMinor: number;
+}
+
 export async function createPendingOrder(
   user: UserProfile,
   pricing: PricingResult,
   currency: Order['currency'],
+  promo?: AppliedPromo,
 ): Promise<Order> {
   const now = new Date().toISOString();
   const reference = newReference();
@@ -193,8 +201,27 @@ export async function createPendingOrder(
       user_id: user.id,
       status: 'draft',
       payment_status: 'unpaid',
+      /*
+        The net before any discount, which is what it has always meant.
+
+        The discount is recorded beside it rather than subtracted from it: a
+        total that silently moved would make the order disagree with the
+        placements listed on it, and the figure that actually left the
+        customer's account is `charged_minor`, written from the Stripe session.
+      */
       total_minor: pricing.totalMinor,
       currency,
+      ...(promo
+        ? {
+            promo_code_id: promo.codeId,
+            // A snapshot, so the order still says SPRING25 after the code has
+            // been edited or deleted.
+            promo_code: promo.code,
+            // An estimate until the webhook replaces it with what Stripe
+            // reports having actually taken off.
+            discount_minor: promo.discountMinor,
+          }
+        : {}),
     })
     .select('id')
     .single();
@@ -265,6 +292,13 @@ export interface PaidAmounts {
   taxMinor?: number | null;
   /** Where they said they were, which is what decides whether zero is right. */
   billingCountry?: string | null;
+  /**
+   * What the coupon actually took off, as Stripe reports it.
+   *
+   * Preferred over our own estimate: Stripe distributed the percentage across
+   * the lines and did the rounding, so this is the figure on the receipt.
+   */
+  discountMinor?: number | null;
 }
 
 export async function markOrderPaid(
@@ -278,7 +312,7 @@ export async function markOrderPaid(
 
   const { data: order } = await supabase
     .from('orders')
-    .select('id, payment_status')
+    .select('id, payment_status, user_id, promo_code_id')
     .eq('stripe_checkout_session_id', sessionId)
     .maybeSingle();
 
@@ -296,8 +330,26 @@ export async function markOrderPaid(
       ...(amounts.chargedMinor == null ? {} : { charged_minor: amounts.chargedMinor }),
       ...(amounts.taxMinor == null ? {} : { tax_minor: amounts.taxMinor }),
       ...(amounts.billingCountry == null ? {} : { billing_country: amounts.billingCountry }),
+      ...(amounts.discountMinor == null ? {} : { discount_minor: amounts.discountMinor }),
     })
     .eq('id', order.id);
+
+  /*
+    The code is spent here, not when checkout opened.
+
+    This is the only place that counts towards a usage limit, because this is
+    the only place that knows a payment happened. The redemption row is unique
+    on the order, so Stripe delivering the same event twice still counts once.
+  */
+  const promoCodeId = (order as { promo_code_id?: string | null }).promo_code_id;
+  if (promoCodeId) {
+    await promoService.recordRedemption({
+      promoCodeId,
+      orderId: order.id as string,
+      userId: (order as { user_id: string }).user_id,
+      discountMinor: amounts.discountMinor ?? 0,
+    });
+  }
 
   // Payment moves the order out of draft and into the queue, and records why.
   await supabase.rpc('set_order_status', {
@@ -346,4 +398,72 @@ export async function releaseStripeEvent(eventId: string): Promise<void> {
 
   const supabase = getAdminScopedClient();
   await supabase.from('stripe_events').delete().eq('id', eventId);
+}
+
+/**
+ * An order a promo code paid for in full.
+ *
+ * Stripe cannot take a payment of nothing - a session for a zero total is
+ * rejected outright - so a 100% code has to settle the order here instead of
+ * being sent to a checkout that would error. This is the only path that marks
+ * an order paid without a Stripe session, which is why it insists on the
+ * order being the one it was told about: unpaid, zero to pay, and carrying the
+ * code that made it free.
+ *
+ * No VAT is recorded, because there is none. VAT is due on the consideration
+ * and the consideration is nothing; there is also no billing address, since
+ * Stripe never collected one.
+ */
+export async function completeFreeOrder(input: {
+  orderId: string;
+  userId: string;
+  promoCodeId: string;
+  discountMinor: number;
+}): Promise<{ ok: boolean; error?: string }> {
+  if (!isSupabaseEnabled()) return { ok: false, error: 'The database is not connected.' };
+
+  const supabase = getAdminScopedClient();
+
+  /*
+    Re-read rather than trust the caller.
+
+    The guard is `payment_status = 'unpaid'` in the update itself, so two
+    requests racing cannot both settle the same order - the second matches no
+    row. Scoped to the buyer as well, because this function takes a user id
+    and must not be usable to settle somebody else's order.
+  */
+  const { data: settled } = await supabase
+    .from('orders')
+    .update({
+      payment_status: 'paid',
+      paid_at: new Date().toISOString(),
+      charged_minor: 0,
+      tax_minor: 0,
+      discount_minor: input.discountMinor,
+    })
+    .eq('id', input.orderId)
+    .eq('user_id', input.userId)
+    .eq('payment_status', 'unpaid')
+    .select('id')
+    .maybeSingle();
+
+  if (!settled) return { ok: false, error: 'That order is no longer waiting to be paid.' };
+
+  await promoService.recordRedemption({
+    promoCodeId: input.promoCodeId,
+    orderId: input.orderId,
+    userId: input.userId,
+    discountMinor: input.discountMinor,
+  });
+
+  // The same transition a paid order makes, with a note saying why no money
+  // moved - an order worth nothing in the ledger needs the reason on it.
+  await supabase.rpc('set_order_status', {
+    p_order_id: input.orderId,
+    p_status: 'awaiting-content',
+    p_note: 'Paid in full by a promo code.',
+    p_changed_by: null,
+  });
+
+  return { ok: true };
 }

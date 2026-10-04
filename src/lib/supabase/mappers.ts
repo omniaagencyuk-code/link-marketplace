@@ -543,6 +543,8 @@ export interface OrderRow {
   total_minor: number;
   tax_minor: number | null;
   charged_minor: number | null;
+  promo_code: string | null;
+  discount_minor: number | null;
   currency: Order['currency'];
   placed_at: string;
   updated_at: string;
@@ -564,6 +566,11 @@ export function mapOrder(row: OrderRow): Order {
     totalMinor: toNumber(row.total_minor),
     taxMinor: row.tax_minor == null ? undefined : toNumber(row.tax_minor),
     chargedMinor: row.charged_minor == null ? undefined : toNumber(row.charged_minor),
+    // Both or neither. A discount with no code on it is a number nobody can
+    // account for, which is exactly what an order should never carry.
+    ...(row.promo_code && row.discount_minor
+      ? { promoCode: row.promo_code, discountMinor: toNumber(row.discount_minor) }
+      : {}),
     currency: row.currency ?? 'GBP',
     items: (row.order_items ?? []).map(
       (item): OrderItem => ({

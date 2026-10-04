@@ -79,7 +79,23 @@ export default async function OrderPage({ params }: { params: Promise<{ id: stri
             value={formatPrice(order.chargedMinor ?? order.totalMinor, {
               currency: order.currency,
             })}
-            hint={order.taxMinor ? `includes ${formatPrice(order.taxMinor)} VAT` : undefined}
+            /*
+              VAT and the promo code both belong on this line, because both
+              explain why the figure is not simply the sum of the placements.
+              The code is named rather than described: an order showing
+              "£150 off" with no code on it is a number nobody can account for
+              six months later.
+            */
+            hint={
+              [
+                order.taxMinor ? `includes ${formatPrice(order.taxMinor)} VAT` : null,
+                order.promoCode && order.discountMinor
+                  ? `${order.promoCode} took off ${formatPrice(order.discountMinor, { currency: order.currency })}`
+                  : null,
+              ]
+                .filter(Boolean)
+                .join(' · ') || undefined
+            }
           />
           <div>
             <p className="text-[12px] text-muted">Status</p>

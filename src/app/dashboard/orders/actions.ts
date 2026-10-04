@@ -6,9 +6,12 @@ import { requireCustomerSession } from '@/lib/auth/customer-access';
 import { settingsService } from '@/lib/services';
 import {
   attachCheckoutSession,
+  completeFreeOrder,
   createPendingOrder,
   priceBasket,
 } from '@/lib/services/checkout-service';
+import { promoService } from '@/lib/services/promo-service';
+import { promoSummary } from '@/lib/promos/rules';
 import { getStripe } from '@/lib/stripe/client';
 import { isStripeEnabled } from '@/lib/stripe/config';
 import { linkTypeLabels } from '@/lib/utils/labels';
@@ -36,6 +39,60 @@ export interface CheckoutResult {
   rejected?: { websiteDomain: string; reason: string }[];
 }
 
+export interface PromoPreview {
+  ok: boolean;
+  /** Why not, in words a shopper can act on. */
+  error?: string;
+  code?: string;
+  /** '25% off' or '£50 off', for the line in the basket. */
+  summary?: string;
+  discountMinor?: number;
+  payableMinor?: number;
+}
+
+/**
+ * Check a code without committing to anything.
+ *
+ * Prices the basket server-side first, because the discount depends on the
+ * subtotal and the subtotal in the browser is a number the browser made up.
+ * Nothing is written and no code is spent: a code is only ever counted as used
+ * when a payment succeeds.
+ */
+export async function checkPromoCodeAction(
+  items: DraftOrderItem[],
+  rawCode: string,
+): Promise<PromoPreview> {
+  const user = await requireCustomerSession('/dashboard/orders');
+
+  if (!rawCode.trim()) return { ok: false, error: 'Type a code first.' };
+  if (!Array.isArray(items) || items.length === 0) {
+    return { ok: false, error: 'Add something to your order first.' };
+  }
+
+  const settings = await settingsService.get();
+  const pricing = await priceBasket(items, tierFor(user.plan));
+  if (pricing.lines.length === 0) {
+    return { ok: false, error: 'None of these placements can be ordered right now.' };
+  }
+
+  const { verdict, code } = await promoService.validate(
+    rawCode,
+    user.id,
+    pricing.totalMinor,
+    settings.currency,
+  );
+
+  if (!verdict.ok) return { ok: false, error: verdict.reason };
+
+  return {
+    ok: true,
+    code: code!.code,
+    summary: promoSummary(code!),
+    discountMinor: verdict.discountMinor,
+    payableMinor: verdict.payableMinor,
+  };
+}
+
 /** The deployment's own origin, so a preview deploy returns to itself. */
 async function currentOrigin(): Promise<string> {
   const store = await headers();
@@ -45,7 +102,10 @@ async function currentOrigin(): Promise<string> {
   return `${protocol}://${host}`;
 }
 
-export async function startCheckoutAction(items: DraftOrderItem[]): Promise<CheckoutResult> {
+export async function startCheckoutAction(
+  items: DraftOrderItem[],
+  rawPromoCode?: string,
+): Promise<CheckoutResult> {
   const user = await requireCustomerSession('/dashboard/orders');
 
   if (!Array.isArray(items) || items.length === 0) {
@@ -68,6 +128,63 @@ export async function startCheckoutAction(items: DraftOrderItem[]): Promise<Chec
     };
   }
 
+  /*
+    The code is re-validated here, against the prices just re-read.
+
+    Never trusted from the preview: the field that showed "£50 off" ran a
+    minute ago, against a basket that may since have lost a line, and the code
+    itself may have been switched off or used up by somebody else in between.
+    A refusal stops checkout rather than quietly charging full price, because
+    the buyer has been shown a discounted figure and is expecting it.
+  */
+  let promo: { codeId: string; code: string; couponId: string; discountMinor: number; payableMinor: number } | undefined;
+
+  if (rawPromoCode?.trim()) {
+    const { verdict, code } = await promoService.validate(
+      rawPromoCode,
+      user.id,
+      pricing.totalMinor,
+      settings.currency,
+    );
+
+    if (!verdict.ok) return { error: verdict.reason, rejected: pricing.rejected };
+
+    promo = {
+      codeId: code!.id,
+      code: code!.code,
+      couponId: code!.stripeCouponId!,
+      discountMinor: verdict.discountMinor,
+      payableMinor: verdict.payableMinor,
+    };
+  }
+
+  /*
+    A code that covers the whole order never reaches Stripe.
+
+    A Checkout session for a zero total is rejected, so sending one would turn
+    a working 100% code into an error page. The order is settled directly
+    instead and the customer goes straight to the confirmation they would have
+    come back to anyway.
+  */
+  if (promo && promo.payableMinor === 0) {
+    const order = await createPendingOrder(user, pricing, settings.currency, {
+      codeId: promo.codeId,
+      code: promo.code,
+      discountMinor: promo.discountMinor,
+    });
+
+    const settled = await completeFreeOrder({
+      orderId: order.id,
+      userId: user.id,
+      promoCodeId: promo.codeId,
+      discountMinor: promo.discountMinor,
+    });
+
+    if (!settled.ok) return { error: settled.error ?? 'Could not place that order.' };
+
+    redirect(`/dashboard/orders/confirmed?order=${order.reference}`);
+  }
+
   const stripe = getStripe();
   if (!stripe) return { error: 'Payments are not available yet.' };
 
@@ -79,7 +196,14 @@ export async function startCheckoutAction(items: DraftOrderItem[]): Promise<Chec
   let checkoutUrl: string;
 
   try {
-    const order = await createPendingOrder(user, pricing, settings.currency);
+    const order = await createPendingOrder(
+      user,
+      pricing,
+      settings.currency,
+      promo
+        ? { codeId: promo.codeId, code: promo.code, discountMinor: promo.discountMinor }
+        : undefined,
+    );
 
     const session = await stripe.checkout.sessions.create({
       mode: 'payment',
@@ -123,9 +247,23 @@ export async function startCheckoutAction(items: DraftOrderItem[]): Promise<Chec
           },
         },
       })),
+      /*
+        Stripe does the discount arithmetic, not this codebase.
+
+        Handing over the coupon rather than discounted line items means Stripe
+        spreads a percentage across the lines, applies VAT to the discounted
+        figure, shows the buyer a discount row on its own page and reports back
+        what it actually took off. Subtracting it here would only ever be a way
+        to disagree with the amount charged.
+      */
+      ...(promo ? { discounts: [{ coupon: promo.couponId }] } : {}),
       // The order id travels with the payment so the webhook can find it even
       // if the customer never returns to the success page.
-      metadata: { orderId: order.id, reference: order.reference },
+      metadata: {
+        orderId: order.id,
+        reference: order.reference,
+        ...(promo ? { promoCode: promo.code } : {}),
+      },
       success_url: `${origin}/dashboard/orders/confirmed?order=${order.reference}`,
       cancel_url: `${origin}/dashboard/orders?checkout=cancelled`,
     });
