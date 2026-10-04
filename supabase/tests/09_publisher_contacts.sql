@@ -122,8 +122,8 @@ reset request.jwt.claim.sub;
 
 -- Removing a listing takes its contact with it: an address we hold because of
 -- a website is not something to keep once the website is gone.
-insert into public.websites (slug, domain, title, country_code, status)
-values ('contact-cascade-com', 'contact-cascade.com', 'Cascade', 'GB', 'draft');
+insert into public.websites (slug, domain, title, country_code, country_source, status)
+values ('contact-cascade-com', 'contact-cascade.com', 'Cascade', 'GB', 'stated', 'draft');
 insert into public.website_contacts (website_id, email)
 select id, 'gone@contact-cascade.com' from public.websites where slug = 'contact-cascade-com';
 delete from public.websites where slug = 'contact-cascade-com';

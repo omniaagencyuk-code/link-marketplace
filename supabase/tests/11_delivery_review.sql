@@ -6,8 +6,8 @@
 -- one thing that must never work is raising one on somebody else's placement
 -- - or reading theirs.
 
-insert into public.websites (slug, domain, title, country_code, status)
-values ('delivery-test-com', 'delivery-test.com', 'Delivery Test', 'GB', 'active');
+insert into public.websites (slug, domain, title, country_code, country_source, status)
+values ('delivery-test-com', 'delivery-test.com', 'Delivery Test', 'GB', 'stated', 'active');
 
 -- Two customers, two orders. 2222 is the ordinary customer the suite uses;
 -- 5555 is the stranger. The profile comes from the handle_new_user trigger,

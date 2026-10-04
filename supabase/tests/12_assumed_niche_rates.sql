@@ -7,8 +7,8 @@
 
 -- A publisher who quoted a standard rate and a premium for sensitive topics,
 -- said yes to gambling, no to adult, and never mentioned crypto.
-insert into public.websites (slug, domain, title, country_code, status, accepted_niches)
-values ('premium-example', 'premium.example', 'Premium', 'GB', 'active', '{gambling,cbd,crypto}');
+insert into public.websites (slug, domain, title, country_code, country_source, status, accepted_niches)
+values ('premium-example', 'premium.example', 'Premium', 'GB', 'stated', 'active', '{gambling,cbd,crypto}');
 
 insert into public.website_niche_costs (website_id, niche, link_type, cost_minor)
 select id, 'gambling', 'guest-post', 70000 from public.websites where slug = 'premium-example';
@@ -28,8 +28,8 @@ insert into public.website_niche_policy (website_id, niche, accepted)
 select id, 'dating', 'unknown' from public.websites where slug = 'premium-example';
 
 -- A publisher who quoted one number and named no sensitive rate at all.
-insert into public.websites (slug, domain, title, country_code, status, accepted_niches)
-values ('flat-example', 'flat.example', 'Flat', 'GB', 'active', '{gambling,crypto}');
+insert into public.websites (slug, domain, title, country_code, country_source, status, accepted_niches)
+values ('flat-example', 'flat.example', 'Flat', 'GB', 'stated', 'active', '{gambling,crypto}');
 insert into public.website_niche_policy (website_id, niche, accepted)
 select id, 'crypto', 'unknown' from public.websites where slug = 'flat-example';
 
@@ -87,8 +87,8 @@ select 'quoted rows surviving the rollback: ' || count(*)
 -- gambling and never stated a standard rate, so the general placement had no
 -- cost and priced at zero.
 
-insert into public.websites (slug, domain, title, country_code, status, accepted_niches)
-values ('niche-only-example', 'niche-only.example', 'Niche Only', 'GB', 'active', '{gambling,cbd}');
+insert into public.websites (slug, domain, title, country_code, country_source, status, accepted_niches)
+values ('niche-only-example', 'niche-only.example', 'Niche Only', 'GB', 'stated', 'active', '{gambling,cbd}');
 
 insert into public.services (website_id, type, price_minor, available)
 select id, 'guest-post', 0, true from public.websites where slug = 'niche-only-example';
@@ -115,8 +115,8 @@ select 'and a listing that sells nothing is not active: ' || status
   from public.websites where slug = 'niche-only-example';
 
 -- A cost somebody already recorded is never overwritten by the assumption.
-insert into public.websites (slug, domain, title, country_code, status)
-values ('priced-example', 'priced.example', 'Priced', 'GB', 'active');
+insert into public.websites (slug, domain, title, country_code, country_source, status)
+values ('priced-example', 'priced.example', 'Priced', 'GB', 'stated', 'active');
 insert into public.services (website_id, type, price_minor, available)
 select id, 'guest-post', 30000, true from public.websites where slug = 'priced-example';
 insert into public.service_costs (service_id, cost_price_minor)

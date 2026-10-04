@@ -12,6 +12,7 @@ import {
   type BrandBits,
 } from '@/lib/email/templates';
 import { siteUrl } from '@/lib/config/brand';
+import { registerPlacedLink } from './link-monitor-service';
 import type { Order } from '@/lib/types';
 import {
   autoApproveDate,
@@ -274,6 +275,20 @@ export const deliveryService = {
       .maybeSingle();
     if (data) await reopenOrder((data as { order_id: string }).order_id);
 
+    /*
+      Start the guarantee clock.
+
+      Here rather than at approval, because the twelve months a buyer was sold
+      runs from the day the link went up, not from the day they got round to
+      pressing a button. Idempotent, so a redelivery does not restart it and
+      does not create a second watched row - the first registration's
+      published date is the one that counts.
+
+      Its failures are logged inside it and never thrown: a monitor that
+      cannot write must not roll back a delivery.
+    */
+    await registerPlacedLink(itemId);
+
     // After the write, never before: the email says the placement is live, so
     // it must not go out unless it is. A failure to send is logged and does
     // not undo the delivery - the customer can still see it by logging in.
@@ -367,6 +382,16 @@ export const deliveryService = {
         .update({ resolved_at: now, resolution_note: 'Closed when the customer approved.' })
         .eq('order_item_id', itemId)
         .is('resolved_at', null);
+
+      /*
+        A backstop, not the main path.
+
+        `deliver` registers the link when it goes live, which is the right
+        moment. This covers the placements delivered before any of this
+        existed: the first time somebody approves one, it starts being
+        watched. Idempotent, so for everything delivered since it is a no-op.
+      */
+      await registerPlacedLink(itemId);
 
       orderIds.add(item.orderId);
       approved += 1;
@@ -680,6 +705,10 @@ export const deliveryService = {
         'id',
         due.map((item) => item.id),
       );
+
+    // The same backstop as the manual path, for placements that pre-date the
+    // monitor and approved themselves rather than being approved.
+    for (const item of due) await registerPlacedLink(item.id);
 
     for (const orderId of new Set(due.map((item) => item.orderId))) {
       await closeOrderIfDone(orderId);

@@ -4,10 +4,12 @@ import { notFound } from 'next/navigation';
 import { ArrowLeft } from 'lucide-react';
 import { PageTitle } from '@/components/dashboard/page-title';
 import { OrderDelivery } from '@/components/dashboard/order-delivery';
+import { LinkGuarantee } from '@/components/dashboard/link-guarantee';
 import { OrderStatusBadge } from '@/components/shared/status-badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { orderService, settingsService } from '@/lib/services';
+import { orderLinks } from '@/lib/services/link-monitor-service';
 import { requireCustomerSession } from '@/lib/auth/customer-access';
 import { deliveredItems } from '@/lib/orders/delivery';
 import { formatDate, formatPrice } from '@/lib/utils/format';
@@ -27,7 +29,15 @@ export default async function OrderPage({ params }: { params: Promise<{ id: stri
   const { id } = await params;
   const user = await requireCustomerSession(`/dashboard/orders/${id}`);
 
-  const [order, settings] = await Promise.all([orderService.getById(id), settingsService.get()]);
+  const [order, settings, guaranteedLinks] = await Promise.all([
+    orderService.getById(id),
+    settingsService.get(),
+    // Checks the order is theirs itself rather than trusting the check below,
+    // because it reads on the service role. It returns nothing for an order
+    // that is not theirs, so the notFound() below is still the only answer
+    // they get.
+    orderLinks(id, user.id),
+  ]);
 
   /*
     Not theirs is the same answer as not there.
@@ -93,6 +103,8 @@ export default async function OrderPage({ params }: { params: Promise<{ id: stri
         // during render produces a different page depending on when React ran.
         nowIso={new Date().toISOString()}
       />
+
+      <LinkGuarantee links={guaranteedLinks} />
 
       {outstanding.length > 0 ? (
         <section className="mt-8" aria-labelledby="in-progress">

@@ -12,14 +12,14 @@ update public.refresh_settings
    set tier1_size = 2, tier2_size = 2,
        tier1_interval_days = 7, tier2_interval_days = 14, tier3_interval_days = 30;
 
-insert into public.websites (slug, domain, title, country_code, status, domain_rating, organic_traffic)
+insert into public.websites (slug, domain, title, country_code, country_source, status, domain_rating, organic_traffic)
 values
-  ('a-com', 'a.com', 'A', 'GB', 'active', 90, 500000),
-  ('b-com', 'b.com', 'B', 'GB', 'active', 80, 400000),
-  ('c-com', 'c.com', 'C', 'GB', 'active', 70, 300000),
-  ('d-com', 'd.com', 'D', 'GB', 'active', 60, 200000),
-  ('e-com', 'e.com', 'E', 'GB', 'active', 50, 100000),
-  ('f-com', 'f.com', 'F', 'GB', 'archived', 95, 900000);
+  ('a-com', 'a.com', 'A', 'GB', 'stated', 'active', 90, 500000),
+  ('b-com', 'b.com', 'B', 'GB', 'stated', 'active', 80, 400000),
+  ('c-com', 'c.com', 'C', 'GB', 'stated', 'active', 70, 300000),
+  ('d-com', 'd.com', 'D', 'GB', 'stated', 'active', 60, 200000),
+  ('e-com', 'e.com', 'E', 'GB', 'stated', 'active', 50, 100000),
+  ('f-com', 'f.com', 'F', 'GB', 'stated', 'archived', 95, 900000);
 
 select 'tiers assigned: ' || tier1 || '/' || tier2 || '/' || tier3 from public.assign_ahrefs_tiers();
 select 'highest DR is tier ' || ahrefs_tier from public.websites where slug = 'a-com';
@@ -85,13 +85,13 @@ update public.refresh_settings
        tier2_interval_days = tier2_interval_days / 2,
        tier3_interval_days = tier3_interval_days / 2;
 
-insert into public.websites (slug, domain, title, country_code, status, domain_rating, organic_traffic)
-values ('g-com', 'g.com', 'G', 'GB', 'active', 40, 50000);
+insert into public.websites (slug, domain, title, country_code, country_source, status, domain_rating, organic_traffic)
+values ('g-com', 'g.com', 'G', 'GB', 'stated', 'active', 40, 50000);
 select 'a new domain raises the projection: ' ||
   (public.ahrefs_projected_monthly_units() > (select before from projection));
 create temp table projection_with_g as select public.ahrefs_projected_monthly_units() as units;
-insert into public.websites (slug, domain, title, country_code, status, domain_rating, organic_traffic)
-values ('h-com', 'h.com', 'H', 'GB', 'archived', 99, 990000);
+insert into public.websites (slug, domain, title, country_code, country_source, status, domain_rating, organic_traffic)
+values ('h-com', 'h.com', 'H', 'GB', 'stated', 'archived', 99, 990000);
 select 'an archived domain does not: ' ||
   (public.ahrefs_projected_monthly_units() = (select units from projection_with_g));
 

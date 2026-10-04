@@ -78,6 +78,10 @@ export interface WebsiteRow {
     | { cost_currency: string | null }[]
     | null;
   spam_score: number | null;
+  durability_pct?: number | null;
+  durability_sample?: number | null;
+  durability_window_months?: number | null;
+  durability_updated_at?: string | null;
   min_word_count: number | null;
   max_word_count: number | null;
   max_links: number | null;
@@ -312,6 +316,24 @@ export function mapWebsite(row: WebsiteRow): Website {
       .sort((a, b) => a.position - b.position)
       .map((entry) => ({ topic: entry.topic, value: toNumber(entry.value) })),
     ...(row.majestic_updated_at ? { majesticUpdatedAt: row.majestic_updated_at } : {}),
+    /*
+      Only when the nightly job put a figure there.
+
+      Spread rather than defaulted, for the same reason `trustFlow` is: a
+      listing with no evidence has no score, and a 0 would read as "every link
+      on this site was lost" - the worst thing a card could say about a
+      publisher, invented out of an absence.
+    */
+    ...(typeof row.durability_pct === 'number' && row.durability_pct !== null
+      ? {
+          durability: {
+            pct: row.durability_pct,
+            sample: toNumber(row.durability_sample),
+            windowMonths: toNumber(row.durability_window_months, 12),
+            ...(row.durability_updated_at ? { updatedAt: row.durability_updated_at } : {}),
+          },
+        }
+      : {}),
     rules: {
       minWordCount: toNumber(row.min_word_count, 800),
       maxWordCount: toNumber(row.max_word_count, 2000),

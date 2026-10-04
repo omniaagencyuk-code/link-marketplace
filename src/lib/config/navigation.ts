@@ -15,6 +15,7 @@ import {
   Package,
   PenLine,
   RefreshCw,
+  ShieldCheck,
   Settings,
   ShoppingCart,
   UserCircle,
@@ -115,6 +116,7 @@ export const adminNav: NavItem[] = [
   { label: 'Publisher inbox', href: '/admin/sourcing', icon: Inbox },
   { label: 'Pricing', href: '/admin/pricing', icon: Calculator },
   { label: 'Ahrefs refresh', href: '/admin/refresh', icon: RefreshCw },
+  { label: 'Link monitor', href: '/admin/link-monitor', icon: ShieldCheck },
   { label: 'Majestic', href: '/admin/majestic', icon: Network },
   { label: 'Settings', href: '/admin/settings', icon: Settings },
 ];

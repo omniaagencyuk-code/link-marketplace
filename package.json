@@ -28,7 +28,9 @@
     "verify:sections": "tsx scripts/verify-sections.mts",
     "verify:paging": "tsx scripts/verify-paging.mts",
     "report:duplicates": "tsx --env-file=.env.local scripts/report-duplicate-listings.mts",
-    "verify:access": "tsx scripts/verify-access.mts"
+    "import:placed-links": "tsx --env-file=.env.local scripts/import-placed-links.mts",
+    "verify:access": "tsx scripts/verify-access.mts",
+    "verify:monitoring": "tsx scripts/verify-monitoring.mts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.128.0",
@@ -39,6 +41,7 @@
     "@tiptap/extension-table": "^3.31.3",
     "@tiptap/react": "^3.31.3",
     "@tiptap/starter-kit": "^3.31.3",
+    "cheerio": "^1.2.0",
     "clsx": "^2.1.1",
     "google-auth-library": "^11.1.0",
     "lucide-react": "^1.45.0",

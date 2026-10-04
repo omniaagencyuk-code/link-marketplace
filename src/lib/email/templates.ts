@@ -247,3 +247,171 @@ export function approvalReminder(
     }),
   };
 }
+
+/**
+ * A link we were paid to place is no longer doing its job.
+ *
+ * To the publisher, and deliberately narrow: what the article was, what we
+ * found, and when we will look again. Not a word about money, balances or
+ * what a claim costs - these are not accounts we hold, and a notice that
+ * leads with a sum turns a fixable mistake into a dispute. Most of these are
+ * a CMS migration or a plugin stripping a rel attribute, and the fastest
+ * route to the link being back is an email somebody can act on in a minute.
+ */
+export function publisherLinkProblem(
+  {
+    domain,
+    placedUrl,
+    targetUrl,
+    reason,
+    deadline,
+  }: {
+    domain: string;
+    placedUrl: string;
+    targetUrl: string;
+    reason: string;
+    deadline: string;
+  },
+  brand: BrandBits,
+): EmailBody {
+  const article = safeUrl(placedUrl);
+  const by = formatDate(deadline);
+
+  return {
+    subject: `A link on ${domain} needs a look`,
+    text:
+      `We check the placements we arrange, and this one is not reading as expected.\n\n` +
+      `Article: ${placedUrl}\nLink to: ${targetUrl}\nWhat we found: ${reason}\n\n` +
+      `Could you take a look by ${by}? We check again automatically, so there is nothing ` +
+      `to reply to if you put it back - we will see it.\n\n` +
+      `If the article was moved rather than removed, send us the new URL and we will ` +
+      `follow it instead.\n\n${brand.supportEmail}\n`,
+    html: layout({
+      heading: `A link on ${escapeHtml(domain)} needs a look`,
+      body:
+        `<p style="margin:0 0 12px;font-size:14px;line-height:1.55;">We check the placements we arrange, and this one is not reading as expected.</p>` +
+        `<table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 0 12px;font-size:14px;line-height:1.6;">` +
+        `<tr><td style="padding-right:12px;color:#6b7280;">Article</td><td>` +
+        (article
+          ? `<a href="${article}" style="color:#047857;word-break:break-all;">${escapeHtml(placedUrl)}</a>`
+          : escapeHtml(placedUrl)) +
+        `</td></tr>` +
+        `<tr><td style="padding-right:12px;color:#6b7280;">Link to</td><td style="word-break:break-all;">${escapeHtml(targetUrl)}</td></tr>` +
+        `<tr><td style="padding-right:12px;color:#6b7280;">We found</td><td>${escapeHtml(reason)}</td></tr>` +
+        `</table>` +
+        `<p style="margin:0 0 12px;font-size:14px;line-height:1.55;">Could you take a look by ${escapeHtml(by)}? We check again automatically, so there is nothing to reply to if you put it back - we will see it.</p>` +
+        `<p style="margin:0;font-size:14px;line-height:1.55;">If the article was moved rather than removed, send us the new URL and we will follow it instead.</p>`,
+      ...brand,
+    }),
+  };
+}
+
+/** Their link has gone, and we are already chasing it. */
+export function buyerLinkLost(
+  {
+    domain,
+    placedUrl,
+    reason,
+    orderReference,
+    orderId,
+    deadline,
+  }: {
+    domain: string;
+    placedUrl: string;
+    reason: string;
+    orderReference: string;
+    orderId: string;
+    deadline: string;
+  },
+  brand: BrandBits,
+): EmailBody {
+  const by = formatDate(deadline);
+
+  return {
+    subject: `Your link on ${domain} has come down`,
+    text:
+      `Your link on ${domain} is no longer live.\n\n` +
+      `${placedUrl}\nWhat we found: ${reason}\n\n` +
+      `It is covered by the twelve month guarantee. We have asked the publisher to put it ` +
+      `back and given them until ${by}. If it is not back by then you choose: a ` +
+      `replacement placement on another site at no cost, or your money back.\n\n` +
+      `Order ${orderReference}\n${brand.siteUrl}/dashboard/orders/${orderId}\n`,
+    html: layout({
+      heading: `Your link on ${escapeHtml(domain)} has come down`,
+      body:
+        `<p style="margin:0 0 12px;font-size:14px;line-height:1.55;">We check every placement we arrange, and this one is no longer live.</p>` +
+        `<p style="margin:0 0 12px;font-size:13px;color:#6b7280;word-break:break-all;">${escapeHtml(placedUrl)}<br>${escapeHtml(reason)}</p>` +
+        `<p style="margin:0 0 12px;font-size:14px;line-height:1.55;">It is covered by the twelve month guarantee, so you are not out of pocket. We have asked the publisher to put it back and given them until ${escapeHtml(by)}.</p>` +
+        `<p style="margin:0;font-size:14px;line-height:1.55;">If it is not back by then, you choose: a replacement placement on another site at no cost, or your money back. Nothing to do until then.</p>` +
+        `<p style="margin:12px 0 0;font-size:13px;color:#6b7280;">Order ${escapeHtml(orderReference)}</p>`,
+      action: { label: 'See the placement', url: `${brand.siteUrl}/dashboard/orders/${orderId}` },
+      ...brand,
+    }),
+  };
+}
+
+/** The publisher put it back. Worth saying, because we told them it was gone. */
+export function buyerLinkRestored(
+  {
+    domain,
+    placedUrl,
+    orderReference,
+    orderId,
+  }: { domain: string; placedUrl: string; orderReference: string; orderId: string },
+  brand: BrandBits,
+): EmailBody {
+  return {
+    subject: `Your link on ${domain} is back`,
+    text:
+      `Good news - your link on ${domain} is live again.\n\n${placedUrl}\n\n` +
+      `We will keep checking it for the rest of the guarantee.\n\n` +
+      `Order ${orderReference}\n${brand.siteUrl}/dashboard/orders/${orderId}\n`,
+    html: layout({
+      heading: `Your link on ${escapeHtml(domain)} is back`,
+      body:
+        `<p style="margin:0 0 12px;font-size:14px;line-height:1.55;">The publisher has put it back. We checked and it is live again.</p>` +
+        `<p style="margin:0 0 12px;font-size:13px;color:#6b7280;word-break:break-all;">${escapeHtml(placedUrl)}</p>` +
+        `<p style="margin:0;font-size:14px;line-height:1.55;">We will keep checking it for the rest of the guarantee. Nothing for you to do.</p>` +
+        `<p style="margin:12px 0 0;font-size:13px;color:#6b7280;">Order ${escapeHtml(orderReference)}</p>`,
+      action: { label: 'See the placement', url: `${brand.siteUrl}/dashboard/orders/${orderId}` },
+      ...brand,
+    }),
+  };
+}
+
+/**
+ * The publisher's time is up and it is the buyer's call.
+ *
+ * This is the only email in the set that asks for a decision, so it says what
+ * the two options are in the first line rather than making somebody open the
+ * dashboard to find out what they are choosing between.
+ */
+export function buyerClaimChoice(
+  {
+    domain,
+    orderReference,
+    orderId,
+  }: { domain: string; orderReference: string; orderId: string },
+  brand: BrandBits,
+): EmailBody {
+  return {
+    subject: `Your call on the link on ${domain}`,
+    text:
+      `The publisher has not put your link on ${domain} back, so it is your call: a ` +
+      `replacement placement on another site at no cost, or your money back.\n\n` +
+      `Order ${orderReference}\n${brand.siteUrl}/dashboard/orders/${orderId}\n`,
+    html: layout({
+      heading: `Your call on the link on ${escapeHtml(domain)}`,
+      body:
+        `<p style="margin:0 0 12px;font-size:14px;line-height:1.55;">We gave the publisher time to put your link back and they have not. That is covered, and it is now your choice:</p>` +
+        `<ul style="margin:0 0 12px;padding-left:20px;font-size:14px;line-height:1.6;">` +
+        `<li>A replacement placement on another site, at no cost to you.</li>` +
+        `<li>Your money back for this placement.</li>` +
+        `</ul>` +
+        `<p style="margin:0;font-size:14px;line-height:1.55;">Either is one click on the order page.</p>` +
+        `<p style="margin:12px 0 0;font-size:13px;color:#6b7280;">Order ${escapeHtml(orderReference)}</p>`,
+      action: { label: 'Choose', url: `${brand.siteUrl}/dashboard/orders/${orderId}` },
+      ...brand,
+    }),
+  };
+}

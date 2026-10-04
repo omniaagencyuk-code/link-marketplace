@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { DomainRating } from '@/components/shared/metric';
 import { LinkTypeList } from '@/components/shared/link-type-badge';
 import { VerifiedBadge } from '@/components/shared/verified-badge';
+import { DurabilityBadge } from '@/components/shared/durability-badge';
 import { FavouriteButton } from './favourite-button';
 import { AddToOrderButton } from './add-to-order-button';
 import { WebsiteSnippet } from './website-snippet';
@@ -65,6 +66,7 @@ export function WebsiteCard({
               </Link>
             )}
             {website.verified ? <VerifiedBadge /> : null}
+            <DurabilityBadge durability={website.durability} />
           </div>
           {/* Clamped until the card is expanded, where the whole point is to
               see more than the list showed. */}

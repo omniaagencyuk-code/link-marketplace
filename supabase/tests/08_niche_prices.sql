@@ -72,8 +72,8 @@ reset request.jwt.claim.sub;
 
 -- Deleting the website takes its prices with it.
 delete from public.website_niche_prices;
-insert into public.websites (slug, domain, title, country_code, status)
-values ('cascade-test-com', 'cascade-test.com', 'Cascade', 'GB', 'draft');
+insert into public.websites (slug, domain, title, country_code, country_source, status)
+values ('cascade-test-com', 'cascade-test.com', 'Cascade', 'GB', 'stated', 'draft');
 insert into public.website_niche_prices (website_id, niche, link_type, price_minor)
 select id, 'gambling', 'guest-post', 50000 from public.websites where slug = 'cascade-test-com';
 delete from public.websites where slug = 'cascade-test-com';

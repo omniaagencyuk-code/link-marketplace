@@ -20,6 +20,14 @@
     {
       "path": "/api/cron/gmail-nightly",
       "schedule": "17 5 * * *"
+    },
+    {
+      "path": "/api/cron/link-monitor",
+      "schedule": "*/15 0-5 * * *"
+    },
+    {
+      "path": "/api/cron/link-maintenance",
+      "schedule": "30 6 * * *"
     }
   ]
 }

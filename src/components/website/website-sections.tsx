@@ -8,6 +8,7 @@ import { formatDate, formatNumber, formatPrice, formatTurnaround } from '@/lib/u
 import { languageLabels, linkTypeLabels, sponsoredTagLabels } from '@/lib/utils/labels';
 import { journeySteps } from '@/lib/config/how-it-works';
 import { TopicChips } from '@/components/marketplace/majestic-badges';
+import { DurabilityPanel } from '@/components/shared/durability-badge';
 import type { Website } from '@/lib/types';
 
 export function WebsiteSections({ website }: { website: Website }) {
@@ -197,6 +198,13 @@ export function WebsiteSections({ website }: { website: Website }) {
           <Row label="Maximum links" value={`${rules.maxLinks} per placement`} />
           <Row label="Sponsored tag" value={sponsoredTagLabels[rules.sponsoredTag]} />
         </dl>
+
+        {/* The guarantee, in a number. Here rather than in the metrics block
+            because it describes what happens after the link is placed, which
+            is the question this section is about. */}
+        <div className="mt-5">
+          <DurabilityPanel durability={website.durability} />
+        </div>
 
         <div className="mt-5 border-t border-line pt-5">
           <h3 className="text-[13px] font-semibold text-ink">Accepted topics</h3>

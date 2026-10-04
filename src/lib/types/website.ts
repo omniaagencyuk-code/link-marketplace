@@ -184,6 +184,22 @@ export interface PublisherContact {
   notes?: string;
 }
 
+export interface WebsiteDurability {
+  /** Share of links still standing at the end of the window, 0-100. */
+  pct: number;
+  /** How many placements the figure is drawn from. */
+  sample: number;
+  /**
+   * The window the figure describes: 12, 6 or 3 months.
+   *
+   * Carried because the widest window the evidence supports is the one used,
+   * and "92% after 12 months" drawn from three-month-old links would be a lie
+   * told in good faith.
+   */
+  windowMonths: number;
+  updatedAt?: string;
+}
+
 export interface Website {
   id: string;
   /** URL segment, e.g. "casinoguru-co-uk". */
@@ -250,6 +266,18 @@ export interface Website {
    */
   costCurrency?: string;
   rules: PublishingRules;
+  /**
+   * How well links on this site have held up, where there is enough evidence.
+   *
+   * Undefined means no score, which is not a bad score: a listing nobody has
+   * bought from yet, or one with fewer placements than the sample floor, has
+   * nothing to report and says so. A zero here would read as "every link was
+   * lost", which is a different and much worse claim.
+   *
+   * Read from columns written nightly by `recompute_durability_scores`. Never
+   * computed per card: the marketplace renders hundreds at once.
+   */
+  durability?: WebsiteDurability;
   /** Manually vetted by the in-house editorial team. */
   verified: boolean;
   status: WebsiteStatus;

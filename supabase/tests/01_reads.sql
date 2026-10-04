@@ -7,8 +7,8 @@ insert into auth.users (id, email) values
   ('22222222-2222-2222-2222-222222222222', 'customer@test');
 update public.profiles set role = 'admin' where email = 'admin@test';
 
-insert into public.websites (slug, domain, title, country_code, status, accepted_niches)
-values ('cost-test-com', 'cost-test.com', 'Cost Test', 'GB', 'active', '{gambling,cbd}');
+insert into public.websites (slug, domain, title, country_code, country_source, status, accepted_niches)
+values ('cost-test-com', 'cost-test.com', 'Cost Test', 'GB', 'stated', 'active', '{gambling,cbd}');
 insert into public.services (website_id, type, price_minor)
 select id, 'guest-post', 30000 from public.websites where slug = 'cost-test-com';
 insert into public.service_costs (service_id, cost_price_minor)

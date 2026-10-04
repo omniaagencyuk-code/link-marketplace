@@ -3,5 +3,5 @@
 -- The admin area today: authenticated role, no Supabase identity at all.
 set role authenticated;
 select 'shared-password admin is_admin(): ' || public.is_admin();
-insert into public.websites (slug, domain, title, country_code, status)
-values ('should-fail', 'should-fail.com', 'x', 'GB', 'draft');
+insert into public.websites (slug, domain, title, country_code, country_source, status)
+values ('should-fail', 'should-fail.com', 'x', 'GB', 'stated', 'draft');

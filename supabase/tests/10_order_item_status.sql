@@ -4,8 +4,8 @@
 -- An order's items are what the customer sees in their dashboard, so an
 -- order that moves and leaves its lines behind tells them nothing happened.
 
-insert into public.websites (slug, domain, title, country_code, status)
-values ('status-test-com', 'status-test.com', 'Status Test', 'GB', 'active');
+insert into public.websites (slug, domain, title, country_code, country_source, status)
+values ('status-test-com', 'status-test.com', 'Status Test', 'GB', 'stated', 'active');
 
 insert into public.orders (reference, user_id, status, payment_status, total_minor, currency)
 values ('PP-STATUS', '22222222-2222-2222-2222-222222222222', 'draft', 'unpaid', 30000, 'GBP');
