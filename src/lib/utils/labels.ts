@@ -69,6 +69,8 @@ export const sortOptions: { value: SortKey; label: string }[] = [
   { value: 'traffic-asc', label: 'Lowest Traffic' },
   { value: 'rd-desc', label: 'Most Ref. Domains' },
   { value: 'rd-asc', label: 'Fewest Ref. Domains' },
+  { value: 'kw-desc', label: 'Most Keywords' },
+  { value: 'kw-asc', label: 'Fewest Keywords' },
   { value: 'turnaround-asc', label: 'Fastest Turnaround' },
   { value: 'turnaround-desc', label: 'Slowest Turnaround' },
   { value: 'newest', label: 'Newest' },

@@ -16,16 +16,16 @@ import {
 } from '../src/lib/config/accepted-niches';
 import { sellableNiches } from '../src/lib/sourcing/review';
 import { countryFromDomain } from '../src/lib/data/cctld';
+import { countries } from '../src/lib/data/countries';
 import { candidatesPerSide, rankRelated } from '../src/lib/websites/related';
 import { audienceBreakdown, shareFor, NAMED_COUNTRIES } from '../src/lib/websites/audience';
-import { flagEmoji } from '../src/lib/data/flags';
 import { runQuery, sortItems } from '../src/lib/services/query-engine';
 import { flipSort, sortDirection } from '../src/lib/types/query';
 import { sortOptions } from '../src/lib/utils/labels';
 import { audiencePatch } from '../src/lib/services/refresh-service';
 import { COUNTRY_SOURCES, outranksCountrySource } from '../src/lib/types/country';
 import { cctldPairs } from './cctld-sql.mts';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import type { WebsiteListItem } from '../src/lib/types';
 
 let failed = 0;
@@ -56,6 +56,11 @@ function site(over: Partial<any> = {}): WebsiteListItem {
       domainRating: over.dr ?? 50,
       organicTraffic: over.traffic ?? 10000,
       referringDomains: over.rd ?? 500,
+      // Defaulted like the rest, so the pair used by the reversal guard below
+      // genuinely differs on this axis. Without it both listings were
+      // unmeasured, sorted equal, and the guard reported that keyword sorting
+      // does not reverse - which was true of the fixture, not of the sort.
+      organicKeywords: over.kw ?? 2000,
       trafficTrend: [],
       audienceSplit: [],
     },
@@ -379,11 +384,11 @@ console.log('\n--- ordering, both ways ---');
     be added half-wired.
   */
   const weak = site({
-    dr: 20, traffic: 1000, rd: 50, turnaround: 10,
+    dr: 20, traffic: 1000, rd: 50, kw: 300, turnaround: 10,
     services: [{ id: 's1', type: 'guest-post', priceMinor: 9000, available: true }],
   });
   const strong = site({
-    dr: 80, traffic: 90000, rd: 9000, turnaround: 2,
+    dr: 80, traffic: 90000, rd: 9000, kw: 54000, turnaround: 2,
     services: [{ id: 's1', type: 'guest-post', priceMinor: 65000, available: true }],
   });
   const pair = [weak, strong];
@@ -393,6 +398,40 @@ console.log('\n--- ordering, both ways ---');
   is('highest DR first', first('dr-desc' as never), strong.id);
   is('and lowest DR first', first('dr-asc' as never), weak.id);
   is('highest traffic first', first('traffic-desc' as never), strong.id);
+  is('most keywords first', first('kw-desc' as never), strong.id);
+  is('and fewest keywords first', first('kw-asc' as never), weak.id);
+
+  /*
+    A listing nobody has measured is not the listing with the fewest keywords.
+
+    `organicKeywords` is undefined until the refresh reaches a site, and
+    treating that as zero would put every unmeasured listing at the top of
+    "fewest keywords" - a ranking of our own coverage rather than of the
+    inventory. It sorts last in both directions instead.
+  */
+  const unmeasured = site({ dr: 50, traffic: 5000, rd: 500, turnaround: 5 });
+  unmeasured.id = 'unmeasured';
+  delete (unmeasured.metrics as { organicKeywords?: number }).organicKeywords;
+  const mixed = [unmeasured, weak, strong];
+
+  is(
+    'an unmeasured listing does not win fewest keywords',
+    sortItems(mixed, 'kw-asc' as never, '')[0]?.id,
+    weak.id,
+  );
+  is(
+    'nor most keywords',
+    sortItems(mixed, 'kw-desc' as never, '')[0]?.id,
+    strong.id,
+  );
+  is(
+    'it sorts last either way',
+    [
+      sortItems(mixed, 'kw-asc' as never, '').at(-1)?.id,
+      sortItems(mixed, 'kw-desc' as never, '').at(-1)?.id,
+    ].join(),
+    'unmeasured,unmeasured',
+  );
   is('and lowest traffic first', first('traffic-asc' as never), weak.id);
   is('most referring domains first', first('rd-desc' as never), strong.id);
   is('and fewest first', first('rd-asc' as never), weak.id);
@@ -432,7 +471,7 @@ console.log('\n--- ordering, both ways ---');
     'utf8',
   );
   const columnKeys = [...table.matchAll(/key:\s*'([a-z-]+)'/g)].map((match) => match[1]!);
-  is('the table offers five sortable columns', columnKeys.length, 5);
+  is('the table offers six sortable columns', columnKeys.length, 6);
   is(
     'and every one is an order the dropdown offers as well',
     columnKeys.every((key) => offered.has(key as never)),
@@ -549,7 +588,7 @@ console.log('\n--- referring domains, which the refresh never wrote ---');
   );
   is(
     'and a dash rather than a zero when it was never measured',
-    /typeof website\.metrics\.organicKeywords === 'number'/.test(snippet),
+    /typeof metrics\.organicKeywords === 'number'/.test(snippet),
     true,
   );
 }
@@ -771,11 +810,43 @@ console.log('\n--- refreshing one tier ---');
   is('a country with no traffic reads as zero', shareFor(split(['US', 46]), 'DE'), 0);
   is('and so does no data at all', shareFor(undefined, 'GB'), 0);
 
+  /*
+    Flags are served SVGs, not emoji.
+
+    Flag emoji are regional indicator pairs and Windows ships no font that
+    draws them, so the same row read as a flag on a Mac and as "GB" on most
+    customers' machines. The asset has to exist for every country we can
+    store, which is what these check - a missing file is an invisible broken
+    image rather than an error.
+  */
   console.log('\n--- country flags ---');
-  is('a code becomes a flag', flagEmoji('GB'), '🇬🇧');
-  is('lower case too', flagEmoji('us'), '🇺🇸');
-  is('a bad code produces nothing rather than two stray symbols', flagEmoji('XYZ'), '');
-  is('and so does nothing', flagEmoji(''), '');
+  const flagDir = new URL('../public/flags/', import.meta.url);
+  for (const code of ['GB', 'US', 'CA', 'AU', 'DE', 'UG', 'CO']) {
+    is(`${code} has a flag asset`, existsSync(new URL(`${code}.svg`, flagDir)), true);
+  }
+
+  const flagComponent = readFileSync(
+    new URL('../src/components/shared/flag.tsx', import.meta.url),
+    'utf8',
+  );
+  is('a bad code draws a globe rather than a broken image',
+    /\^\[A-Z\]\{2\}\$/.test(flagComponent), true);
+  is('the image is decorative, never the only label',
+    /alt=""/.test(flagComponent), true);
+  is('and carries the country name where no name is beside it',
+    /sr-only/.test(flagComponent), true);
+
+  // Every country the listing data can hold must have an asset, or a real
+  // listing renders a gap. Checked against the country list itself rather
+  // than a handful picked by hand.
+  const missing = countries.map((entry) => entry.code).filter(
+    (code) => !existsSync(new URL(`${code}.svg`, flagDir)),
+  );
+  is(
+    `every stored country code has a flag${missing.length ? ` (missing: ${missing.slice(0, 8).join(', ')})` : ''}`,
+    missing.length,
+    0,
+  );
 
   /*
     The panel must hide a term the publisher never stated rather than print a

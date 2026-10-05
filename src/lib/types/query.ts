@@ -27,6 +27,8 @@ export type SortKey =
   | 'traffic-desc'
   | 'rd-asc'
   | 'rd-desc'
+  | 'kw-asc'
+  | 'kw-desc'
   | 'turnaround-asc'
   | 'turnaround-desc'
   | 'newest';

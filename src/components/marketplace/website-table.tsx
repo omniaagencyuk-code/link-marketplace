@@ -13,8 +13,13 @@ import { FavouriteButton } from './favourite-button';
 import { AddToOrderButton } from './add-to-order-button';
 import { WebsiteSnippet } from './website-snippet';
 import { nicheName } from '@/lib/data/categories';
-import { countryShortNameOrUnknown } from '@/lib/data/countries';
-import { formatCompactNumber, formatPrice, formatTurnaround } from '@/lib/utils/format';
+import { Flag } from '@/components/shared/flag';
+import {
+  formatCompactNumber,
+  formatNumber,
+  formatPrice,
+  formatTurnaround,
+} from '@/lib/utils/format';
 import { cn } from '@/lib/utils/cn';
 import { flipSort, sortDirection } from '@/lib/types/query';
 import type { SortKey, WebsiteListItem } from '@/lib/types';
@@ -38,13 +43,14 @@ interface SortableColumn {
 const sortableColumns: Record<string, SortableColumn> = {
   dr: { key: 'dr-desc', label: 'DR' },
   traffic: { key: 'traffic-desc', label: 'Organic Traffic' },
+  kw: { key: 'kw-desc', label: 'Keywords' },
   rd: { key: 'rd-desc', label: 'Ref. Domains' },
   turnaround: { key: 'turnaround-asc', label: 'Turnaround' },
   price: { key: 'price-asc', label: 'Price', align: 'right' },
 };
 
 /** Columns in the row, which the snippet row has to span. */
-const COLUMN_COUNT = 11;
+const COLUMN_COUNT = 12;
 
 /**
  * Clicks that belong to something else.
@@ -90,15 +96,28 @@ export function WebsiteTable({
             1440px viewport without the table scrolling sideways. */}
         <colgroup>
           <col className="w-[34px]" />
+          {/* Website */}
           <col className="w-[170px]" />
+          {/* Niche */}
           <col className="w-[96px]" />
+          {/* Country. The cell is only a flag now, but the column still has to
+              hold the word "Country" in the header without truncating it. */}
           <col className="w-[64px]" />
-          <col className="w-[56px]" />
+          {/* DR */}
+          <col className="w-[52px]" />
+          {/* Organic traffic */}
+          <col className="w-[82px]" />
+          {/* Keywords */}
+          <col className="w-[82px]" />
+          {/* Referring domains */}
+          <col className="w-[82px]" />
+          {/* Link type */}
+          <col className="w-[98px]" />
+          {/* Turnaround */}
           <col className="w-[88px]" />
-          <col className="w-[88px]" />
-          <col className="w-[113px]" />
-          <col className="w-[96px]" />
+          {/* Price */}
           <col className="w-[72px]" />
+          {/* Actions */}
           <col className="w-[183px]" />
         </colgroup>
         <thead>
@@ -116,6 +135,7 @@ export function WebsiteTable({
             <Th>Country</Th>
             <SortableTh column={sortableColumns.dr!} sort={sort} onSort={onSort} />
             <SortableTh column={sortableColumns.traffic!} sort={sort} onSort={onSort} />
+            <SortableTh column={sortableColumns.kw!} sort={sort} onSort={onSort} />
             <SortableTh column={sortableColumns.rd!} sort={sort} onSort={onSort} />
             <Th>Link Type</Th>
             <SortableTh column={sortableColumns.turnaround!} sort={sort} onSort={onSort} />
@@ -173,15 +193,38 @@ export function WebsiteTable({
                   <Td className="truncate text-[13px] text-ink-soft" title={nicheName(website.niche)}>
                     {nicheName(website.niche)}
                   </Td>
-                  <Td className="text-[13px] text-ink-soft">{countryShortNameOrUnknown(website.country)}</Td>
+                  <Td className="text-[13px] text-ink-soft">
+                    {website.country ? (
+                      <Flag country={website.country} label />
+                    ) : (
+                      <span className="text-muted" title="Country not known">
+                        —
+                      </span>
+                    )}
+                  </Td>
                   <Td>
                     <DomainRating value={website.metrics.domainRating} />
                   </Td>
                   <Td className="tabular text-[13px] text-ink-soft">
-                    {formatCompactNumber(website.metrics.organicTraffic)}
+                    <span title={formatNumber(website.metrics.organicTraffic)}>
+                      {formatCompactNumber(website.metrics.organicTraffic)}
+                    </span>
                   </Td>
                   <Td className="tabular text-[13px] text-ink-soft">
-                    {formatCompactNumber(website.metrics.referringDomains)}
+                    {typeof website.metrics.organicKeywords === 'number' ? (
+                      <span title={formatNumber(website.metrics.organicKeywords)}>
+                        {formatCompactNumber(website.metrics.organicKeywords)}
+                      </span>
+                    ) : (
+                      // Never measured. A zero here would say the site ranks
+                      // for nothing, which is a claim about the publisher.
+                      <span title="Not measured yet">—</span>
+                    )}
+                  </Td>
+                  <Td className="tabular text-[13px] text-ink-soft">
+                    <span title={formatNumber(website.metrics.referringDomains)}>
+                      {formatCompactNumber(website.metrics.referringDomains)}
+                    </span>
                   </Td>
                   <Td className="overflow-hidden">
                     <LinkTypeList types={website.availableLinkTypes} max={1} nowrap />

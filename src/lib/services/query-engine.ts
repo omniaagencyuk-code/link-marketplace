@@ -29,6 +29,13 @@ export function toListItem(website: Website): WebsiteListItem {
   };
 }
 
+/** The keyword count, or the value that sorts an unmeasured listing last. */
+function keywordsFor(item: WebsiteListItem, whenUnknown: number): number {
+  return typeof item.metrics.organicKeywords === 'number'
+    ? item.metrics.organicKeywords
+    : whenUnknown;
+}
+
 function withinRange(value: number, range?: { min?: number; max?: number }) {
   if (!range) return true;
   if (range.min !== undefined && value < range.min) return false;
@@ -134,6 +141,20 @@ export function sortItems(items: WebsiteListItem[], sort: SortKey, term: string)
       break;
     case 'rd-desc':
       sorted.sort((a, b) => b.metrics.referringDomains - a.metrics.referringDomains);
+      break;
+    /*
+      Unmeasured sorts last either way.
+
+      `organicKeywords` is undefined on a listing the refresh has not reached,
+      and treating that as zero would put every unmeasured site at the top of
+      "fewest keywords" - a ranking of our own coverage rather than of the
+      inventory.
+    */
+    case 'kw-asc':
+      sorted.sort((a, b) => keywordsFor(a, Infinity) - keywordsFor(b, Infinity));
+      break;
+    case 'kw-desc':
+      sorted.sort((a, b) => keywordsFor(b, -1) - keywordsFor(a, -1));
       break;
     case 'turnaround-asc':
       sorted.sort((a, b) => a.fastestTurnaroundDays - b.fastestTurnaroundDays);

@@ -10,7 +10,8 @@ import { AddToOrderButton } from './add-to-order-button';
 import { WebsiteSnippet } from './website-snippet';
 import { nicheName } from '@/lib/data/categories';
 import { FlowMetrics, TopicChips } from './majestic-badges';
-import { countryShortNameOrUnknown } from '@/lib/data/countries';
+import { countryName } from '@/lib/data/countries';
+import { Flag } from '@/components/shared/flag';
 import { formatCompactNumber, formatPrice, formatTurnaround } from '@/lib/utils/format';
 import { linkTypeLabels } from '@/lib/utils/labels';
 import { cn } from '@/lib/utils/cn';
@@ -77,7 +78,16 @@ export function WebsiteCard({
         <FavouriteButton websiteId={website.id} domain={website.domain} />
       </div>
 
-      <dl className="mt-3.5 grid grid-cols-4 gap-2 border-y border-line py-3">
+      {/*
+        Keywords belongs here because the card is the collapsed row on a
+        phone - the table is desktop only - and the panel below omits the SEO
+        card precisely to avoid repeating this row. Without it the metric is
+        invisible to anybody on mobile.
+
+        Three across then two, rather than five: at 390px five columns put
+        "Ref. domains" over three lines and pushed "Turnaround" off the card.
+      */}
+      <dl className="mt-3.5 grid grid-cols-3 gap-x-2 gap-y-3 border-y border-line py-3 sm:grid-cols-5">
         <Metric label="DR">
           <DomainRating value={website.metrics.domainRating} />
         </Metric>
@@ -85,6 +95,17 @@ export function WebsiteCard({
           <span className="tabular text-[13px] font-semibold text-ink">
             {formatCompactNumber(website.metrics.organicTraffic)}
           </span>
+        </Metric>
+        <Metric label="Keywords">
+          {typeof website.metrics.organicKeywords === 'number' ? (
+            <span className="tabular text-[13px] font-semibold text-ink">
+              {formatCompactNumber(website.metrics.organicKeywords)}
+            </span>
+          ) : (
+            <span className="text-[13px] text-muted" title="Not measured yet">
+              —
+            </span>
+          )}
         </Metric>
         <Metric label="Ref. domains">
           <span className="tabular text-[13px] font-semibold text-ink">
@@ -101,7 +122,16 @@ export function WebsiteCard({
       <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2 text-[12px] text-muted">
         <span>{nicheName(website.niche)}</span>
         <span aria-hidden="true">&middot;</span>
-        <span>{countryShortNameOrUnknown(website.country)}</span>
+        {/* The flag with the name beside it, so the card matches the table
+            without the name disappearing where there is room for it. */}
+        {website.country ? (
+          <span className="inline-flex items-center gap-1.5">
+            <Flag country={website.country} />
+            {countryName(website.country)}
+          </span>
+        ) : (
+          <span>Unknown</span>
+        )}
         <LinkTypeList types={website.availableLinkTypes} />
         {/* Nothing renders where nothing has been measured, so a card without
             a Majestic reading looks exactly as it did before. */}
