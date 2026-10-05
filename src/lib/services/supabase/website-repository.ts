@@ -13,6 +13,7 @@ import { toPreviewRows, type MarketplacePreview } from '../marketplace-preview';
 import { normaliseDomain } from '@/lib/import/normalise';
 import { newWebsiteDefaults, toWebsitePatch } from '@/lib/import/to-website';
 import { slugifyDomain } from '@/lib/utils/format';
+import { candidatesPerSide, rankRelated, relatedTarget } from '@/lib/websites/related';
 import type { ImportBatchResult, ImportPayloadRow, DuplicateMode } from '@/lib/import/types';
 import type {
   NichePrice,
@@ -378,29 +379,95 @@ export const supabaseWebsiteRepository = {
     return (data ?? []).map((row) => row.slug as string);
   },
 
-  async getRelated(slug: string, limit = 4): Promise<WebsiteListItem[]> {
-    const current = await supabaseWebsiteRepository.getBySlug(slug);
-    if (!current) return [];
-
+  /**
+   * The related strip, asked for properly.
+   *
+   * Takes the listing rather than its slug, because the page has already read
+   * it: the previous version looked it up again here, which was the third
+   * identical read of the same row in one request.
+   *
+   * The database does the filtering and the ordering. It is asked for the few
+   * listings immediately above this one's Domain Rating and the few
+   * immediately below, which is all the nearest-neighbour answer can possibly
+   * come from - so at most eight rows are fetched to show four, instead of
+   * sixty to show four. It also cannot come back empty while matches exist,
+   * which the old unordered `limit(60)` could and increasingly would as the
+   * inventory grew.
+   */
+  async getRelated(current: Website, limit = 4): Promise<WebsiteListItem[]> {
     const supabase = await getServerClient();
-    const { data } = await supabase
-      .from('websites')
-      .select(WEBSITE_SELECT)
-      .eq('status', 'active')
-      .neq('slug', slug)
-      .limit(60);
 
-    const rows = (data as unknown as WebsiteRow[] | null) ?? [];
-    return rows
-      .map(mapWebsite)
-      .filter((website) => website.niche === current.niche)
-      .sort(
-        (a, b) =>
-          Math.abs(a.metrics.domainRating - current.metrics.domainRating) -
-          Math.abs(b.metrics.domainRating - current.metrics.domainRating),
-      )
-      .slice(0, limit)
-      .map(toListItem);
+    /*
+      The niche, as a category id.
+
+      `websites` stores `primary_category_id` and the listing carries the
+      category's slug, so one of them has to be translated. Doing it with a
+      tiny indexed lookup rather than a filter on an embedded resource keeps
+      the main query a plain equality on an indexed column, which is the part
+      that has to stay fast.
+    */
+    const { data: category } = await supabase
+      .from('categories')
+      .select('id')
+      .eq('slug', current.niche)
+      .maybeSingle();
+
+    const categoryId = (category as { id: string } | null)?.id;
+    // No category means no niche to be related by. Four arbitrary listings
+    // would be worse than an honest empty strip.
+    if (!categoryId) return [];
+
+    /*
+      Finite, because it is interpolated into a filter string.
+
+      `domainRating` comes through `toNumber`, so it is already a number - but
+      this is the one value in the query that becomes text rather than being
+      passed as a parameter, and `domain_rating.lt.NaN` is a request PostgREST
+      answers with an error rather than an empty strip.
+    */
+    const target = Number.isFinite(current.metrics.domainRating)
+      ? current.metrics.domainRating
+      : 0;
+    const perSide = candidatesPerSide(limit);
+
+    const base = () =>
+      supabase
+        .from('websites')
+        .select(WEBSITE_SELECT)
+        .eq('status', 'active')
+        .eq('primary_category_id', categoryId)
+        .neq('slug', current.slug);
+
+    const [above, below] = await Promise.all([
+      base()
+        .gte('domain_rating', target)
+        .order('domain_rating', { ascending: true })
+        // A stable second key, so two listings on the same DR do not swap
+        // places between page loads.
+        .order('slug', { ascending: true })
+        .limit(perSide),
+      /*
+        Below, and the unmeasured ones with them.
+
+        A listing whose DR has never been measured is still in the same niche,
+        which is the stronger relevance signal of the two. `lt` alone would
+        drop it silently - exactly the kind of quiet exclusion this rewrite
+        exists to remove. It maps to a DR of 0, so the ranking puts it last on
+        its own merits rather than by being hidden.
+      */
+      base()
+        .or(`domain_rating.lt.${target},domain_rating.is.null`)
+        .order('domain_rating', { ascending: false, nullsFirst: false })
+        .order('slug', { ascending: true })
+        .limit(perSide),
+    ]);
+
+    const rows = [
+      ...((above.data as unknown as WebsiteRow[] | null) ?? []),
+      ...((below.data as unknown as WebsiteRow[] | null) ?? []),
+    ];
+
+    return rankRelated(rows.map(mapWebsite), relatedTarget(current), limit).map(toListItem);
   },
 
   async getByIds(ids: string[]): Promise<WebsiteListItem[]> {

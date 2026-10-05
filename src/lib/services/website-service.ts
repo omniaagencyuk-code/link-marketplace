@@ -7,6 +7,7 @@ import { newWebsiteDefaults, toWebsitePatch } from '@/lib/import/to-website';
 import { toPreviewRows, type MarketplacePreview } from './marketplace-preview';
 import { isSupabaseEnabled } from '@/lib/supabase/config';
 import { publishBlocker, publishBlockerMessage } from '@/lib/websites/publishing';
+import { rankRelated, relatedTarget } from '@/lib/websites/related';
 import { pricingService } from './pricing-service';
 import { supabaseWebsiteRepository } from './supabase/website-repository';
 import type { ImportPayloadRow, ImportBatchResult, DuplicateMode } from '@/lib/import/types';
@@ -164,19 +165,27 @@ export const websiteService = {
   },
 
   /** Sites in the same niche, excluding the current one. */
-  async getRelated(slug: string, limit = 4): Promise<WebsiteListItem[]> {
-    if (isSupabaseEnabled()) return publicItems(await supabaseWebsiteRepository.getRelated(slug, limit));
+  /**
+   * Other listings worth a look, given the one being read.
+   *
+   * Takes the listing rather than its slug: every caller has already loaded
+   * it, and asking for it again here was a third read of the same row inside
+   * one request.
+   *
+   * Both paths rank with `rankRelated`, so the mock and the database cannot
+   * disagree about what "related" means.
+   */
+  async getRelated(current: Website, limit = 4): Promise<WebsiteListItem[]> {
+    if (isSupabaseEnabled()) {
+      return publicItems(await supabaseWebsiteRepository.getRelated(current, limit));
+    }
 
-    const current = store.find((website) => website.slug === slug);
-    if (!current) return [];
-    return publicItems(listItems())
-      .filter((website) => website.slug !== slug && website.niche === current.niche)
-      .sort(
-        (a, b) =>
-          Math.abs(a.metrics.domainRating - current.metrics.domainRating) -
-          Math.abs(b.metrics.domainRating - current.metrics.domainRating),
-      )
-      .slice(0, limit);
+    // The mock store is a fixed array in memory, so filtering it here costs
+    // nothing and there is no query to push the work into.
+    const sameNiche = publicItems(listItems()).filter(
+      (website) => website.niche === current.niche,
+    );
+    return rankRelated(sameNiche, relatedTarget(current), limit);
   },
 
   async getByIds(ids: string[]): Promise<WebsiteListItem[]> {

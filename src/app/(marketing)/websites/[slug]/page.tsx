@@ -61,7 +61,9 @@ export default async function WebsiteDetailPage({ params }: PageProps) {
   const website = await websiteService.getBySlug(slug);
   if (!website || website.status === 'archived') notFound();
 
-  const related = await websiteService.getRelated(slug, 4);
+  // The listing is already loaded, so it is passed in rather than looked up
+  // again - that lookup was the third read of the same row in one request.
+  const related = await websiteService.getRelated(website, 4);
 
   return (
     <>

@@ -153,9 +153,17 @@ console.log('\n--- no full read in the repositories uses a bare limit ---');
   is('nor the marketplace at 2,000', repoCode.includes('.limit(2000)'), false);
   is('nor the contested drafts at 5,000', code(sourcing).includes('.limit(5000)'), false);
 
-  // Proving the strip does not simply blank the file: the caps that are
-  // meant to be there, on reads that genuinely want a first page, survive it.
-  is('a deliberate small limit is still visible to this check', repoCode.includes('.limit(60)'), true);
+  /*
+    Proving the strip does not simply blank the file: a cap that is meant to
+    be there, on a read that genuinely wants a first page, survives it.
+
+    This used to point at `.limit(60)` in `getRelated` - which was not a
+    deliberate cap at all, but the sixty-row fetch that existed to show four
+    related listings, filtered down in JavaScript afterwards. Removing it
+    broke this check, which is how a canary is supposed to behave. It now
+    points at a limit that is doing its job.
+  */
+  is('a deliberate small limit is still visible to this check', repoCode.includes('.limit(120)'), true);
 }
 
 console.log(failed === 0 ? '\nAll paging checks passed.\n' : `\n${failed} failed.\n`);

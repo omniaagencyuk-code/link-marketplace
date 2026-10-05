@@ -16,6 +16,7 @@ import {
 } from '../src/lib/config/accepted-niches';
 import { sellableNiches } from '../src/lib/sourcing/review';
 import { countryFromDomain } from '../src/lib/data/cctld';
+import { candidatesPerSide, rankRelated } from '../src/lib/websites/related';
 import { runQuery, sortItems } from '../src/lib/services/query-engine';
 import { flipSort, sortDirection } from '../src/lib/types/query';
 import { sortOptions } from '../src/lib/utils/labels';
@@ -563,6 +564,98 @@ console.log('\n--- refreshing one tier ---');
   is('the button asks before spending', /window\.confirm/.test(button), true);
   is('and names the count it will act on', /\$\{overdue\}/.test(button), true);
   is('a tier with nothing due offers no button', /overdue === 0/.test(button), true);
+}
+
+/*
+  The related strip.
+
+  The old version fetched sixty unordered listings to show four and filtered
+  them in JavaScript, which meant a niche holding thirty sites out of eighteen
+  hundred could miss all thirty and show an empty strip. The ranking is now
+  pure and the database does the filtering, so the part that decides what a
+  buyer sees can be checked by calling a function.
+*/
+{
+  console.log('\n--- related listings ---');
+
+  const site = (slug: string, domainRating: number) => ({ slug, metrics: { domainRating } });
+  const current = site('target', 50);
+
+  /*
+    Distances chosen so none of them tie: 2, 4, 40 and 45 from DR 50. The
+    first version of this used 46 and 54, which are both 4 away - so the slug
+    tiebreak decided the order and the test was asserting the tiebreak while
+    claiming to assert closeness. It failed, which is the only reason it was
+    noticed.
+  */
+  const ranked = rankRelated(
+    [site('far-below', 10), site('just-above', 54), site('just-below', 48), site('far-above', 95)],
+    current,
+    4,
+  );
+  is('closest Domain Rating first', ranked[0]?.slug, 'just-below');
+  is('then the next closest', ranked[1]?.slug, 'just-above');
+  is('then the next', ranked[2]?.slug, 'far-below');
+  is('and the furthest last', ranked[3]?.slug, 'far-above');
+
+  is(
+    'the listing being read is never related to itself',
+    rankRelated([site('target', 50), site('other', 51)], current, 4).map((s) => s.slug).join(),
+    'other',
+  );
+
+  // The two queries feeding this overlap at the boundary, so the same listing
+  // can arrive twice. It must appear once.
+  is(
+    'a listing returned by both queries appears once',
+    rankRelated([site('dup', 55), site('dup', 55)], current, 4).length,
+    1,
+  );
+
+  // Two sites on the same DR would otherwise swap places between page loads,
+  // which looks like a bug in the page.
+  is(
+    'ties break on the slug rather than on arrival order',
+    rankRelated([site('zebra', 55), site('alpha', 55)], current, 4).map((s) => s.slug).join(),
+    'alpha,zebra',
+  );
+  is(
+    'and the same answer whichever order they arrive in',
+    rankRelated([site('alpha', 55), site('zebra', 55)], current, 4).map((s) => s.slug).join(),
+    'alpha,zebra',
+  );
+
+  is('the limit is honoured', rankRelated([site('a', 51), site('b', 52), site('c', 53)], current, 2).length, 2);
+  is('fewer candidates than the limit is not an error', rankRelated([site('a', 51)], current, 4).length, 1);
+  is('no candidates is an empty strip', rankRelated([], current, 4).length, 0);
+
+  /*
+    A listing whose DR was never measured maps to 0, so it ranks last on its
+    own merits. The point is that it is not silently dropped: it is in the
+    same niche, which is the stronger relevance signal of the two.
+  */
+  const withUnmeasured = rankRelated([site('unmeasured', 0), site('close', 48)], current, 4);
+  is('an unmeasured listing still appears', withUnmeasured.length, 2);
+  is('but ranks behind a measured one', withUnmeasured[1]?.slug, 'unmeasured');
+
+  /*
+    Asking each side for the limit is enough, and asking for more would be
+    fetching rows that cannot win: the nearest four overall are always inside
+    the nearest four above plus the nearest four below.
+  */
+  is('each side is asked for the limit', candidatesPerSide(4), 4);
+  is('and never for nothing', candidatesPerSide(0), 1);
+
+  const repo = readFileSync(
+    new URL('../src/lib/services/supabase/website-repository.ts', import.meta.url),
+    'utf8',
+  );
+  const body = repo.slice(repo.indexOf('async getRelated'), repo.indexOf('async getByIds'));
+  is('the sixty-row fetch is gone', /limit\(60\)/.test(body), false);
+  is('the niche is filtered in the query', /primary_category_id/.test(body), true);
+  is('the rows are ordered', /order\('domain_rating'/.test(body), true);
+  is('unmeasured listings are not excluded', /domain_rating\.is\.null/.test(body), true);
+  is('and it no longer re-reads the listing it was given', /getBySlug/.test(body), false);
 }
 
 console.log(failed ? `\n  ${failed} FAILED\n` : '\n  all passed\n');
