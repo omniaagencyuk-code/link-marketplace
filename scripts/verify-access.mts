@@ -438,19 +438,51 @@ console.log('\n--- reading what a publisher says about themselves ---');
   /*
     Scoped to the runner's own body, not the file.
 
-    The filter appears twice - the runner uses it and the counter on the admin
+    The filter appeared twice - the runner used it and the counter on the admin
     page uses it - so a check against the whole file passed with the runner's
     copy deleted. Which is to say it was not checking anything: it would have
     let through a pass that overwrote every description in the marketplace.
+
+    The selection has since moved into SQL, where a conjunction of two
+    disjunctions can be written once and read back, so the first half of this
+    now checks the migration and the second half checks the writer.
   */
   const runner = service.slice(
-    service.indexOf('export async function fillSiteDescriptions'),
-    service.indexOf('export async function blankDescriptionCount'),
+    service.indexOf('export async function advanceDescriptionRun'),
+    service.length,
   );
   yes('the runner was found to check', runner.length > 400);
-  yes('only listings with no description are looked at', /description\.is\.null,description\.eq\./.test(runner));
-  yes('and only the description is written', /\.update\(\{ description: /.test(runner));
-  yes('nothing else on the row is touched', !/\.update\(\{[^}]*(?:price|status|domain|niche)/.test(runner));
+
+  const sweepSql = read('supabase/migrations/0048_description_runs.sql');
+  const selection = sweepSql.slice(
+    sweepSql.indexOf('create or replace function public.description_sweep_batch'),
+    sweepSql.indexOf('revoke all on function public.description_sweep_batch'),
+  );
+  yes('the selection was found to check', selection.length > 200);
+  yes(
+    'only listings with no description are looked at',
+    /w\.description is null or w\.description = ''/.test(selection),
+  );
+  yes(
+    'and only ones this sweep has not already read',
+    /description_checked_at is null or w\.description_checked_at < p_since/.test(selection),
+  );
+  // Read-only, so a selection bug can never write anything either.
+  yes('the selection cannot write', !/\b(update|insert|delete)\b/i.test(selection));
+
+  /*
+    Two columns, and only two.
+
+    `description_checked_at` is written beside the description now, because the
+    stamp is what moves the sweep forward. Anything else appearing in this
+    update would be a crawler with write access to the inventory.
+  */
+  yes('and only the description is written', /description: outcome\.description/.test(runner));
+  yes('with the stamp that moves the sweep on', /description_checked_at: stamped/.test(runner));
+  yes(
+    'nothing else on the row is touched',
+    !/\.from\('websites'\)[\s\S]{0,400}?(price|status:|domain:|niche)/.test(runner),
+  );
   yes('requests time out rather than hanging a run', /AbortSignal\.timeout/.test(service));
   yes('the crawler says who it is', /PressParrotBot|USER_AGENT/.test(service));
   yes('and does not open hundreds of connections at once', /AT_ONCE/.test(service));

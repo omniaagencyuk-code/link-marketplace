@@ -2,18 +2,23 @@
 
 import { revalidatePath } from 'next/cache';
 import { requireAdminSession } from '@/lib/auth/admin-access';
-import { fillSiteDescriptions } from '@/lib/services/site-description-service';
+import {
+  advanceDescriptionRun,
+  cancelDescriptionRun,
+  liveDescriptionRun,
+  startDescriptionRun,
+  type RunProgress,
+} from '@/lib/services/site-description-service';
 
 /**
- * Fill in the blank site descriptions.
+ * Starting, watching and stopping the description sweep.
  *
- * Lives beside the Ahrefs controls because it is the same kind of job - a
- * bounded pass over the inventory that fetches something and writes it back -
- * and because that is the page somebody already goes to when they want the
- * listings brought up to date.
+ * Starting it does the first slice as well, so pressing the button visibly
+ * does something rather than only writing a row. Everything after that is the
+ * cron's, which is what lets somebody start it and close the tab.
  *
  * It spends no money. The only cost is an HTTP request per domain, which is
- * why there is no budget guard here and a long one on the refresh next to it.
+ * why there is no budget guard here and a long one on the refresh beside it.
  */
 
 export interface DescriptionActionResult {
@@ -21,40 +26,47 @@ export interface DescriptionActionResult {
   message: string;
 }
 
-/** How many a single run attempts. Bounded by the serverless time limit. */
-const PER_RUN = 200;
+/**
+ * A short first slice.
+ *
+ * Forty-five seconds, not the cron's four minutes: somebody is watching a
+ * spinner, and the job carries on without them either way. Long enough that
+ * the bar has moved by the time the page comes back.
+ */
+const FIRST_SLICE_MS = 45_000;
 
-export async function fillDescriptionsAction(): Promise<DescriptionActionResult> {
-  await requireAdminSession();
+export async function startDescriptionRunAction(): Promise<DescriptionActionResult> {
+  const session = await requireAdminSession();
 
+  const started = await startDescriptionRun(session.email);
+  if (!started.ok) return { ok: false, message: started.error ?? 'Could not start it.' };
+
+  // Straight into the first slice. A failure here does not undo the run - the
+  // cron picks it up within a few minutes regardless.
   try {
-    const run = await fillSiteDescriptions(PER_RUN);
-
-    if (run.looked === 0) {
-      return { ok: true, message: 'Every listing already has a description.' };
-    }
-
-    const parts = [`Looked at ${run.looked}`, `filled ${run.filled}`];
-    if (run.nothingUseful > 0) {
-      parts.push(`${run.nothingUseful} had nothing worth using on their homepage`);
-    }
-    if (run.failed > 0) {
-      parts.push(`${run.failed} could not be reached${run.firstError ? ` (${run.firstError})` : ''}`);
-    }
-
-    revalidatePath('/admin/refresh');
-    revalidatePath('/admin/websites');
-
-    // Said plainly, because a run that fills 40 of 200 is a normal outcome
-    // rather than a failure and should not read as one.
-    return {
-      ok: true,
-      message: `${parts.join(', ')}. Run it again to continue through the rest.`,
-    };
-  } catch (error) {
-    return {
-      ok: false,
-      message: `Could not fill descriptions: ${error instanceof Error ? error.message : String(error)}`,
-    };
+    await advanceDescriptionRun(FIRST_SLICE_MS);
+  } catch {
+    // Reported by the progress row, not by throwing at somebody who has just
+    // successfully started a job.
   }
+
+  revalidatePath('/admin/refresh');
+  return {
+    ok: true,
+    message: 'Started. It carries on in the background - you can close this page.',
+  };
+}
+
+export async function stopDescriptionRunAction(): Promise<DescriptionActionResult> {
+  await requireAdminSession();
+  await cancelDescriptionRun();
+
+  revalidatePath('/admin/refresh');
+  return { ok: true, message: 'Stopped. What it already filled in stays filled in.' };
+}
+
+/** Polled by the progress bar. Null when nothing is running. */
+export async function descriptionProgressAction(): Promise<RunProgress | null> {
+  await requireAdminSession();
+  return liveDescriptionRun();
 }

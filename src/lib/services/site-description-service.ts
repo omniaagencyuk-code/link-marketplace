@@ -1,5 +1,5 @@
 import { getAdminScopedClient } from '@/lib/supabase/server';
-import { readAllPages } from '@/lib/services/supabase/paged';
+import { isSupabaseEnabled } from '@/lib/supabase/config';
 import { describeFromHtml } from '@/lib/websites/site-description';
 import { brand } from '@/lib/config/brand';
 
@@ -95,75 +95,325 @@ async function homepageDescription(domain: string): Promise<string | undefined> 
 }
 
 /**
- * Fill in the blank descriptions, a batch at a time.
+ * The sweep, as a job rather than a button press.
  *
- * `limit` bounds a run so it fits inside a serverless invocation. Running it
- * again picks up where it left off, because the query is "still blank" rather
- * than an offset - which also means a domain that answered with boilerplate is
- * retried next time, and that is the right trade: sites get redesigned.
+ * A run is a row in `description_runs`. Whoever picks it up claims it, works
+ * until their time budget is spent, writes what they did and releases it. The
+ * admin button does the first slice so something visibly happens; the cron
+ * does the rest, which is what lets somebody start it and close the tab.
+ *
+ * ## Why a run cannot simply ask for "still blank"
+ *
+ * It used to, and that was the bug that made the old button feel like it was
+ * going backwards. About sixty per cent of homepages yield nothing usable, so
+ * those listings are still blank after being read - and the next press asked
+ * the same question, got the same rows first, and spent its whole budget
+ * re-reading the domains already known to be fruitless. `description_checked_at`
+ * is what makes a sweep move forward: each slice asks for listings this run has
+ * not looked at yet.
  */
-export async function fillSiteDescriptions(limit = 200): Promise<DescriptionRun> {
+
+/** One slice's worth of candidates. Small, because the budget decides, not this. */
+const CHUNK = 40;
+
+/** Leave enough room to write the final counters before the function is killed. */
+const DEFAULT_BUDGET_MS = 240_000;
+
+/** A claim older than this belonged to a slice that died. */
+const STALE_CLAIM_SECONDS = 600;
+
+export interface RunProgress {
+  id: string;
+  status: 'running' | 'finished' | 'cancelled' | 'failed';
+  total: number;
+  looked: number;
+  filled: number;
+  nothingUseful: number;
+  failed: number;
+  firstError?: string;
+  startedAt: string;
+  finishedAt?: string;
+}
+
+export interface SliceResult {
+  /** No run to work on. Not an error - the usual answer on a cron tick. */
+  idle: boolean;
+  looked: number;
+  filled: number;
+  finished: boolean;
+  outOfTime: boolean;
+}
+
+function mapRun(row: Record<string, unknown>): RunProgress {
+  return {
+    id: String(row.id),
+    status: String(row.status) as RunProgress['status'],
+    total: Number(row.total ?? 0),
+    looked: Number(row.looked ?? 0),
+    filled: Number(row.filled ?? 0),
+    nothingUseful: Number(row.nothing_useful ?? 0),
+    failed: Number(row.failed ?? 0),
+    ...(row.first_error ? { firstError: String(row.first_error) } : {}),
+    startedAt: String(row.started_at),
+    ...(row.finished_at ? { finishedAt: String(row.finished_at) } : {}),
+  };
+}
+
+const RUN_COLUMNS =
+  'id, status, total, looked, filled, nothing_useful, failed, first_error, started_at, finished_at';
+
+/**
+ * Begin a sweep over every listing with no description.
+ *
+ * Refuses when one is already going, rather than starting a second: two runs
+ * would each fetch half the inventory twice and each report half the progress.
+ * The partial unique index enforces it, so two people pressing the button
+ * together is settled by the database rather than by timing.
+ */
+export async function startDescriptionRun(
+  startedBy?: string,
+): Promise<{ ok: boolean; error?: string }> {
+  if (!isSupabaseEnabled()) return { ok: false, error: 'The database is not connected.' };
+
   const supabase = getAdminScopedClient();
-  const run: DescriptionRun = { looked: 0, filled: 0, nothingUseful: 0, failed: 0 };
+  const total = await blankDescriptionCount();
 
-  const rows = await readAllPages<{ id: string; domain: string }>(
-    'listings with no description',
-    (from, to) =>
-      supabase
-        .from('websites')
-        .select('id, domain')
-        .neq('status', 'archived')
-        .or('description.is.null,description.eq.')
-        .order('id', { ascending: true })
-        .range(from, to),
-  );
+  if (total === 0) return { ok: false, error: 'Every listing already has a description.' };
 
-  const wanted = rows.slice(0, limit);
+  const { error } = await supabase
+    .from('description_runs')
+    .insert({ total, started_by: startedBy ?? null });
 
-  for (let start = 0; start < wanted.length; start += AT_ONCE) {
-    const slice = wanted.slice(start, start + AT_ONCE);
-
-    const found = await Promise.all(
-      slice.map(async (row) => {
-        try {
-          return { row, description: await homepageDescription(row.domain) };
-        } catch (error) {
-          return { row, error: error instanceof Error ? error.message : String(error) };
-        }
-      }),
-    );
-
-    for (const result of found) {
-      run.looked += 1;
-
-      if ('error' in result && result.error) {
-        run.failed += 1;
-        run.firstError ??= `${result.row.domain}: ${result.error}`;
-        continue;
-      }
-      if (!result.description) {
-        run.nothingUseful += 1;
-        continue;
-      }
-
-      const { error } = await supabase
-        .from('websites')
-        // Only the description. A run that touched anything else would be a
-        // crawler with write access to the inventory.
-        .update({ description: result.description })
-        .eq('id', result.row.id);
-
-      if (error) {
-        run.failed += 1;
-        run.firstError ??= `${result.row.domain}: ${error.message}`;
-      } else {
-        run.filled += 1;
-      }
+  if (error) {
+    // 23505 is the one-running-run index.
+    if (error.code === '23505') {
+      return { ok: false, error: 'A sweep is already running. Watch it above, or stop it first.' };
     }
+    return { ok: false, error: `Could not start it: ${error.message}` };
   }
 
-  return run;
+  return { ok: true };
 }
+
+/** Stop the running sweep. What it has already written stays written. */
+export async function cancelDescriptionRun(): Promise<void> {
+  if (!isSupabaseEnabled()) return;
+
+  await getAdminScopedClient()
+    .from('description_runs')
+    .update({ status: 'cancelled', finished_at: new Date().toISOString(), claimed_at: null })
+    .eq('status', 'running');
+}
+
+/** The run in progress, for the bar. Null when nothing is going on. */
+export async function liveDescriptionRun(): Promise<RunProgress | null> {
+  if (!isSupabaseEnabled()) return null;
+
+  const { data } = await getAdminScopedClient()
+    .from('description_runs')
+    .select(RUN_COLUMNS)
+    .eq('status', 'running')
+    .order('started_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  return data ? mapRun(data as Record<string, unknown>) : null;
+}
+
+/** The last few sweeps, so the page can say what happened without one running. */
+export async function recentDescriptionRuns(limit = 3): Promise<RunProgress[]> {
+  if (!isSupabaseEnabled()) return [];
+
+  const { data } = await getAdminScopedClient()
+    .from('description_runs')
+    .select(RUN_COLUMNS)
+    .neq('status', 'running')
+    .order('started_at', { ascending: false })
+    .limit(limit);
+
+  return ((data ?? []) as Record<string, unknown>[]).map(mapRun);
+}
+
+/**
+ * Do as much of the running sweep as the budget allows.
+ *
+ * Claims the run first, so a cron tick landing on top of a manual slice does
+ * not double-fetch everything in it. Releases the claim on the way out,
+ * including when it runs out of time, so the next tick picks straight up.
+ *
+ * It never throws. This is called by a cron, and a thrown error would be a red
+ * entry in a dashboard nobody reads rather than a counter somebody can see.
+ */
+export async function advanceDescriptionRun(
+  budgetMs = DEFAULT_BUDGET_MS,
+): Promise<SliceResult> {
+  const result: SliceResult = {
+    idle: true,
+    looked: 0,
+    filled: 0,
+    finished: false,
+    outOfTime: false,
+  };
+
+  if (!isSupabaseEnabled()) return result;
+
+  const supabase = getAdminScopedClient();
+  const deadline = Date.now() + budgetMs;
+
+  const { data: claimed } = await supabase.rpc('claim_description_run', {
+    p_stale_seconds: STALE_CLAIM_SECONDS,
+  });
+
+  const runId = typeof claimed === 'string' ? claimed : null;
+  // Nothing running, or somebody else is already on it.
+  if (!runId) return result;
+
+  result.idle = false;
+
+  const { data: runRow } = await supabase
+    .from('description_runs')
+    .select(RUN_COLUMNS)
+    .eq('id', runId)
+    .maybeSingle();
+
+  if (!runRow) return result;
+  const run = mapRun(runRow as Record<string, unknown>);
+
+  const tally = {
+    looked: run.looked,
+    filled: run.filled,
+    nothingUseful: run.nothingUseful,
+    failed: run.failed,
+    firstError: run.firstError,
+  };
+
+  try {
+    while (Date.now() < deadline) {
+      /*
+        The next few this run has not tried.
+
+        A database function rather than filters over the wire: the condition is
+        "blank description AND not seen by this run", each half a disjunction,
+        and expressing that as two `or=` parameters is a combination not worth
+        being unsure about. Getting it subtly wrong would not fail - it would
+        quietly hand back listings that already have a description and spend
+        the whole sweep re-reading them.
+
+        Because every listing is stamped whatever the outcome, a slice can
+        never be handed the same fruitless domain twice.
+      */
+      const { data: rows } = await supabase.rpc('description_sweep_batch', {
+        p_since: run.startedAt,
+        p_limit: CHUNK,
+      });
+
+      const candidates = (rows ?? []) as { id: string; domain: string }[];
+
+      if (candidates.length === 0) {
+        result.finished = true;
+        break;
+      }
+
+      for (let start = 0; start < candidates.length; start += AT_ONCE) {
+        if (Date.now() >= deadline) {
+          result.outOfTime = true;
+          break;
+        }
+
+        const slice = candidates.slice(start, start + AT_ONCE);
+        const found = await Promise.all(
+          slice.map(async (row) => {
+            try {
+              return { row, description: await homepageDescription(row.domain) };
+            } catch (error) {
+              return { row, error: error instanceof Error ? error.message : String(error) };
+            }
+          }),
+        );
+
+        const stamped = new Date().toISOString();
+
+        for (const outcome of found) {
+          tally.looked += 1;
+          result.looked += 1;
+
+          if ('error' in outcome && outcome.error) {
+            tally.failed += 1;
+            tally.firstError ??= `${outcome.row.domain}: ${outcome.error}`;
+          } else if (!outcome.description) {
+            tally.nothingUseful += 1;
+          } else {
+            tally.filled += 1;
+            result.filled += 1;
+          }
+
+          /*
+            Stamped whatever happened, and only the two columns.
+
+            The stamp is what moves the sweep forward, so it has to be written
+            for a domain that timed out exactly as for one that answered -
+            otherwise a dead host is retried on every slice until the run gives
+            up on the clock instead of on the inventory.
+          */
+          await supabase
+            .from('websites')
+            .update({
+              ...('description' in outcome && outcome.description
+                ? { description: outcome.description }
+                : {}),
+              description_checked_at: stamped,
+            })
+            .eq('id', outcome.row.id);
+        }
+
+        // After each group of eight, so the bar moves while the slice runs
+        // rather than jumping when it ends.
+        await supabase
+          .from('description_runs')
+          .update({
+            looked: tally.looked,
+            filled: tally.filled,
+            nothing_useful: tally.nothingUseful,
+            failed: tally.failed,
+            first_error: tally.firstError ?? null,
+          })
+          .eq('id', runId);
+      }
+
+      if (result.outOfTime) break;
+    }
+  } catch (error) {
+    await supabase
+      .from('description_runs')
+      .update({
+        status: 'failed',
+        finished_at: new Date().toISOString(),
+        claimed_at: null,
+        first_error: tally.firstError ?? String(error).slice(0, 300),
+      })
+      .eq('id', runId);
+    return result;
+  }
+
+  await supabase
+    .from('description_runs')
+    .update({
+      looked: tally.looked,
+      filled: tally.filled,
+      nothing_useful: tally.nothingUseful,
+      failed: tally.failed,
+      first_error: tally.firstError ?? null,
+      ...(result.finished
+        ? { status: 'finished', finished_at: new Date().toISOString() }
+        : {}),
+      // Released either way, so the next tick can pick it straight up.
+      claimed_at: null,
+    })
+    .eq('id', runId);
+
+  return result;
+}
+
 
 /**
  * How many listings still have no description.

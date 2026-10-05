@@ -28,6 +28,10 @@
     {
       "path": "/api/cron/link-maintenance",
       "schedule": "30 6 * * *"
+    },
+    {
+      "path": "/api/cron/site-descriptions",
+      "schedule": "*/5 * * * *"
     }
   ]
 }
