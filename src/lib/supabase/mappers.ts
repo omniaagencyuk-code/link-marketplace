@@ -95,6 +95,11 @@ export interface WebsiteRow {
   accepted_niches: string[] | null;
   restricted_niches: string[] | null;
   content_provided_by: string | null;
+  permanence: string | null;
+  min_live_months: number | null;
+  dofollow_expires_after_months: number | null;
+  homepage_placement: boolean | null;
+  topic_restriction: string | null;
   guidelines: string[] | null;
   example_placements: { title: string; path: string; publishedAt: string }[] | null;
   created_at: string;
@@ -361,6 +366,25 @@ export function mapWebsite(row: WebsiteRow): Website {
       contentProvidedBy: (row.content_provided_by ?? 'either') as Website['rules']['contentProvidedBy'],
       guidelines: row.guidelines ?? [],
       examplePlacements: row.example_placements ?? [],
+      /*
+        Spread, never defaulted.
+
+        "The publisher did not say" is a real answer and by far the commonest
+        one. A `permanence` defaulted to 'fixed-term' would tell a buyer the
+        link expires; defaulted to 'permanent' it would promise something
+        nobody agreed to. Absent stays absent and the preview hides the row.
+      */
+      ...(row.permanence === 'permanent' || row.permanence === 'fixed-term'
+        ? { permanence: row.permanence }
+        : {}),
+      ...(typeof row.min_live_months === 'number' ? { minLiveMonths: row.min_live_months } : {}),
+      ...(typeof row.dofollow_expires_after_months === 'number'
+        ? { dofollowExpiresAfterMonths: row.dofollow_expires_after_months }
+        : {}),
+      ...(typeof row.homepage_placement === 'boolean'
+        ? { homepagePlacement: row.homepage_placement }
+        : {}),
+      ...(row.topic_restriction ? { topicRestriction: row.topic_restriction } : {}),
     },
     verified: row.verified ?? false,
     status: row.status,
@@ -449,6 +473,27 @@ export function websiteToRow(patch: Partial<Website>): Record<string, unknown> {
     set('content_provided_by', patch.rules.contentProvidedBy);
     set('guidelines', patch.rules.guidelines);
     set('example_placements', patch.rules.examplePlacements);
+
+    /*
+      Written explicitly rather than through `set`, which skips undefined.
+
+      Each of these is a term the publisher may have stated and may later be
+      corrected on, so clearing one in the admin has to store a null. With
+      `set` the field would simply be left out of the update and the old value
+      would survive a deliberate deletion - the same trap the country column
+      documents above.
+    */
+    if ('permanence' in patch.rules) row.permanence = patch.rules.permanence ?? null;
+    if ('minLiveMonths' in patch.rules) row.min_live_months = patch.rules.minLiveMonths ?? null;
+    if ('dofollowExpiresAfterMonths' in patch.rules) {
+      row.dofollow_expires_after_months = patch.rules.dofollowExpiresAfterMonths ?? null;
+    }
+    if ('homepagePlacement' in patch.rules) {
+      row.homepage_placement = patch.rules.homepagePlacement ?? null;
+    }
+    if ('topicRestriction' in patch.rules) {
+      row.topic_restriction = patch.rules.topicRestriction ?? null;
+    }
   }
 
   return row;

@@ -183,6 +183,98 @@ check(
   mapped.rules.examplePlacements.length === sample.rules.examplePlacements.length,
 );
 
+/*
+  The publishing terms, written and read back.
+
+  These five columns have existed since the sourcing migration and were
+  populated whenever a publisher draft was approved, but nothing in the
+  application read them - so a wrong column name here would have been
+  invisible until somebody noticed a listing never showing a term the
+  publisher clearly stated. The seed carries none of them, so they are set
+  explicitly rather than hoped for.
+*/
+console.log('\n== publishing terms round-trip ==');
+{
+  const terms = {
+    rules: {
+      permanence: 'fixed-term',
+      minLiveMonths: 12,
+      dofollowExpiresAfterMonths: 6,
+      homepagePlacement: true,
+      topicRestriction: 'Chelsea FC only',
+    },
+  };
+
+  const row = websiteToRow(terms);
+  const assignments = Object.keys(row)
+    .map((key) => `${key} = ${sqlValue(row[key])}`)
+    .join(', ');
+
+  let wrote = true;
+  try {
+    psql(`update public.websites set ${assignments} where slug = '${sample.slug}';`);
+  } catch (error) {
+    wrote = false;
+    check(
+      `terms written (${String(error.stderr ?? error.message).split('\n').find((l) => l.includes('ERROR'))})`,
+      false,
+    );
+  }
+
+  if (wrote) {
+    check('terms written with the real column names', true);
+
+    const back = mapWebsite(
+      JSON.parse(
+        psql(`
+          select row_to_json(t) from (
+            select w.*, null as primary_category,
+              '[]'::json as website_categories, '[]'::json as services
+            from public.websites w where w.slug = '${sample.slug}'
+          ) t;
+        `),
+      ),
+    );
+
+    for (const [label, got, want] of [
+      ['permanence', back.rules.permanence, 'fixed-term'],
+      ['minLiveMonths', back.rules.minLiveMonths, 12],
+      ['dofollowExpiresAfterMonths', back.rules.dofollowExpiresAfterMonths, 6],
+      ['homepagePlacement', back.rules.homepagePlacement, true],
+      ['topicRestriction', back.rules.topicRestriction, 'Chelsea FC only'],
+    ]) {
+      check(`${label} survives the round trip: ${JSON.stringify(got)}`, got === want);
+    }
+
+    // Clearing one has to store a null, not quietly keep the old term. The
+    // mapper writes these by key presence for exactly this reason.
+    psql(
+      `update public.websites set ${Object.keys(
+        websiteToRow({ rules: { permanence: undefined, homepagePlacement: undefined } }),
+      )
+        .map((key) => `${key} = ${sqlValue(websiteToRow({ rules: { permanence: undefined, homepagePlacement: undefined } })[key])}`)
+        .join(', ')} where slug = '${sample.slug}';`,
+    );
+
+    const cleared = mapWebsite(
+      JSON.parse(
+        psql(`
+          select row_to_json(t) from (
+            select w.*, null as primary_category,
+              '[]'::json as website_categories, '[]'::json as services
+            from public.websites w where w.slug = '${sample.slug}'
+          ) t;
+        `),
+      ),
+    );
+
+    check('a cleared term really clears', cleared.rules.permanence === undefined);
+    check('and so does a cleared tri-state', cleared.rules.homepagePlacement === undefined);
+    // The one left alone must survive the write that cleared the other two.
+    check('a term not mentioned is left alone', cleared.rules.minLiveMonths === 12);
+  }
+}
+
 console.log('\n== services round-trip ==');
 const websiteId = psql(`select id from public.websites where slug = '${sample.slug}';`);
 for (const service of sample.services) {

@@ -103,6 +103,34 @@ export interface PublishingRules {
   guidelines: string[];
   /** Indexed example placements, used on the listing page. */
   examplePlacements: { title: string; path: string; publishedAt: string }[];
+  /*
+    ----------------------------------------------------------------- terms
+
+    All five arrived with the publisher-sourcing migration, are written when a
+    draft is approved, and until now were read by nothing at all - captured
+    from a publisher's own email and then invisible. Every one is optional
+    because "the publisher did not say" is a real and common answer, and the
+    expanded preview hides a row rather than guessing at it.
+  */
+  /** Whether the link stays up for good, or only for an agreed term. */
+  permanence?: 'permanent' | 'fixed-term';
+  /** The agreed term, where there is one. */
+  minLiveMonths?: number;
+  /** Some publishers switch a link to nofollow after a while. */
+  dofollowExpiresAfterMonths?: number;
+  /** Does the article appear on the homepage. */
+  homepagePlacement?: boolean;
+  /** What the publisher will only cover, in their words. A sentence, not a tag. */
+  topicRestriction?: string;
+}
+
+/** One country's share of a website's organic traffic. */
+export interface AudienceCountry {
+  country: CountryCode;
+  /** Whole per cent of the site's organic traffic. */
+  share: number;
+  /** Visits, where the refresh reported them. Shares are derived from these. */
+  traffic?: number;
 }
 
 export interface WebsiteMetrics {
@@ -137,7 +165,7 @@ export interface WebsiteMetrics {
    * reports visits per country rather than a percentage. Shares are derived
    * from it, so the two cannot disagree.
    */
-  audienceSplit: { country: CountryCode; share: number; traffic?: number }[];
+  audienceSplit: AudienceCountry[];
   /** Undefined means not measured. Zero is a real - and good - reading. */
   spamScore?: number;
   /**

@@ -416,6 +416,120 @@ export function WebsiteEditor({
             />
           </Field>
 
+          {/*
+            Terms the publisher states in their own email.
+
+            These arrive filled in when a listing is approved from the
+            publisher inbox - the sourcing extraction has captured them since
+            it was built. They are editable here because a publisher changes
+            their mind, and because a listing added by hand has nobody to have
+            extracted them from.
+
+            "Not stated" is the default and is a real answer. Every one of
+            these is hidden on the listing when blank rather than shown as a
+            no, so leaving it alone is always safe.
+          */}
+          <Field
+            label="Permanent placement"
+            htmlFor="permanence"
+            hint="Hidden on the listing unless the publisher said"
+          >
+            <Select
+              id="permanence"
+              name="permanence"
+              defaultValue={website?.rules.permanence ?? ''}
+            >
+              <option value="">Not stated</option>
+              <option value="permanent">Permanent</option>
+              <option value="fixed-term">Fixed term</option>
+            </Select>
+          </Field>
+
+          <Field
+            label="Minimum months live"
+            htmlFor="minLiveMonths"
+            hint="Only for a fixed term"
+          >
+            <Input
+              id="minLiveMonths"
+              name="minLiveMonths"
+              type="number"
+              min={1}
+              defaultValue={website?.rules.minLiveMonths ?? ''}
+            />
+          </Field>
+
+          <Field
+            label="DoFollow expires after"
+            htmlFor="dofollowExpiresAfterMonths"
+            hint="Months, where the publisher switches it to nofollow"
+          >
+            <Input
+              id="dofollowExpiresAfterMonths"
+              name="dofollowExpiresAfterMonths"
+              type="number"
+              min={1}
+              defaultValue={website?.rules.dofollowExpiresAfterMonths ?? ''}
+            />
+          </Field>
+
+          <Field label="Homepage placement" htmlFor="homepagePlacement">
+            <Select
+              id="homepagePlacement"
+              name="homepagePlacement"
+              defaultValue={
+                website?.rules.homepagePlacement === undefined
+                  ? ''
+                  : website.rules.homepagePlacement
+                    ? 'yes'
+                    : 'no'
+              }
+            >
+              <option value="">Not stated</option>
+              <option value="yes">Yes</option>
+              <option value="no">No</option>
+            </Select>
+          </Field>
+
+          <Field
+            label="Only covers"
+            htmlFor="topicRestriction"
+            hint="In the publisher's words, e.g. Chelsea FC only"
+          >
+            <Input
+              id="topicRestriction"
+              name="topicRestriction"
+              defaultValue={website?.rules.topicRestriction ?? ''}
+            />
+          </Field>
+
+          {/*
+            Up to three published articles, shown at the foot of the expanded
+            marketplace row and on the listing page. A path rather than a full
+            URL, because the domain is already on the row and storing it twice
+            is a second thing to keep in step when a publisher moves domain.
+          */}
+          {[0, 1, 2].map((index) => (
+            <div key={index} className="grid gap-3 sm:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
+              <Field label={`Example article ${index + 1}`} htmlFor={`exampleTitle${index}`}>
+                <Input
+                  id={`exampleTitle${index}`}
+                  name={`exampleTitle${index}`}
+                  placeholder="How Bitcoin Adoption Is Growing"
+                  defaultValue={website?.rules.examplePlacements[index]?.title ?? ''}
+                />
+              </Field>
+              <Field label="Path" htmlFor={`examplePath${index}`} hint="e.g. /blog/post-name">
+                <Input
+                  id={`examplePath${index}`}
+                  name={`examplePath${index}`}
+                  placeholder="/blog/post-name"
+                  defaultValue={website?.rules.examplePlacements[index]?.path ?? ''}
+                />
+              </Field>
+            </div>
+          ))}
+
           <div className="flex items-center gap-2.5">
             <Checkbox
               id="dofollow"

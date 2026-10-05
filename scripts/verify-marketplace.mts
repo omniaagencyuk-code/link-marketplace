@@ -17,6 +17,8 @@ import {
 import { sellableNiches } from '../src/lib/sourcing/review';
 import { countryFromDomain } from '../src/lib/data/cctld';
 import { candidatesPerSide, rankRelated } from '../src/lib/websites/related';
+import { audienceBreakdown, shareFor, NAMED_COUNTRIES } from '../src/lib/websites/audience';
+import { flagEmoji } from '../src/lib/data/flags';
 import { runQuery, sortItems } from '../src/lib/services/query-engine';
 import { flipSort, sortDirection } from '../src/lib/types/query';
 import { sortOptions } from '../src/lib/utils/labels';
@@ -656,6 +658,131 @@ console.log('\n--- refreshing one tier ---');
   is('the rows are ordered', /order\('domain_rating'/.test(body), true);
   is('unmeasured listings are not excluded', /domain_rating\.is\.null/.test(body), true);
   is('and it no longer re-reads the listing it was given', /getBySlug/.test(body), false);
+}
+
+/*
+  The expanded marketplace row.
+
+  A listing carries one country, which is the market it is established in. The
+  panel shows where the readers actually are, because a site classified as
+  United States sending forty per cent of its traffic to the United Kingdom is
+  the whole decision for somebody buying for a British client - and the single
+  country answer hides exactly that.
+*/
+{
+  console.log('\n--- traffic by country ---');
+
+  const split = (...pairs: [string, number][]) =>
+    pairs.map(([country, share]) => ({ country: country as never, share }));
+
+  const four = audienceBreakdown(split(['US', 46], ['GB', 40], ['CA', 7], ['AU', 4]));
+  is('the named countries come through', four.length, 5);
+  is('biggest first', four[0]?.country, 'US');
+  is('and the remainder is combined', four[4]?.country, 'OTHER');
+  is('which is what is missing, not what was dropped', four[4]?.share, 3);
+  is('so the bars add up to a whole', four.reduce((total, s) => total + s.share, 0), 100);
+
+  // Ahrefs returns a handful of countries whose shares rarely sum to a
+  // hundred; the long tail is simply not reported. "Other" has to come from
+  // the gap or it reads as zero on a site with a genuine tail.
+  const tail = audienceBreakdown(split(['US', 30], ['GB', 20], ['CA', 10], ['AU', 5]));
+  is('a long tail is accounted for', tail[4]?.share, 35);
+
+  is(
+    'only the top four are named',
+    audienceBreakdown(split(['US', 30], ['GB', 25], ['CA', 20], ['AU', 15], ['DE', 5], ['FR', 5]))
+      .filter((s) => !s.isOther).length,
+    NAMED_COUNTRIES,
+  );
+
+  const one = audienceBreakdown(split(['US', 100]));
+  is('a single country needs no Other row', one.length, 1);
+  is('and fills the bar', one[0]?.share, 100);
+
+  // A one per cent remainder is rounding, not a finding.
+  is('a rounding remainder is not given a row', audienceBreakdown(split(['US', 99.6])).length, 1);
+
+  is('no data is an empty breakdown, not a zero row', audienceBreakdown(undefined).length, 0);
+  is('nor is an empty array', audienceBreakdown([]).length, 0);
+  is('a zero share is not a country', audienceBreakdown(split(['US', 0])).length, 0);
+
+  // A provider rounding every share up can push one past a hundred, and a bar
+  // wider than its track looks like a rendering fault.
+  is('a share over a hundred is clamped', audienceBreakdown(split(['US', 140]))[0]?.share, 100);
+
+  is('arrives unsorted, leaves sorted', audienceBreakdown(split(['CA', 7], ['US', 46]))[0]?.country, 'US');
+
+  // The arithmetic a future "at least 25% UK traffic" filter needs, kept here
+  // so the filter and the panel cannot disagree about what a share is.
+  is('a share can be read for one country', shareFor(split(['US', 46], ['GB', 40]), 'GB'), 40);
+  is('case does not matter', shareFor(split(['US', 46]), 'us'), 46);
+  is('a country with no traffic reads as zero', shareFor(split(['US', 46]), 'DE'), 0);
+  is('and so does no data at all', shareFor(undefined, 'GB'), 0);
+
+  console.log('\n--- country flags ---');
+  is('a code becomes a flag', flagEmoji('GB'), '🇬🇧');
+  is('lower case too', flagEmoji('us'), '🇺🇸');
+  is('a bad code produces nothing rather than two stray symbols', flagEmoji('XYZ'), '');
+  is('and so does nothing', flagEmoji(''), '');
+
+  /*
+    The panel must hide a term the publisher never stated rather than print a
+    "No". These terms have been written to `websites` since the sourcing
+    migration and were read by nothing until now, so this is the first thing
+    standing between a buyer and a claim nobody made.
+  */
+  console.log('\n--- the expanded panel states only what it knows ---');
+  const panel = readFileSync(
+    new URL('../src/components/marketplace/website-snippet.tsx', import.meta.url),
+    'utf8',
+  );
+  is('permanence is shown only when stated', /rules\.permanence \? \(/.test(panel), true);
+  is('the dofollow expiry too', /typeof rules\.dofollowExpiresAfterMonths === 'number'/.test(panel), true);
+  is('homepage placement too', /rules\.homepagePlacement === true/.test(panel), true);
+  is(
+    'a site with no country data says so rather than drawing empty bars',
+    /No country traffic data/.test(panel),
+    true,
+  );
+  is('delivered placements are hidden at zero', /website\.completedOrders > 0/.test(panel), true);
+  is('example content is hidden when there is none', /examples\.length > 0/.test(panel), true);
+  // Expanding a row must never cost a request: everything shown is already on
+  // the listing the marketplace fetched.
+  is('the panel fetches nothing', !/\bfetch\(|useEffect/.test(panel), true);
+  is('and reuses the one add-to-order button', /AddToOrderButton/.test(panel), true);
+
+  const editor = readFileSync(
+    new URL('../src/components/admin/website-editor.tsx', import.meta.url),
+    'utf8',
+  );
+  for (const field of [
+    'permanence',
+    'minLiveMonths',
+    'dofollowExpiresAfterMonths',
+    'homepagePlacement',
+    'topicRestriction',
+  ]) {
+    is(`${field} can be edited in the admin`, new RegExp(`name="${field}"`).test(editor), true);
+  }
+
+  /*
+    The three example rows are rendered from a loop, so their names are built
+    rather than written out. Checked against the form instead of the markup:
+    the contract that matters is that the save action reads the names the
+    editor emits, and a literal-string check on the editor missed that
+    entirely - it failed while the fields were working.
+  */
+  const saveAction = readFileSync(
+    new URL('../src/app/admin/actions.ts', import.meta.url),
+    'utf8',
+  );
+  is('the example rows are rendered from a loop', /name=\{`exampleTitle\$\{index\}`\}/.test(editor), true);
+  is('with a path beside each', /name=\{`examplePath\$\{index\}`\}/.test(editor), true);
+  is('and the save action reads those names', /exampleTitle\$\{index\}/.test(saveAction), true);
+  is('and that one', /examplePath\$\{index\}/.test(saveAction), true);
+  // A title with no path is a link to the homepage, which is an example of
+  // nothing.
+  is('a half-filled example row is dropped', /if \(!title \|\| !path\) return null/.test(saveAction), true);
 }
 
 console.log(failed ? `\n  ${failed} FAILED\n` : '\n  all passed\n');

@@ -32,6 +32,61 @@ function readNumber(formData: FormData, key: string, fallback = 0) {
   return Number.isFinite(value) ? value : fallback;
 }
 
+/** The permanence select, where an empty option means nobody has said. */
+function readPermanence(formData: FormData): Website['rules']['permanence'] {
+  const value = String(formData.get('permanence') ?? '');
+  return value === 'permanent' || value === 'fixed-term' ? value : undefined;
+}
+
+/** A positive whole number, or undefined when the box was left empty. */
+function readOptionalCount(formData: FormData, key: string): number | undefined {
+  const raw = formData.get(key);
+  if (typeof raw !== 'string' || raw.trim() === '') return undefined;
+  const value = Number(raw);
+  return Number.isFinite(value) && value > 0 ? Math.round(value) : undefined;
+}
+
+/**
+ * Yes, no, or nobody said.
+ *
+ * Three states and not a checkbox, because an unticked box and a publisher who
+ * never mentioned homepage placement are the same pixel and opposite claims.
+ */
+function readTriState(formData: FormData, key: string): boolean | undefined {
+  const value = String(formData.get(key) ?? '');
+  if (value === 'yes') return true;
+  if (value === 'no') return false;
+  return undefined;
+}
+
+/**
+ * The example articles, from three pairs of boxes.
+ *
+ * The published date is kept from whatever was already stored, because the
+ * form does not ask for one and inventing today's date would date every
+ * example to the last time somebody saved the listing.
+ */
+function readExamplePlacements(
+  formData: FormData,
+  existing?: Website,
+): Website['rules']['examplePlacements'] {
+  const held = existing?.rules.examplePlacements ?? [];
+
+  return [0, 1, 2]
+    .map((index) => {
+      const title = String(formData.get(`exampleTitle${index}`) ?? '').trim();
+      const path = String(formData.get(`examplePath${index}`) ?? '').trim();
+      if (!title || !path) return null;
+
+      return {
+        title,
+        path: path.replace(/^\/+/, ''),
+        publishedAt: held[index]?.publishedAt ?? '',
+      };
+    })
+    .filter((entry): entry is { title: string; path: string; publishedAt: string } => entry !== null);
+}
+
 /**
  * A number, or undefined when the box was left empty.
  *
@@ -215,6 +270,25 @@ function buildPatch(formData: FormData, websiteId: string, existing?: Website): 
         .split(',')
         .map((value) => value.trim())
         .filter(Boolean),
+
+      /*
+        The publisher's own terms.
+
+        Each is written as a key whose value may be undefined, because the
+        mapper distinguishes "the form did not mention this" from "the form
+        cleared it" by whether the key is present. These are always on the
+        form, so clearing one here really does clear it in the database rather
+        than silently keeping a term the publisher has since withdrawn.
+      */
+      permanence: readPermanence(formData),
+      minLiveMonths: readOptionalCount(formData, 'minLiveMonths'),
+      dofollowExpiresAfterMonths: readOptionalCount(formData, 'dofollowExpiresAfterMonths'),
+      homepagePlacement: readTriState(formData, 'homepagePlacement'),
+      topicRestriction: readString(formData, 'topicRestriction') || undefined,
+      // Only the rows that were filled in, and only ones carrying both halves:
+      // a title with no path is a link to the homepage, which is not an
+      // example of anything.
+      examplePlacements: readExamplePlacements(formData, existing),
     } as Website['rules'],
   };
 }
