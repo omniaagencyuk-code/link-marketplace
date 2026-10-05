@@ -57,6 +57,7 @@ export interface WebsiteRow {
   website_topics?: { position: number; topic: string; value: number }[] | null;
   organic_traffic: number | null;
   referring_domains: number | null;
+  organic_keywords?: number | null;
   traffic_trend: number[] | null;
   traffic_change_pct: number | string | null;
   top_country_share: number | null;
@@ -284,6 +285,10 @@ export function mapWebsite(row: WebsiteRow): Website {
       domainRating: toNumber(row.domain_rating),
       organicTraffic: toNumber(row.organic_traffic),
       referringDomains: toNumber(row.referring_domains),
+      // Spread, not defaulted - see the note on the type.
+      ...(typeof row.organic_keywords === 'number'
+        ? { organicKeywords: row.organic_keywords }
+        : {}),
       // Optional, not defaulted: an unmeasured trust flow is a gap, and a
       // card must not print it as a zero.
       ...(typeof row.trust_flow === 'number' ? { trustFlow: row.trust_flow } : {}),
@@ -435,6 +440,11 @@ export function websiteToRow(patch: Partial<Website>): Record<string, unknown> {
     set('domain_rating', patch.metrics.domainRating);
     set('organic_traffic', patch.metrics.organicTraffic);
     set('referring_domains', patch.metrics.referringDomains);
+    // Explicit rather than through `set`, so clearing it in the admin stores a
+    // null instead of silently keeping the previous count.
+    if ('organicKeywords' in patch.metrics) {
+      row.organic_keywords = patch.metrics.organicKeywords ?? null;
+    }
     set('traffic_trend', patch.metrics.trafficTrend);
     // `set` skips undefined, which would make an unset metric unclearable.
     // These three are written explicitly so blanking one in the admin stores

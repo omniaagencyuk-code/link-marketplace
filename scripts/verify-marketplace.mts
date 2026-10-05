@@ -493,11 +493,63 @@ console.log('\n--- referring domains, which the refresh never wrote ---');
     true,
   );
 
-  // A target Ahrefs knows nothing about is still skipped entirely, so a domain
-  // with no data stays due rather than being marked fresh at zero.
+  /*
+    A target Ahrefs knows nothing about is still skipped entirely, so a domain
+    with no data stays due rather than being marked fresh at zero.
+
+    Whitespace-tolerant, because the guard grew a fourth clause when keywords
+    were added and a one-line regex broke on the wrapping. It failed, which is
+    what a guard like this is for - but it was failing on formatting rather
+    than on the rule, so it is written against the clauses now.
+  */
+  for (const column of ['domain_rating', 'org_traffic', 'refdomains', 'org_keywords']) {
+    is(
+      `a target with no ${column} counts towards being left alone`,
+      new RegExp(`row\\.${column} == null`).test(client),
+      true,
+    );
+  }
+
+  /*
+    ------------------------------------------------------------- keywords
+
+    The same omission as `refdomains`, caught before it shipped rather than
+    after. `org_keywords` is a column on the request already being made: the
+    endpoint is priced by metric group, and `org_traffic` has already paid for
+    the organic one, so the six-column select and the select with keywords both
+    cost 90 units per domain - measured against the live API, not assumed.
+  */
+  is('the batch request asks for the keyword count', /'org_keywords'/.test(client), true);
   is(
-    'a target with no data at all is still left alone',
-    /row\.domain_rating == null && row\.org_traffic == null && row\.refdomains == null/.test(client),
+    'the refresh writes it',
+    /organic_keywords: metrics\.organicKeywords/.test(refresh),
+    true,
+  );
+  is(
+    'only when Ahrefs reported one',
+    /metrics\.organicKeywords == null[\s\S]{0,120}organic_keywords/.test(refresh),
+    true,
+  );
+  is(
+    'and the parser leaves it out rather than calling it zero',
+    /row\.org_keywords == null \? \{\} : \{ organicKeywords/.test(client),
+    true,
+  );
+
+  // The panel shows a dash for a listing nobody has measured. A zero there is
+  // a claim about the publisher, not about our data.
+  const snippet = readFileSync(
+    new URL('../src/components/marketplace/website-snippet.tsx', import.meta.url),
+    'utf8',
+  );
+  is(
+    'the panel shows the keyword count',
+    /Organic keywords/.test(snippet),
+    true,
+  );
+  is(
+    'and a dash rather than a zero when it was never measured',
+    /typeof website\.metrics\.organicKeywords === 'number'/.test(snippet),
     true,
   );
 }

@@ -226,6 +226,9 @@ function buildPatch(formData: FormData, websiteId: string, existing?: Website): 
       domainRating: readNumber(formData, 'domainRating'),
       organicTraffic: readNumber(formData, 'organicTraffic'),
       referringDomains: readNumber(formData, 'referringDomains'),
+      // Optional, so an empty box clears it rather than storing a zero that
+      // would read as "this site ranks for nothing".
+      organicKeywords: readOptionalNumber(formData, 'organicKeywords'),
       // These three are read straight from the form rather than falling back
       // to what was there, so clearing a field genuinely clears it.
       topCountryShare: readOptionalNumber(formData, 'topCountryShare'),

@@ -35,6 +35,19 @@ export interface AhrefsMetrics {
    * the column kept whatever the CSV import left in it.
    */
   referringDomains?: number;
+  /**
+   * Keywords the target ranks for in the top 100 organic results.
+   *
+   * Undefined rather than zero when Ahrefs did not report one, for the same
+   * reason as `referringDomains` above: "ranks for 0 keywords" is a claim
+   * about the site, and a missing reading is a claim about our data.
+   *
+   * Free to collect. It is a column on this same request, and the endpoint is
+   * priced by metric group rather than by column - `org_traffic` has already
+   * paid for the organic group, so the current select and the select with this
+   * added both cost 90 units per domain, measured against the live API.
+   */
+  organicKeywords?: number;
   /** Biggest first. Empty when Ahrefs returned no breakdown. */
   topCountries: AhrefsCountryTraffic[];
 }
@@ -70,6 +83,7 @@ interface AhrefsTargetRow {
   org_traffic?: number | null;
   org_traffic_top_by_country?: [string, number][] | null;
   refdomains?: number | null;
+  org_keywords?: number | null;
 }
 
 export class AhrefsError extends Error {
@@ -193,6 +207,8 @@ export async function batchAnalysis(domains: string[]): Promise<BatchAnalysisRes
         'org_traffic',
         'org_traffic_top_by_country',
         'refdomains',
+        // Free: see the note on `organicKeywords` above.
+        'org_keywords',
       ],
       // Without this the breakdown comes back with a single country, which
       // says nothing about how concentrated the audience is.
@@ -220,7 +236,14 @@ export async function batchAnalysis(domains: string[]): Promise<BatchAnalysisRes
     // A target Ahrefs has no data for comes back with nulls. That is not a
     // reading of zero and must not be written as one - the domain is left
     // alone and reported as missing so it stays due.
-    if (row.domain_rating == null && row.org_traffic == null && row.refdomains == null) continue;
+    if (
+      row.domain_rating == null &&
+      row.org_traffic == null &&
+      row.refdomains == null &&
+      row.org_keywords == null
+    ) {
+      continue;
+    }
 
     metrics.set(domain, {
       // Stored as an integer; Ahrefs returns a float.
@@ -230,6 +253,7 @@ export async function batchAnalysis(domains: string[]): Promise<BatchAnalysisRes
       // above is skipped entirely when it said nothing at all: absence of a
       // reading is not a reading of zero.
       ...(row.refdomains == null ? {} : { referringDomains: Math.round(row.refdomains) }),
+      ...(row.org_keywords == null ? {} : { organicKeywords: Math.round(row.org_keywords) }),
       topCountries: parseTopCountries(row.org_traffic_top_by_country),
     });
   }

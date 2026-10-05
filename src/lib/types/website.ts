@@ -138,6 +138,14 @@ export interface WebsiteMetrics {
   organicTraffic: number;
   referringDomains: number;
   /**
+   * Keywords the site ranks for in the top 100 organic results.
+   *
+   * Optional, not defaulted: a listing nobody has measured must not render as
+   * "ranks for 0 keywords", which is a claim about the publisher rather than
+   * about our data. Undefined shows a dash.
+   */
+  organicKeywords?: number;
+  /**
    * 12 monthly values used to draw the traffic trend sparkline.
    *
    * Empty means no series was supplied - Ahrefs Batch Analysis does not

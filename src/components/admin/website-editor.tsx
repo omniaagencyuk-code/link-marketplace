@@ -202,6 +202,20 @@ export function WebsiteEditor({
           </Field>
 
           <Field
+            label="Organic keywords"
+            htmlFor="organicKeywords"
+            hint="Filled by the Ahrefs refresh. Blank shows as unknown; 0 would say the site ranks for nothing."
+          >
+            <Input
+              id="organicKeywords"
+              name="organicKeywords"
+              type="number"
+              min={0}
+              defaultValue={website?.metrics.organicKeywords ?? ''}
+            />
+          </Field>
+
+          <Field
             label="Audience in primary country (%)"
             htmlFor="topCountryShare"
             hint="Leave blank if unknown. Blank shows as unknown; 0 would be published as a fact."

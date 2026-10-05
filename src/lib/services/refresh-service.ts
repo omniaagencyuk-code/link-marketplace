@@ -698,6 +698,11 @@ export async function runRefresh(options: RunOptions = {}): Promise<RunOutcome> 
             ...(metrics.referringDomains == null
               ? {}
               : { referring_domains: metrics.referringDomains }),
+            // Same rule: a reading Ahrefs did not give is not a reading of
+            // zero, and this column is shown on the card.
+            ...(metrics.organicKeywords == null
+              ? {}
+              : { organic_keywords: metrics.organicKeywords }),
             last_ahrefs_refresh_at: now,
             ...audiencePatch(metrics, countryById.get(entry.id)),
           })

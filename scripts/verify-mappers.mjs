@@ -193,6 +193,46 @@ check(
   publisher clearly stated. The seed carries none of them, so they are set
   explicitly rather than hoped for.
 */
+/*
+  The keyword count, written and read back.
+
+  Nullable on purpose: a listing the refresh has not reached has no reading,
+  and zero is a claim about the publisher. So both directions are checked -
+  a number survives, and clearing it stores a null rather than a zero.
+*/
+console.log('\n== organic keywords round-trip ==');
+{
+  const readBack = () =>
+    mapWebsite(
+      JSON.parse(
+        psql(`
+          select row_to_json(t) from (
+            select w.*, null as primary_category,
+              '[]'::json as website_categories, '[]'::json as services
+            from public.websites w where w.slug = '${sample.slug}'
+          ) t;
+        `),
+      ),
+    );
+
+  const withCount = websiteToRow({ metrics: { organicKeywords: 253 } });
+  psql(
+    `update public.websites set ${Object.keys(withCount)
+      .map((key) => `${key} = ${sqlValue(withCount[key])}`)
+      .join(', ')} where slug = '${sample.slug}';`,
+  );
+  check('the keyword count survives the round trip', readBack().metrics.organicKeywords === 253);
+
+  const cleared = websiteToRow({ metrics: { organicKeywords: undefined } });
+  psql(
+    `update public.websites set ${Object.keys(cleared)
+      .map((key) => `${key} = ${sqlValue(cleared[key])}`)
+      .join(', ')} where slug = '${sample.slug}';`,
+  );
+  const after = readBack().metrics.organicKeywords;
+  check(`clearing it stores unknown, not zero (got ${JSON.stringify(after)})`, after === undefined);
+}
+
 console.log('\n== publishing terms round-trip ==');
 {
   const terms = {

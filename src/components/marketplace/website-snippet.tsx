@@ -120,6 +120,18 @@ export function WebsiteSnippet({
             <Row label="Referring domains">
               <Figure>{formatCompactNumber(website.metrics.referringDomains)}</Figure>
             </Row>
+            {/*
+              A dash, never a zero. A listing the refresh has not reached yet
+              has no reading, and "ranks for 0 keywords" is a claim about the
+              publisher rather than about our data.
+            */}
+            <Row label="Organic keywords">
+              {typeof website.metrics.organicKeywords === 'number' ? (
+                <Figure>{formatCompactNumber(website.metrics.organicKeywords)}</Figure>
+              ) : (
+                <span className="text-[13px] text-muted">—</span>
+              )}
+            </Row>
             {/* Only when measured. A trend of zero and a trend nobody has
                 measured look identical as a number and mean opposite things. */}
             {typeof website.metrics.trafficChangePct === 'number' ? (
