@@ -16,6 +16,19 @@ import { formatDateTime, formatNumber } from '@/lib/utils/format';
 
 export const dynamic = 'force-dynamic';
 
+/*
+  The same ceiling the nightly cron route has.
+
+  "Run now" and "Refresh tier 3" execute inside this segment's function, and
+  without this they inherit the default - which is a fraction of what a run
+  over a few thousand domains needs, so the button was being cut off long
+  before it finished. Nothing was lost when that happened, because each
+  domain's refresh stamp is written as its batch completes and whatever was
+  left stayed due. But the press did a fraction of what it looked like it was
+  doing, and the person watching had no way to tell.
+*/
+export const maxDuration = 300;
+
 const TIER_LABELS: Record<number, string> = {
   1: 'Tier 1 - weekly',
   2: 'Tier 2 - biweekly',
