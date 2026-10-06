@@ -7,6 +7,7 @@ import { salesSettingsService } from '@/lib/services/sales-settings-service';
 import { salesContactService } from '@/lib/services/sales-contact-service';
 import { salesEmailService } from '@/lib/services/sales-email-service';
 import { salesAttributionService } from '@/lib/services/sales-attribution-service';
+import { salesReplyService } from '@/lib/services/sales-reply-service';
 import { salesFollowUpService } from '@/lib/services/sales-followup-service';
 import {
   advanceResearchSweep,
@@ -19,7 +20,7 @@ import {
   startQualifySweep,
 } from '@/lib/services/sales-qualify-service';
 import { normaliseDomain } from '@/lib/import/normalise';
-import type { ProspectStage, SalesSegment } from '@/lib/types/sales';
+import type { ProspectStage, ReplyClassification, SalesSegment } from '@/lib/types/sales';
 
 /**
  * Everything the Sales Centre pages can do.
@@ -485,6 +486,73 @@ export async function matchAttributionsAction(): Promise<SalesActionResult> {
         outcome.created === 1 ? '' : 's'
       }.`,
     );
+  } catch (error) {
+    return bad(reasonFor(error));
+  }
+}
+
+/**
+ * Log a reply somebody received in their own mail client.
+ *
+ * Here because most teams read replies in Gmail, not in an admin panel, and a
+ * reply nobody records is a reply that neither stops a follow-up nor moves a
+ * pipeline. Pasting it in does both - and an unsubscribe pasted in here
+ * suppresses the company exactly as one that arrived automatically would.
+ */
+export async function logReplyAction(formData: FormData): Promise<SalesActionResult> {
+  const session = await requireAdminSession();
+
+  try {
+    const outcome = await salesReplyService.logByHand({
+      fromAddress: String(formData.get('fromAddress') ?? ''),
+      subject: String(formData.get('subject') ?? '') || undefined,
+      body: String(formData.get('body') ?? ''),
+      actor: session.email,
+    });
+
+    revalidatePath('/admin/sales/inbox');
+    if (!outcome.ok) return bad(outcome.error ?? 'Could not log it.');
+
+    return ok(
+      `Logged, read as "${outcome.classification?.replace(/_/g, ' ')}"` +
+        (outcome.classification === 'unsubscribe'
+          ? '. The whole company is now suppressed.'
+          : '.'),
+    );
+  } catch (error) {
+    return bad(reasonFor(error));
+  }
+}
+
+export async function reclassifyReplyAction(
+  replyId: string,
+  classification: ReplyClassification,
+): Promise<SalesActionResult> {
+  const session = await requireAdminSession();
+
+  try {
+    const outcome = await salesReplyService.reclassify(replyId, classification, session.email);
+    revalidatePath('/admin/sales/inbox');
+
+    return outcome.ok
+      ? ok(
+          classification === 'unsubscribe'
+            ? 'Changed, and the company is now suppressed.'
+            : 'Changed.',
+        )
+      : bad(outcome.error ?? 'Could not change it.');
+  } catch (error) {
+    return bad(reasonFor(error));
+  }
+}
+
+export async function markReplyHandledAction(replyId: string): Promise<SalesActionResult> {
+  const session = await requireAdminSession();
+
+  try {
+    const outcome = await salesReplyService.markHandled(replyId, session.email);
+    revalidatePath('/admin/sales/inbox');
+    return outcome.ok ? ok('Marked as dealt with.') : bad(outcome.error ?? 'Could not mark it.');
   } catch (error) {
     return bad(reasonFor(error));
   }
