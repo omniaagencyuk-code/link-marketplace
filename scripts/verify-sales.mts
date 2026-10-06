@@ -22,6 +22,15 @@ import {
   buildQualificationMessage,
 } from '../src/lib/sales/qualification-rules';
 import { isContactable, salesSegments, segmentDefinition } from '../src/lib/config/sales-segments';
+import { bestContact, rankContacts } from '../src/lib/sales/contact-ranking';
+import { lookupsAffordable, mayLookUp } from '../src/lib/sales/credit-guard';
+import { redactKey } from '../src/lib/sales/hunter-config';
+import type { HunterPerson } from '../src/lib/sales/hunter-client';
+import {
+  fromWire,
+  quoteIsReal,
+  wireQualificationSchema,
+} from '../src/lib/sales/qualification-schema';
 import type { WebsiteListItem } from '../src/lib/types/website';
 import type { ProspectQualification } from '../src/lib/types/sales';
 
@@ -467,6 +476,279 @@ for (const segment of salesSegments) {
 }
 ok('every segment has an angle and the niches it needs');
 is('an unknown segment falls back rather than throwing', segmentDefinition('nonsense' as never).slug, 'other');
+
+// ---------------------------------------------------------------------------
+console.log('\n--- who to write to ---');
+
+const person = (email: string, patch: Partial<HunterPerson> = {}): HunterPerson => ({
+  email,
+  ...patch,
+});
+
+const people: HunterPerson[] = [
+  person('dev@agency.example', { firstName: 'Ali', position: 'Senior Engineer', confidence: 95 }),
+  person('info@agency.example', { position: 'General enquiries', confidence: 98 }),
+  person('maria@agency.example', {
+    firstName: 'Maria',
+    position: 'Head of SEO',
+    confidence: 88,
+    verification: 'valid',
+  }),
+  person('recruitment@agency.example', { position: 'Talent Acquisition', confidence: 99 }),
+];
+
+const chosen = bestContact(people);
+is('the head of SEO is chosen', chosen?.person.email, 'maria@agency.example');
+has('and the reason says why', chosen?.reason ?? '', 'owns SEO');
+
+const ranked = rankContacts(people);
+isTrue(
+  'a role mailbox loses to a named person even at higher confidence',
+  ranked.findIndex((entry) => entry.person.email === 'maria@agency.example') <
+    ranked.findIndex((entry) => entry.person.email === 'info@agency.example'),
+);
+/*
+  The bug this caught.
+
+  "Talent Acquisition" contains the word "Acquisition", which the marketing
+  pattern matched - so a recruiter scored as a marketing lead and outranked
+  the engineer. Disqualifiers are now checked first, so a title naming a
+  disqualifying function cannot earn points from another word in it.
+*/
+has(
+  'a recruiter reads as recruitment, not marketing',
+  rankContacts([person('r@c.example', { position: 'Talent Acquisition Manager' })])[0]?.reason ?? '',
+  'recruitment',
+);
+isTrue(
+  'recruitment ranks below the engineer',
+  ranked.findIndex((entry) => entry.person.email === 'dev@agency.example') <
+    ranked.findIndex((entry) => entry.person.email === 'recruitment@agency.example'),
+);
+
+/*
+  A bounce is not a lesser outcome than no contact.
+
+  An invalid or disposable address bounces, and bounces land on the sending
+  reputation shared with every order confirmation we send. Returning nothing is
+  an honest "we could not reach them" that a human can act on; returning the
+  least-bad option is a bounce nobody chose.
+*/
+is(
+  'an invalid address is never chosen',
+  bestContact([
+    person('bad@agency.example', { firstName: 'Bad', position: 'Head of SEO', verification: 'invalid' }),
+  ]),
+  null,
+);
+is(
+  'a disposable address is never chosen',
+  bestContact([person('x@mailinator.example', { verification: 'disposable' })]),
+  null,
+);
+is('nobody found means nobody chosen', bestContact([]), null);
+
+/*
+  `accept_all` is not verified.
+
+  A catch-all domain accepts mail for addresses that belong to nobody, so the
+  lookup proves nothing. It may still be chosen - sometimes it is all there is -
+  but it must not outrank a genuinely verified address.
+*/
+const catchAll = rankContacts([
+  person('a@c.example', { firstName: 'A', position: 'Head of SEO', verification: 'accept_all' }),
+  person('b@c.example', { firstName: 'B', position: 'Head of SEO', verification: 'valid' }),
+]);
+is('verified outranks catch-all', catchAll[0]?.person.email, 'b@c.example');
+has('and the catch-all says so', catchAll[1]?.reason ?? '', 'unverifiable');
+
+/*
+  Unscored is not zero-confidence.
+
+  Plenty of real addresses come back unscored. Treating that as zero would rank
+  a scored role mailbox above an unscored named person, which is the wrong way
+  round - the name is the stronger signal.
+*/
+const unscored = rankContacts([
+  person('hello@c.example', { position: 'Enquiries', confidence: 95 }),
+  person('jo@c.example', { firstName: 'Jo', position: 'Marketing Manager' }),
+]);
+is('an unscored named person wins', unscored[0]?.person.email, 'jo@c.example');
+
+// ---------------------------------------------------------------------------
+console.log('\n--- the credit guard ---');
+
+const liveSettings = {
+  enabled: true,
+  dryRun: false,
+  hunterMonthlyCreditBudget: 100,
+  hunterCreditSafetyPct: 90,
+};
+
+const base = { settings: liveSettings, configured: true, creditsUsedThisCycle: 0, cost: 1 };
+
+isTrue('a configured, funded lookup is allowed', mayLookUp(base).allowed);
+
+/*
+  Off, then dry run, then unconfigured, then budget.
+
+  The order is the design: each refusal is cheaper than the one after it, and
+  the message names the switch to change rather than saying "not allowed".
+*/
+const off = mayLookUp({ ...base, settings: { ...liveSettings, enabled: false } });
+isTrue('off refuses', !off.allowed);
+has('and says which switch', off.allowed ? '' : off.reason, 'Turn it on in Sales settings');
+
+const dry = mayLookUp({ ...base, settings: { ...liveSettings, dryRun: true } });
+isTrue('dry run refuses', !dry.allowed);
+has('and says nothing will be spent', dry.allowed ? '' : dry.reason, 'no Hunter credit will be spent');
+
+/*
+  Dry run is checked before the key.
+
+  This is what makes "never consume real credits in a test" structural rather
+  than a habit: a deployment with a real key and dry run on cannot spend one,
+  and the refusal does not depend on the key being absent.
+*/
+const dryWithKey = mayLookUp({
+  ...base,
+  settings: { ...liveSettings, dryRun: true },
+  configured: true,
+});
+isTrue('dry run refuses even with a real key present', !dryWithKey.allowed);
+
+const unconfigured = mayLookUp({ ...base, configured: false });
+isTrue('no key refuses', !unconfigured.allowed);
+has('and names the variable', unconfigured.allowed ? '' : unconfigured.reason, 'HUNTER_API_KEY');
+
+/*
+  Zero refuses everything, which is how the feature ships.
+
+  A credit allowance nobody has entered is one nobody has agreed to spend.
+*/
+const zeroBudget = mayLookUp({
+  ...base,
+  settings: { ...liveSettings, hunterMonthlyCreditBudget: 0 },
+});
+isTrue('a zero budget refuses', !zeroBudget.allowed);
+has('and explains that this is deliberate', zeroBudget.allowed ? '' : zeroBudget.reason, 'on purpose');
+
+// 90% of 100 is 90, so the 90th credit is the last one allowed.
+isTrue(
+  'the last credit under the ceiling is allowed',
+  mayLookUp({ ...base, creditsUsedThisCycle: 89 }).allowed,
+);
+const overCeiling = mayLookUp({ ...base, creditsUsedThisCycle: 90 });
+isTrue('the one past it is refused', !overCeiling.allowed);
+has(
+  'and the refusal quotes the ceiling, not the budget',
+  overCeiling.allowed ? '' : overCeiling.reason,
+  '90',
+);
+
+/*
+  The guard stops at the safety share, not at the budget.
+
+  The Hunter allowance is shared with whatever else uses the account, which is
+  the same reason `refresh_settings.budget_safety_pct` exists.
+*/
+isTrue(
+  'the guard stops below the full budget',
+  !mayLookUp({ ...base, creditsUsedThisCycle: 95 }).allowed,
+);
+
+is('a sweep is told how many it can afford', lookupsAffordable({ ...base, creditsUsedThisCycle: 80 }), 10);
+is('and zero when it may not run at all', lookupsAffordable({ ...base, configured: false }), 0);
+is(
+  'and zero in dry run',
+  lookupsAffordable({ ...base, settings: { ...liveSettings, dryRun: true } }),
+  0,
+);
+
+console.log('\n--- the key never leaves ---');
+/*
+  Hunter authenticates with a query parameter, so the request URL is a
+  credential. The natural thing to do with a failed request is print the URL,
+  and that is the thing that writes the key into a log somebody else reads.
+*/
+has(
+  'a URL carrying the key is redacted',
+  redactKey('fetch failed for https://api.hunter.io/v2/domain-search?domain=a.com&api_key=sk-real-key'),
+  'api_key=REDACTED',
+);
+hasNot(
+  'and the key itself is gone',
+  redactKey('https://api.hunter.io/v2/x?api_key=sk-real-key'),
+  'sk-real-key',
+);
+has(
+  'even mid-string',
+  redactKey('?api_key=abc123&domain=a.com'),
+  'api_key=REDACTED&domain=a.com',
+);
+
+// ---------------------------------------------------------------------------
+console.log('\n--- the model answer, parsed ---');
+
+const wire = wireQualificationSchema.parse({
+  verdict: 'likely_buyer',
+  confidence: 140,
+  segment: 'unknown',
+  reasons: [
+    { claim: 'Offers link building', quote: 'we do link building', url: 'https://a.example/' },
+    { claim: 'They feel like buyers', quote: '', url: '' },
+    { claim: '', quote: 'orphan quote', url: '' },
+  ],
+  buying_signals: [{ claim: 'Hiring for SEO', quote: 'SEO Manager', url: '' }],
+});
+
+const out = fromWire(wire);
+
+/*
+  A confidence of 140 is not a number we want reaching a column with a 0-100
+  check on it: the insert would fail and the whole qualification would be lost
+  after it had already been paid for.
+*/
+is('confidence is clamped', out.confidence, 100);
+
+// `unknown` is a value on the wire so the field is never optional, and it is
+// absence everywhere else.
+is('the unknown sentinel becomes absence', out.segment, undefined);
+
+/*
+  The prompt says to leave an unquoted reason out. This is the enforcement
+  rather than the request - a model that ignores the rule loses the claim
+  instead of getting it through, which matters because the score counts quotes.
+*/
+is('only the quoted reason survives', out.reasons.length, 1);
+is('and it is the right one', out.reasons[0]?.claim, 'Offers link building');
+is('an empty url becomes absence', fromWire({ ...wire, reasons: [{ claim: 'c', quote: 'q', url: '' }] }).reasons[0]?.url, undefined);
+is('a quoted buying signal survives', out.buyingSignals.length, 1);
+
+console.log('\n--- was the quote really there? ---');
+
+const source = 'We do link building for ambitious brands.  Our outreach service places guest posts.';
+
+isTrue('a real quote is found', quoteIsReal('link building for ambitious brands', source));
+isTrue('case does not matter', quoteIsReal('LINK BUILDING', source));
+/*
+  The text given to the model has already had its whitespace collapsed, so a
+  model re-wrapping a line is not a fabrication.
+*/
+isTrue('re-wrapped whitespace is still a match', quoteIsReal('brands.\n  Our outreach', source));
+
+/*
+  The check that makes the quote rule real.
+  A composed quote reads exactly like evidence, and the score counts quotes -
+  so one that got through would inflate the score of the prospect the model was
+  least sure about. Asking for a copied quote is not the same as checking.
+*/
+isTrue(
+  'an invented quote is not',
+  !quoteIsReal('we buy hundreds of links every month', source),
+);
+isTrue('and nor is an empty one', !quoteIsReal('  ', source));
+isTrue('a one-character quote is not a quote', !quoteIsReal('a', source));
 
 console.log(failed === 0 ? '\nAll sales checks passed.\n' : `\n${failed} sales check(s) failed.\n`);
 process.exit(failed === 0 ? 0 : 1);
