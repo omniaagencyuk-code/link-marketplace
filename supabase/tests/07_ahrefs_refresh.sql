@@ -114,3 +114,82 @@ set role authenticated;
 set request.jwt.claim.sub = '22222222-2222-2222-2222-222222222222';
 select 'customer reads settings: ' || count(*) from public.refresh_settings;
 reset role; reset request.jwt.claim.sub;
+
+-- ------------------------------------------------- previewing an assignment --
+-- 0052. The preview is a second copy of the assignment's ranking, and a
+-- second copy agrees on the day it is written and drifts afterwards. So it is
+-- checked against the real assignment at several sizes rather than read and
+-- believed - including the sizes that ship by default, where every listing
+-- ranks inside the top band and the whole inventory moves to weekly.
+--
+-- The two calls are separate statements on purpose: the preview is `stable`,
+-- so asking it and assigning in one statement would compare a prediction
+-- against the snapshot it was made from and always agree.
+create temp table preview_check (config text, tiers_agreed boolean, cost_agreed boolean);
+
+do $$
+declare
+  c record;
+  predicted record;
+  actual record;
+  projected bigint;
+begin
+  for c in
+    select * from (values (0, 0), (1, 1), (2, 2), (3, 1), (10000, 10000)) as v(t1, t2)
+  loop
+    update public.refresh_settings set tier1_size = c.t1, tier2_size = c.t2;
+
+    select * into predicted from public.ahrefs_tier_preview(c.t1, c.t2);
+    select * into actual from public.assign_ahrefs_tiers();
+    select public.ahrefs_projected_monthly_units() into projected;
+
+    insert into preview_check values (
+      lpad(c.t1::text, 5, '0') || '/' || lpad(c.t2::text, 5, '0'),
+      predicted.tier1 = actual.tier1
+        and predicted.tier2 = actual.tier2
+        and predicted.tier3 = actual.tier3,
+      predicted.projected_units = projected
+    );
+  end loop;
+end;
+$$;
+
+select 'preview matches the assignment at ' || config || ': ' || tiers_agreed
+from preview_check order by config;
+select 'preview predicts the cost at ' || config || ': ' || cost_agreed
+from preview_check order by config;
+select 'every size agreed: ' ||
+  (count(*) = 5 and count(*) filter (where not tiers_agreed or not cost_agreed) = 0)
+from preview_check;
+
+-- A locked listing is left out of the ranking and keeps its tier, in the
+-- preview as much as in the assignment. e-com is pinned to tier 1 above, and
+-- on DR alone it would rank last.
+update public.refresh_settings set tier1_size = 1, tier2_size = 1;
+select 'preview keeps a locked listing in tier 1: ' || (tier1 = 2)
+from public.ahrefs_tier_preview(1, 1);
+
+-- Nobody but the service role may ask. The function reads the whole inventory
+-- and the budget, so execute is revoked rather than left to row security.
+set role anon;
+do $$
+declare v record;
+begin
+  select * into v from public.ahrefs_tier_preview(1, 1);
+  raise notice 'anon previews tiers: allowed';
+exception
+  when insufficient_privilege then raise notice 'anon previewing tiers is refused: true';
+end;
+$$;
+reset role;
+set role authenticated;
+do $$
+declare v record;
+begin
+  select * into v from public.ahrefs_tier_preview(1, 1);
+  raise notice 'customer previews tiers: allowed';
+exception
+  when insufficient_privilege then raise notice 'a customer previewing tiers is refused: true';
+end;
+$$;
+reset role;

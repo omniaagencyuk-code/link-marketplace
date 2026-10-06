@@ -9,6 +9,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
   assignTiersAction,
+  previewTiersAction,
   runNowAction,
   saveRefreshSettingsAction,
   setDryRunAction,
@@ -110,7 +111,7 @@ export function RefreshControls({
             type="button"
             variant="outline"
             disabled={pending}
-            onClick={() => run(assignTiersAction)}
+            onClick={confirmThenAssign}
           >
             <Layers className="h-4 w-4" aria-hidden="true" />
             Assign tiers
@@ -124,6 +125,63 @@ export function RefreshControls({
         {feedback}
       </form>
     );
+  }
+
+  /**
+   * Say what it will cost before doing it.
+   *
+   * This button reassigns the whole inventory and the cost lands every month
+   * afterwards. At the sizes it ships with, and an inventory smaller than
+   * them, every listing ranks inside the top two bands and nothing is left on
+   * the monthly cadence - four times the current spend, measured, with no
+   * confirmation and no way to see the number first.
+   *
+   * Which is why the dialog leads on the change rather than the total: the
+   * total is inside the budget and inside the warning threshold, so neither
+   * existing guard says a word about it.
+   *
+   * The action refuses a cadence that cannot be met on its own; this is so
+   * nobody has to be refused to find out.
+   */
+  function confirmThenAssign() {
+    startTransition(async () => {
+      const preview = await previewTiersAction().catch(() => null);
+
+      if (preview) {
+        const summary =
+          `This will set:\n\n` +
+          `  ${preview.tier1.toLocaleString('en-GB')} domains to weekly\n` +
+          `  ${preview.tier2.toLocaleString('en-GB')} to fortnightly\n` +
+          `  ${preview.tier3.toLocaleString('en-GB')} to monthly\n\n` +
+          `Monthly cost now: ${preview.currentMonthlyUnits.toLocaleString('en-GB')} units\n` +
+          `Monthly cost after: ${preview.projectedMonthlyUnits.toLocaleString('en-GB')} units` +
+          (preview.budget > 0 ? ` (${preview.percentOfBudget}% of the allowance)` : '') +
+          // The multiple, because a percentage inside budget reads as fine
+          // and "four times what you spend today, every month" does not.
+          (preview.currentMonthlyUnits > 0 &&
+          preview.projectedMonthlyUnits > preview.currentMonthlyUnits * 1.2
+            ? `\n\nThat is ${(preview.projectedMonthlyUnits / preview.currentMonthlyUnits).toFixed(1)}x ` +
+              `what the current cadence costs, and it recurs every month.`
+            : '') +
+          (preview.exceedsCeiling
+            ? `\n\nThis is more than the ${preview.ceiling.toLocaleString('en-GB')} this job ` +
+              `stops at, so it will be refused. Runs would stop on the budget guard and ` +
+              `leave listings overdue. Lower the tier sizes first.`
+            : preview.aboveWarnThreshold
+              ? `\n\nThat is above your ${preview.warnPct}% warning threshold and it recurs ` +
+                `every month. Continue?`
+              : `\n\nContinue?`);
+
+        if (preview.exceedsCeiling) {
+          window.alert(summary);
+          return;
+        }
+        if (!window.confirm(summary)) return;
+      }
+
+      setResult(await assignTiersAction());
+      router.refresh();
+    });
   }
 
   return (

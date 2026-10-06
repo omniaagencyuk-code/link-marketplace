@@ -2,7 +2,11 @@
 
 import { revalidatePath } from 'next/cache';
 import { requireAdminSession } from '@/lib/auth/admin-access';
-import { refreshService, runRefresh } from '@/lib/services/refresh-service';
+import {
+  refreshService,
+  runRefresh,
+  type TierPreview,
+} from '@/lib/services/refresh-service';
 
 /**
  * Controls for the Ahrefs refresh.
@@ -84,10 +88,53 @@ export async function saveRefreshSettingsAction(formData: FormData): Promise<Ref
   }
 }
 
+/**
+ * What assigning tiers would do, for the confirmation.
+ *
+ * Read-only, and it reads the sizes from the settings row rather than from the
+ * form - the saved sizes are what the assignment will use, and previewing
+ * unsaved numbers would show a figure for something that is not about to
+ * happen.
+ */
+export async function previewTiersAction(): Promise<TierPreview | null> {
+  await requireAdminSession();
+  const settings = await refreshService.getSettings();
+  if (!settings) return null;
+
+  return refreshService.previewTiers(settings.tier1Size, settings.tier2Size);
+}
+
 /** Recalculate every unlocked domain's tier from its current rank. */
 export async function assignTiersAction(): Promise<RefreshActionResult> {
   await requireAdminSession();
   try {
+    const settings = await refreshService.getSettings();
+
+    /*
+      Refused here, not only in the dialog.
+
+      The browser can send this action whatever it likes, and the thing being
+      prevented is not a mistake that shows up next week - it is a schedule
+      the budget cannot meet, which spends the whole allowance and still
+      leaves listings overdue. The sizes ship larger than the inventory, so
+      this button moves nearly all of it to the weekly cadence.
+    */
+    if (settings) {
+      const preview = await refreshService.previewTiers(settings.tier1Size, settings.tier2Size);
+
+      if (preview?.exceedsCeiling) {
+        return {
+          ok: false,
+          error:
+            `That would put ${preview.tier1.toLocaleString('en-GB')} domains on the weekly ` +
+            `cadence and cost about ${preview.projectedMonthlyUnits.toLocaleString('en-GB')} ` +
+            `units a month - more than the ${preview.ceiling.toLocaleString('en-GB')} this job ` +
+            `stops at. Runs would hit the budget guard and leave listings overdue. ` +
+            `Lower the tier sizes and try again.`,
+        };
+      }
+    }
+
     const counts = await refreshService.assignTiers();
     revalidatePath('/admin/refresh');
     return {

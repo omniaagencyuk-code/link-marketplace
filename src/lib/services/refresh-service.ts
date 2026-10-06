@@ -86,6 +86,39 @@ export interface AhrefsUsageSnapshot {
   observedAt: string;
 }
 
+export interface TierPreview {
+  tier1: number;
+  tier2: number;
+  tier3: number;
+  projectedMonthlyUnits: number;
+  /** What a run stops at: the budget times the safety percentage. */
+  ceiling: number;
+  budget: number;
+  /** Share of the monthly allowance this cadence would consume. */
+  percentOfBudget: number;
+  /**
+   * What the schedule costs today.
+   *
+   * The number that actually matters is the change, not the absolute. A
+   * percentage inside the budget reads as fine; "this quadruples your monthly
+   * spend, every month" does not, and that is the same fact.
+   */
+  currentMonthlyUnits: number;
+  /**
+   * The schedule cannot be met at all: runs would stop on the budget guard
+   * and leave listings permanently overdue. Refused rather than warned about.
+   */
+  exceedsCeiling: boolean;
+  /**
+   * Affordable, but past the share the settings already warn about elsewhere.
+   * Shown, not refused - wanting the whole inventory on a weekly cadence is a
+   * legitimate choice, as long as it is a choice rather than a default nobody
+   * read.
+   */
+  aboveWarnThreshold: boolean;
+  warnPct: number;
+}
+
 export interface RefreshStatus {
   settings: RefreshSettings | null;
   overdue: OverdueCount[];
@@ -253,6 +286,75 @@ export const refreshService = {
 
     if (error) throw new Error(`Could not update refresh settings: ${error.message}`);
     return data ? mapSettings(data) : null;
+  },
+
+  /**
+   * What assigning tiers would do, before it is done.
+   *
+   * The sizes ship at 3,000 and 6,000, and the inventory is 3,472 listings -
+   * so every one of them ranks inside those two bands and the button puts
+   * nothing on the monthly cadence at all. Measured at that size and the 90
+   * units a domain the job really costs, that is 1,248,172 units a month
+   * against 312,480 for the cadence it sits on today: four times the spend,
+   * and under both of the guards that already exist.
+   *
+   * The preview mirrors the assignment exactly, including that locked
+   * listings are left out of the ranking and keep the tier they have. It is
+   * checked against the real assignment rather than assumed to match.
+   */
+  async previewTiers(
+    tier1Size: number,
+    tier2Size: number,
+  ): Promise<TierPreview | null> {
+    if (!isSupabaseEnabled()) return null;
+
+    const supabase = getAdminScopedClient();
+    const { data, error } = await supabase.rpc('ahrefs_tier_preview', {
+      p_tier1_size: Math.max(0, Math.floor(tier1Size)),
+      p_tier2_size: Math.max(0, Math.floor(tier2Size)),
+    });
+    if (error) throw new Error(`Could not preview tiers: ${error.message}`);
+
+    const row = Array.isArray(data) ? data[0] : data;
+    if (!row) return null;
+
+    const settings = await refreshService.getSettings();
+    /*
+      The same ceiling a run stops at.
+
+      "Too expensive" is not a judgement about money here - it is the point
+      past which the schedule cannot keep up, because every run would stop on
+      the budget guard and leave domains permanently overdue. Preferring the
+      live reading matters because the account is shared and the configured
+      budget is only a fallback.
+    */
+    const live = await readUsage().catch(() => null);
+    const budget = live?.unitsLimit ?? settings?.monthlyUnitBudget ?? 0;
+    const safetyPct = settings?.budgetSafetyPct ?? 90;
+    const ceiling = Math.floor((budget * safetyPct) / 100);
+    const projected = Number(row.projected_units ?? 0);
+
+    const { data: currentProjection } = await supabase.rpc('ahrefs_projected_monthly_units');
+    const currentMonthlyUnits = Number(currentProjection ?? 0);
+
+    const warnPct = settings?.projectionWarnPct ?? 85;
+    const percentOfBudget = budget > 0 ? Math.round((projected / budget) * 100) : 0;
+
+    return {
+      tier1: Number(row.tier1 ?? 0),
+      tier2: Number(row.tier2 ?? 0),
+      tier3: Number(row.tier3 ?? 0),
+      projectedMonthlyUnits: projected,
+      ceiling,
+      budget,
+      percentOfBudget,
+      currentMonthlyUnits,
+      // Not a warning: a schedule that cannot be met is a schedule that leaves
+      // the marketplace showing stale figures while spending the whole budget.
+      exceedsCeiling: ceiling > 0 && projected > ceiling,
+      aboveWarnThreshold: budget > 0 && percentOfBudget >= warnPct,
+      warnPct,
+    };
   },
 
   /** Recalculate every unlocked domain's tier from its current rank. */
