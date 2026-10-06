@@ -38,6 +38,12 @@ import {
   readInParts,
 } from '../src/lib/sourcing/in-parts';
 import { APPROVE_CHUNK_SIZE, chunk, progressText } from '../src/lib/sourcing/approving';
+import {
+  MAX_CSV_ROWS,
+  decodeSheetBytes,
+  looksLikeSheet,
+  readRateCardCsv,
+} from '../src/lib/sourcing/rate-card-csv';
 import { zodOutputFormat } from '@anthropic-ai/sdk/helpers/zod';
 
 let failed = 0;
@@ -48,6 +54,7 @@ const bad = (label: string, detail?: string) => {
 };
 const is = (label: string, actual: unknown, expected: unknown) =>
   actual === expected ? ok(label) : bad(label, `expected ${String(expected)}, got ${String(actual)}`);
+const isTrue = (label: string, actual: boolean) => (actual ? ok(label) : bad(label, 'expected true'));
 const has = (label: string, haystack: string, needle: string) =>
   haystack.includes(needle) ? ok(label) : bad(label, `missing ${JSON.stringify(needle)} in ${JSON.stringify(haystack)}`);
 
@@ -1498,6 +1505,154 @@ console.log('\n--- an update from somebody else ---');
     true,
   );
 }
+
+
+console.log('\n--- a rate card that arrived as a spreadsheet ---');
+
+const bytesOf = (text: string) => new TextEncoder().encode(text).buffer as ArrayBuffer;
+
+/*
+  The encoding rule, which is the whole reason this module reads bytes rather
+  than taking a string.
+
+  Excel on Windows saves CSV as Windows-1252, where a pound sign is the single
+  byte 0xA3 - not valid UTF-8. Decoded leniently it becomes the replacement
+  character, so "£250" arrives as "\uFFFD250", the currency is gone, and the
+  extraction rules then correctly treat it as a price with no currency. A
+  silently de-pounded rate card is the failure this exists to prevent.
+*/
+const windows1252 = new Uint8Array([
+  0x44, 0x6f, 0x6d, 0x61, 0x69, 0x6e, 0x2c, 0x50, 0x72, 0x69, 0x63, 0x65, 0x0a, // Domain,Price
+  0x61, 0x2e, 0x63, 0x6f, 0x6d, 0x2c, 0xa3, 0x32, 0x35, 0x30, // a.com,£250
+]);
+const decoded = decodeSheetBytes(windows1252.buffer as ArrayBuffer);
+if ('error' in decoded) {
+  bad('a Windows-1252 file is read', decoded.error);
+} else {
+  has('the pound sign survives', decoded.text, '£250');
+  isTrue('and the re-encoding is reported', decoded.reEncoded);
+}
+
+const utf8 = decodeSheetBytes(bytesOf('Domain,Price\na.com,£250'));
+if ('error' in utf8) {
+  bad('a UTF-8 file is read', utf8.error);
+} else {
+  has('the pound sign survives there too', utf8.text, '£250');
+  isTrue('and nothing is reported as re-encoded', !utf8.reEncoded);
+}
+
+/*
+  The two wrong files people actually pick.
+
+  An .xlsx is a zip; parsed as text it produces a page of binary that looks
+  like it half worked. Detected by its own magic bytes, so a renamed file is
+  still caught.
+*/
+const xlsx = decodeSheetBytes(new Uint8Array([0x50, 0x4b, 0x03, 0x04, 0x14, 0x00]).buffer as ArrayBuffer);
+isTrue('an xlsx is refused', 'error' in xlsx);
+if ('error' in xlsx) has('and says to save as CSV', xlsx.error, 'save as CSV');
+
+const pdf = decodeSheetBytes(new Uint8Array([0x25, 0x50, 0x44, 0x46, 0x2d, 0x31]).buffer as ArrayBuffer);
+isTrue('a PDF is refused', 'error' in pdf);
+if ('error' in pdf) has('and says to screenshot it', pdf.error, 'screenshot');
+
+isTrue('an empty file is refused', 'error' in decodeSheetBytes(new ArrayBuffer(0)));
+
+console.log('\n--- the table it produces ---');
+
+const simple = readRateCardCsv('Domain,Guest post,Link insertion\na.com,£250,£120\nb.com,£300,£150');
+if (!simple.ok) {
+  bad('an ordinary rate card reads', simple.error);
+} else {
+  is('three rows', simple.table.rows, 3);
+  is('three columns', simple.table.columns, 3);
+  has('the header row survives', simple.table.text, 'Domain | Guest post | Link insertion');
+  has('and a data row', simple.table.text, 'a.com | £250 | £120');
+}
+
+/*
+  Parsed without a header row on purpose.
+
+  `header: true` on a file that has no headings silently promotes the first
+  site's prices into column names - losing a row, and a publisher's cheapest
+  one at that.
+*/
+const headerless = readRateCardCsv('a.com,250\nb.com,300\nc.com,350');
+isTrue('a file with no heading row keeps every row', headerless.ok && headerless.table.rows === 3);
+
+// Papa works the delimiter out, so a tab or semicolon export needs no telling.
+const tabbed = readRateCardCsv('Domain\tPrice\na.com\t250');
+isTrue('a tab-separated file is read', tabbed.ok && tabbed.table.columns === 2);
+const semi = readRateCardCsv('Domain;Price\na.com;250');
+isTrue('a semicolon-separated one is too', semi.ok && semi.table.columns === 2);
+
+// Quoted commas are a value, not a new column.
+const quoted = readRateCardCsv('Domain,Notes\na.com,"Finance, crypto and forex"');
+isTrue('a quoted comma stays inside its cell', quoted.ok && quoted.table.columns === 2);
+if (quoted.ok) has('with the text intact', quoted.table.text, 'Finance, crypto and forex');
+
+/*
+  Trailing empty columns dropped.
+
+  A sheet saved after somebody clicked into column Z carries twenty-five empty
+  cells on every row: noise to whoever reads the box, and several hundred
+  tokens of nothing in the prompt.
+*/
+const padded = readRateCardCsv('Domain,Price,,,,\na.com,250,,,,');
+isTrue('empty trailing columns are dropped', padded.ok && padded.table.columns === 2);
+
+/*
+  One column and more than one row means the delimiter was not recognised.
+  Handing over a column of sentences and letting the model do its best is how
+  prose becomes a price.
+*/
+const prose = readRateCardCsv('We charge about two fifty for a guest post\nand one twenty for an insertion');
+isTrue('prose in a .csv is refused', !prose.ok);
+if (!prose.ok) has('and says to paste it instead', prose.error, 'paste them into the box');
+
+// A genuine single-column list of domains is a real thing, so one row alone
+// is not an error.
+isTrue('a single row is not refused', readRateCardCsv('a.com').ok);
+
+isTrue('an empty file is refused', !readRateCardCsv('   ').ok);
+
+const many = readRateCardCsv(
+  ['Domain,Price', ...Array.from({ length: MAX_CSV_ROWS + 50 }, (_, i) => `d${i}.com,${i}`)].join('\n'),
+);
+isTrue('a huge file is capped', many.ok && many.table.rows === MAX_CSV_ROWS);
+isTrue('and says how many it dropped', many.ok && many.table.truncated > 0);
+
+console.log('\n--- which files go down this path ---');
+isTrue('a .csv does', looksLikeSheet({ name: 'rates.csv' }));
+isTrue('a .tsv does', looksLikeSheet({ name: 'rates.tsv' }));
+isTrue('a text/csv type does', looksLikeSheet({ name: 'rates', type: 'text/csv' }));
+isTrue('a screenshot does not', !looksLikeSheet({ name: 'shot.png', type: 'image/png' }));
+
+/*
+  An .xlsx goes down this path even though it cannot be read, and that is the
+  point: the question is "is somebody handing us a spreadsheet", not "can we
+  read it".
+
+  Routing by readability was the bug. An .xlsx fell through to the image
+  handler and got "nothing readable in that
+  (application/vnd.openxmlformats-...)" - true, useless, and not the sentence
+  that tells somebody to save it as CSV. The specific message existed and was
+  unreachable. Driving the real control in a browser is what caught it; the
+  build could not.
+*/
+isTrue('an .xlsx does, so it can be refused properly', looksLikeSheet({ name: 'rates.xlsx' }));
+isTrue('and so does an .ods', looksLikeSheet({ name: 'rates.ods' }));
+isTrue(
+  'and one identified only by its mime type',
+  looksLikeSheet({ name: 'download', type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }),
+);
+
+// An old .xls is an OLE compound file, not a zip, so it needs its own check.
+const oldXls = decodeSheetBytes(
+  new Uint8Array([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1]).buffer as ArrayBuffer,
+);
+isTrue('an old .xls is refused', 'error' in oldXls);
+if ('error' in oldXls) has('and says to save as CSV', oldXls.error, 'save as CSV');
 
 console.log(failed ? `\n  ${failed} FAILED\n` : '\n  all passed\n');
 process.exit(failed ? 1 : 0);

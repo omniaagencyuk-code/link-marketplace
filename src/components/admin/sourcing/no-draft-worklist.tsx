@@ -7,6 +7,7 @@ import {
   ExternalLink,
   FileSpreadsheet,
   FileText,
+  Upload,
   Link2,
   Paperclip,
   X,
@@ -22,6 +23,13 @@ import {
   readRateCardImagesAction,
 } from '@/app/admin/(protected)/sourcing/actions';
 import { ACCEPTED_IMAGE_TYPES, MAX_IMAGES } from '@/lib/sourcing/rate-card-image';
+import {
+  ACCEPTED_SHEET_EXTENSIONS,
+  ACCEPTED_SHEET_TYPES,
+  decodeSheetBytes,
+  looksLikeSheet,
+  readRateCardCsv,
+} from '@/lib/sourcing/rate-card-csv';
 import { formatDateTime } from '@/lib/utils/format';
 import type { NoDraftEmail } from '@/lib/services/sourcing-service';
 import type { LinkKind } from '@/lib/sourcing/links';
@@ -73,9 +81,71 @@ export function NoDraftWorklist({
     return { name: file.name || 'pasted image', mediaType: file.type, data: btoa(binary) };
   }
 
+  /**
+   * A dropped or picked spreadsheet, read into the box.
+   *
+   * No model call: a CSV is already text, so this is parsing rather than
+   * transcription. It lands in the same box the images land in and goes down
+   * the same path from there - a person reads it, confirms it, and the reply
+   * goes back into the extraction queue. A sheet is not a more trustworthy
+   * source than an email just because it has columns, so it gets the same
+   * review rather than a shortcut past it.
+   */
+  async function takeSheet(file: File, emailId: string): Promise<boolean> {
+    const decoded = decodeSheetBytes(await file.arrayBuffer());
+    if ('error' in decoded) {
+      setMessage({ id: emailId, tone: 'bad', text: decoded.error });
+      return true;
+    }
+
+    const read = readRateCardCsv(decoded.text);
+    if (!read.ok) {
+      setMessage({ id: emailId, tone: 'bad', text: read.error });
+      return true;
+    }
+
+    // Appended, never replacing, so a file never eats something already typed
+    // into the box - the same rule the image transcription follows.
+    setText((current) =>
+      current.trim() ? `${current.trim()}\n\n${read.table.text}` : read.table.text,
+    );
+
+    const notes = [
+      `${read.table.rows} ${read.table.rows === 1 ? 'row' : 'rows'} read from ${file.name || 'the file'}`,
+    ];
+    if (read.table.truncated > 0) notes.push(`${read.table.truncated} beyond the cap were dropped`);
+    if (decoded.reEncoded) {
+      notes.push('it was not UTF-8, so it was re-read as Windows-1252 - check the currency symbols');
+    }
+    notes.push('check it before adding');
+
+    setMessage({ id: emailId, tone: 'ok', text: `${notes.join('. ')}.` });
+    return true;
+  }
+
   async function takeFiles(files: FileList | File[], emailId: string) {
     const offered = [...files];
-    const taken = (await Promise.all(offered.map(asImage))).filter(Boolean) as {
+
+    /*
+      Sheets first, and taken out of the list.
+
+      Otherwise a CSV falls through to the image branch and is reported as
+      "nothing readable", which is the kind of message that teaches somebody
+      the feature does not work.
+    */
+    const sheets = offered.filter((file) => looksLikeSheet(file));
+    for (const sheet of sheets) {
+      if (await takeSheet(sheet, emailId)) {
+        // One at a time: the message says what was read, and two files would
+        // overwrite each other's message with nothing lost but the reason.
+        break;
+      }
+    }
+
+    const rest = offered.filter((file) => !looksLikeSheet(file));
+    if (rest.length === 0) return;
+
+    const taken = (await Promise.all(rest.map(asImage))).filter(Boolean) as {
       name: string;
       mediaType: string;
       data: string;
@@ -88,13 +158,13 @@ export function NoDraftWorklist({
       button, which is how somebody concludes the feature does not work.
     */
     if (taken.length === 0) {
-      const names = offered.map((file) => file.type || file.name).join(', ');
+      const names = rest.map((file) => file.type || file.name).join(', ');
       setMessage({
         id: emailId,
         tone: 'bad',
         text: offered.some((file) => file.type === 'application/pdf')
           ? 'A PDF cannot be read here. Open it, screenshot the rates, and paste the screenshot.'
-          : `Nothing readable in that (${names}). Paste a screenshot - PNG, JPEG, GIF or WebP.`,
+          : `Nothing readable in that (${names}). Attach a CSV, or paste a screenshot - PNG, JPEG, GIF or WebP.`,
       });
       return;
     }
@@ -231,7 +301,7 @@ export function NoDraftWorklist({
                     autoFocus
                     aria-label="Rates from the reply"
                     placeholder={
-                      'Paste the rates from the file, the sheet, or the email itself.\n\nA table copied from a spreadsheet pastes straight in, columns and all. A screenshot can be pasted here too and read into text first.\n\nIt is read exactly like the reply itself, so include the currency and say which topics each price covers.'
+                      'Paste the rates from the file, the sheet, or the email itself.\n\nA table copied from a spreadsheet pastes straight in, columns and all. A CSV can be attached or dropped here, and a screenshot pasted here and read into text first.\n\nIt is read exactly like the reply itself, so include the currency and say which topics each price covers.'
                     }
                     onChange={(event) => setText(event.target.value)}
                     onPaste={(event) => {
@@ -298,6 +368,36 @@ export function NoDraftWorklist({
                       </div>
                     </div>
                   ) : null}
+                  {/*
+                    A picker as well as drag-and-drop.
+
+                    Dropping onto a textarea works and nobody discovers it. The
+                    label is the control - a hidden input with a styled button
+                    beside it does not open on a keyboard, and this list gets
+                    worked through at speed.
+                  */}
+                  <div className="flex flex-wrap items-center gap-2">
+                    <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-md border border-line bg-white px-2.5 py-1.5 text-[12px] font-medium text-ink hover:bg-surface-sunken">
+                      <Upload className="h-3.5 w-3.5" aria-hidden="true" />
+                      Attach a CSV
+                      <input
+                        type="file"
+                        className="sr-only"
+                        accept={[...ACCEPTED_SHEET_EXTENSIONS, ...ACCEPTED_SHEET_TYPES].join(',')}
+                        onChange={(event) => {
+                          const file = event.target.files?.[0];
+                          if (file) void takeFiles([file], email.id);
+                          // Cleared so picking the same file twice fires again.
+                          event.target.value = '';
+                        }}
+                      />
+                    </label>
+                    <span className="text-[12px] leading-relaxed text-muted">
+                      Rows land in the box above for you to check. An .xlsx is a zip rather than
+                      text - save it as CSV first, or just copy the rows and paste them in.
+                    </span>
+                  </div>
+
                   <div className="flex flex-wrap gap-2">
                     <Button
                       variant="accent"
