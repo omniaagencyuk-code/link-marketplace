@@ -36,16 +36,40 @@ async function recentRuns() {
   return (data ?? []) as Record<string, unknown>[];
 }
 
+/**
+ * The ledger, split by what the call was for.
+ *
+ * Scoped to `kind = 'refdomains'` rather than counted whole, because a
+ * suggestion lookup is fifty units and a referring-domain pull is 2,500: mixing
+ * them makes the cache hit rate a figure about neither. Suggestions get their
+ * own line, where their one useful property - that they are nearly free - is
+ * legible instead of being averaged away.
+ */
 async function lookupTotals() {
-  if (!isSupabaseEnabled()) return { calls: 0, cached: 0 };
+  if (!isSupabaseEnabled()) return { calls: 0, cached: 0, suggestions: 0, suggestionUnits: 0 };
 
   const supabase = getAdminScopedClient();
-  const [all, cached] = await Promise.all([
-    supabase.from('gap_lookups').select('id', { count: 'exact', head: true }),
-    supabase.from('gap_lookups').select('id', { count: 'exact', head: true }).eq('from_cache', true),
+  const [all, cached, suggestions] = await Promise.all([
+    supabase
+      .from('gap_lookups')
+      .select('id', { count: 'exact', head: true })
+      .eq('kind', 'refdomains'),
+    supabase
+      .from('gap_lookups')
+      .select('id', { count: 'exact', head: true })
+      .eq('kind', 'refdomains')
+      .eq('from_cache', true),
+    supabase.from('gap_lookups').select('units_charged').eq('kind', 'competitors'),
   ]);
 
-  return { calls: Number(all.count ?? 0), cached: Number(cached.count ?? 0) };
+  const suggestionRows = (suggestions.data ?? []) as { units_charged?: number }[];
+
+  return {
+    calls: Number(all.count ?? 0),
+    cached: Number(cached.count ?? 0),
+    suggestions: suggestionRows.length,
+    suggestionUnits: suggestionRows.reduce((total, row) => total + Number(row.units_charged ?? 0), 0),
+  };
 }
 
 export default async function AdminLinkGapPage() {
@@ -53,7 +77,7 @@ export default async function AdminLinkGapPage() {
     gapService.settings().catch(() => null),
     gapService.spend().catch(() => ({ unitsUsed: 0, runsThisCycle: 0 })),
     recentRuns().catch(() => []),
-    lookupTotals().catch(() => ({ calls: 0, cached: 0 })),
+    lookupTotals().catch(() => ({ calls: 0, cached: 0, suggestions: 0, suggestionUnits: 0 })),
   ]);
 
   const budget = settings?.monthlyUnitBudget ?? 0;
@@ -73,7 +97,7 @@ export default async function AdminLinkGapPage() {
         </CardContent>
       </Card>
 
-      <div className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
         <Stat
           label="Units this cycle"
           value={spend.unitsUsed.toLocaleString('en-GB')}
@@ -86,7 +110,7 @@ export default async function AdminLinkGapPage() {
           hint={
             cacheRate === null
               ? 'No pulls yet'
-              : `${totals.cached.toLocaleString('en-GB')} of ${totals.calls.toLocaleString('en-GB')} pulls free`
+              : `${totals.cached.toLocaleString('en-GB')} of ${totals.calls.toLocaleString('en-GB')} refdomain pulls free`
           }
         />
         <Stat
@@ -98,6 +122,11 @@ export default async function AdminLinkGapPage() {
           label="Cost per uncached pull"
           value={(settings?.rowsPerTarget ?? 0).toLocaleString('en-GB')}
           hint="Units, worst case — one per referring domain"
+        />
+        <Stat
+          label="Competitor suggestions"
+          value={totals.suggestions.toLocaleString('en-GB')}
+          hint={`${totals.suggestionUnits.toLocaleString('en-GB')} units in total — 50 a lookup, and cached`}
         />
       </div>
 

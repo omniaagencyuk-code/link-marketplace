@@ -174,3 +174,83 @@ export function isFresh(fetchedAt: string, cacheDays: number, now = Date.now()):
   if (!Number.isFinite(fetched)) return false;
   return now - fetched < Math.max(0, cacheDays) * 24 * 60 * 60 * 1000;
 }
+
+/**
+ * What one competitor suggestion lookup costs.
+ *
+ * Always the floor. Three columns against a dozen rows is thirty-six, and the
+ * per-request floor is fifty - measured against the live API with exactly the
+ * select `organicCompetitors` sends. Written as the arithmetic rather than as
+ * the constant fifty so that adding a column, or asking for hundreds of rows,
+ * changes the number here instead of silently invalidating the comment.
+ */
+export function costOfSuggestion(rows: number, columns: number): number {
+  return Math.max(UNIT_FLOOR_PER_REQUEST, Math.max(0, rows) * Math.max(0, columns));
+}
+
+export interface SuggestionGuardInput {
+  settings: {
+    enabled: boolean;
+    monthlyUnitBudget: number;
+    unitSafetyPct: number;
+    runsPerAccount: number;
+  };
+  configured: boolean;
+  unitsUsedThisCycle: number;
+  runsThisCycle: number;
+  /** Rows and columns the lookup will ask for. */
+  rows: number;
+  columns: number;
+}
+
+/**
+ * May we look up competitors for this customer?
+ *
+ * A separate guard from `mayRunGap` because it is a separate, far smaller
+ * spend, and tying it to the report guard would have one of two wrong effects:
+ * refuse a fifty-unit lookup because a 10,000-unit report would not fit, or
+ * charge a suggestion against the report allowance and so cost somebody a
+ * report for pressing a button.
+ *
+ * The one thing it does borrow from the report guard is the per-account run
+ * limit, and not as an allowance: an account with no reports left cannot run
+ * anything, so there is nothing for a suggestion to be for. That is what stops
+ * the button being the cheapest way to spend our units - a cached lookup is
+ * free, an uncached one is fifty, and an account out of reports gets neither.
+ */
+export function maySuggestCompetitors(input: SuggestionGuardInput): GapDecision {
+  const { settings } = input;
+
+  const budget = Math.max(0, settings.monthlyUnitBudget);
+  const ceiling = Math.floor((budget * settings.unitSafetyPct) / 100);
+  const remaining = Math.max(0, ceiling - input.unitsUsedThisCycle);
+  const estimatedUnits = costOfSuggestion(input.rows, input.columns);
+
+  const refuse = (reason: string): GapDecision => ({
+    allowed: false,
+    reason,
+    estimatedUnits,
+    remaining,
+    ceiling,
+  });
+
+  if (!settings.enabled) return refuse('The gap finder is switched off at the moment.');
+  if (!input.configured) return refuse('The gap finder is not set up on this deployment.');
+
+  if (settings.runsPerAccount > 0 && input.runsThisCycle >= settings.runsPerAccount) {
+    return refuse(
+      `You have run ${input.runsThisCycle} of your ${settings.runsPerAccount} reports this month, ` +
+        `so there is nothing to suggest competitors for yet. Add them by hand and run it when the month turns.`,
+    );
+  }
+
+  if (budget === 0) return refuse('Suggestions are not available at the moment.');
+
+  if (estimatedUnits > remaining) {
+    // Same discretion as the report refusal: they learn it is unavailable, not
+    // what our allowance is or how much of it is left.
+    return refuse('Suggestions are busy right now. Add competitors by hand, or try again later today.');
+  }
+
+  return { allowed: true, estimatedUnits, remaining, ceiling };
+}

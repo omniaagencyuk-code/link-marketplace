@@ -8,8 +8,12 @@ import { isValidDomain, normaliseDomain } from '@/lib/import/normalise';
  * a pull for that is fifty units for an empty answer. The importer always
  * pairs the two functions, and so must this - the verifier caught the version
  * that did not.
+ *
+ * Exported because saving a project has the same problem on a different path:
+ * a project stores the domains a report will later be run against, so junk
+ * stored today is a wasted pull whenever somebody presses Run.
  */
-function cleanDomain(raw: string): string | null {
+export function cleanDomain(raw: string): string | null {
   const domain = normaliseDomain(raw ?? '');
   if (!domain || !isValidDomain(domain)) return null;
   return domain;
