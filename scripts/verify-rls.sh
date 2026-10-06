@@ -134,3 +134,6 @@ run -f "$ROOT/supabase/tests/10_order_item_status.sql" 2>&1 | grep -v '^$'
 echo
 echo "--- a page's sections: what a stranger may read, and reordering ---"
 run -f "$ROOT/supabase/tests/14_page_sections.sql" 2>&1 | grep -v '^$'
+echo
+echo "--- the sales centre: approval, suppression, caps and who may look ---"
+run -f "$ROOT/supabase/tests/16_sales_centre.sql" 2>&1 | grep -v '^$'
