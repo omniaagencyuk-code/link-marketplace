@@ -31,6 +31,15 @@ import {
   quoteIsReal,
   wireQualificationSchema,
 } from '../src/lib/sales/qualification-schema';
+import { renderOutbound, splitSubjectFromBody, unsubscribeUrl } from '../src/lib/sales/email-render';
+import { isFreeMail } from '../src/lib/services/sales-attribution-service';
+import {
+  EMAIL_PROMPT_VERSION,
+  EMAIL_RULES,
+  buildEmailBrief,
+  checkDraft,
+  type EmailBrief,
+} from '../src/lib/sales/email-rules';
 import type { WebsiteListItem } from '../src/lib/types/website';
 import type { ProspectQualification } from '../src/lib/types/sales';
 
@@ -749,6 +758,209 @@ isTrue(
 );
 isTrue('and nor is an empty one', !quoteIsReal('  ', source));
 isTrue('a one-character quote is not a quote', !quoteIsReal('a', source));
+
+// ---------------------------------------------------------------------------
+console.log('\n--- the email brief ---');
+
+const brief: EmailBrief = {
+  companyName: 'Northfield SEO',
+  domain: 'northfieldseo.example',
+  segment: 'seo_agency',
+  quotes: [{ claim: 'Offers link building', quote: 'we do link building for ambitious brands' }],
+  listings: [
+    { websiteId: 'w1', domain: 'alpha.example', domainRating: 61, organicTraffic: 48000, priceMinor: 22000 },
+    { websiteId: 'w2', domain: 'beta.example', domainRating: 44, organicTraffic: 19000, priceMinor: 14000 },
+  ],
+  inventory: { count: 214, minDr: 21, maxDr: 78, fromPriceMinor: 9500 },
+  contactFirstName: 'Maria',
+  contactRole: 'Head of SEO',
+  senderFirstName: 'Sam',
+  stepNumber: 1,
+};
+
+const briefText = buildEmailBrief(brief);
+
+/*
+  Prices are formatted in the brief, not passed as minor units.
+
+  A model handed `22000` will sometimes write "£22,000" - not a rounding error
+  but a quote a hundred times too high, in an email somebody might accept.
+*/
+has('a price reaches the model already formatted', briefText, '£220');
+hasNot('and the minor-unit figure does not', briefText, '22000');
+has('the real DR is given', briefText, 'DR 61');
+has('the real traffic is given', briefText, '48,000 monthly organic visits');
+has('their own words are given', briefText, 'we do link building for ambitious brands');
+has('the inventory count is given', briefText, '214 priced listings');
+
+/*
+  No quotes is a usable brief, not a broken one.
+
+  An email that does not characterise them at all is a perfectly good email.
+  An invented reason for writing is not, so the brief says so in words rather
+  than leaving the model to fill a gap.
+*/
+const noQuotes = buildEmailBrief({ ...brief, quotes: [], listings: [], inventory: undefined });
+has('with no quotes it says not to characterise them', noQuotes, 'does not');
+has('and not to invent a reason', noQuotes, 'Do not invent a reason');
+has('with no listings it says not to name one', noQuotes, 'Do not name one');
+
+const followUp = buildEmailBrief({
+  ...brief,
+  stepNumber: 2,
+  previousSubject: 'a few sites for your gambling clients',
+  previousBody: 'First email body.',
+});
+has('a follow-up says which one it is', followUp, 'follow-up number 1');
+has('and not to ask whether they saw it', followUp, 'do not ask whether they');
+has('and carries the previous email', followUp, 'First email body.');
+
+console.log('\n--- the rules ---');
+has('the version is stamped', EMAIL_PROMPT_VERSION, 'sales-email');
+has('every number must be given', EMAIL_RULES, 'must be one you were given');
+has('every claim needs a quote', EMAIL_RULES, 'must rest on a quote you were given');
+has('no invented history', EMAIL_RULES, 'Never imply a history that does not exist');
+has('never say where the address came from', EMAIL_RULES, 'Never mention where their email address came from');
+has('one question only', EMAIL_RULES, 'Do not write more than one question');
+has('no meeting asks', EMAIL_RULES, 'Never ask for a call, a demo, a meeting');
+
+// ---------------------------------------------------------------------------
+console.log('\n--- checking a draft before a human reads it ---');
+
+const goodDraft = {
+  subject: 'a few sites for your client work',
+  body:
+    'You mention link building for ambitious brands on your site, so this may be useful.\n\n' +
+    'We have 214 priced placements - alpha.example is DR 61 at £220, beta.example DR 44 at £140.\n\n' +
+    'Which niches are you buying in at the moment?',
+};
+is('a clean draft has no problems', checkDraft(goodDraft, brief).length, 0);
+
+/*
+  The rule this function exists for.
+
+  "from £99" reads better than the real number and is a price nobody set. We
+  would then have to honour it or retract it, and both cost more than the email
+  was worth - so a draft carrying one is held back rather than joining a review
+  queue where it reads like all the others.
+*/
+const invented = checkDraft(
+  { ...goodDraft, body: goodDraft.body.replace('£220', '£99') },
+  brief,
+);
+isTrue('an invented price is caught', invented.some((problem) => problem.kind === 'invented-price'));
+has('and the problem quotes the figure', invented[0]?.detail ?? '', '£99');
+
+// £220 and £220.00 are the same number; £22,000 is not.
+is(
+  'a formatted price we did give is accepted',
+  checkDraft({ ...goodDraft, body: goodDraft.body.replace('£220', '£220.00') }, brief).length,
+  0,
+);
+isTrue(
+  'and a hundredfold one is not',
+  checkDraft({ ...goodDraft, body: goodDraft.body.replace('£220', '£22,000') }, brief).some(
+    (problem) => problem.kind === 'invented-price',
+  ),
+);
+
+isTrue(
+  'an invented DR is caught',
+  checkDraft({ ...goodDraft, body: goodDraft.body.replace('DR 61', 'DR 75') }, brief).some(
+    (problem) => problem.kind === 'invented-price',
+  ),
+);
+
+/*
+  The lie, as opposed to the cliché.
+
+  "Following up on our last conversation" when there was none is the fastest
+  way to make a company tell their spam filter about us.
+*/
+const history = checkDraft(
+  { ...goodDraft, body: `Following up on our last conversation.\n\n${goodDraft.body}` },
+  brief,
+);
+isTrue('invented history is caught', history.some((problem) => problem.kind === 'invented-history'));
+
+isTrue(
+  'a draft with nothing to answer is caught',
+  checkDraft({ ...goodDraft, body: goodDraft.body.replace('?', '.') }, brief).some(
+    (problem) => problem.kind === 'no-question',
+  ),
+);
+isTrue(
+  'an essay is caught',
+  checkDraft({ ...goodDraft, body: `${'word '.repeat(200)}?` }, brief).some(
+    (problem) => problem.kind === 'too-long',
+  ),
+);
+isTrue(
+  'a banned phrase is caught',
+  checkDraft(
+    { ...goodDraft, body: `I hope this email finds you well.\n\n${goodDraft.body}` },
+    brief,
+  ).some((problem) => problem.kind === 'banned-phrase'),
+);
+
+// ---------------------------------------------------------------------------
+console.log('\n--- the email as it goes out ---');
+
+const rendered = renderOutbound({
+  bodyText: 'First line.\n\nSecond line with <b>markup</b> in it & an ampersand.',
+  senderFirstName: 'Sam',
+  senderEmail: 'sam@pressparrot.com',
+  unsubscribeToken: '00112233445566778899aabbccddeeff',
+  siteUrl: 'https://pressparrot.com',
+});
+
+/*
+  The footer is appended here rather than left to the model, which would write
+  it sometimes, skip it sometimes, and occasionally write a link to nowhere. An
+  unsubscribe link and a postal identity are what make an unsolicited
+  commercial email lawful in the UK and the EU.
+*/
+has('the text has an unsubscribe link', rendered.text, 'https://pressparrot.com/sales/unsubscribe/');
+has('and so does the HTML', rendered.html, 'unsubscribe');
+has('the sender signs it', rendered.text, 'Sam');
+
+/*
+  The link carries the prospect's random token, never its row id. A sequential
+  id in a URL somebody receives is an invitation to try the next one, and the
+  next one is a different company's record.
+*/
+has('the link carries the token', rendered.unsubscribeUrl, '00112233445566778899aabbccddeeff');
+is(
+  'and a trailing slash on the site URL does not double up',
+  unsubscribeUrl('https://pressparrot.com/', 'abc'),
+  'https://pressparrot.com/sales/unsubscribe/abc',
+);
+
+// Anything from outside is escaped before it reaches an HTML body.
+has('markup in the body is escaped', rendered.html, '&lt;b&gt;');
+has('and so is an ampersand', rendered.html, '&amp;');
+hasNot('no raw tag survives', rendered.html, '<b>markup</b>');
+
+/*
+  A model that puts "Subject: ..." at the top of the body has happened to every
+  prompt that ever asked for both, and leaving it sends an email whose first
+  line is its own subject.
+*/
+const split = splitSubjectFromBody('Subject: a few sites\n\nHello there.');
+is('a stray subject line is lifted out', split.subject, 'a few sites');
+is('and removed from the body', split.body, 'Hello there.');
+is('an ordinary body is left alone', splitSubjectFromBody('Hello there.').body, 'Hello there.');
+
+console.log('\n--- attribution ---');
+/*
+  Matching a signup to a prospect by email domain is right for a company
+  domain and catastrophic for a free one: gmail.com would attribute every
+  Gmail signup in the database to whichever prospect happened to have a Gmail
+  contact. That is not an edge case in the numbers - it is all of them.
+*/
+isTrue('gmail is free mail', isFreeMail('gmail.com'));
+isTrue('and so is outlook, whatever the case', isFreeMail('Outlook.com'));
+isTrue('a company domain is not', !isFreeMail('northfieldseo.com'));
 
 console.log(failed === 0 ? '\nAll sales checks passed.\n' : `\n${failed} sales check(s) failed.\n`);
 process.exit(failed === 0 ? 0 : 1);

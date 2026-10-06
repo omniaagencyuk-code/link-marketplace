@@ -32,6 +32,14 @@
     {
       "path": "/api/cron/site-descriptions",
       "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/cron/sales",
+      "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/cron/sales-attribution",
+      "schedule": "43 5 * * *"
     }
   ]
 }
