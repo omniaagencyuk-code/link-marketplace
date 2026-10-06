@@ -14,6 +14,7 @@ import {
   Newspaper,
   Package,
   PenLine,
+  Radar,
   RefreshCw,
   Settings,
   ShieldCheck,
@@ -100,6 +101,7 @@ export const dashboardNav: NavItem[] = [
   { label: 'Marketplace', href: '/marketplace', icon: Globe },
   { label: 'Content', href: '/dashboard/content', icon: PenLine },
   { label: 'Orders', href: '/dashboard/orders', icon: Package },
+  { label: 'Link gap finder', href: '/dashboard/link-gap', icon: Radar },
   { label: 'Saved Sites', href: '/dashboard/saved', icon: Bookmark },
   { label: 'Billing', href: '/dashboard/billing', icon: CreditCard },
   { label: 'Account', href: '/dashboard/account', icon: UserCircle },
@@ -121,6 +123,7 @@ export const adminNav: NavItem[] = [
   { label: 'Promo codes', href: '/admin/promo-codes', icon: TicketPercent },
   { label: 'Ahrefs refresh', href: '/admin/refresh', icon: RefreshCw },
   { label: 'Link monitor', href: '/admin/link-monitor', icon: ShieldCheck },
+  { label: 'Link gap finder', href: '/admin/link-gap', icon: Radar },
   { label: 'Majestic', href: '/admin/majestic', icon: Network },
   { label: 'Settings', href: '/admin/settings', icon: Settings },
 ];

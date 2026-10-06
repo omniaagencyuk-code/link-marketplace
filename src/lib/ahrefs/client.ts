@@ -283,3 +283,89 @@ function parseTopCountries(raw: [string, number][] | null | undefined): AhrefsCo
     .sort((a, b) => b.traffic - a.traffic)
     .slice(0, AHREFS_TOP_COUNTRIES);
 }
+
+/**
+ * The referring domains for one target.
+ *
+ * Priced per row per column, measured against the live API rather than taken
+ * from documentation:
+ *
+ *   units-cost-row   = the number of columns selected
+ *   units-cost-total = max(50, rows x columns)
+ *
+ * So the three choices below are each a cost decision, not a style one.
+ *
+ * **One column.** `domain` and nothing else. Domain rating and traffic are a
+ * unit a row each, and we already hold both for every site in our own
+ * inventory - which is the only part of a gap we can sell. Adding either
+ * would double or triple the bill to buy figures we have, for domains we
+ * cannot offer.
+ *
+ * **A row cap, always.** The bill is otherwise the target's whole backlink
+ * profile, and in a gap report the customer chooses the target. Sorted by
+ * domain rating so a capped pull is the strongest N rather than an arbitrary
+ * N.
+ *
+ * **`history=live`.** The default is `all_time`, which includes links that
+ * have since been lost: more rows, so more units, for a worse answer.
+ *
+ * `mode=subdomains` because Ahrefs documents that `domain` excludes www and
+ * other subdomains - which would silently drop a chunk of any real profile.
+ *
+ * The path is `site-explorer/refdomains`, taken from Ahrefs' own MCP client
+ * rather than guessed from the endpoint's name: the plural-noun pattern here
+ * is not consistent (`linkeddomains` has no hyphen, `best-by-external-links`
+ * is nothing like its tool name), so a path inferred from the tool name would
+ * have been a 404 on the first real report.
+ */
+export interface RefdomainsResult {
+  domains: string[];
+  /** What Ahrefs charged, read back from the response. Null means unknown. */
+  unitsCost: number | null;
+  /** True when the cap was hit, so this is the strongest N rather than all. */
+  truncated: boolean;
+}
+
+export async function referringDomains(
+  target: string,
+  rowCap: number,
+): Promise<RefdomainsResult> {
+  const limit = Math.max(1, Math.floor(rowCap));
+
+  const params = new URLSearchParams({
+    target,
+    select: 'domain',
+    mode: 'subdomains',
+    history: 'live',
+    order_by: 'domain_rating:desc',
+    limit: String(limit),
+    output: 'json',
+  });
+
+  const response = await ahrefsFetch(`/site-explorer/refdomains?${params.toString()}`, {
+    method: 'GET',
+  });
+
+  const payload = (await response.json()) as {
+    refdomains?: { domain?: string | null }[];
+  };
+
+  const rows = payload.refdomains ?? [];
+  const domains = rows
+    .map((row) => (typeof row.domain === 'string' ? row.domain.trim().toLowerCase() : ''))
+    .filter(Boolean);
+
+  return {
+    domains,
+    unitsCost: readUnitsCost(response, payload),
+    /*
+      A full page is assumed truncated.
+
+      Ahrefs does not say whether more existed, and the distinction matters to
+      the report rather than to the bill: a gap computed from the strongest
+      2,500 is a different claim from one computed from all of them, and the
+      page says which it is.
+    */
+    truncated: rows.length >= limit,
+  };
+}
