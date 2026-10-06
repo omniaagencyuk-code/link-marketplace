@@ -23,8 +23,11 @@ import {
 } from '../src/lib/sourcing/queue';
 import {
   MAX_IMAGES,
+  MAX_PDF_BYTES,
+  MAX_REQUEST_BYTES,
   TRANSCRIPTION_RULES,
   checkImages,
+  isPdf,
 } from '../src/lib/sourcing/rate-card-image';
 import { healthOf, progressMessage, runProgress, type BatchRow } from '../src/lib/sourcing/batch-health';
 import { describeSkip, nightlySkipReason, type NightlyState } from '../src/lib/sourcing/schedule';
@@ -982,7 +985,12 @@ console.log('\n--- reading a rate card out of a picture ---');
   */
   const png = (bytes: number) => ({ mediaType: 'image/png', data: 'A'.repeat(Math.ceil((bytes * 4) / 3)) });
 
-  is('nothing to read is refused', checkImages([]), 'Paste an image first.');
+  const pdf = (bytes: number) => ({
+    mediaType: 'application/pdf',
+    data: 'A'.repeat(Math.ceil((bytes * 4) / 3)),
+  });
+
+  is('nothing to read is refused', checkImages([]), 'Attach a file first.');
   is('one small image is fine', checkImages([png(1000)]), null);
   is(`${MAX_IMAGES} is still fine`, checkImages(Array.from({ length: MAX_IMAGES }, () => png(1000))), null);
   has(
@@ -991,19 +999,70 @@ console.log('\n--- reading a rate card out of a picture ---');
     'more than',
   );
 
-  // A PDF is not an image the API reads, and sending one is a 400 that would
-  // surface as "the image could not be read" with no reason.
-  has('a PDF is refused by type', checkImages([{ mediaType: 'application/pdf', data: 'AAAA' }]) ?? '', 'not an image');
+  /*
+    A PDF now goes to the model whole, as a `document` block.
+
+    It used to be refused here, and the advice was to screenshot it - which is
+    work the thing that noticed should be doing, and half the rate cards on
+    that page are PDFs.
+  */
+  is('a PDF is accepted', checkImages([pdf(1000)]), null);
   is('jpeg is accepted', checkImages([{ mediaType: 'image/jpeg', data: 'AAAA' }]), null);
   is('webp is accepted', checkImages([{ mediaType: 'image/webp', data: 'AAAA' }]), null);
+  has(
+    'something that is neither is refused',
+    checkImages([{ mediaType: 'application/zip', data: 'AAAA' }]) ?? '',
+    'not something this can read',
+  );
+
+  // A PDF and a screenshot in one call, so a media kit split across both is
+  // read as one document.
+  is('a PDF alongside an image is fine', checkImages([pdf(1000), png(1000)]), null);
+
+  // A PDF gets more room than a screenshot, and still has a ceiling.
+  is('a PDF under its own ceiling passes', checkImages([pdf(MAX_PDF_BYTES - 1000)]), null);
+  has('and one over it is refused', checkImages([pdf(MAX_PDF_BYTES + 100_000)]) ?? '', 'larger than');
+
+  isPdfChecks();
+  function isPdfChecks() {
+    isTrue('a pdf media type is recognised', isPdf({ mediaType: 'application/pdf' }));
+    isTrue('and a browser File type is too', isPdf({ type: 'application/pdf' }));
+    // Some mail clients hand over a dragged attachment with no type at all.
+    isTrue('and a .pdf name with no type', isPdf({ name: 'mediakit.PDF', type: '' }));
+    isTrue('a png is not a pdf', !isPdf({ type: 'image/png', name: 'shot.png' }));
+  }
 
   // Measured on the bytes, not on the length of the base64 holding them.
   is('an image just under the ceiling passes', checkImages([png(5 * 1024 * 1024 - 100)]), null);
   has('and one over it is refused', checkImages([png(6 * 1024 * 1024)]) ?? '', 'larger than');
 
-  // One bad image in a batch stops the batch. Sending the rest would read a
+  // One bad file in a batch stops the batch. Sending the rest would read a
   // media kit with a page silently missing from it.
-  has('a bad image among good ones still refuses', checkImages([png(100), { mediaType: 'image/bmp', data: 'AAAA' }]) ?? '', 'not an image');
+  has(
+    'a bad file among good ones still refuses',
+    checkImages([png(100), { mediaType: 'image/bmp', data: 'AAAA' }]) ?? '',
+    'not something this can read',
+  );
+
+  /*
+    The whole request, not just each file - a bug the per-file limits hid.
+
+    Five images each under the 5MB ceiling is 25MB of file and about 33MB once
+    base64 has added a third. The API's request limit is 32MB, so that batch
+    failed at the API with a message about request size that nothing in the UI
+    could explain. Now it is refused here, naming the rule that was hit.
+  */
+  const fiveBig = Array.from({ length: MAX_IMAGES }, () => png(5 * 1024 * 1024 - 1000));
+  has(
+    'five maximum-size images are refused as a batch',
+    checkImages(fiveBig) ?? '',
+    'more than one request can carry',
+  );
+  isTrue(
+    'and the ceiling leaves room for the prompt under the API limit',
+    MAX_REQUEST_BYTES * (4 / 3) < 32 * 1024 * 1024,
+  );
+  is('two large files that fit are still fine', checkImages([pdf(8 * 1024 * 1024), png(1000)]), null);
 
   /*
     One client, one place the workspace header is set.
@@ -1553,8 +1612,10 @@ isTrue('an xlsx is refused', 'error' in xlsx);
 if ('error' in xlsx) has('and says to save as CSV', xlsx.error, 'save as CSV');
 
 const pdf = decodeSheetBytes(new Uint8Array([0x25, 0x50, 0x44, 0x46, 0x2d, 0x31]).buffer as ArrayBuffer);
-isTrue('a PDF is refused', 'error' in pdf);
-if ('error' in pdf) has('and says to screenshot it', pdf.error, 'screenshot');
+// A PDF is not a CSV - but it is read by the transcriber, so the message no
+// longer sends somebody off to take a screenshot.
+isTrue('a PDF is not parsed as a CSV', 'error' in pdf);
+if ('error' in pdf) has('and points at the reader instead', pdf.error, 'goes to the reader');
 
 isTrue('an empty file is refused', 'error' in decodeSheetBytes(new ArrayBuffer(0)));
 

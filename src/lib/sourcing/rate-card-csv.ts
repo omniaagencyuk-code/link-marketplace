@@ -120,10 +120,14 @@ export function decodeSheetBytes(buffer: ArrayBuffer): SheetText | { error: stri
     };
   }
 
-  // A PDF, the other common wrong pick, with its own clear message.
+  /*
+    A PDF is not a CSV, but it is no longer a dead end - it goes to the
+    transcriber instead. The message used to say to screenshot it, which was
+    work the thing that noticed should have been doing.
+  */
   if (bytes[0] === 0x25 && bytes[1] === 0x50 && bytes[2] === 0x44 && bytes[3] === 0x46) {
     return {
-      error: 'That is a PDF. Open it, screenshot the rates, and paste the screenshot instead.',
+      error: 'That is a PDF, so it goes to the reader rather than the CSV parser. Attach it again and it will be read.',
     };
   }
 

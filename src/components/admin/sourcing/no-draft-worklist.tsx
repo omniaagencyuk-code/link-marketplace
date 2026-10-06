@@ -22,7 +22,13 @@ import {
   markHandledAction,
   readRateCardImagesAction,
 } from '@/app/admin/(protected)/sourcing/actions';
-import { ACCEPTED_IMAGE_TYPES, MAX_IMAGES } from '@/lib/sourcing/rate-card-image';
+import {
+  ACCEPTED_ATTACHMENT_TYPES,
+  ACCEPTED_IMAGE_TYPES,
+  MAX_IMAGES,
+  PDF_TYPE,
+  isPdf,
+} from '@/lib/sourcing/rate-card-image';
 import {
   ACCEPTED_SHEET_EXTENSIONS,
   ACCEPTED_SHEET_TYPES,
@@ -69,16 +75,31 @@ export function NoDraftWorklist({
   const [images, setImages] = useState<{ name: string; mediaType: string; data: string }[]>([]);
   const [reading, startReading] = useTransition();
 
-  /** A pasted or dropped file as base64, or null if it is not an image we read. */
-  async function asImage(file: File) {
-    if (!ACCEPTED_IMAGE_TYPES.includes(file.type)) return null;
+  /**
+   * A pasted or dropped file as base64, or null if it is not one we read.
+   *
+   * Images and PDFs both, because the model reads both and the transcription
+   * is the same job either way. `btoa` produces no newlines, which the
+   * document payload requires.
+   */
+  async function asAttachment(file: File) {
+    const pdf = isPdf(file);
+    if (!pdf && !ACCEPTED_IMAGE_TYPES.includes(file.type)) return null;
+
     const buffer = await file.arrayBuffer();
     let binary = '';
     const bytes = new Uint8Array(buffer);
     for (let index = 0; index < bytes.length; index += 1) {
       binary += String.fromCharCode(bytes[index] as number);
     }
-    return { name: file.name || 'pasted image', mediaType: file.type, data: btoa(binary) };
+
+    return {
+      name: file.name || (pdf ? 'attached PDF' : 'pasted image'),
+      // A PDF dragged from some mail clients arrives with no type at all, so
+      // the type is settled here rather than trusted from the browser.
+      mediaType: pdf ? PDF_TYPE : file.type,
+      data: btoa(binary),
+    };
   }
 
   /**
@@ -145,26 +166,23 @@ export function NoDraftWorklist({
     const rest = offered.filter((file) => !looksLikeSheet(file));
     if (rest.length === 0) return;
 
-    const taken = (await Promise.all(rest.map(asImage))).filter(Boolean) as {
+    const taken = (await Promise.all(rest.map(asAttachment))).filter(Boolean) as {
       name: string;
       mediaType: string;
       data: string;
     }[];
 
     /*
-      Say so rather than doing nothing. A PDF is the commonest thing to drop
-      here - half the rate cards on this page are one - and it is not an
-      image the model reads. Silently ignoring it looks exactly like a broken
-      button, which is how somebody concludes the feature does not work.
+      Say so rather than doing nothing. Silently ignoring a file looks exactly
+      like a broken button, which is how somebody concludes the feature does
+      not work.
     */
     if (taken.length === 0) {
       const names = rest.map((file) => file.type || file.name).join(', ');
       setMessage({
         id: emailId,
         tone: 'bad',
-        text: offered.some((file) => file.type === 'application/pdf')
-          ? 'A PDF cannot be read here. Open it, screenshot the rates, and paste the screenshot.'
-          : `Nothing readable in that (${names}). Attach a CSV, or paste a screenshot - PNG, JPEG, GIF or WebP.`,
+        text: `Nothing readable in that (${names}). Attach a PDF or a CSV, or paste a screenshot - PNG, JPEG, GIF or WebP.`,
       });
       return;
     }
@@ -301,7 +319,7 @@ export function NoDraftWorklist({
                     autoFocus
                     aria-label="Rates from the reply"
                     placeholder={
-                      'Paste the rates from the file, the sheet, or the email itself.\n\nA table copied from a spreadsheet pastes straight in, columns and all. A CSV can be attached or dropped here, and a screenshot pasted here and read into text first.\n\nIt is read exactly like the reply itself, so include the currency and say which topics each price covers.'
+                      'Paste the rates from the file, the sheet, or the email itself.\n\nA table copied from a spreadsheet pastes straight in, columns and all. A CSV, a PDF or a screenshot can be attached or dropped here - the PDF and the screenshot are read into text first.\n\nIt is read exactly like the reply itself, so include the currency and say which topics each price covers.'
                     }
                     onChange={(event) => setText(event.target.value)}
                     onPaste={(event) => {
@@ -328,15 +346,32 @@ export function NoDraftWorklist({
                       <div className="flex flex-wrap gap-2">
                         {images.map((image, index) => (
                           <span key={`${image.name}-${index}`} className="relative">
-                            {/* A data: URI preview of something the reviewer
-                                just pasted. next/image optimises remote files
-                                it can fetch; there is no file and no URL. */}
-                            {/* eslint-disable-next-line @next/next/no-img-element */}
-                            <img
-                              src={`data:${image.mediaType};base64,${image.data}`}
-                              alt={image.name}
-                              className="h-20 w-auto rounded border border-line-strong bg-white object-contain"
-                            />
+                            {/*
+                              A PDF gets a chip rather than a thumbnail. An
+                              <img> pointing at a PDF data URI renders as a
+                              broken image, which reads as "it did not take the
+                              file" when it took it perfectly well.
+                            */}
+                            {image.mediaType === PDF_TYPE ? (
+                              <span className="flex h-20 w-32 flex-col items-center justify-center gap-1 rounded border border-line-strong bg-white px-2 text-center">
+                                <FileText className="h-5 w-5 text-muted" aria-hidden="true" />
+                                <span className="line-clamp-2 text-[11px] leading-tight text-ink-soft">
+                                  {image.name}
+                                </span>
+                              </span>
+                            ) : (
+                              <>
+                                {/* A data: URI preview of something the reviewer
+                                    just pasted. next/image optimises remote files
+                                    it can fetch; there is no file and no URL. */}
+                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                <img
+                                  src={`data:${image.mediaType};base64,${image.data}`}
+                                  alt={image.name}
+                                  className="h-20 w-auto rounded border border-line-strong bg-white object-contain"
+                                />
+                              </>
+                            )}
                             <button
                               type="button"
                               aria-label={`Remove ${image.name}`}
@@ -359,10 +394,10 @@ export function NoDraftWorklist({
                         >
                           {reading
                             ? 'Reading...'
-                            : `Read ${images.length === 1 ? 'the image' : `all ${images.length}`} into text`}
+                            : `Read ${images.length === 1 ? (images[0]!.mediaType === PDF_TYPE ? 'the PDF' : 'the image') : `all ${images.length}`} into text`}
                         </Button>
                         <span className="text-[12px] text-muted">
-                          The text lands in the box above for you to check. The image itself is
+                          The text lands in the box above for you to check. The file itself is
                           not kept.
                         </span>
                       </div>
@@ -379,22 +414,28 @@ export function NoDraftWorklist({
                   <div className="flex flex-wrap items-center gap-2">
                     <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-md border border-line bg-white px-2.5 py-1.5 text-[12px] font-medium text-ink hover:bg-surface-sunken">
                       <Upload className="h-3.5 w-3.5" aria-hidden="true" />
-                      Attach a CSV
+                      Attach a PDF or CSV
                       <input
                         type="file"
+                        multiple
                         className="sr-only"
-                        accept={[...ACCEPTED_SHEET_EXTENSIONS, ...ACCEPTED_SHEET_TYPES].join(',')}
+                        accept={[
+                          ...ACCEPTED_SHEET_EXTENSIONS,
+                          ...ACCEPTED_SHEET_TYPES,
+                          ...ACCEPTED_ATTACHMENT_TYPES,
+                        ].join(',')}
                         onChange={(event) => {
-                          const file = event.target.files?.[0];
-                          if (file) void takeFiles([file], email.id);
+                          const files = event.target.files;
+                          if (files?.length) void takeFiles(files, email.id);
                           // Cleared so picking the same file twice fires again.
                           event.target.value = '';
                         }}
                       />
                     </label>
                     <span className="text-[12px] leading-relaxed text-muted">
-                      Rows land in the box above for you to check. An .xlsx is a zip rather than
-                      text - save it as CSV first, or just copy the rows and paste them in.
+                      A CSV is parsed straight into the box. A PDF or a screenshot is read by the
+                      model first, which costs tokens. An .xlsx is a zip rather than text - save it
+                      as CSV, or copy the rows and paste them in.
                     </span>
                   </div>
 
