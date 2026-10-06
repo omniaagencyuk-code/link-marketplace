@@ -7,8 +7,10 @@ import { cn } from '@/lib/utils/cn';
 const TABS = [
   { href: '/admin/sales', label: 'Overview', exact: true },
   { href: '/admin/sales/prospects', label: 'Prospects' },
+  { href: '/admin/sales/campaigns', label: 'Campaigns' },
   { href: '/admin/sales/review', label: 'Review queue' },
   { href: '/admin/sales/inbox', label: 'Inbox' },
+  { href: '/admin/sales/customers', label: 'Customers' },
   { href: '/admin/sales/suppressions', label: 'Do not contact' },
   { href: '/admin/sales/settings', label: 'Settings' },
 ];

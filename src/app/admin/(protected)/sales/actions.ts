@@ -8,6 +8,7 @@ import { salesContactService } from '@/lib/services/sales-contact-service';
 import { salesEmailService } from '@/lib/services/sales-email-service';
 import { salesAttributionService } from '@/lib/services/sales-attribution-service';
 import { salesReplyService } from '@/lib/services/sales-reply-service';
+import { salesCampaignService } from '@/lib/services/sales-campaign-service';
 import { salesFollowUpService } from '@/lib/services/sales-followup-service';
 import {
   advanceResearchSweep,
@@ -553,6 +554,85 @@ export async function markReplyHandledAction(replyId: string): Promise<SalesActi
     const outcome = await salesReplyService.markHandled(replyId, session.email);
     revalidatePath('/admin/sales/inbox');
     return outcome.ok ? ok('Marked as dealt with.') : bad(outcome.error ?? 'Could not mark it.');
+  } catch (error) {
+    return bad(reasonFor(error));
+  }
+}
+
+export async function createCampaignAction(formData: FormData): Promise<SalesActionResult> {
+  const session = await requireAdminSession();
+
+  const minScoreRaw = String(formData.get('minScore') ?? '').trim();
+  const segmentRaw = String(formData.get('segment') ?? '').trim();
+
+  try {
+    const outcome = await salesCampaignService.create(
+      {
+        name: String(formData.get('name') ?? ''),
+        segment: segmentRaw ? (segmentRaw as SalesSegment) : undefined,
+        minScore: minScoreRaw ? Number(minScoreRaw) : undefined,
+        angle: String(formData.get('angle') ?? ''),
+      },
+      session.email,
+    );
+
+    revalidatePath('/admin/sales/campaigns');
+    return outcome.ok ? ok('Created. Nothing is drafted until you run it.') : bad(outcome.error ?? 'Could not create it.');
+  } catch (error) {
+    return bad(reasonFor(error));
+  }
+}
+
+/**
+ * Draft for everyone a campaign matches.
+ *
+ * Capped, deliberately. Forty drafts is a morning's reviewing; four hundred is
+ * a queue that gets approved without being read, which is the one failure this
+ * whole feature is arranged to prevent.
+ */
+export async function runCampaignAction(
+  campaignId: string,
+  limit: number,
+): Promise<SalesActionResult> {
+  const session = await requireAdminSession();
+
+  try {
+    const outcome = await salesCampaignService.run(
+      campaignId,
+      Math.max(1, Math.min(40, limit)),
+      session.email,
+    );
+
+    revalidatePath('/admin/sales/campaigns');
+    revalidatePath('/admin/sales/review');
+
+    if (outcome.error) return bad(outcome.error);
+
+    const skipped = outcome.skipped
+      .map((entry) => `${entry.count} ${entry.reason}`)
+      .slice(0, 4)
+      .join(', ');
+
+    return ok(
+      `Looked at ${outcome.considered}, drafted ${outcome.drafted}.` +
+        (skipped ? ` Skipped: ${skipped}.` : '') +
+        (outcome.drafted > 0 ? ' They are in the review queue.' : ''),
+    );
+  } catch (error) {
+    return bad(reasonFor(error));
+  }
+}
+
+export async function setCampaignStatusAction(
+  campaignId: string,
+  status: 'draft' | 'active' | 'paused' | 'done' | 'cancelled',
+): Promise<SalesActionResult> {
+  await requireAdminSession();
+
+  try {
+    const outcome = await salesCampaignService.setStatus(campaignId, status);
+    revalidatePath('/admin/sales/campaigns');
+    return outcome.ok ? ok(`Marked ${status}.`) : bad(outcome.error ?? 'Could not change it.');
   } catch (error) {
     return bad(reasonFor(error));
   }
