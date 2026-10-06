@@ -52,6 +52,49 @@ table with an admin-only policy and no customer-facing policy at all:
 Before adding a column that holds a cost, a contact or a commercial term, ask
 which of those tables it belongs in. It does not belong on `websites`.
 
+The Sales Centre's fourteen tables are internal on the same terms and for a
+sharper reason: a prospect is a company somebody decided to approach, a
+qualification is a judgement about them, and `prospect_contacts` holds named
+people's work addresses. None of them has a customer-facing policy and none
+should acquire one.
+
+## Outbound sales
+
+Two rules are enforced by the database rather than by whoever is calling it,
+because both are about an email that has already left.
+
+- **Nothing sends unapproved.** `outbound_emails` cannot reach `approved`,
+  `scheduled` or `sent` without a named approver and a timestamp. The parallel
+  is `draft-approval.ts`: the model proposes, a person decides.
+- **An unsubscribe is final.** A trigger checks `sales_suppressions` on the way
+  to the wire, by address or by whole company. A suppression that depends on
+  every future caller remembering it is not a suppression. Cancelling is always
+  allowed - stopping is never the thing to refuse.
+
+An unsubscribe is also recognised without a model: `looksLikeStop` in
+`src/lib/sales/reply-rules.ts` runs alongside the classifier and may override
+it, never the other way round. A missed unsubscribe is another email to
+somebody who asked us to stop; a false one costs a prospect. Those are not
+comparable errors.
+
+Three more files are prompts, each the only copy, each versioned in the same
+edit as a rule change - the same arrangement `extraction-rules.ts` has:
+`sales/qualification-rules.ts`, `sales/email-rules.ts`, `sales/reply-rules.ts`.
+
+The rules in them most often got wrong:
+
+- **Silence is `unclear`, never `unlikely`.** A company that does not mention
+  SEO has not said it does not buy links; most buyers never mention it. A
+  pipeline that reads silence as a refusal works a small self-selecting slice
+  of the market and cannot recover the rest, because nobody re-reads the ones
+  already marked no.
+- **A number in an email must be one the writer was given.** `checkDraft`
+  enforces it rather than trusting it: a price we never set is one we have to
+  honour or retract.
+- **Spend is measured.** Hunter credits are summed from `hunter_lookups`, one
+  row per call carrying what Hunter charged; model cost from reported tokens.
+  The Hunter budget ships at zero and zero refuses everything.
+
 ## Verification
 
 - `npm run verify:rls` — replays every migration into a local Postgres and
@@ -59,3 +102,8 @@ which of those tables it belongs in. It does not belong on `websites`.
 - `npm run verify:import` — the CSV importer.
 - `npm run verify:sourcing` — mbox reading and the review rules. Needs no API
   key and no database.
+- `npm run verify:sales` — the Sales Centre's decisions: what gets crawled,
+  what scores, which listings a prospect is shown, which address an email may
+  reach. No API key, no database, no network - and no Hunter credit, which is
+  structural rather than careful: the guard refuses in dry run before it checks
+  for a key.
