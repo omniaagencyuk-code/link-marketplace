@@ -164,6 +164,46 @@ console.log('\n--- no full read in the repositories uses a bare limit ---');
     points at a limit that is doing its job.
   */
   is('a deliberate small limit is still visible to this check', repoCode.includes('.limit(120)'), true);
+
+  /*
+    The Ahrefs refresh, which had the same bug in a different shape.
+
+    It asked `ahrefs_due_domains` for `batchBudget * batchSize` - four thousand
+    - and treated what came back as the whole plan. PostgREST caps a
+    set-returning function at a thousand rows and says nothing, so every run
+    refreshed at most a thousand domains and reported itself completed. On
+    three and a half thousand listings that is a quarter of the job, silently,
+    and the run history looked perfect.
+
+    It is fixed by asking for a batch at a time inside the loop rather than
+    everything up front, so these pin both halves: nothing asks for more than
+    the ceiling, and the fetch happens per batch.
+  */
+  const refresh = code(readFileSync('src/lib/services/refresh-service.ts', 'utf8'));
+
+  const dueLimits = [...refresh.matchAll(/p_limit:\s*([^,\n]+)/g)].map((match) => match[1]!.trim());
+  is('the due-domains fetch asks for a bounded page', dueLimits.length > 0, true);
+  is(
+    'and never for more than PostgREST will return',
+    dueLimits.every((limit) => /Math\.min\(1000/.test(limit)),
+    true,
+  );
+  is(
+    'the plan comes from a count, not from the length of one page',
+    /ahrefs_overdue_counts/.test(refresh),
+    true,
+  );
+  // The fetch has to be inside the loop, or one capped page is still the plan.
+  const loopStart = refresh.indexOf('while (batches < batchBudget)');
+  is('the loop refetches rather than slicing one list', loopStart !== -1, true);
+  is(
+    'and the fetch is inside it',
+    loopStart !== -1 && refresh.indexOf("rpc('ahrefs_due_domains'") > loopStart,
+    true,
+  );
+  // A domain Ahrefs has no data for stays due, so without this the loop would
+  // hand itself the same failures until the budget ran out.
+  is('and cannot re-send the same failures forever', /attempted\.has\(/.test(refresh), true);
 }
 
 console.log(failed === 0 ? '\nAll paging checks passed.\n' : `\n${failed} failed.\n`);

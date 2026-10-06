@@ -564,17 +564,31 @@ export async function runRefresh(options: RunOptions = {}): Promise<RunOutcome> 
       return { status: 'skipped', reason, dryRun: settings.dryRun, runId: id, ...idle };
     }
 
-    const { data: due, error: dueError } = await supabase.rpc('ahrefs_due_domains', {
-      p_limit: batchBudget * batchSize,
-      // Null is every tier, which is what the schedule wants and what the
-      // one-argument form of this function did.
-      p_tier: options.tier ?? null,
-    });
-    if (dueError) throw new Error(dueError.message);
+    /*
+      How many are due, counted rather than measured from a page.
 
-    const domains = (due ?? []) as { id: string; domain: string; tier: number }[];
+      This used to ask `ahrefs_due_domains` for `batchBudget * batchSize` -
+      four thousand - and take the length of what came back as the plan.
+      PostgREST caps a set-returning function at a thousand rows and says
+      nothing about it, so every run since this was written refreshed at most
+      a thousand domains and then reported itself completed. On an inventory
+      of three and a half thousand that is a quarter of the job, silently, and
+      it looked like a finished run every time.
 
-    if (domains.length === 0) {
+      The count comes from the counts function now, and the domains are
+      fetched a batch at a time inside the loop, where a hundred rows is
+      nowhere near the ceiling.
+    */
+    const { data: overdueRows, error: countError } = await supabase.rpc('ahrefs_overdue_counts');
+    if (countError) throw new Error(countError.message);
+
+    const totalDue = ((overdueRows ?? []) as { tier: number; overdue: number }[])
+      .filter((row) => options.tier == null || Number(row.tier) === options.tier)
+      .reduce((total, row) => total + Number(row.overdue ?? 0), 0);
+
+    const plannedTotal = Math.min(totalDue, batchBudget * batchSize);
+
+    if (plannedTotal === 0) {
       const nothing = options.tier ? `Nothing due in tier ${options.tier}` : 'Nothing due';
       await finishRun(id, { status: 'completed', reason: nothing });
       return { status: 'completed', reason: nothing, dryRun: settings.dryRun, runId: id, ...idle };
@@ -582,10 +596,10 @@ export async function runRefresh(options: RunOptions = {}): Promise<RunOutcome> 
 
     // Dry run stops here: the selection has been proved without spending.
     if (settings.dryRun) {
-      const estimate = Math.ceil(domains.length * unitCost);
+      const estimate = Math.ceil(plannedTotal * unitCost);
       const reason =
-        `Dry run: would refresh ${domains.length} domains in ` +
-        `${Math.ceil(domains.length / batchSize)} batches ` +
+        `Dry run: would refresh ${plannedTotal} domains in ` +
+        `${Math.ceil(plannedTotal / batchSize)} batches ` +
         `for about ${estimate} units`;
       await finishRun(id, {
         status: 'completed',
@@ -615,11 +629,45 @@ export async function runRefresh(options: RunOptions = {}): Promise<RunOutcome> 
     */
     await supabase
       .from('refresh_runs')
-      .update({ domains_total: domains.length })
+      .update({ domains_total: plannedTotal })
       .eq('id', id);
 
-    for (let offset = 0; offset < domains.length; offset += batchSize) {
-      const slice = domains.slice(offset, offset + batchSize);
+    /*
+      Every domain this run has already sent to Ahrefs.
+
+      A domain Ahrefs had no data for is deliberately left unstamped so it
+      stays due and is tried again another day - which means the next fetch
+      hands it straight back. Without this set the loop would re-send the same
+      failures until the budget ran out.
+    */
+    const attempted = new Set<string>();
+
+    while (batches < batchBudget) {
+      /*
+        The next batch, fetched now rather than planned at the start.
+
+        A hundred rows is far below PostgREST's thousand-row ceiling, and the
+        domains just processed have been stamped so they no longer come back.
+        Asked for three batches' worth and cut to one, so a batch where half
+        the domains failed is still refilled rather than shrinking for the
+        rest of the run.
+      */
+      const { data: page, error: dueError } = await supabase.rpc('ahrefs_due_domains', {
+        p_limit: Math.min(1000, batchSize * 3),
+        // Null is every tier, which is what the schedule wants and what the
+        // one-argument form of this function did.
+        p_tier: options.tier ?? null,
+      });
+      if (dueError) throw new Error(dueError.message);
+
+      const slice = ((page ?? []) as { id: string; domain: string; tier: number }[])
+        .filter((entry) => !attempted.has(entry.id))
+        .slice(0, batchSize);
+
+      // Nothing left, or nothing left that this run has not already tried.
+      if (slice.length === 0) break;
+      for (const entry of slice) attempted.add(entry.id);
+
       const expected = Math.ceil(slice.length * unitCost);
 
       // Re-checked before every batch: the allowance shrinks as the run
@@ -669,47 +717,70 @@ export async function runRefresh(options: RunOptions = {}): Promise<RunOutcome> 
         ]),
       );
 
-      for (const entry of slice) {
-        const metrics = result.metrics.get(entry.domain);
-        if (!metrics) {
-          // Left untouched, so it stays due and is tried again next run
-          // rather than being marked fresh with no new data.
-          failed += 1;
-          continue;
+      /*
+        Twelve writes at a time, not one.
+
+        These were sequential: a hundred round trips to Supabase per batch,
+        each a few tens of milliseconds, which is seconds of waiting per batch
+        and minutes across an inventory. It was the biggest reason a
+        whole-inventory run could not finish inside one invocation.
+
+        Twelve rather than all hundred because this is a connection pool the
+        site is also using, and a burst of a hundred concurrent updates is how
+        a refresh starts showing up in page loads.
+      */
+      const WRITE_AT_ONCE = 12;
+
+      for (let start = 0; start < slice.length; start += WRITE_AT_ONCE) {
+        const group = slice.slice(start, start + WRITE_AT_ONCE);
+
+        const outcomes = await Promise.all(
+          group.map(async (entry) => {
+            const metrics = result.metrics.get(entry.domain);
+            if (!metrics) {
+              // Left untouched, so it stays due and is tried again next run
+              // rather than being marked fresh with no new data.
+              return false;
+            }
+
+            const { error } = await supabase
+              .from('websites')
+              .update({
+                domain_rating: metrics.domainRating,
+                organic_traffic: metrics.organicTraffic,
+                /*
+                  Referring domains, which this never wrote.
+
+                  Domain rating and traffic updated on every run while the backlink
+                  count kept whatever the CSV import left in it - zero for most -
+                  so a refreshed listing read as a site with real traffic and no
+                  backlinks at all, and the marketplace filters on that column.
+
+                  Written only when Ahrefs reported one. A reading it did not give
+                  is not a reading of zero, which is the same rule that decides
+                  whether the row is written at all.
+                */
+                ...(metrics.referringDomains == null
+                  ? {}
+                  : { referring_domains: metrics.referringDomains }),
+                // Same rule: a reading Ahrefs did not give is not a reading of
+                // zero, and this column is shown on the card.
+                ...(metrics.organicKeywords == null
+                  ? {}
+                  : { organic_keywords: metrics.organicKeywords }),
+                last_ahrefs_refresh_at: now,
+                ...audiencePatch(metrics, countryById.get(entry.id)),
+              })
+              .eq('id', entry.id);
+
+            return !error;
+          }),
+        );
+
+        for (const wrote of outcomes) {
+          if (wrote) refreshed += 1;
+          else failed += 1;
         }
-
-        const { error } = await supabase
-          .from('websites')
-          .update({
-            domain_rating: metrics.domainRating,
-            organic_traffic: metrics.organicTraffic,
-            /*
-              Referring domains, which this never wrote.
-
-              Domain rating and traffic updated on every run while the backlink
-              count kept whatever the CSV import left in it - zero for most -
-              so a refreshed listing read as a site with real traffic and no
-              backlinks at all, and the marketplace filters on that column.
-
-              Written only when Ahrefs reported one. A reading it did not give
-              is not a reading of zero, which is the same rule that decides
-              whether the row is written at all.
-            */
-            ...(metrics.referringDomains == null
-              ? {}
-              : { referring_domains: metrics.referringDomains }),
-            // Same rule: a reading Ahrefs did not give is not a reading of
-            // zero, and this column is shown on the card.
-            ...(metrics.organicKeywords == null
-              ? {}
-              : { organic_keywords: metrics.organicKeywords }),
-            last_ahrefs_refresh_at: now,
-            ...audiencePatch(metrics, countryById.get(entry.id)),
-          })
-          .eq('id', entry.id);
-
-        if (error) failed += 1;
-        else refreshed += 1;
       }
 
       /*
@@ -733,7 +804,13 @@ export async function runRefresh(options: RunOptions = {}): Promise<RunOutcome> 
     }
 
     const scope = options.tier ? ` in tier ${options.tier}` : '';
-    const reason = `Refreshed ${refreshed} of ${domains.length} due${scope}`;
+    /*
+      What was due when the run started, not what it managed to attempt. A run
+      that stops on its budget should say so by the numbers rather than
+      redefining the denominator to whatever it got through - which is how a
+      run capped at a thousand reported itself as having refreshed everything.
+    */
+    const reason = `Refreshed ${refreshed} of ${totalDue} due${scope}`;
     await finishRun(id, {
       status: 'completed',
       domains_refreshed: refreshed,
