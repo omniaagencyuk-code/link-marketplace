@@ -170,3 +170,46 @@ export function checkTargets(
 
   return { ok: true, targets: { target, competitors } };
 }
+
+/**
+ * The order a finished report is read in.
+ *
+ * Pure, and separated from the service so the rule can be checked without a
+ * database - it decides which rows a customer sees first, and the top of that
+ * table is the only part most people read.
+ *
+ * Four keys, in this order:
+ *
+ * 1. **Ours first.** The rows with something to buy.
+ * 2. **Then the evidence.** A site linking to all three rivals covers the
+ *    niche; one linking to a single rival happened to mention somebody. That
+ *    is a claim about relevance which domain rating cannot make, so it stays
+ *    ahead of it.
+ * 3. **Then the strength**, domain rating and then traffic. This was missing,
+ *    and the first real report showed the cost: inside one evidence tier the
+ *    rows were alphabetical, so anniversaryjourney.com (DR 48, one visitor a
+ *    month) sat above hostadvice.com (DR 80, 646,000).
+ * 4. **Then the name**, so the order is stable.
+ *
+ * Both metrics are optional because only our own listings have them: we do not
+ * buy domain rating for the rest of the gap, which is the single biggest thing
+ * keeping a report affordable. Those rows share a rating of nothing and fall
+ * through to the name.
+ */
+export interface ReportRow {
+  domain: string;
+  linkingCompetitors: string[];
+  websiteId?: string;
+  domainRating?: number;
+  organicTraffic?: number;
+}
+
+export function compareReportRows(a: ReportRow, b: ReportRow): number {
+  return (
+    Number(Boolean(b.websiteId)) - Number(Boolean(a.websiteId)) ||
+    b.linkingCompetitors.length - a.linkingCompetitors.length ||
+    (b.domainRating ?? 0) - (a.domainRating ?? 0) ||
+    (b.organicTraffic ?? 0) - (a.organicTraffic ?? 0) ||
+    a.domain.localeCompare(b.domain)
+  );
+}

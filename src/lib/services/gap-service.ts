@@ -2,7 +2,13 @@ import { getAdminScopedClient } from '@/lib/supabase/server';
 import { isSupabaseEnabled } from '@/lib/supabase/config';
 import { organicCompetitors, referringDomains } from '@/lib/ahrefs/client';
 import { isAhrefsConfigured } from '@/lib/ahrefs/config';
-import { checkTargets, cleanDomain, findGap, type GapRow } from '@/lib/gap/analysis';
+import {
+  checkTargets,
+  cleanDomain,
+  compareReportRows,
+  findGap,
+  type GapRow,
+} from '@/lib/gap/analysis';
 import {
   SUGGESTION_COLUMNS,
   SUGGESTION_ROWS,
@@ -779,12 +785,13 @@ export const gapService = {
       sellableFound: Number(header.sellable_found ?? 0),
       truncated: Boolean(header.truncated),
       createdAt: String(header.created_at),
-      results: results.sort(
-        (a, b) =>
-          Number(Boolean(b.websiteId)) - Number(Boolean(a.websiteId)) ||
-          b.linkingCompetitors.length - a.linkingCompetitors.length ||
-          a.domain.localeCompare(b.domain),
-      ),
+      /*
+        The order lives in `gap/analysis.ts` so it can be checked without a
+        database. It decides which rows a customer reads first, and the first
+        real report ranked one evidence tier alphabetically - DR 48 with one
+        visitor a month above DR 80 with 646,000.
+      */
+      results: results.sort(compareReportRows),
     };
   },
 

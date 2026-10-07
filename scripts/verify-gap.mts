@@ -16,7 +16,7 @@ import {
   mayRunGap,
   maySuggestCompetitors,
 } from '../src/lib/gap/cost';
-import { checkTargets, findGap } from '../src/lib/gap/analysis';
+import { checkTargets, compareReportRows, findGap } from '../src/lib/gap/analysis';
 import {
   SUGGESTION_COLUMNS,
   SUGGESTION_ROWS,
@@ -453,6 +453,65 @@ is(
   're-ranking what was already ranked changes nothing',
   rankSuggestions(ranked, { target: 'mine.com', limit: 6 }).map((row) => row.domain).join(','),
   suggested.join(','),
+);
+
+// ---------------------------------------------------------------------------
+console.log('\n--- the order a report is read in ---');
+
+/*
+  Taken from the first real report run through the live feature:
+  pressparrot.com against fatjoe.com, collaborator.pro and adsy.com. These are
+  its actual rows, and they are what showed the bug - inside the "you can buy
+  these from us" table every row linking to one competitor was alphabetical, so
+  a DR 48 site with one visitor a month sat above a DR 80 site with 646,000.
+*/
+const rows = [
+  { domain: 'anniversaryjourney.com', linkingCompetitors: ['collaborator.pro'], websiteId: 'w1', domainRating: 48, organicTraffic: 1 },
+  { domain: 'hostadvice.com', linkingCompetitors: ['adsy.com'], websiteId: 'w2', domainRating: 80, organicTraffic: 646_449 },
+  { domain: 'serpwatch.io', linkingCompetitors: ['adsy.com', 'collaborator.pro', 'fatjoe.com'], websiteId: 'w3', domainRating: 73, organicTraffic: 14_144 },
+  { domain: 'allhiphop.com', linkingCompetitors: ['collaborator.pro'], websiteId: 'w4', domainRating: 73, organicTraffic: 46_245 },
+  { domain: 'analyticsinsight.net', linkingCompetitors: ['adsy.com', 'fatjoe.com'], websiteId: 'w5', domainRating: 80, organicTraffic: 981_148 },
+  // Not ours, so no metrics were ever bought for it - and it outranks none of
+  // the above however strong it might really be.
+  { domain: 'aaa-not-ours.com', linkingCompetitors: ['adsy.com', 'collaborator.pro', 'fatjoe.com'] },
+];
+
+const ordered = [...rows].sort(compareReportRows).map((row) => row.domain);
+
+is('everything we can sell comes first', ordered.indexOf('aaa-not-ours.com'), rows.length - 1);
+is('then the site covering the whole niche', ordered[0], 'serpwatch.io');
+is('then the two-rival row', ordered[1], 'analyticsinsight.net');
+
+/*
+  The fix. Within one evidence tier the strongest comes first, where it used to
+  be whichever name sorted earliest.
+*/
+is('the strongest single-rival row beats the weakest', ordered[2], 'hostadvice.com');
+is('and traffic breaks a tie on rating', ordered[3], 'allhiphop.com');
+is('the DR 48 one-visitor site comes last of ours', ordered[4], 'anniversaryjourney.com');
+
+isTrue(
+  'relevance still outranks strength: three rivals at DR 73 beats one at DR 80',
+  ordered.indexOf('serpwatch.io') < ordered.indexOf('hostadvice.com'),
+);
+
+// A row with no metrics must not be read as a rating of zero *among ours* - it
+// is simply not ours, which key one already decided.
+const noMetrics = [
+  { domain: 'b.com', linkingCompetitors: ['x.com'] },
+  { domain: 'a.com', linkingCompetitors: ['x.com'] },
+];
+is(
+  'rows with no metrics fall through to the name',
+  [...noMetrics].sort(compareReportRows).map((row) => row.domain).join(','),
+  'a.com,b.com',
+);
+
+// Stable: sorting an ordered list again changes nothing.
+is(
+  'the order is stable',
+  [...rows].sort(compareReportRows).sort(compareReportRows).map((row) => row.domain).join(','),
+  ordered.join(','),
 );
 
 console.log(failed === 0 ? '\nAll gap checks passed.\n' : `\n${failed} gap check(s) failed.\n`);
