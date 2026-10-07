@@ -84,10 +84,54 @@ insert into public.websites (slug, domain, title, country_code, country_source, 
 values
   ('ours-one', 'ours-one.com', 'Ours One', 'GB', 'stated', 'active', 61, 48000),
   ('ours-two', 'ours-two.com', 'Ours Two', 'GB', 'stated', 'active', 44, 19000),
-  ('ours-paused', 'ours-paused.com', 'Paused', 'GB', 'stated', 'paused', 70, 90000);
+  ('ours-paused', 'ours-paused.com', 'Paused', 'GB', 'stated', 'paused', 70, 90000),
+  ('ours-unpriced', 'ours-unpriced.com', 'No service', 'GB', 'stated', 'active', 66, 30000),
+  ('ours-free', 'ours-free.com', 'Priced at nothing', 'GB', 'stated', 'active', 59, 12000),
+  ('ours-withdrawn', 'ours-withdrawn.com', 'Service off', 'GB', 'stated', 'active', 72, 44000);
 
-select 'our active sites are found: ' || string_agg(domain, ',' order by domain)
+/*
+  A price is what makes a listing an offer, and the price lives on `services`.
+
+  `ours-unpriced` deliberately gets none at all. The other two get a service
+  that cannot be bought: one at zero, one marked unavailable.
+*/
+insert into public.services (website_id, type, price_minor, available)
+select id, 'guest-post', 18000, true from public.websites where slug = 'ours-one';
+insert into public.services (website_id, type, price_minor, available)
+select id, 'guest-post', 9000, true from public.websites where slug = 'ours-two';
+insert into public.services (website_id, type, price_minor, available)
+select id, 'guest-post', 25000, true from public.websites where slug = 'ours-paused';
+insert into public.services (website_id, type, price_minor, available)
+select id, 'guest-post', 0, true from public.websites where slug = 'ours-free';
+insert into public.services (website_id, type, price_minor, available)
+select id, 'guest-post', 30000, false from public.websites where slug = 'ours-withdrawn';
+
+/*
+  `coalesce`, so an empty answer is loud.
+
+  This assertion printed the two domains until 0056 required a price, at which
+  point the fixtures had no services and `string_agg` over no rows returned
+  null - the line went blank and the verifier's own `grep -v '^$'` swallowed
+  it. A check that stops checking has to say so.
+*/
+select 'our active priced sites are found: ' ||
+  coalesce(string_agg(domain, ',' order by domain), '(NONE - CHECK STOPPED CHECKING)')
 from public.gap_sellable(array['ours-one.com', 'ours-two.com', 'stranger.com']);
+
+/*
+  0056: active is not the same as orderable.
+
+  Before it, `gap_sellable` checked only `status`, though its comment claimed
+  otherwise. The report then counted these three under "you can order these
+  today" and, once the row grew an Add to order button, would have shown that
+  claim above a row with no button under it.
+*/
+select 'a listing with no service at all is not offered: ' ||
+  (count(*) = 0) from public.gap_sellable(array['ours-unpriced.com']);
+select 'nor one priced at nothing: ' ||
+  (count(*) = 0) from public.gap_sellable(array['ours-free.com']);
+select 'nor one whose only service is switched off: ' ||
+  (count(*) = 0) from public.gap_sellable(array['ours-withdrawn.com']);
 
 /*
   A paused listing is not an offer.
