@@ -2,11 +2,13 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { LogOut, ShieldCheck } from 'lucide-react';
+import { ArrowRight, LogOut, ShieldCheck, ShoppingBag } from 'lucide-react';
 import { Logo } from '@/components/layout/logo';
 import { Avatar } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/lib/providers/auth-provider';
+import { useOrderDraft } from '@/lib/providers/order-draft-provider';
+import { formatPrice } from '@/lib/utils/format';
 import { cn } from '@/lib/utils/cn';
 import { adminNav, dashboardNav, type NavItem } from '@/lib/config/navigation';
 
@@ -25,6 +27,20 @@ export function DashboardShell({
 }) {
   const pathname = usePathname();
   const { user, isAdmin, signOut, signingOut } = useAuth();
+
+  /*
+    The basket, read straight from the draft provider.
+
+    Mounted in the root layout, so it is already here on every dashboard page
+    - including the gap finder, which is where somebody is most likely to add
+    three sites in a row and want to see that land somewhere.
+
+    Nothing is rendered while the count is zero, which is also what the server
+    renders: the draft lives in localStorage, so the first client render has an
+    empty list too and the two agree. The badge appears on hydration rather
+    than flickering through a mismatch.
+  */
+  const { count: draftCount, totalMinor } = useOrderDraft();
   // Nav items carry icon components, so they are resolved inside this client
   // component rather than passed across the server/client boundary.
   const nav = variant === 'admin' ? adminNav : dashboardNav;
@@ -59,6 +75,16 @@ export function DashboardShell({
             >
               {item.icon ? <item.icon className="h-4 w-4" aria-hidden="true" /> : null}
               {item.label}
+              {item.badge === 'order-draft' && draftCount > 0 ? (
+                <span
+                  className={cn(
+                    'tabular ml-auto flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-[11px] font-semibold',
+                    isActive(item) ? 'bg-white text-navy-900' : 'bg-accent-600 text-white',
+                  )}
+                >
+                  {draftCount > 99 ? '99+' : draftCount}
+                </span>
+              ) : null}
             </Link>
           ))}
 
@@ -84,7 +110,48 @@ export function DashboardShell({
           ) : null}
         </nav>
 
-        <div className="mt-auto hidden border-t border-line p-3 lg:block">
+        {/*
+          What is in the basket, in money.
+
+          The count on the nav item says something was added; this says what it
+          will cost, which is the figure somebody adding a fourth site is
+          actually watching. It appears only when there is something in it, so
+          an empty dashboard is not carrying a permanent empty box.
+
+          Desktop only, like the account block below it. On a phone the sidebar
+          collapses to a horizontal strip of nav items where a summary card has
+          nowhere to sit - the count on Orders still shows there, and the site
+          header carries its own basket icon.
+        */}
+        {variant === 'dashboard' && draftCount > 0 ? (
+          <div className="mt-auto hidden px-3 pb-3 lg:block">
+            <Link
+              href="/dashboard/orders"
+              className="block rounded-lg border border-line bg-surface-sunken p-3 transition-colors hover:border-accent-500"
+            >
+              <span className="flex items-center gap-1.5 text-[11px] font-semibold tracking-wide text-muted uppercase">
+                <ShoppingBag className="h-3.5 w-3.5" aria-hidden="true" />
+                Your order
+              </span>
+              <span className="mt-1 block text-[18px] font-semibold text-ink">
+                {formatPrice(totalMinor)}
+              </span>
+              <span className="mt-0.5 flex items-center gap-1 text-[12px] text-muted">
+                {draftCount} {draftCount === 1 ? 'placement' : 'placements'}
+                <ArrowRight className="h-3 w-3" aria-hidden="true" />
+              </span>
+            </Link>
+          </div>
+        ) : null}
+
+        <div
+          className={cn(
+            'hidden border-t border-line p-3 lg:block',
+            // The summary takes the spare space when it is there, so the
+            // account block must not also claim it or they fight over it.
+            variant === 'dashboard' && draftCount > 0 ? '' : 'mt-auto',
+          )}
+        >
           {footer ?? (user ? (
             <div className="flex items-center gap-2.5 rounded-md px-2 py-2">
               <Avatar initials={user.avatarInitials} />
