@@ -140,3 +140,6 @@ run -f "$ROOT/supabase/tests/16_sales_centre.sql" 2>&1 | grep -v '^$'
 echo
 echo "--- the link gap finder: two budgets, and who reads whose report ---"
 run -f "$ROOT/supabase/tests/17_link_gap.sql" 2>&1 | grep -v '^$'
+echo
+echo "--- saved sites, and the suggestion cache ---"
+run -f "$ROOT/supabase/tests/18_gap_projects.sql" 2>&1 | grep -v '^$'

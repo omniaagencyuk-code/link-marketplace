@@ -1,9 +1,20 @@
 import { getAdminScopedClient } from '@/lib/supabase/server';
 import { isSupabaseEnabled } from '@/lib/supabase/config';
-import { referringDomains } from '@/lib/ahrefs/client';
+import { organicCompetitors, referringDomains } from '@/lib/ahrefs/client';
 import { isAhrefsConfigured } from '@/lib/ahrefs/config';
-import { checkTargets, findGap, type GapRow } from '@/lib/gap/analysis';
-import { isFresh, mayRunGap, type GapDecision } from '@/lib/gap/cost';
+import { checkTargets, cleanDomain, findGap, type GapRow } from '@/lib/gap/analysis';
+import {
+  SUGGESTION_COLUMNS,
+  SUGGESTION_ROWS,
+  rankSuggestions,
+  type Suggestion,
+} from '@/lib/gap/competitors';
+import {
+  isFresh,
+  mayRunGap,
+  maySuggestCompetitors,
+  type GapDecision,
+} from '@/lib/gap/cost';
 
 /**
  * Running a link gap report.
@@ -54,6 +65,37 @@ function mapSettings(row: Row): GapSettings {
     maxCompetitors: Number(row.max_competitors ?? 3),
     cacheDays: Number(row.cache_days ?? 30),
     runsPerAccount: Number(row.runs_per_account ?? 5),
+  };
+}
+
+/**
+ * A site somebody runs reports on - their own, or a client's.
+ *
+ * Saved so an agency sets a client up once and re-runs it monthly. The saving
+ * is not the typing: the competitors stay the same, so they stay in the
+ * referring-domain cache, and the second run for a project costs close to
+ * nothing.
+ */
+export interface GapProject {
+  id: string;
+  name: string;
+  domain: string;
+  competitorDomains: string[];
+  /** Which market to read competitors in. Two letters, lowercase. */
+  country: string;
+  lastRunAt?: string;
+  updatedAt: string;
+}
+
+function mapProject(row: Row): GapProject {
+  return {
+    id: String(row.id),
+    name: String(row.name ?? ''),
+    domain: String(row.domain ?? ''),
+    competitorDomains: (row.competitor_domains as string[]) ?? [],
+    country: String(row.country ?? 'gb'),
+    lastRunAt: (row.last_run_at as string) ?? undefined,
+    updatedAt: String(row.updated_at ?? ''),
   };
 }
 
@@ -116,6 +158,259 @@ export const gapService = {
       unitsUsed: Number(units.data ?? 0),
       runsThisCycle: Number(runs.data ?? 0),
     };
+  },
+
+  /**
+   * The sites this customer runs reports on.
+   *
+   * Scoped by `user_id` here as well as by the policy on the table: the
+   * service role bypasses row security, so the policy protects a customer
+   * querying directly and this protects them from a bug in our own code.
+   */
+  async projects(userId: string, limit = 50): Promise<GapProject[]> {
+    if (!isSupabaseEnabled()) return [];
+
+    const { data } = await getAdminScopedClient()
+      .from('gap_projects')
+      .select('id, name, domain, competitor_domains, country, last_run_at, updated_at')
+      .eq('user_id', userId)
+      .order('updated_at', { ascending: false })
+      .limit(limit);
+
+    return ((data ?? []) as Row[]).map(mapProject);
+  },
+
+  /**
+   * Create or update a saved site.
+   *
+   * The domains are cleaned on the way in rather than on the way out, because
+   * a project is what a report is run from: junk stored today is a wasted pull
+   * whenever somebody presses Run, possibly weeks later and by somebody else
+   * at the same agency.
+   *
+   * Competitors are allowed to be empty. A project saved to hold a client's
+   * domain before anybody has decided who it competes with is a reasonable
+   * thing to want, and the report guard refuses a run with no competitors
+   * anyway - refusing the save as well would only mean the domain gets typed
+   * twice.
+   */
+  async saveProject(
+    userId: string,
+    input: { id?: string; name: string; domain: string; competitors: string[]; country: string },
+  ): Promise<{ ok: true; project: GapProject } | { ok: false; error: string }> {
+    if (!isSupabaseEnabled()) return { ok: false, error: 'Not available right now.' };
+
+    const settings = await gapService.settings();
+    const maxCompetitors = settings?.maxCompetitors ?? 3;
+
+    const domain = cleanDomain(input.domain ?? '');
+    if (!domain) return { ok: false, error: 'Enter the domain this report is for.' };
+
+    const name = (input.name ?? '').trim().slice(0, 120) || domain;
+
+    const competitors: string[] = [];
+    for (const raw of input.competitors ?? []) {
+      if (!raw?.trim()) continue;
+      const clean = cleanDomain(raw);
+      if (!clean) return { ok: false, error: `"${raw.trim()}" is not a domain we can read.` };
+      // The site itself, and a competitor named twice, are dropped rather than
+      // refused - the same judgement `checkTargets` makes, for the same reason.
+      if (clean === domain || competitors.includes(clean)) continue;
+      competitors.push(clean);
+    }
+
+    if (competitors.length > maxCompetitors) {
+      return {
+        ok: false,
+        error: `That is more than ${maxCompetitors} competitors. Keep your closest ${maxCompetitors}.`,
+      };
+    }
+
+    const country = /^[a-z]{2}$/i.test(input.country ?? '') ? input.country.toLowerCase() : 'gb';
+    const supabase = getAdminScopedClient();
+
+    const fields = { name, domain, competitor_domains: competitors, country };
+
+    /*
+      An update is scoped by `user_id` as well as by `id`.
+
+      Without that half, an id posted from a form would be enough to rewrite
+      somebody else's project - the service role does not consult the policy
+      that would otherwise stop it.
+    */
+    if (input.id) {
+      const { data, error } = await supabase
+        .from('gap_projects')
+        .update(fields)
+        .eq('id', input.id)
+        .eq('user_id', userId)
+        .select('id, name, domain, competitor_domains, country, last_run_at, updated_at')
+        .maybeSingle();
+
+      if (error || !data) return { ok: false, error: 'Could not save that site.' };
+      return { ok: true, project: mapProject(data as Row) };
+    }
+
+    const { data, error } = await supabase
+      .from('gap_projects')
+      .upsert({ user_id: userId, ...fields }, { onConflict: 'user_id,domain' })
+      .select('id, name, domain, competitor_domains, country, last_run_at, updated_at')
+      .maybeSingle();
+
+    if (error || !data) {
+      /*
+        The unique constraint is `(user_id, domain)` on purpose, and the upsert
+        above is how saving the same site twice becomes an edit rather than a
+        refusal. Two rows for one client is two sets of competitors drifting
+        apart, which is worse than overwriting the older one.
+      */
+      return { ok: false, error: 'Could not save that site.' };
+    }
+
+    return { ok: true, project: mapProject(data as Row) };
+  },
+
+  async deleteProject(userId: string, id: string): Promise<boolean> {
+    if (!isSupabaseEnabled()) return false;
+
+    const { error } = await getAdminScopedClient()
+      .from('gap_projects')
+      .delete()
+      .eq('id', id)
+      .eq('user_id', userId);
+
+    return !error;
+  },
+
+  /**
+   * Competitors for a domain, from Ahrefs and from the cache.
+   *
+   * The whole point of this call is that it is cheap: fifty units for a list,
+   * against 2,500 for one referring-domain pull. So the order matters less than
+   * it does for a report, but it is the same order for the same reason - the
+   * cache is consulted before the guard, and the guard before anything is
+   * spent.
+   *
+   * `fresh` tells the caller whether this cost anything, which is what the UI
+   * uses to say "from earlier this month" rather than implying a fresh look.
+   */
+  async suggestCompetitors(
+    userId: string,
+    rawDomain: string,
+    rawCountry: string,
+  ): Promise<
+    | { ok: true; suggestions: Suggestion[]; cached: boolean }
+    | { ok: false; error: string }
+  > {
+    if (!isSupabaseEnabled()) return { ok: false, error: 'Not available right now.' };
+
+    const settings = await gapService.settings();
+    if (!settings) return { ok: false, error: 'Not available right now.' };
+
+    const domain = cleanDomain(rawDomain ?? '');
+    if (!domain) return { ok: false, error: 'Enter your domain first, then we can suggest rivals.' };
+
+    const country = /^[a-z]{2}$/i.test(rawCountry ?? '') ? rawCountry.toLowerCase() : 'gb';
+    const offer = Math.max(1, settings.maxCompetitors * 2);
+    const supabase = getAdminScopedClient();
+
+    const { data: cached } = await supabase
+      .from('competitor_suggestions')
+      .select('suggestions, fetched_at')
+      .eq('domain', domain)
+      .eq('country', country)
+      .maybeSingle();
+
+    if (cached && isFresh(String((cached as Row).fetched_at), settings.cacheDays)) {
+      const stored = ((cached as Row).suggestions ?? []) as {
+        domain?: string;
+        keywords_common?: number;
+        domain_rating?: number;
+      }[];
+
+      /*
+        Re-ranked and re-filtered on the way out, not trusted as stored.
+
+        The platform list and the ordering are code, and code changes; a row
+        cached a fortnight ago under the old filter would otherwise keep
+        suggesting whatever the old filter let through.
+      */
+      return {
+        ok: true,
+        cached: true,
+        suggestions: rankSuggestions(
+          stored.map((row) => ({
+            domain: String(row.domain ?? ''),
+            keywordsCommon: Number(row.keywords_common ?? 0),
+            domainRating: Number(row.domain_rating ?? 0),
+          })),
+          { target: domain, limit: offer },
+        ),
+      };
+    }
+
+    const spend = await gapService.spend(userId);
+    const decision: GapDecision = maySuggestCompetitors({
+      settings,
+      configured: isAhrefsConfigured(),
+      unitsUsedThisCycle: spend.unitsUsed,
+      runsThisCycle: spend.runsThisCycle,
+      rows: SUGGESTION_ROWS,
+      columns: SUGGESTION_COLUMNS,
+    });
+
+    if (!decision.allowed) return { ok: false, error: decision.reason };
+
+    try {
+      const pulled = await organicCompetitors(domain, country, SUGGESTION_ROWS);
+
+      // The ledger before the cache, for the reason `refdomainsFor` writes it
+      // in that order: the units are gone either way, and a budget counted
+      // from a ledger with a missing row under-counts and keeps spending.
+      await supabase.from('gap_lookups').insert({
+        run_id: null,
+        kind: 'competitors',
+        target: domain,
+        rows_returned: pulled.competitors.length,
+        units_charged: pulled.unitsCost ?? decision.estimatedUnits,
+        from_cache: false,
+      });
+
+      await supabase.from('competitor_suggestions').upsert(
+        {
+          domain,
+          country,
+          suggestions: pulled.competitors.map((row) => ({
+            domain: row.domain,
+            keywords_common: row.keywordsCommon,
+            domain_rating: row.domainRating,
+          })),
+          units_charged: pulled.unitsCost ?? decision.estimatedUnits,
+          fetched_at: new Date().toISOString(),
+        },
+        { onConflict: 'domain,country' },
+      );
+
+      return {
+        ok: true,
+        cached: false,
+        suggestions: rankSuggestions(pulled.competitors, { target: domain, limit: offer }),
+      };
+    } catch (error) {
+      await supabase.from('gap_lookups').insert({
+        run_id: null,
+        kind: 'competitors',
+        target: domain,
+        rows_returned: 0,
+        units_charged: 0,
+        error: error instanceof Error ? error.message.slice(0, 300) : 'Suggestion failed',
+      });
+
+      // Never the underlying message: an Ahrefs error can carry our account's
+      // state, and a customer who cannot have suggestions can still type them.
+      console.error('[gap] suggestion failed:', String(error).slice(0, 200));
+      return { ok: false, error: 'We could not look up competitors just now. Add them by hand.' };
+    }
   },
 
   /**
@@ -221,6 +516,7 @@ export const gapService = {
     userId: string,
     rawTarget: string,
     rawCompetitors: string[],
+    projectId?: string,
   ): Promise<{ ok: true; runId: string } | { ok: false; error: string }> {
     if (!isSupabaseEnabled()) return { ok: false, error: 'Not available right now.' };
 
@@ -233,6 +529,27 @@ export const gapService = {
     const { target, competitors } = checked.targets;
     const allTargets = [target, ...competitors];
     const supabase = getAdminScopedClient();
+
+    /*
+      Which project this run belongs to, if any - confirmed against the
+      customer rather than taken from the form.
+
+      A project id is posted by the page, and the service role does not consult
+      the policy that would otherwise refuse somebody else's. An id that is not
+      theirs is dropped rather than refused: the report itself is theirs and is
+      worth running, it just does not belong to a project.
+    */
+    let project: string | null = null;
+    if (projectId) {
+      const { data: owned } = await supabase
+        .from('gap_projects')
+        .select('id')
+        .eq('id', projectId)
+        .eq('user_id', userId)
+        .maybeSingle();
+
+      project = owned ? String((owned as Row).id) : null;
+    }
 
     // Which of these we already hold, fresh. Asked before the guard, because
     // it is what the guard costs the run on.
@@ -267,6 +584,7 @@ export const gapService = {
       */
       await supabase.from('gap_runs').insert({
         user_id: userId,
+        project_id: project,
         target_domain: target,
         competitor_domains: competitors,
         status: 'refused',
@@ -278,7 +596,12 @@ export const gapService = {
 
     const { data: created, error: createError } = await supabase
       .from('gap_runs')
-      .insert({ user_id: userId, target_domain: target, competitor_domains: competitors })
+      .insert({
+        user_id: userId,
+        project_id: project,
+        target_domain: target,
+        competitor_domains: competitors,
+      })
       .select('id')
       .maybeSingle();
 
@@ -365,6 +688,21 @@ export const gapService = {
           finished_at: new Date().toISOString(),
         })
         .eq('id', runId);
+
+      /*
+        Stamped only on a completed run.
+
+        `last_run_at` is read as "when this client was last looked at", and a
+        run that failed looked at nothing. A failure that moved the date would
+        quietly tell somebody working through twenty clients that this one is
+        done.
+      */
+      if (project) {
+        await supabase
+          .from('gap_projects')
+          .update({ last_run_at: new Date().toISOString() })
+          .eq('id', project);
+      }
 
       return { ok: true, runId };
     } catch (error) {

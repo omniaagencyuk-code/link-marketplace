@@ -369,3 +369,87 @@ export async function referringDomains(
     truncated: rows.length >= limit,
   };
 }
+
+/**
+ * Who else ranks for what this site ranks for.
+ *
+ * Ahrefs' organic competitors, used to fill in the competitor boxes on a gap
+ * report rather than leaving the customer to guess. Measured against the free
+ * `ahrefs.com` target with exactly the select below:
+ *
+ *   rows 8, units-cost-row 3, units-cost-total 50
+ *
+ * Eight rows at three columns is twenty-four, floored at fifty - so this costs
+ * the per-request floor and nothing more, against the 2,500 one referring
+ * domain pull costs. Suggesting is therefore effectively free, and that is the
+ * argument for doing it here rather than asking a model: a model cannot know
+ * who ranks for what and would name plausible companies instead. An invented
+ * competitor is not merely a wrong answer - it is a real 2,500-unit pull
+ * against a site nobody competes with.
+ *
+ * Three columns, all unsurcharged. `traffic` and the keyword-difficulty
+ * columns are ten units a row each; `keywords_common` and `domain_rating` are
+ * not, and between them they say both how close a rival is and whether the
+ * suggestion is worth taking.
+ *
+ * `country` and `date` are required by the endpoint, and the country is a real
+ * choice rather than a formality: a UK affiliate and a US one ranking for the
+ * same terms have different rivals.
+ *
+ * The path is `site-explorer/organic-competitors`, read out of Ahrefs' own MCP
+ * client rather than inferred from the tool name, for the reason written
+ * against `referringDomains` above.
+ */
+export interface CompetitorRow {
+  domain: string;
+  /** Keywords this site and the target both rank for. The closeness measure. */
+  keywordsCommon: number;
+  domainRating: number;
+}
+
+export interface CompetitorSuggestionResult {
+  competitors: CompetitorRow[];
+  /** What Ahrefs charged, read back from the response. Null means unknown. */
+  unitsCost: number | null;
+}
+
+export async function organicCompetitors(
+  target: string,
+  country: string,
+  limit: number,
+): Promise<CompetitorSuggestionResult> {
+  const params = new URLSearchParams({
+    target,
+    select: 'competitor_domain,keywords_common,domain_rating',
+    mode: 'subdomains',
+    country: country.toLowerCase(),
+    // Today. The endpoint reports on a date rather than "latest", and asking
+    // for a date Ahrefs has no snapshot for returns the nearest it has.
+    date: new Date().toISOString().slice(0, 10),
+    order_by: 'keywords_common:desc',
+    limit: String(Math.max(1, Math.floor(limit))),
+    output: 'json',
+  });
+
+  const response = await ahrefsFetch(`/site-explorer/organic-competitors?${params.toString()}`, {
+    method: 'GET',
+  });
+
+  const payload = (await response.json()) as {
+    competitors?: {
+      competitor_domain?: string | null;
+      keywords_common?: number | null;
+      domain_rating?: number | null;
+    }[];
+  };
+
+  const competitors: CompetitorRow[] = (payload.competitors ?? [])
+    .filter((row) => typeof row.competitor_domain === 'string' && row.competitor_domain.trim())
+    .map((row) => ({
+      domain: String(row.competitor_domain).trim().toLowerCase(),
+      keywordsCommon: Math.round(row.keywords_common ?? 0),
+      domainRating: Math.round(row.domain_rating ?? 0),
+    }));
+
+  return { competitors, unitsCost: readUnitsCost(response, payload) };
+}

@@ -10,11 +10,19 @@ import {
   UNIT_FLOOR_PER_REQUEST,
   costOfPull,
   costOfRun,
+  costOfSuggestion,
   describeForAdmin,
   isFresh,
   mayRunGap,
+  maySuggestCompetitors,
 } from '../src/lib/gap/cost';
 import { checkTargets, findGap } from '../src/lib/gap/analysis';
+import {
+  SUGGESTION_COLUMNS,
+  SUGGESTION_ROWS,
+  isPlatform,
+  rankSuggestions,
+} from '../src/lib/gap/competitors';
 
 let failed = 0;
 const ok = (label: string) => console.log(`  PASS  ${label}`);
@@ -258,6 +266,184 @@ ok('junk in a competitor box is refused rather than pulled');
 
 isTrue('and junk as the target is too', !checkTargets('not a domain', ['rival.com'], 3).ok);
 isTrue('a real domain still passes', checkTargets('mine.co.uk', ['rival.com'], 3).ok);
+
+// ---------------------------------------------------------------------------
+console.log('\n--- suggesting competitors, and what that costs ---');
+
+/*
+  Measured against the live API with exactly the select `organicCompetitors`
+  sends, on the free `ahrefs.com` target:
+
+    rows 8, units-cost-row 3, units-cost-total 50
+
+  Twelve rows at three columns is thirty-six, under the fifty-unit floor. So a
+  suggestion is the floor and nothing more - fiftieth of what one
+  referring-domain pull costs, which is the whole argument for suggesting
+  rather than guessing.
+*/
+is('three columns, all unsurcharged', SUGGESTION_COLUMNS, 3);
+is('a suggestion costs the floor', costOfSuggestion(SUGGESTION_ROWS, SUGGESTION_COLUMNS), 50);
+isTrue(
+  'which is a rounding error against one pull',
+  costOfSuggestion(SUGGESTION_ROWS, SUGGESTION_COLUMNS) * 50 <= costOfPull(2500),
+);
+
+/*
+  The arithmetic, not the constant fifty.
+
+  Written that way so adding a surcharged column, or asking for hundreds of
+  rows, changes the number here rather than silently invalidating the comment
+  above. These two cases are what would catch that.
+*/
+is('hundreds of rows would cost more than the floor', costOfSuggestion(500, 3), 1500);
+is('and so would a surcharged column', costOfSuggestion(12, 10), 120);
+
+const suggestSettings = {
+  enabled: true,
+  monthlyUnitBudget: 500_000,
+  unitSafetyPct: 90,
+  runsPerAccount: 5,
+};
+
+const suggestBase = {
+  settings: suggestSettings,
+  configured: true,
+  unitsUsedThisCycle: 0,
+  runsThisCycle: 0,
+  rows: SUGGESTION_ROWS,
+  columns: SUGGESTION_COLUMNS,
+};
+
+isTrue('a funded suggestion is allowed', maySuggestCompetitors(suggestBase).allowed);
+isTrue(
+  'switched off refuses a suggestion too',
+  !maySuggestCompetitors({ ...suggestBase, settings: { ...suggestSettings, enabled: false } }).allowed,
+);
+isTrue('unconfigured refuses it', !maySuggestCompetitors({ ...suggestBase, configured: false }).allowed);
+
+/*
+  A suggestion is fifty units, a report is 10,000, and the two guards are
+  separate so neither distorts the other.
+
+  At 445,000 used the ceiling is 450,000, so there is room for a suggestion and
+  not for a report. Tying them together would refuse the fifty-unit lookup
+  because the expensive thing would not fit.
+*/
+isTrue(
+  'a suggestion fits where a report does not',
+  maySuggestCompetitors({ ...suggestBase, unitsUsedThisCycle: 445_000 }).allowed &&
+    !mayRunGap({ ...base, unitsUsedThisCycle: 445_000 }).allowed,
+);
+
+/*
+  The one thing it borrows from the report guard.
+
+  An account with no reports left cannot run anything, so there is nothing for a
+  suggestion to be for - and without this the button would be the cheapest way
+  for one customer to spend our units. Not an allowance: a suggestion never
+  costs anybody a report.
+*/
+const noReportsLeft = maySuggestCompetitors({ ...suggestBase, runsThisCycle: 5 });
+isTrue('an account out of reports cannot suggest either', !noReportsLeft.allowed);
+has(
+  'and is told to add them by hand',
+  noReportsLeft.allowed ? '' : noReportsLeft.reason,
+  'by hand',
+);
+
+// The same discretion as the report refusal: no allowance, no spend, no Ahrefs.
+const suggestBudgetGone = maySuggestCompetitors({ ...suggestBase, unitsUsedThisCycle: 460_000 });
+const suggestReason = suggestBudgetGone.allowed ? '' : suggestBudgetGone.reason;
+isTrue('a spent budget refuses a suggestion', !suggestBudgetGone.allowed);
+hasNot('without quoting our allowance', suggestReason, '450,000');
+hasNot('nor mentioning units', suggestReason.toLowerCase(), 'unit');
+hasNot('nor naming Ahrefs', suggestReason.toLowerCase(), 'ahrefs');
+
+console.log('\n--- which suggestions are worth offering ---');
+
+/*
+  The endpoint ranks by shared keywords, and the sites sharing the most keywords
+  with anything are the platforms that rank for everything. Measured against
+  `ahrefs.com`, `google.com` came back fifth with 816 shared keywords. Offering
+  it would be 2,500 units to learn that Google's referring domains are other
+  giants - none of which we sell and none of which anybody can pitch.
+*/
+for (const platform of [
+  'google.com',
+  'google.co.uk',
+  'news.google.com',
+  'youtube.com',
+  'en.wikipedia.org',
+  'amazon.co.uk',
+  'reddit.com',
+  'x.com',
+]) {
+  if (!isPlatform(platform)) bad(`a platform is never suggested: ${platform}`);
+}
+ok('platforms are never suggested, under any subdomain or market');
+
+// And the filter is narrow: a name that merely contains a platform's is not one.
+for (const real of ['googleads-agency.com', 'amazonaws-tips.co.uk', 'mysite.com', 'seo-reddit.com']) {
+  if (isPlatform(real)) bad(`a real site is not a platform: ${real}`);
+}
+ok('a site that merely sounds like one is left alone');
+
+const ranked = rankSuggestions(
+  [
+    { domain: 'google.com', keywordsCommon: 9999, domainRating: 100 },
+    { domain: 'close-rival.com', keywordsCommon: 1400, domainRating: 55 },
+    { domain: 'https://www.Strongest.com/page', keywordsCommon: 2400, domainRating: 61 },
+    { domain: 'mine.com', keywordsCommon: 5000, domainRating: 40 },
+    { domain: 'shop.mine.com', keywordsCommon: 4000, domainRating: 38 },
+    { domain: 'close-rival.com', keywordsCommon: 1400, domainRating: 55 },
+    { domain: 'not a domain', keywordsCommon: 900, domainRating: 10 },
+    { domain: 'distant.com', keywordsCommon: 120, domainRating: 90 },
+  ],
+  { target: 'mine.com', limit: 6 },
+);
+const suggested = ranked.map((row) => row.domain);
+
+isTrue('the platform is dropped however many keywords it shares', !suggested.includes('google.com'));
+isTrue("the customer's own domain is not its own rival", !suggested.includes('mine.com'));
+
+/*
+  Subdomains of the target, not only the target.
+
+  `mode=subdomains` means a site with a shop or a blog on a subdomain comes back
+  as its own competitor, and a pull for that is 2,500 units for a gap that is
+  empty by definition.
+*/
+isTrue('and nor is a subdomain of it', !suggested.includes('shop.mine.com'));
+
+isTrue('junk never reaches a 2,500-unit pull', !suggested.some((entry) => entry.includes(' ')));
+is('the same rival twice is one suggestion', suggested.filter((e) => e === 'close-rival.com').length, 1);
+is('spellings are normalised', suggested.includes('strongest.com'), true);
+
+/*
+  Ordered by shared keywords, not by domain rating.
+
+  A site competing for the same searches has the links that would help. A
+  stronger site with nothing in common does not, and ranking by domain rating
+  would put it first - which is how a gap report ends up being about somebody
+  else's market.
+*/
+is('the closest rival comes first', suggested[0], 'strongest.com');
+is('and the strong stranger comes last', suggested[suggested.length - 1], 'distant.com');
+
+is('the limit is respected', rankSuggestions(ranked, { target: 'mine.com', limit: 2 }).length, 2);
+is('nothing in, nothing out', rankSuggestions([], { target: 'mine.com', limit: 6 }).length, 0);
+
+/*
+  Re-ranking a cached row has to be stable, because that is what the service
+  does on the way out: the platform list and the ordering are code, and a row
+  cached a fortnight ago under an older filter would otherwise keep suggesting
+  whatever that filter let through.
+*/
+is(
+  're-ranking what was already ranked changes nothing',
+  rankSuggestions(ranked, { target: 'mine.com', limit: 6 }).map((row) => row.domain).join(','),
+  suggested.join(','),
+);
 
 console.log(failed === 0 ? '\nAll gap checks passed.\n' : `\n${failed} gap check(s) failed.\n`);
 process.exit(failed === 0 ? 0 : 1);

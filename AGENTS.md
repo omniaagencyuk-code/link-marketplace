@@ -95,6 +95,44 @@ The rules in them most often got wrong:
   row per call carrying what Hunter charged; model cost from reported tokens.
   The Hunter budget ships at zero and zero refuses everything.
 
+## Link gap finder
+
+A customer names their site and up to three competitors; we buy each one's
+referring domains from Ahrefs and show them the sites linking to a competitor
+and not to them, with ours marked. The customer picks the targets, so the
+customer sets the bill - and that is what the whole design is arranged around.
+
+- **Its budget is its own.** `gap_settings` has a separate allowance from
+  `refresh_settings`, counted from a separate ledger (`gap_lookups`, not
+  `refresh_runs`). Neither can borrow from the other, which is why a busy week
+  of gap reports cannot stop the marketplace's metrics updating, and a heavy
+  refresh cannot stop a customer running a report. Do not make one read the
+  other's figure.
+- **A row cap, always.** An uncapped pull costs the target's whole backlink
+  profile - 150,000 units from one form submission is three ordinary
+  competitors. The cap is what the guard budgets against, because nobody knows
+  a competitor's real size before paying to find out.
+- **A competitor is measured, never invented.** Suggestions come from Ahrefs'
+  organic competitors at fifty units a list, not from a model. A model cannot
+  know who ranks for what and will name plausible companies instead, and each
+  invented name becomes a real 2,500-unit pull against a site nobody competes
+  with. `src/lib/gap/competitors.ts` also drops the platforms that rank for
+  everything - a gap against YouTube is a list of sites we cannot sell.
+- **Suggesting proposes, a person decides.** The lookup fills the boxes and
+  stops; nothing expensive runs until somebody presses the button. The same
+  arrangement as `draft-approval.ts`.
+- **What a customer is told when the budget is the reason is not our budget.**
+  `mayRunGap` and `maySuggestCompetitors` refuse with "try again later" and
+  never quote our allowance, our spend, or Ahrefs. `describeForAdmin` is where
+  the numbers go.
+
+`refdomain_snapshots`, `competitor_suggestions`, `gap_lookups` and
+`gap_settings` are internal on the terms above: they hold what we paid.
+`gap_projects`, `gap_runs` and `gap_results` are the customer's own and are the
+only tables here with a customer-facing policy - scoped to `user_id` on
+`using` *and* `with check`, because without the second half a customer can hand
+their project to somebody else.
+
 ## Verification
 
 - `npm run verify:rls` — replays every migration into a local Postgres and
@@ -107,3 +145,7 @@ The rules in them most often got wrong:
   reach. No API key, no database, no network - and no Hunter credit, which is
   structural rather than careful: the guard refuses in dry run before it checks
   for a key.
+- `npm run verify:gap` — what a gap report costs, whether it may run, what
+  counts as a gap, and which competitors are worth suggesting. Pure arithmetic
+  against the measured Ahrefs pricing model; no API key, no database, no
+  network.

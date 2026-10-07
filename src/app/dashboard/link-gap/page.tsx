@@ -20,6 +20,14 @@ import { brand } from '@/lib/config/brand';
  * The page says how many reports are left before it is asked for, because
  * running out at the point of submitting is the version that wastes somebody's
  * afternoon.
+ *
+ * A site can be saved and re-run, which is what an agency running twenty
+ * clients needs and is also the cheapest thing anybody can do here: the same
+ * competitors stay in the referring-domain cache, so a second run for a saved
+ * site costs close to nothing. Competitors can be suggested rather than typed,
+ * from Ahrefs rather than from a model - the suggestion fills the boxes and
+ * stops there, because the person is the one who knows whether a rival is
+ * really a rival.
  */
 
 export const metadata: Metadata = {
@@ -32,10 +40,11 @@ export const dynamic = 'force-dynamic';
 export default async function LinkGapPage() {
   const user = await requireCustomerSession('/dashboard/link-gap');
 
-  const [settings, spend, recent] = await Promise.all([
+  const [settings, spend, recent, projects] = await Promise.all([
     gapService.settings().catch(() => null),
     gapService.spend(user.id).catch(() => ({ unitsUsed: 0, runsThisCycle: 0 })),
     gapService.recentRuns(user.id).catch(() => []),
+    gapService.projects(user.id).catch(() => []),
   ]);
 
   const allowance = settings?.runsPerAccount ?? 0;
@@ -63,6 +72,7 @@ export default async function LinkGapPage() {
                 maxCompetitors={settings?.maxCompetitors ?? 3}
                 reportsLeft={left}
                 allowance={allowance}
+                projects={projects}
               />
             </CardContent>
           </Card>
@@ -70,7 +80,8 @@ export default async function LinkGapPage() {
           <p className="mb-6 max-w-2xl text-[13px] leading-relaxed text-muted">
             A report looks at the strongest {(settings?.rowsPerTarget ?? 2500).toLocaleString('en-GB')}{' '}
             referring domains for each site, which is where the gaps worth closing are. It takes
-            under a minute.
+            under a minute. Save a site and re-running it later is faster, because we keep what we
+            already looked up.
           </p>
         </>
       )}
