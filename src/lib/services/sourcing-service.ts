@@ -1406,11 +1406,28 @@ async function contestedDrafts(): Promise<Map<string, Offer[]>> {
     is the tell: a reduce that throws most of its input away is a query that
     was asked the wrong question.
   */
-  const { data, error } = await supabase.rpc('sourcing_contested_drafts');
-  if (error) throw new Error(`Could not read the contested drafts: ${error.message}`);
+  /*
+    Paged, because an RPC is capped like any other read.
+
+    PostgREST applies its thousand-row cap to a set-returning function exactly
+    as it does to a table select, and says nothing when it does. The first
+    version of this called `.rpc()` bare and would have been handed the first
+    thousand of roughly sixteen hundred contested rows - and because the
+    caller no longer re-checks `offers.length > 1`, a domain whose two drafts
+    straddled that boundary would have been shown as a duplicate with one
+    offer. Truncation here does not lose duplicates visibly; it invents
+    half-duplicates.
+
+    `sourcing_contested_drafts` orders by `(domain, id)`, which is total, so
+    the walk is stable - the property the top of `paged.ts` says every caller
+    has to supply.
+  */
+  const data = await readAllPages<Record<string, unknown>>('the contested drafts', (from, to) =>
+    supabase.rpc('sourcing_contested_drafts').range(from, to),
+  );
 
   const byDomain = new Map<string, Offer[]>();
-  for (const row of (data ?? []) as Record<string, unknown>[]) {
+  for (const row of data) {
     const proposed = (row.proposed ?? {}) as Record<string, unknown>;
     const domain = String(row.domain);
     const offers = byDomain.get(domain) ?? [];
@@ -1430,8 +1447,10 @@ async function contestedDrafts(): Promise<Map<string, Offer[]>> {
     No second filter on `offers.length > 1`.
 
     The function only returns drafts on a contested domain, so every group here
-    has at least two by construction. Re-checking it in the caller would be a
-    second definition of "contested" that could drift from the first.
+    has at least two by construction - provided the read was complete, which is
+    what the paging above is for. Re-checking it here would be a second
+    definition of "contested" that could drift from the first, and it would
+    paper over a truncated read rather than letting one show.
   */
   return byDomain;
 }

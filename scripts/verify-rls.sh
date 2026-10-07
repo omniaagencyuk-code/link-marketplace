@@ -146,3 +146,6 @@ run -f "$ROOT/supabase/tests/18_gap_projects.sql" 2>&1 | grep -v '^$'
 echo
 echo "--- the publisher inbox's counts, done in SQL ---"
 run -f "$ROOT/supabase/tests/19_publisher_inbox_counts.sql" 2>&1 | grep -v '^$'
+echo
+echo "--- what an approve-all may touch ---"
+run -f "$ROOT/supabase/tests/20_approve_all_drafts.sql" 2>&1 | grep -v '^$'

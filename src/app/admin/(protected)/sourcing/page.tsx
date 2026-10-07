@@ -7,6 +7,8 @@ import { Button } from '@/components/ui/button';
 import { SourcingControls } from '@/components/admin/sourcing/sourcing-controls';
 import { DraftsTable } from '@/components/admin/sourcing/drafts-table';
 import { sourcingService } from '@/lib/services/sourcing-service';
+import { eligibleCount, latestApprovalRun } from '@/lib/services/draft-approval-run';
+import { ApproveAll } from '@/components/admin/sourcing/approve-all';
 import { getAdminScopedClient } from '@/lib/supabase/server';
 import { isSupabaseEnabled } from '@/lib/supabase/config';
 
@@ -45,7 +47,19 @@ async function load() {
 
   const supabase = getAdminScopedClient();
 
-  const [settings, pending, spent, noDrafts, duplicates, drafts, emails, problems, batches] = await Promise.all([
+  const [
+    settings,
+    pending,
+    spent,
+    noDrafts,
+    duplicates,
+    drafts,
+    eligible,
+    approvalRun,
+    emails,
+    problems,
+    batches,
+  ] = await Promise.all([
     sourcingService.getSettings(),
     sourcingService.pendingCount().catch(() => 0),
     sourcingService.spentThisMonthUsd().catch(() => 0),
@@ -55,6 +69,10 @@ async function load() {
     // the contested rows afterwards is what made this queue appear to refill
     // forever.
     sourcingService.pendingDrafts(200).catch(() => ({ rows: [], total: 0 })),
+    // Both cheap: a count and a one-row read. They are here rather than in
+    // the component so the button knows its own number before it renders.
+    eligibleCount().catch(() => 0),
+    latestApprovalRun().catch(() => null),
     /*
       Counted in the database rather than here.
 
@@ -116,6 +134,8 @@ async function load() {
     counts,
     drafts: draftRows,
     draftsWaiting: drafts.total,
+    eligible,
+    approvalRun,
     problems: (problems.data ?? []) as Record<string, unknown>[],
     batches: (batches.data ?? []) as Record<string, unknown>[],
     /*
@@ -276,6 +296,7 @@ export default async function SourcingPage() {
           ) : null}
         </CardHeader>
         <CardContent className="space-y-3">
+          <ApproveAll eligible={state.eligible} run={state.approvalRun} />
           {state.duplicateDrafts > 0 ? (
             <p className="rounded-lg border border-line bg-surface-sunken px-3 py-2 text-[13px] text-ink-soft">
               {state.duplicateDrafts} more {state.duplicateDrafts === 1 ? 'draft is' : 'drafts are'}{' '}

@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache';
 import { requireAdminSession } from '@/lib/auth/admin-access';
 import { sourcingService } from '@/lib/services/sourcing-service';
 import { approveDraft, applyGeneralPriceToNiches } from '@/lib/services/draft-approval';
+import { cancelApprovalRun, startApprovalRun } from '@/lib/services/draft-approval-run';
 import { getAdminScopedClient } from '@/lib/supabase/server';
 import { extractedListingSchema, type ExtractedListing } from '@/lib/sourcing/schema';
 
@@ -804,4 +805,40 @@ export async function releaseStuckAction() {
   const result = await sourcingService.releaseStuckBatches();
   revalidatePath('/admin/sourcing');
   return result;
+}
+
+/**
+ * Approve everything the model was sure about, all of it, in the background.
+ *
+ * The same rules as `bulkApproveConfidentAction` - no low-confidence field, no
+ * reviewer flag, no second offer for the same domain - but driven by a run
+ * instead of by the browser. That action exists for a handful of drafts on
+ * screen; this one exists because a queue of eight thousand cannot be
+ * approved a hundred at a time by somebody holding a tab open.
+ *
+ * It starts the run and returns. `/api/cron/draft-approvals` carries it on a
+ * slice at a time, so closing the laptop does not stop it.
+ */
+export async function startApproveAllAction() {
+  const by = await reviewer();
+  const outcome = await startApprovalRun(by ?? 'an admin');
+
+  revalidatePath('/admin/sourcing');
+  return outcome;
+}
+
+export async function cancelApproveAllAction() {
+  await reviewer();
+  const stopped = await cancelApprovalRun();
+
+  revalidatePath('/admin/sourcing');
+  /*
+    Stopping leaves what has already been approved approved.
+
+    There is no undo here and there should not be: those drafts became
+    listings, and un-approving them would mean deciding which of the edits
+    since belong to the draft and which to a person. Stopping means "no more",
+    not "as you were".
+  */
+  return { ok: stopped };
 }
