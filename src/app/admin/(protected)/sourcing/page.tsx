@@ -55,10 +55,21 @@ async function load() {
     // the contested rows afterwards is what made this queue appear to refill
     // forever.
     sourcingService.pendingDrafts(200).catch(() => ({ rows: [], total: 0 })),
-    // batch_id too: an email in a running batch is still 'new', and counting
-    // it as waiting told the owner 50 were waiting while 25 were in flight -
-    // and put 50 on a button that would only ever send the unclaimed ones.
-    supabase.from('inbound_emails').select('status, batch_id'),
+    /*
+      Counted in the database rather than here.
+
+      This was `select('status, batch_id')` with no limit, reduced in
+      JavaScript. PostgREST caps a set-returning read at a thousand rows
+      without saying so, so past a thousand emails the tiles described
+      whichever thousand came back rather than the inbox - slow and wrong at
+      the same time. `sourcing_email_counts` returns one row per state.
+
+      The 'new' with a batch split survives into the function: an email in a
+      running batch is still 'new', and counting it as waiting told the owner
+      50 were waiting while 25 were in flight - and put 50 on a button that
+      would only ever send the unclaimed ones.
+    */
+    supabase.rpc('sourcing_email_counts'),
     supabase
       .from('inbound_emails')
       .select('id, from_address, subject, status, status_reason, sent_at')
@@ -78,15 +89,12 @@ async function load() {
     // Configured is about the key, not the schema - keep both reasons visible.
   }
 
-  const emailRows = (emails.data ?? []) as { status: string; batch_id: string | null }[];
-  const counts = emailRows.reduce<Record<string, number>>((all, row) => {
-    // Unread but claimed is its own state, and the one worth showing: it is
-    // what somebody is waiting on, and it is not something to press the
-    // button about.
-    const key = row.status === 'new' && row.batch_id ? 'in-flight' : row.status;
-    all[key] = (all[key] ?? 0) + 1;
-    return all;
-  }, {});
+  const counts = Object.fromEntries(
+    ((emails.data ?? []) as { status: string; total: number }[]).map((row) => [
+      row.status,
+      Number(row.total),
+    ]),
+  );
 
   /*
     A domain two replies offer is not review work, it is a comparison, and it
@@ -110,6 +118,12 @@ async function load() {
     draftsWaiting: drafts.total,
     problems: (problems.data ?? []) as Record<string, unknown>[],
     batches: (batches.data ?? []) as Record<string, unknown>[],
+    /*
+      Now also the canary for 0057: if `sourcing_email_counts` is missing the
+      error names it, which is more use than tiles that quietly read zero.
+      The duplicates card is caught into an empty list a few lines up, so this
+      is the one place a missing migration announces itself.
+    */
     schemaError: emails.error?.message ?? null,
   };
 }

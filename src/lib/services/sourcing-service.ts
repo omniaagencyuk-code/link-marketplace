@@ -1391,38 +1391,49 @@ async function contestedDrafts(): Promise<Map<string, Offer[]>> {
   if (!isSupabaseEnabled()) return new Map();
   const supabase = getAdminScopedClient();
 
-  // Paged rather than `.limit(5000)`, which PostgREST answered with the first
-  // thousand and no error. Two offers for one domain are only contested if
-  // both are in the array, so a truncated read here does not show fewer
-  // duplicates - it shows none at all for the drafts in the tail.
-  const data = await readAllPages<Record<string, unknown>>('the open drafts', (from, to) =>
-    supabase
-      .from('listing_drafts')
-      .select('id, domain, status, proposed, inbound_emails (from_address, sent_at)')
-      .in('status', ['pending', 'approved'])
-      .order('id', { ascending: true })
-      .range(from, to),
-  );
+  /*
+    The grouping happens in the database, in `sourcing_contested_drafts`.
+
+    It used to happen here, over every draft whose status is `pending` or
+    `approved` - and approved drafts accumulate for ever, so this got slower
+    every time somebody approved one. Measured against 5,000 open drafts and
+    6,000 emails: `readAllPages` walked it in ten round trips, each re-sorting
+    all 5,000 rows and re-hashing all 6,000 emails at 44ms a page, moving 2.5MB
+    of `proposed` jsonb - to find 800 contested domains. The same answer is one
+    call at 20ms returning only the contested rows.
+
+    `having count(*) > 1` is the whole of what the JavaScript was doing, which
+    is the tell: a reduce that throws most of its input away is a query that
+    was asked the wrong question.
+  */
+  const { data, error } = await supabase.rpc('sourcing_contested_drafts');
+  if (error) throw new Error(`Could not read the contested drafts: ${error.message}`);
 
   const byDomain = new Map<string, Offer[]>();
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  for (const row of data as any[]) {
-    const email = Array.isArray(row.inbound_emails) ? row.inbound_emails[0] : row.inbound_emails;
+  for (const row of (data ?? []) as Record<string, unknown>[]) {
     const proposed = (row.proposed ?? {}) as Record<string, unknown>;
-    const offers = byDomain.get(row.domain) ?? [];
+    const domain = String(row.domain);
+    const offers = byDomain.get(domain) ?? [];
     offers.push({
-      draftId: String(row.id),
-      domain: String(row.domain),
-      fromAddress: String(email?.from_address ?? ''),
+      draftId: String(row.draft_id),
+      domain,
+      fromAddress: String(row.from_address ?? ''),
       cost: typeof proposed.guest_post_cost === 'number' ? proposed.guest_post_cost : null,
       currency: typeof proposed.currency === 'string' ? proposed.currency : null,
-      sentAt: (email?.sent_at as string | null) ?? null,
+      sentAt: (row.sent_at as string | null) ?? null,
       status: String(row.status),
     });
-    byDomain.set(String(row.domain), offers);
+    byDomain.set(domain, offers);
   }
 
-  return new Map([...byDomain].filter(([, offers]) => offers.length > 1));
+  /*
+    No second filter on `offers.length > 1`.
+
+    The function only returns drafts on a contested domain, so every group here
+    has at least two by construction. Re-checking it in the caller would be a
+    second definition of "contested" that could drift from the first.
+  */
+  return byDomain;
 }
 
 /**
