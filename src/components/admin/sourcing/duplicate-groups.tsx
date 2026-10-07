@@ -11,8 +11,10 @@ import {
   discardDraftsAction,
   leaveDomainAsIsAction,
   leaveDomainsAsIsAction,
+  repeatSweepPlanAction,
   resolveDuplicateAction,
   resolveDuplicatesAction,
+  tidyRepeatOffersAction,
 } from "@/app/admin/(protected)/sourcing/actions";
 import { chunk } from "@/lib/utils/chunk";
 import { formatDate, formatPrice } from "@/lib/utils/format";
@@ -152,6 +154,70 @@ export function DuplicateGroups({ groups }: { groups: DuplicateGroup[] }) {
     });
   }
 
+  /**
+   * Clear the repeats, after saying out loud what that means.
+   *
+   * Two steps rather than one because the counts cannot be read off this
+   * page: a card saying "4 offers" does not say whether that is four
+   * companies or one writing four times, and that is the whole difference
+   * between a decision and a repeat. So the plan is asked for first and the
+   * confirm quotes it - including the approvals, which are the part that
+   * changes what we are recorded as paying.
+   */
+  function tidyRepeats() {
+    setWorking("tidy");
+    startTransition(async () => {
+      try {
+        const planned = await repeatSweepPlanAction();
+        if (!planned.ok) {
+          setResult(planned.error);
+          return;
+        }
+
+        const { redundant, undercuts, domains } = planned.plan;
+        if (redundant === 0 && undercuts === 0) {
+          setResult(
+            "Nothing to tidy - every draft here is either a different seller or a price that cannot be compared.",
+          );
+          return;
+        }
+
+        const deleting = `${redundant} ${redundant === 1 ? "draft repeats" : "drafts repeat"} a price we already have from the same seller`;
+        const approving = undercuts
+          ? ` ${undercuts} ${undercuts === 1 ? "is" : "are"} the same seller asking less than we approved, and will be approved to replace what is on the listing.`
+          : "";
+
+        if (
+          !window.confirm(
+            `Across ${domains} ${domains === 1 ? "domain" : "domains"}: ${deleting}, and will be deleted.${approving} The emails stay, so any of these replies can be read again. Offers from two different sellers are not touched.`,
+          )
+        ) {
+          return;
+        }
+
+        const outcome = await tidyRepeatOffersAction();
+        if (!outcome.ok) {
+          setResult(outcome.error);
+          return;
+        }
+
+        const left = outcome.remaining
+          ? ` ${outcome.remaining} more cheaper offer${outcome.remaining === 1 ? "" : "s"} to approve - run it again.`
+          : "";
+        const bad = outcome.failures.length
+          ? ` ${outcome.failures.length} could not be done: ${outcome.failures.slice(0, 3).join("; ")}${outcome.failures.length > 3 ? " and more" : ""}.`
+          : "";
+
+        setResult(
+          `Deleted ${outcome.deleted} repeat${outcome.deleted === 1 ? "" : "s"} and approved ${outcome.approved} cheaper offer${outcome.approved === 1 ? "" : "s"}.${left}${bad}`,
+        );
+      } finally {
+        setWorking(null);
+        router.refresh();
+      }
+    });
+  }
+
   function approveSelected() {
     const ids = [...picked.values()];
     if (ids.length === 0) return;
@@ -286,6 +352,32 @@ export function DuplicateGroups({ groups }: { groups: DuplicateGroup[] }) {
           {result}
         </p>
       ) : null}
+
+      {/*
+        Before the selection bar, because most of this list is not a selection
+        problem. A domain showing four rows from one company at one price is
+        not four offers, and ticking it four times is not the fix - it has no
+        decision in it at all. This clears those outright, and what is left
+        below is the part that was ever worth reading.
+      */}
+      <div className="flex flex-wrap items-center gap-3 rounded-lg border border-line bg-surface-sunken px-3 py-2">
+        <p className="min-w-0 flex-1 text-[12px] leading-relaxed text-ink-soft">
+          Most of these are one seller quoting the same site more than once.
+          Those can go without being read - and where a seller we already
+          approved has since dropped their price, the cheaper reply replaces
+          what is on the listing. Two different sellers are always left for
+          you.
+        </p>
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={busy}
+          onClick={tidyRepeats}
+          title="Delete the drafts that repeat a price we already have from the same seller"
+        >
+          {working === "tidy" ? "Working…" : "Tidy one-seller repeats"}
+        </Button>
+      </div>
 
       {/* The bar is always here rather than appearing with the first tick, so
           the page does not jump under the cursor that just ticked something. */}

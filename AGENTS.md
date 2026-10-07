@@ -41,6 +41,22 @@ Nothing extracted reaches a listing without a human pressing Approve.
 `src/lib/services/draft-approval.ts` is the only path, and it never writes a
 sell price: what we charge is a separate decision from what we pay.
 
+There is one exception and it has to stay the only one. `repeat-offers.ts`
+approves a draft where a seller we have **already** approved for that site now
+wants strictly less: same company by the domain after the `@`, same site, both
+figures converted, and not under a tenth of the old price. It still goes
+through `approveDraft` - what is skipped is the press, not the checking. The
+case is safe because the answer is never no, and the floor is there because a
+seller who quoted 400 and now says 20 has been misread rather than discounted,
+and that number becomes what we think the placement costs.
+
+Everything else that file touches it deletes, never approves: a repeat from a
+seller whose price we already hold says nothing new, and the email stays. Two
+*different* sellers are never collapsed, however alike their prices - choosing
+between them is what the duplicates queue is for. The rule that protects that
+is in `sellerKey`: a free provider is not a company, so `joe@gmail.com` and
+`sara@gmail.com` are two sellers and only the identical address is a repeat.
+
 ## Internal data
 
 `websites` is readable by every signed-in customer and row level security

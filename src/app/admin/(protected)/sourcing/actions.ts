@@ -9,6 +9,7 @@ import {
   startApprovalRun,
   type ApprovalMode,
 } from '@/lib/services/draft-approval-run';
+import { planRepeatSweep, runRepeatSweep } from '@/lib/services/repeat-offers';
 import { getAdminScopedClient } from '@/lib/supabase/server';
 import { extractedListingSchema, type ExtractedListing } from '@/lib/sourcing/schema';
 
@@ -466,6 +467,54 @@ export async function leaveDomainAsIsAction(domain: string) {
   revalidatePath('/admin/sourcing');
   revalidatePath('/admin/sourcing/duplicates');
   return { ok: true as const, cleared };
+}
+
+/**
+ * What tidying the repeats would do, before it does any of it.
+ *
+ * The button that follows deletes drafts in the thousands. Nobody should press
+ * it without being shown the number, and the number is not one anybody can
+ * estimate from the page: the cards show four rows on a domain without saying
+ * whether those four are one company or four.
+ */
+export async function repeatSweepPlanAction() {
+  await requireAdminSession();
+  try {
+    return { ok: true as const, plan: await planRepeatSweep() };
+  } catch (error) {
+    return {
+      ok: false as const,
+      error: error instanceof Error ? error.message : 'Could not work out what is a repeat.',
+    };
+  }
+}
+
+/**
+ * Settle every one-seller repeat in the duplicates queue.
+ *
+ * Deletes the drafts that say nothing new and approves the ones where a
+ * seller we have already approved has since dropped their price. Everything
+ * that is a real choice between two sellers stays exactly where it is - see
+ * `repeat-offers.ts` for which is which and why the approval half is allowed
+ * to happen without a person.
+ */
+export async function tidyRepeatOffersAction() {
+  const by = await reviewer();
+
+  let outcome;
+  try {
+    outcome = await runRepeatSweep(by);
+  } catch (error) {
+    return {
+      ok: false as const,
+      error: error instanceof Error ? error.message : 'Could not tidy the repeats.',
+    };
+  }
+
+  revalidatePath('/admin/sourcing');
+  revalidatePath('/admin/sourcing/duplicates');
+  revalidatePath('/admin/websites');
+  return { ok: true as const, ...outcome };
 }
 
 export async function collectBatchesAction() {
