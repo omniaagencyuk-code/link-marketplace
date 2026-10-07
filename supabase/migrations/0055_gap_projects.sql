@@ -13,8 +13,10 @@
 -- **Suggested competitors** come from Ahrefs' organic competitors endpoint,
 -- which ranks other sites by how many keywords they share with the target.
 -- Measured at fifty units a call - the per-request floor, because only a
--- handful of rows are wanted - against the 2,500 a referring-domain pull
--- costs. So suggesting is effectively free, and it replaces the thing it
+-- handful of rows are wanted - against the 5,000 a referring-domain pull
+-- costs. (That second figure read 2,500 when this migration was written: the
+-- pull is charged for two columns a row, not one, because `order_by` is
+-- charged for as well. Measured afterwards; see `COLUMNS_CHARGED`.) So suggesting is effectively free, and it replaces the thing it
 -- would otherwise be tempting to do: ask a model to name competitors, which
 -- it cannot know and would invent. An invented competitor is not just a wrong
 -- answer, it is a real 2,500-unit pull against a site nobody competes with.

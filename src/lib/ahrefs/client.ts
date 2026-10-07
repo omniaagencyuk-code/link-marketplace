@@ -290,21 +290,31 @@ function parseTopCountries(raw: [string, number][] | null | undefined): AhrefsCo
  * Priced per row per column, measured against the live API rather than taken
  * from documentation:
  *
- *   units-cost-row   = the number of columns selected
+ *   units-cost-row   = the number of columns the request touches
  *   units-cost-total = max(50, rows x columns)
+ *
+ * **Touches, not selects.** A column named only in `order_by` is charged for
+ * as well. Measured on the free `ahrefs.com` target, same call otherwise:
+ * `select=domain` with no sort is one unit a row, sorting by `domain` is one,
+ * and sorting by `domain_rating` is two. This call does the last of those, so
+ * it costs two units a row - see `COLUMNS_CHARGED` in `gap/cost.ts`, which
+ * read 1 for the whole of 0054 and made every estimate half the real figure.
  *
  * So the three choices below are each a cost decision, not a style one.
  *
- * **One column.** `domain` and nothing else. Domain rating and traffic are a
- * unit a row each, and we already hold both for every site in our own
- * inventory - which is the only part of a gap we can sell. Adding either
- * would double or triple the bill to buy figures we have, for domains we
+ * **One column selected.** `domain` and nothing else. Domain rating and
+ * traffic are another unit a row each *on top* of the sort, and we already
+ * hold both for every site in our own inventory - which is the only part of a
+ * gap we can sell. Adding either would buy figures we have, for domains we
  * cannot offer.
  *
  * **A row cap, always.** The bill is otherwise the target's whole backlink
  * profile, and in a gap report the customer chooses the target. Sorted by
  * domain rating so a capped pull is the strongest N rather than an arbitrary
- * N.
+ * N - which is what the second unit a row buys, and it is worth it: the same
+ * measurement returned google.com, youtube.com and linkedin.com sorted,
+ * against aivancity.ai and blogpens.com unsorted. An arbitrary slice of a
+ * 50,000-link profile will not find gaps anybody can sell.
  *
  * **`history=live`.** The default is `all_time`, which includes links that
  * have since been lost: more rows, so more units, for a worse answer.
@@ -384,7 +394,7 @@ export async function referringDomains(
  * domain pull costs. Suggesting is therefore effectively free, and that is the
  * argument for doing it here rather than asking a model: a model cannot know
  * who ranks for what and would name plausible companies instead. An invented
- * competitor is not merely a wrong answer - it is a real 2,500-unit pull
+ * competitor is not merely a wrong answer - it is a real 5,000-unit pull
  * against a site nobody competes with.
  *
  * Three columns, all unsurcharged. `traffic` and the keyword-difficulty

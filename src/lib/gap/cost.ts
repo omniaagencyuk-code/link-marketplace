@@ -9,11 +9,16 @@
  *
  * Against the live API rather than assumed:
  *
- *   units-cost-row   = the number of columns selected
+ *   units-cost-row   = the number of columns the request touches
  *   units-cost-total = max(50, rows x columns)
  *
- * One column selected is therefore one unit per referring domain, with a
- * fifty-unit floor per request. Two consequences shape everything here.
+ * "Touches", not "selects": a column named only in `order_by` is charged for
+ * too, which is why a pull selecting `domain` alone and sorting by
+ * `domain_rating` costs two units a row rather than one. That distinction cost
+ * us a budget model that was half the real figure - see `COLUMNS_CHARGED`.
+ *
+ * There is a fifty-unit floor per request. Two consequences shape everything
+ * here.
  *
  * **The bill is set by the competitor, and the customer picks the
  * competitor.** Three competitors with fifty thousand referring domains each
@@ -30,18 +35,37 @@
 export const UNIT_FLOOR_PER_REQUEST = 50;
 
 /**
- * One column, so one unit a row.
+ * Two columns are charged for, though only one is asked for.
  *
- * `domain` is all a gap needs. Domain rating and traffic are another unit a
- * row each, and we already hold both for every site in our own inventory -
- * which is the only part of the gap we can sell. Buying metrics we have, for
- * domains we cannot offer, is the easiest way to triple this bill.
+ * `units-cost-row` is the number of columns the request *touches*, and
+ * `order_by` touches one whether or not it is in the select. Measured against
+ * the free `ahrefs.com` target, same call otherwise:
+ *
+ *   select=domain, no order_by               -> 1 unit a row
+ *   select=domain, order_by=domain:desc      -> 1 unit a row
+ *   select=domain, order_by=domain_rating    -> 2 units a row
+ *
+ * So the sort is not free, and it is the one we need. A pull is capped at
+ * `rows_per_target`, and without the sort the cap takes an arbitrary N of a
+ * site's referring domains rather than its strongest N - the same measurement
+ * returned google.com, youtube.com and linkedin.com sorted, against
+ * aivancity.ai and blogpens.com unsorted. An arbitrary slice of a 50,000-link
+ * profile is close to useless for finding gaps we can sell.
+ *
+ * This was wrong at 1 for the whole of 0054: the ledger recorded the real cost
+ * because Ahrefs reports it back, so nothing was overspent silently, but every
+ * estimate the guard made was half the true figure.
+ *
+ * `domain` is still the only column selected. Domain rating and traffic are
+ * another unit a row *each* on top of this, and we already hold both for every
+ * site in our own inventory - which is the only part of a gap we can sell.
  */
-export const COLUMNS_SELECTED = 1;
+export const COLUMNS_CHARGED = 2;
+
 
 /** What one target's pull costs at a given row cap, worst case. */
 export function costOfPull(rowCap: number): number {
-  return Math.max(UNIT_FLOOR_PER_REQUEST, Math.max(0, rowCap) * COLUMNS_SELECTED);
+  return Math.max(UNIT_FLOOR_PER_REQUEST, Math.max(0, rowCap) * COLUMNS_CHARGED);
 }
 
 /**

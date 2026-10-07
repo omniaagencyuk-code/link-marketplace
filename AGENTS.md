@@ -109,13 +109,22 @@ customer sets the bill - and that is what the whole design is arranged around.
   refresh cannot stop a customer running a report. Do not make one read the
   other's figure.
 - **A row cap, always.** An uncapped pull costs the target's whole backlink
-  profile - 150,000 units from one form submission is three ordinary
-  competitors. The cap is what the guard budgets against, because nobody knows
+  profile - three ordinary competitors is 300,000 units from one form
+  submission. The cap is what the guard budgets against, because nobody knows
   a competitor's real size before paying to find out.
+- **`units-cost-row` counts the columns a request *touches*, not the ones it
+  selects.** A column named only in `order_by` is charged for too. The
+  referring-domain pull selects `domain` and sorts by `domain_rating`, so it
+  costs two units a row, not one - a 2,500-row target is 5,000 units and a
+  four-target report is 20,000. `COLUMNS_CHARGED` in `src/lib/gap/cost.ts` read
+  1 for the whole of 0054; the ledger was right throughout because Ahrefs
+  reports the real cost back, but every estimate the guard made was half.
+  Before adding a column to any Ahrefs call, or a sort, measure the call
+  against the free `ahrefs.com` target and read `apiUsageCosts` back.
 - **A competitor is measured, never invented.** Suggestions come from Ahrefs'
   organic competitors at fifty units a list, not from a model. A model cannot
   know who ranks for what and will name plausible companies instead, and each
-  invented name becomes a real 2,500-unit pull against a site nobody competes
+  invented name becomes a real 5,000-unit pull against a site nobody competes
   with. `src/lib/gap/competitors.ts` also drops the platforms that rank for
   everything - a gap against YouTube is a list of sites we cannot sell.
 - **Suggesting proposes, a person decides.** The lookup fills the boxes and
