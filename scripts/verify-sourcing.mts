@@ -13,7 +13,15 @@ import { extractionResultSchema, fromWire, wireResultSchema, type ExtractedListi
 import { applyGeneralPriceToNiches, assumedNicheCosts, countLowConfidence, expandListings, fillGeneralFromNiches, flagsFor, sellableNiches, sensitiveRate } from '../src/lib/sourcing/review';
 import { sensitiveNicheSlugs } from '../src/lib/config/accepted-niches';
 import { extractLinks, looksLikeRateCardLead } from '../src/lib/sourcing/links';
-import { offersAgree, offersNote, rankOffers, senderSignal } from '../src/lib/sourcing/offers';
+import {
+  UNDERCUT_FLOOR,
+  offersAgree,
+  offersNote,
+  rankOffers,
+  resolveRepeats,
+  sellerKey,
+  senderSignal,
+} from '../src/lib/sourcing/offers';
 import {
   DIFFERENT_SELLER,
   defaultChoices,
@@ -1739,6 +1747,157 @@ const oldXls = decodeSheetBytes(
 );
 isTrue('an old .xls is refused', 'error' in oldXls);
 if ('error' in oldXls) has('and says to save as CSV', oldXls.error, 'save as CSV');
+
+
+/* ------------------------------------------------------------------ repeats
+
+  One seller quoting the same site more than once.
+
+  Both shapes below are real cards from the duplicates queue, and between them
+  they were most of it. Neither has a decision in it, and the only way to find
+  that out was to open every row.
+*/
+
+const repeatRates = new Map([['EUR', 1.1269], ['DKK', 0.1508], ['USD', 1]]);
+
+const offer = (
+  draftId: string,
+  fromAddress: string,
+  cost: number | null,
+  currency: string | null,
+  status = 'pending',
+  domain = 'site.test',
+) => ({ draftId, domain, fromAddress, cost, currency, sentAt: null, status });
+
+const verdictFor = (ranked: ReturnType<typeof rankOffers>, draftId: string) =>
+  resolveRepeats(ranked).find((v) => v.draftId === draftId)?.verdict ?? 'missing';
+
+const countOf = (ranked: ReturnType<typeof rankOffers>, verdict: string) =>
+  resolveRepeats(ranked).filter((v) => v.verdict === verdict).length;
+
+// sportmember.com: one approved from info@holdsport.dk, three more waiting
+// from frank@holdsport.dk at the same price, and one genuine rival.
+const sportmember = rankOffers(
+  [
+    offer('a', 'info@holdsport.dk', 400, 'EUR', 'approved', 'sportmember.com'),
+    offer('b', 'frank@holdsport.dk', 400, 'EUR', 'pending', 'sportmember.com'),
+    offer('c', 'frank@holdsport.dk', 400, 'EUR', 'pending', 'sportmember.com'),
+    offer('d', 'frank@holdsport.dk', 400, 'EUR', 'pending', 'sportmember.com'),
+    offer('e', 'pas@mgdk.dk', 3300, 'DKK', 'pending', 'sportmember.com'),
+  ],
+  repeatRates,
+);
+
+is('a colleague at the approved seller is a repeat, not an offer', countOf(sportmember, 'redundant'), 3);
+is('and the rival seller still goes to a person', verdictFor(sportmember, 'e'), 'decide');
+
+// cadenanoticias.com: four waiting, all the same address at the same price,
+// nothing approved yet. One survives for the ordinary queue to deal with.
+const cadena = rankOffers(
+  [
+    offer('p', 'yrodriguez@publiplanner.com', 74, 'EUR', 'pending', 'cadenanoticias.com'),
+    offer('q', 'yrodriguez@publiplanner.com', 74, 'EUR', 'pending', 'cadenanoticias.com'),
+    offer('r', 'yrodriguez@publiplanner.com', 74, 'EUR', 'pending', 'cadenanoticias.com'),
+    offer('s', 'yrodriguez@publiplanner.com', 74, 'EUR', 'pending', 'cadenanoticias.com'),
+  ],
+  repeatRates,
+);
+
+is('four copies of one offer leave three repeats', countOf(cadena, 'redundant'), 3);
+is('and exactly one survivor', countOf(cadena, 'decide'), 1);
+is('nothing is approved when we had nothing from them before', countOf(cadena, 'undercuts'), 0);
+
+/*
+  The half that keeps this safe.
+
+  Every assertion below is a draft that must NOT be deleted. Collapsing by the
+  domain after the `@` is only sound where that domain identifies a company,
+  and the failure mode when it does not is silent: a real competing quote
+  disappears and the card shows one price where there were two.
+*/
+const freeEmail = rankOffers(
+  [
+    offer('j', 'joe@gmail.com', 100, 'EUR'),
+    offer('k', 'sara@gmail.com', 90, 'EUR'),
+  ],
+  repeatRates,
+);
+is('two strangers sharing gmail are two offers', countOf(freeEmail, 'redundant'), 0);
+is('both of them go to a person', countOf(freeEmail, 'decide'), 2);
+is('but one address repeating itself at a free provider is still a repeat',
+  countOf(rankOffers([offer('j', 'joe@gmail.com', 100, 'EUR'), offer('k', 'joe@gmail.com', 100, 'EUR')], repeatRates), 'redundant'),
+  1);
+
+is('a draft with no sender groups with nothing',
+  countOf(rankOffers([offer('x', '', 100, 'EUR'), offer('y', '', 90, 'EUR')], repeatRates), 'redundant'),
+  0);
+
+is('a near-miss host is not the same company',
+  countOf(rankOffers([offer('x', 'a@holdsport.dk', 100, 'EUR'), offer('y', 'b@mail.holdsport.dk', 90, 'EUR')], repeatRates), 'redundant'),
+  0);
+
+is('a price that cannot be converted is never binned as a repeat',
+  verdictFor(rankOffers([offer('a', 'x@acme.test', 400, 'EUR', 'approved'), offer('b', 'y@acme.test', 300, null)], repeatRates), 'b'),
+  'decide');
+
+is('nor when the approved price is the unreadable one',
+  verdictFor(rankOffers([offer('a', 'x@acme.test', 400, null, 'approved'), offer('b', 'y@acme.test', 300, 'EUR')], repeatRates), 'b'),
+  'decide');
+
+/*
+  Cheaper from the same seller, which is the one case that writes to a listing
+  without anybody pressing a button.
+*/
+is('the same seller dropping their price is approved',
+  verdictFor(rankOffers([offer('a', 'x@acme.test', 400, 'EUR', 'approved'), offer('b', 'y@acme.test', 300, 'EUR')], repeatRates), 'b'),
+  'undercuts');
+is('a different seller undercutting them is not',
+  verdictFor(rankOffers([offer('a', 'x@acme.test', 400, 'EUR', 'approved'), offer('b', 'y@other.test', 300, 'EUR')], repeatRates), 'b'),
+  'decide');
+is('the same price is not cheaper',
+  verdictFor(rankOffers([offer('a', 'x@acme.test', 400, 'EUR', 'approved'), offer('b', 'y@acme.test', 400, 'EUR')], repeatRates), 'b'),
+  'redundant');
+is('and dearer is a repeat too',
+  verdictFor(rankOffers([offer('a', 'x@acme.test', 400, 'EUR', 'approved'), offer('b', 'y@acme.test', 500, 'EUR')], repeatRates), 'b'),
+  'redundant');
+
+/*
+  Cheaper across currencies, which is the whole reason the comparison is done
+  in our own money. 2,600 DKK is 392 USD against 400 EUR at 450 USD, so it is
+  a real undercut - and the raw numbers say the opposite, loudly.
+*/
+is('cheaper is decided on the converted figure, not the printed one',
+  verdictFor(rankOffers([offer('a', 'x@acme.test', 400, 'EUR', 'approved'), offer('b', 'y@acme.test', 2600, 'DKK')], repeatRates), 'b'),
+  'undercuts');
+
+/*
+  The floor. A seller who quoted 400 EUR and now says 20 has not discounted;
+  something has been misread, and the number is about to become what we think
+  the placement costs.
+*/
+is('an undercut below the floor goes to a person instead',
+  verdictFor(rankOffers([offer('a', 'x@acme.test', 400, 'EUR', 'approved'), offer('b', 'y@acme.test', 20, 'EUR')], repeatRates), 'b'),
+  'decide');
+is('a steep but believable one still goes through',
+  verdictFor(rankOffers([offer('a', 'x@acme.test', 400, 'EUR', 'approved'), offer('b', 'y@acme.test', 200, 'EUR')], repeatRates), 'b'),
+  'undercuts');
+isTrue('and the floor is a tenth', UNDERCUT_FLOOR === 0.1);
+
+/*
+  Two sellers at identical prices stay two offers.
+
+  The temptation is to collapse them - the money is the same, so what is there
+  to choose? The contact, the terms, and which of them still answers in six
+  months. That is the decision this queue exists for.
+*/
+is('identical prices from different companies are still a choice',
+  countOf(rankOffers([offer('a', 'x@one.test', 400, 'EUR'), offer('b', 'y@two.test', 400, 'EUR')], repeatRates), 'redundant'),
+  0);
+
+is('the seller key is the domain after the @', sellerKey({ draftId: 'a', fromAddress: 'Frank@HoldSport.dk ' }), 'domain:holdsport.dk');
+is('a free provider keys on the whole address', sellerKey({ draftId: 'a', fromAddress: 'joe@gmail.com' }), 'address:joe@gmail.com');
+is('and a missing one keys on the draft', sellerKey({ draftId: 'a', fromAddress: '' }), 'draft:a');
+
 
 console.log(failed ? `\n  ${failed} FAILED\n` : '\n  all passed\n');
 process.exit(failed ? 1 : 0);
