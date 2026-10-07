@@ -12,7 +12,7 @@ import { isValidDomain, normaliseDomain } from '@/lib/import/normalise';
  * A model cannot know who ranks for what. Asked for a site's competitors it
  * produces plausible companies in the right industry, which is a different
  * thing and reads the same. The cost of being wrong is not a bad answer on a
- * screen: each invented competitor becomes a real 2,500-unit referring-domain
+ * screen: each invented competitor becomes a real 5,000-unit referring-domain
  * pull against a site nobody competes with. Ahrefs' answer costs fifty units
  * for the whole list and is measured rather than imagined.
  *

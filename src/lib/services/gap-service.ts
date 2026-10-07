@@ -10,6 +10,7 @@ import {
   type Suggestion,
 } from '@/lib/gap/competitors';
 import {
+  costOfPull,
   isFresh,
   mayRunGap,
   maySuggestCompetitors,
@@ -286,7 +287,7 @@ export const gapService = {
    * Competitors for a domain, from Ahrefs and from the cache.
    *
    * The whole point of this call is that it is cheap: fifty units for a list,
-   * against 2,500 for one referring-domain pull. So the order matters less than
+   * against 5,000 for one referring-domain pull. So the order matters less than
    * it does for a report, but it is the same order for the same reason - the
    * cache is consulted before the guard, and the guard before anything is
    * spent.
@@ -468,10 +469,16 @@ export const gapService = {
         run_id: runId,
         target: domain,
         rows_returned: pulled.domains.length,
-        // Null means Ahrefs did not report a cost. Charged at the cap rather
-        // than at zero: an unknown cost that reads as free is a budget that
-        // never fills up.
-        units_charged: pulled.unitsCost ?? settings.rowsPerTarget,
+        /*
+          Null means Ahrefs did not report a cost. Charged at what the cap
+          would cost rather than at zero: an unknown cost that reads as free is
+          a budget that never fills up.
+
+          `costOfPull`, not the row cap itself. Rows are not units - the pull
+          is charged for two columns a row - so the row count under-recorded
+          by half, which is the same mistake `COLUMNS_CHARGED` documents.
+        */
+        units_charged: pulled.unitsCost ?? costOfPull(settings.rowsPerTarget),
         from_cache: false,
       });
 
@@ -491,7 +498,7 @@ export const gapService = {
         domains: pulled.domains,
         cached: false,
         truncated: pulled.truncated,
-        units: pulled.unitsCost ?? settings.rowsPerTarget,
+        units: pulled.unitsCost ?? costOfPull(settings.rowsPerTarget),
       };
     } catch (error) {
       await supabase.from('gap_lookups').insert({

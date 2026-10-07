@@ -6,7 +6,7 @@
  * things you would rather not discover were wrong from an Ahrefs invoice.
  */
 import {
-  COLUMNS_SELECTED,
+  COLUMNS_CHARGED,
   UNIT_FLOOR_PER_REQUEST,
   costOfPull,
   costOfRun,
@@ -43,19 +43,29 @@ console.log('\n--- what a pull costs ---');
 
 /*
   Measured against the live API, not assumed:
-    units-cost-row   = columns selected
+    units-cost-row   = the columns the request TOUCHES
     units-cost-total = max(50, rows x columns)
-  One column selected, so one unit per referring domain.
+
+  "Touches", not "selects". Three calls against the free ahrefs.com target,
+  identical but for the sort:
+
+    select=domain, no order_by            -> 1 unit a row
+    select=domain, order_by=domain:desc   -> 1 unit a row
+    select=domain, order_by=domain_rating -> 2 units a row
+
+  Our pull selects `domain` and sorts by `domain_rating`, so it is charged for
+  two. This read as 1 for the whole of 0054, which made every estimate the
+  guard produced half the real figure.
 */
-is('one column is selected', COLUMNS_SELECTED, 1);
-is('2,500 rows cost 2,500', costOfPull(2500), 2500);
-is('100 rows cost 100', costOfPull(100), 100);
+is('two columns are charged for', COLUMNS_CHARGED, 2);
+is('2,500 rows cost 5,000', costOfPull(2500), 5000);
+is('100 rows cost 200', costOfPull(100), 200);
 
 // The floor, which makes a tiny pull cost the same as a middling one.
 is('a 10-row pull still costs the floor', costOfPull(10), UNIT_FLOOR_PER_REQUEST);
 is('and so does a 1-row pull', costOfPull(1), UNIT_FLOOR_PER_REQUEST);
 
-is('four uncached targets at the cap', costOfRun(4, 2500), 10_000);
+is('four uncached targets at the cap', costOfRun(4, 2500), 20_000);
 is('nothing uncached costs nothing', costOfRun(0, 2500), 0);
 
 /*
@@ -89,7 +99,7 @@ const base = {
 
 const allowed = mayRunGap(base);
 isTrue('a funded first run is allowed', allowed.allowed);
-is('and it is costed', allowed.estimatedUnits, 10_000);
+is('and it is costed', allowed.estimatedUnits, 20_000);
 
 isTrue('switched off refuses', !mayRunGap({ ...base, settings: { ...settings, enabled: false } }).allowed);
 isTrue('unconfigured refuses', !mayRunGap({ ...base, configured: false }).allowed);
@@ -115,9 +125,9 @@ has(
   'reports this month',
 );
 
-// 90% of 500,000 is 450,000, so a 10,000-unit run is refused at 441,000 used.
-isTrue('a run that fits is allowed', mayRunGap({ ...base, unitsUsedThisCycle: 439_000 }).allowed);
-const overCeiling = mayRunGap({ ...base, unitsUsedThisCycle: 441_000 });
+// 90% of 500,000 is 450,000, so a 20,000-unit run is refused at 431,000 used.
+isTrue('a run that fits is allowed', mayRunGap({ ...base, unitsUsedThisCycle: 429_000 }).allowed);
+const overCeiling = mayRunGap({ ...base, unitsUsedThisCycle: 431_000 });
 isTrue('a run that does not fit is refused', !overCeiling.allowed);
 is('and the ceiling is the safety share, not the budget', overCeiling.ceiling, 450_000);
 isTrue('so it stops below the full budget', !mayRunGap({ ...base, unitsUsedThisCycle: 455_000 }).allowed);
@@ -415,7 +425,7 @@ isTrue("the customer's own domain is not its own rival", !suggested.includes('mi
 */
 isTrue('and nor is a subdomain of it', !suggested.includes('shop.mine.com'));
 
-isTrue('junk never reaches a 2,500-unit pull', !suggested.some((entry) => entry.includes(' ')));
+isTrue('junk never reaches a 5,000-unit pull', !suggested.some((entry) => entry.includes(' ')));
 is('the same rival twice is one suggestion', suggested.filter((e) => e === 'close-rival.com').length, 1);
 is('spellings are normalised', suggested.includes('strongest.com'), true);
 

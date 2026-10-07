@@ -7,6 +7,7 @@ import { gapService } from '@/lib/services/gap-service';
 import { getAdminScopedClient } from '@/lib/supabase/server';
 import { isSupabaseEnabled } from '@/lib/supabase/config';
 import { isAhrefsConfigured } from '@/lib/ahrefs/config';
+import { costOfPull } from '@/lib/gap/cost';
 import { formatDate } from '@/lib/utils/format';
 
 /**
@@ -120,8 +121,8 @@ export default async function AdminLinkGapPage() {
         />
         <Stat
           label="Cost per uncached pull"
-          value={(settings?.rowsPerTarget ?? 0).toLocaleString('en-GB')}
-          hint="Units, worst case — one per referring domain"
+          value={costOfPull(settings?.rowsPerTarget ?? 0).toLocaleString('en-GB')}
+          hint={`Units, worst case — two per referring domain, capped at ${(settings?.rowsPerTarget ?? 0).toLocaleString('en-GB')} rows`}
         />
         <Stat
           label="Competitor suggestions"
