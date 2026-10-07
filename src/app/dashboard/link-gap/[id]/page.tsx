@@ -6,8 +6,10 @@ import { PageTitle } from '@/components/dashboard/page-title';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableWrap, Td, Th, Tr } from '@/components/ui/table';
+import { GapResultsTable, type GapSellableRow } from '@/components/dashboard/gap-results-table';
 import { requireCustomerSession } from '@/lib/auth/customer-access';
 import { gapService } from '@/lib/services/gap-service';
+import { websiteService } from '@/lib/services/website-service';
 import { formatDate } from '@/lib/utils/format';
 import { brand } from '@/lib/config/brand';
 
@@ -39,6 +41,43 @@ export default async function GapReportPage({ params }: { params: Promise<{ id: 
 
   const sellable = report.results.filter((row) => row.websiteId);
   const rest = report.results.filter((row) => !row.websiteId);
+
+  /*
+    The listings behind the rows we can sell, in one query.
+
+    Bounded by the sellable count - tens, in every report so far - rather than
+    by the gap, which runs to thousands. The marketplace reads its whole
+    inventory to do the same job, so this is the cheaper end of a pattern the
+    site already pays for, and it is what lets the panel open without a
+    request: `WebsiteSnippet` fetches nothing.
+
+    Scoped to the signed-in customer rather than the service role. They can
+    read `websites` - the marketplace proves it - and a page that will render
+    prices and an order button should be reading as the person buying.
+  */
+  const listings = await websiteService
+    .getByIds(sellable.map((row) => row.websiteId as string))
+    .catch(() => []);
+
+  /*
+    Active only, re-checked here.
+
+    `getByIds` does not filter on status, and a report is a stored thing: a
+    publisher paused between the run and this read would otherwise render an
+    orderable panel for something nobody can order. The row stays, without a
+    panel, because the gap itself is still true.
+  */
+  const byId = new Map(
+    listings.filter((item) => item.status === 'active').map((item) => [item.id, item]),
+  );
+
+  const sellableRows: GapSellableRow[] = sellable.map((row) => ({
+    domain: row.domain,
+    linkingCompetitors: row.linkingCompetitors,
+    domainRating: row.domainRating,
+    organicTraffic: row.organicTraffic,
+    website: row.websiteId ? byId.get(row.websiteId) : undefined,
+  }));
 
   return (
     <>
@@ -94,41 +133,7 @@ export default async function GapReportPage({ params }: { params: Promise<{ id: 
           ) : (
             <Card className="mb-8">
               <CardContent className="p-0">
-                <TableWrap>
-                  <Table>
-                    <thead>
-                      <Tr>
-                        <Th>Site</Th>
-                        <Th className="text-right">DR</Th>
-                        <Th className="text-right">Traffic</Th>
-                        <Th>Links to</Th>
-                        <Th />
-                      </Tr>
-                    </thead>
-                    <tbody>
-                      {sellable.map((row) => (
-                        <Tr key={row.domain}>
-                          <Td className="font-medium text-ink">{row.domain}</Td>
-                          <Td className="tabular text-right">{row.domainRating ?? '—'}</Td>
-                          <Td className="tabular text-right">
-                            {row.organicTraffic ? row.organicTraffic.toLocaleString('en-GB') : '—'}
-                          </Td>
-                          <Td className="text-[12px] text-muted">
-                            {row.linkingCompetitors.join(', ')}
-                          </Td>
-                          <Td>
-                            <Link
-                              href={`/websites?q=${encodeURIComponent(row.domain)}`}
-                              className="text-[13px] font-medium text-accent-700 hover:underline"
-                            >
-                              View listing
-                            </Link>
-                          </Td>
-                        </Tr>
-                      ))}
-                    </tbody>
-                  </Table>
-                </TableWrap>
+                <GapResultsTable rows={sellableRows} />
               </CardContent>
             </Card>
           )}
