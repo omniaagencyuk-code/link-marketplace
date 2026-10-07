@@ -54,7 +54,8 @@ async function load() {
     noDrafts,
     duplicates,
     drafts,
-    eligible,
+    eligibleConfident,
+    eligiblePriced,
     approvalRun,
     emails,
     problems,
@@ -71,7 +72,8 @@ async function load() {
     sourcingService.pendingDrafts(200).catch(() => ({ rows: [], total: 0 })),
     // Both cheap: a count and a one-row read. They are here rather than in
     // the component so the button knows its own number before it renders.
-    eligibleCount().catch(() => 0),
+    eligibleCount('confident').catch(() => 0),
+    eligibleCount('priced').catch(() => 0),
     latestApprovalRun().catch(() => null),
     /*
       Counted in the database rather than here.
@@ -134,7 +136,8 @@ async function load() {
     counts,
     drafts: draftRows,
     draftsWaiting: drafts.total,
-    eligible,
+    eligibleConfident,
+    eligiblePriced,
     approvalRun,
     problems: (problems.data ?? []) as Record<string, unknown>[],
     batches: (batches.data ?? []) as Record<string, unknown>[],
@@ -296,7 +299,11 @@ export default async function SourcingPage() {
           ) : null}
         </CardHeader>
         <CardContent className="space-y-3">
-          <ApproveAll eligible={state.eligible} run={state.approvalRun} />
+          <ApproveAll
+            eligibleConfident={state.eligibleConfident}
+            eligiblePriced={state.eligiblePriced}
+            run={state.approvalRun}
+          />
           {state.duplicateDrafts > 0 ? (
             <p className="rounded-lg border border-line bg-surface-sunken px-3 py-2 text-[13px] text-ink-soft">
               {state.duplicateDrafts} more {state.duplicateDrafts === 1 ? 'draft is' : 'drafts are'}{' '}
