@@ -31,6 +31,14 @@ export interface NavItem {
   icon?: LucideIcon;
   description?: string;
   exact?: boolean;
+  /**
+   * A live count to show beside the label.
+   *
+   * Named rather than a number, because this file is a plain config imported
+   * by server components and the figure lives in a client-side provider. The
+   * sidebar resolves the name against its own hooks; nothing here reads state.
+   */
+  badge?: 'order-draft';
 }
 
 export interface NavGroup extends NavItem {
@@ -100,7 +108,12 @@ export const dashboardNav: NavItem[] = [
   { label: 'Dashboard', href: '/dashboard', icon: LayoutDashboard, exact: true },
   { label: 'Marketplace', href: '/marketplace', icon: Globe },
   { label: 'Content', href: '/dashboard/content', icon: PenLine },
-  { label: 'Orders', href: '/dashboard/orders', icon: Package },
+  /*
+    The basket and the order history are the same page: the draft sits at the
+    top of /dashboard/orders with submitted orders under it. So this is one
+    entry carrying a count rather than two pointing at the same place.
+  */
+  { label: 'Orders', href: '/dashboard/orders', icon: Package, badge: 'order-draft' },
   { label: 'Link gap finder', href: '/dashboard/link-gap', icon: Radar },
   { label: 'Saved Sites', href: '/dashboard/saved', icon: Bookmark },
   { label: 'Billing', href: '/dashboard/billing', icon: CreditCard },
