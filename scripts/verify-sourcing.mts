@@ -13,8 +13,10 @@ import { extractionResultSchema, fromWire, wireResultSchema, type ExtractedListi
 import { applyGeneralPriceToNiches, assumedNicheCosts, countLowConfidence, expandListings, fillGeneralFromNiches, flagsFor, sellableNiches, sensitiveRate } from '../src/lib/sourcing/review';
 import { sensitiveNicheSlugs } from '../src/lib/config/accepted-niches';
 import { extractLinks, looksLikeRateCardLead } from '../src/lib/sourcing/links';
+import { readBlockTarget } from '../src/lib/sourcing/blocklist';
 import {
   UNDERCUT_FLOOR,
+  isFreeProvider,
   offersAgree,
   offersNote,
   rankOffers,
@@ -1897,6 +1899,57 @@ is('identical prices from different companies are still a choice',
 is('the seller key is the domain after the @', sellerKey({ draftId: 'a', fromAddress: 'Frank@HoldSport.dk ' }), 'domain:holdsport.dk');
 is('a free provider keys on the whole address', sellerKey({ draftId: 'a', fromAddress: 'joe@gmail.com' }), 'address:joe@gmail.com');
 is('and a missing one keys on the draft', sellerKey({ draftId: 'a', fromAddress: '' }), 'draft:a');
+
+
+
+/* ---------------------------------------------------------- blocked senders
+
+  One field, because asking "address or domain?" asks the person to classify
+  what they have already typed. An `@` in the middle is an address; anything
+  else is a company.
+*/
+
+const target = (typed: string) => {
+  const read = readBlockTarget(typed);
+  return read.kind === 'email' ? read.email : read.kind === 'domain' ? read.domain : 'refused';
+};
+
+is('an address blocks that address', target('digital.seo.revolution@gmail.com'), 'digital.seo.revolution@gmail.com');
+is('case and spacing do not matter', target('  Frank@HoldSport.dk '), 'frank@holdsport.dk');
+is('a mailto: link is still an address', target('mailto:joe@acme.com'), 'joe@acme.com');
+is('a bare domain blocks the company', target('reseller.com'), 'reseller.com');
+is('and so does one written with the @', target('@reseller.com'), 'reseller.com');
+is('a pasted URL is read as its host', target('https://www.reseller.com/rates'), 'reseller.com');
+
+/*
+  The two refusals, both of which would be silent.
+
+  A block is applied by a trigger to every reply that arrives, so a wrong one
+  does not throw - it quietly stops the pipeline finding anything, and the only
+  symptom is an inbox that went still.
+*/
+is('a free provider cannot be blocked wholesale', target('gmail.com'), 'refused');
+is('nor one written with the @', target('@googlemail.com'), 'refused');
+isTrue(
+  'and the refusal says to block the address instead',
+  (readBlockTarget('gmail.com') as { why: string }).why.includes('individual address'),
+);
+is('but an address at a free provider is fine', target('anglepapi9762@gmail.com'), 'anglepapi9762@gmail.com');
+
+is('something with no dot is refused', target('reseller'), 'refused');
+is('an empty box is refused', target('   '), 'refused');
+is('an @ with no name is not an address', target('@'), 'refused');
+is('an address with no host is refused', target('joe@'), 'refused');
+
+/*
+  One list, not two. The blocklist refuses a free provider by asking
+  `offers.ts`, so a provider added there reaches this refusal without anybody
+  editing a second copy - the mistake already paid for once, when the priced
+  approval rule reassembled a price check `hasAnyPrice` already had right.
+*/
+isTrue('the free-provider list is the one in offers.ts', isFreeProvider('proton.me'));
+is('and a company domain is not on it', isFreeProvider('holdsport.dk'), false);
+is('a www. prefix does not hide a free provider', isFreeProvider('www.gmail.com'), true);
 
 
 console.log(failed ? `\n  ${failed} FAILED\n` : '\n  all passed\n');

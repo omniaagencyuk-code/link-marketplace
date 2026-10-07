@@ -149,3 +149,6 @@ run -f "$ROOT/supabase/tests/19_publisher_inbox_counts.sql" 2>&1 | grep -v '^$'
 echo
 echo "--- what an approve-all may touch ---"
 run -f "$ROOT/supabase/tests/20_approve_all_drafts.sql" 2>&1 | grep -v '^$'
+echo
+echo "--- senders we will not buy from ---"
+run -f "$ROOT/supabase/tests/21_blocked_senders.sql" 2>&1 | grep -v '^$'

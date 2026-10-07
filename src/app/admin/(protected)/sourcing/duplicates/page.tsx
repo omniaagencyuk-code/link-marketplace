@@ -2,7 +2,9 @@ import Link from 'next/link';
 import { PageTitle } from '@/components/dashboard/page-title';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
+import { BlockSender } from '@/components/admin/sourcing/block-sender';
 import { DuplicateGroups } from '@/components/admin/sourcing/duplicate-groups';
+import { blockedSenders } from '@/lib/services/repeat-offers';
 import { sourcingService } from '@/lib/services/sourcing-service';
 import { isSupabaseEnabled } from '@/lib/supabase/config';
 
@@ -26,7 +28,10 @@ export default async function DuplicatesPage() {
     return <PageTitle title="Offered more than once" description="The database is not connected." />;
   }
 
-  const groups = await sourcingService.duplicateGroups().catch(() => []);
+  const [groups, blocked] = await Promise.all([
+    sourcingService.duplicateGroups().catch(() => []),
+    blockedSenders().catch(() => []),
+  ]);
   const drafts = groups.reduce((total, group) => total + group.pending, 0);
 
   return (
@@ -40,6 +45,8 @@ export default async function DuplicatesPage() {
           </Button>
         }
       />
+
+      <BlockSender blocked={blocked} />
 
       {groups.length === 0 ? (
         <Card>
