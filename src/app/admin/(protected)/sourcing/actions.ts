@@ -9,7 +9,12 @@ import {
   startApprovalRun,
   type ApprovalMode,
 } from '@/lib/services/draft-approval-run';
-import { planRepeatSweep, runRepeatSweep } from '@/lib/services/repeat-offers';
+import {
+  blockSender,
+  planRepeatSweep,
+  runRepeatSweep,
+  unblockSender,
+} from '@/lib/services/repeat-offers';
 import { getAdminScopedClient } from '@/lib/supabase/server';
 import { extractedListingSchema, type ExtractedListing } from '@/lib/sourcing/schema';
 
@@ -515,6 +520,37 @@ export async function tidyRepeatOffersAction() {
   revalidatePath('/admin/sourcing/duplicates');
   revalidatePath('/admin/websites');
   return { ok: true as const, ...outcome };
+}
+
+/**
+ * Refuse a sender, and clear what they have already sent.
+ *
+ * One field: an `@` in it is an address, anything else is a company. The
+ * refusals live in `readBlockTarget` - a free provider as a whole domain, and
+ * anything that is not a domain at all - because both would be silent. A block
+ * is applied by a trigger to every reply that arrives, so a wrong one stops
+ * the pipeline finding anything and says nothing about why.
+ */
+export async function blockSenderAction(typed: string, note: string | null) {
+  const by = await reviewer();
+  const outcome = await blockSender(typed, note, by);
+
+  if (outcome.ok) {
+    revalidatePath('/admin/sourcing');
+    revalidatePath('/admin/sourcing/duplicates');
+  }
+  return outcome;
+}
+
+export async function unblockSenderAction(value: string) {
+  await requireAdminSession();
+  const outcome = await unblockSender(value);
+
+  if (outcome.ok) {
+    revalidatePath('/admin/sourcing');
+    revalidatePath('/admin/sourcing/duplicates');
+  }
+  return outcome;
 }
 
 export async function collectBatchesAction() {

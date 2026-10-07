@@ -39,6 +39,20 @@ function bare(host: string): string {
   return host.trim().toLowerCase().replace(/^www\./, '');
 }
 
+/**
+ * Is this host one of the free providers above?
+ *
+ * Exported so nothing has to keep a second copy of the list. The blocklist
+ * needs it to refuse `gmail.com` as a whole-domain block, and a provider added
+ * to `FREE_EMAIL` has to reach that refusal without anybody remembering to
+ * edit two places - the mistake this codebase has already paid for once, when
+ * the priced approval rule reassembled a price check `hasAnyPrice` already had
+ * right.
+ */
+export function isFreeProvider(host: string): boolean {
+  return FREE_EMAIL.has(bare(host));
+}
+
 /** The domain part of an address, or '' when there is not one. */
 export function senderDomain(address: string): string {
   const at = address.lastIndexOf('@');

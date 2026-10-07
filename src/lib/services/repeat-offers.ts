@@ -44,6 +44,7 @@ import { isSupabaseEnabled } from '@/lib/supabase/config';
 import { approveDraft } from '@/lib/services/draft-approval';
 import { fxService } from '@/lib/services/fx-service';
 import { sourcingService } from '@/lib/services/sourcing-service';
+import { readBlockTarget } from '@/lib/sourcing/blocklist';
 import { rankOffers, resolveRepeats, type RepeatVerdict } from '@/lib/sourcing/offers';
 import { extractedListingSchema } from '@/lib/sourcing/schema';
 
@@ -253,4 +254,101 @@ function summarise(verdicts: Map<string, RepeatVerdict[]>): RepeatPlan {
   }
 
   return { domains: touched.size, redundant, undercuts, decide };
+}
+
+/* ------------------------------------------------------------- blocked senders
+
+  A reseller quoting 150 USD for a site four other people sell at 35 is not a
+  draft with anything wrong on it. No flag catches them and no rule can: the
+  number only looks wrong beside the rival offers, and by the time those have
+  arrived somebody has read all four.
+
+  So they are blocked by name, and the block is applied by a trigger on
+  `inbound_emails` rather than here - see 0062. What is left for this file is
+  reading what the person typed, and reporting what the block did.
+*/
+
+export interface BlockedSender {
+  email: string | null;
+  domain: string | null;
+  note: string | null;
+  createdBy: string | null;
+  createdAt: string | null;
+}
+
+/** Who we refuse to buy from, newest first. */
+export async function blockedSenders(): Promise<BlockedSender[]> {
+  if (!isSupabaseEnabled()) return [];
+
+  const { data } = await getAdminScopedClient()
+    .from('sourcing_blocklist')
+    .select('email, domain, note, created_by, created_at')
+    .order('created_at', { ascending: false })
+    .limit(500);
+
+  return ((data ?? []) as Record<string, unknown>[]).map((row) => ({
+    email: (row.email as string | null) ?? null,
+    domain: (row.domain as string | null) ?? null,
+    note: (row.note as string | null) ?? null,
+    createdBy: (row.created_by as string | null) ?? null,
+    createdAt: (row.created_at as string | null) ?? null,
+  }));
+}
+
+export type BlockOutcome =
+  | { ok: true; what: string; draftsRemoved: number; emailsIgnored: number }
+  | { ok: false; error: string };
+
+/**
+ * Block a sender, and clear what they have already sent.
+ *
+ * The counting and the deleting both happen inside `sourcing_block_sender`,
+ * in one statement each against the same condition the trigger uses. Doing it
+ * here instead would mean this function and the trigger each deciding who is
+ * blocked, which is two answers to one question and exactly how the match
+ * drifts - a sender refused on the way in but whose waiting drafts nobody
+ * removed, or the reverse.
+ */
+export async function blockSender(
+  typed: string,
+  note: string | null,
+  by: string | undefined,
+): Promise<BlockOutcome> {
+  const target = readBlockTarget(typed);
+  if (target.kind === 'refused') return { ok: false, error: target.why };
+  if (!isSupabaseEnabled()) return { ok: false, error: 'The database is not connected.' };
+
+  const { data, error } = await getAdminScopedClient().rpc('sourcing_block_sender', {
+    p_email: target.kind === 'email' ? target.email : null,
+    p_domain: target.kind === 'domain' ? target.domain : null,
+    p_note: note,
+    p_by: by ?? null,
+  });
+
+  if (error) return { ok: false, error: error.message };
+
+  const row = (Array.isArray(data) ? data[0] : data) as
+    | { drafts_removed?: number; emails_ignored?: number }
+    | null;
+
+  return {
+    ok: true,
+    what: target.kind === 'email' ? target.email : `everyone at ${target.domain}`,
+    draftsRemoved: row?.drafts_removed ?? 0,
+    emailsIgnored: row?.emails_ignored ?? 0,
+  };
+}
+
+/** Lift a block and put the replies it silenced back in the queue. */
+export async function unblockSender(
+  value: string,
+): Promise<{ ok: true; restored: number } | { ok: false; error: string }> {
+  if (!isSupabaseEnabled()) return { ok: false, error: 'The database is not connected.' };
+
+  const { data, error } = await getAdminScopedClient().rpc('sourcing_unblock_sender', {
+    p_value: value,
+  });
+
+  if (error) return { ok: false, error: error.message };
+  return { ok: true, restored: typeof data === 'number' ? data : 0 };
 }
