@@ -122,7 +122,29 @@ export function flagsFor(listing: ExtractedListing): string[] {
   // the model would not invent a code from it, which is the right call and
   // exactly when a human should be asked.
   if (hasAnyPrice(listing) && !listing.currency) flags.push('price-without-currency');
-  if (listing.relationship) flags.push('different-site-offered');
+  /*
+    `relationship` is not a signal that a different site was offered.
+
+    It was flagged as one, on any non-empty value, and against a real backlog
+    that fired on 7,304 drafts out of 7,307 - keeping the whole queue out of
+    every bulk path and telling reviewers "They offered a different site:
+    owner". What the model actually writes there is how the publisher relates
+    to the domain:
+
+      Site from the publisher's own rate card (network of ~2,000 sites)  2,708
+      owner                                                             1,020
+      Agency/reseller offering guest posts and link insertions             381
+      Site in the Sun Media Brands network                                 242
+
+    That is useful - reseller versus owner is worth knowing - and none of it
+    means the draft is about the wrong domain. The rule it was built on says
+    the opposite: "If the publisher declines for the site we asked about but
+    offers another, THE OFFERED SITE IS THE LISTING." The draft's domain is
+    already the offered one, so there was never a mismatch to catch.
+
+    No flag replaces it. A field that is populated on 99.96% of rows carries
+    no information as a flag, whatever it is called.
+  */
   if (listing.price_valid_until || listing.future_price_notes) flags.push('price-changes-later');
   if (!listing.contact_email) flags.push('no-contact-email');
 
