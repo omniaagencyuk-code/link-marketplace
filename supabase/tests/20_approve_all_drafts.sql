@@ -231,3 +231,66 @@ select 'each mode has its own count, and priced is the larger: ' ||
 select 'the priced count agrees with its batch: ' ||
   (public.draft_approval_eligible_count(true) =
    (select count(*) from public.draft_approval_batch(100000, '{}', true)));
+
+-- ---------------------------------------------------------------------------
+-- 0060: each of the five price fields on its own
+--
+-- 0059 asked for `guest_post_cost` and nothing else, and against the real
+-- backlog that offered 1,132 drafts where about five thousand were expected.
+-- `extraction-rules.ts`: "guest_post_cost" is ALWAYS the price when we supply
+-- the article; "guest_post_cost_written_by_publisher" is the price when they
+-- write it. A publisher doing their own writing has no `guest_post_cost` at
+-- all, and nor does one selling only link insertions.
+--
+-- One row per field, so a future narrowing of `draft_has_any_price` fails here
+-- rather than quietly costing thousands of drafts again.
+-- ---------------------------------------------------------------------------
+
+insert into public.listing_drafts (email_id, domain, status, proposed, low_confidence_count, flags)
+select e.id, d.domain, 'pending', d.proposed::jsonb, 0, '{single-price-confirm-niches}'
+from public.inbound_emails e
+cross join (values
+  ('price-they-write.test',  '{"guest_post_cost_written_by_publisher": 220, "currency": "USD"}'),
+  ('price-insertion.test',   '{"link_insertion_cost": 90, "currency": "USD"}'),
+  ('price-homepage.test',    '{"homepage_link_cost": 400, "currency": "USD"}'),
+  ('price-banner.test',      '{"banner_cost": 300, "currency": "USD"}'),
+  ('price-niche-only.test',  '{"niches": {"gambling": {"accepted": "yes", "guest_post_cost": 500}}}')
+) as d(domain, proposed)
+where e.message_id = 'aa-2';
+
+select 'a price for the publisher writing it counts: ' ||
+  (select count(*) = 1 from public.draft_approval_batch(100000, '{}', true)
+   where domain = 'price-they-write.test');
+select 'a link insertion price counts: ' ||
+  (select count(*) = 1 from public.draft_approval_batch(100000, '{}', true)
+   where domain = 'price-insertion.test');
+select 'a homepage link price counts: ' ||
+  (select count(*) = 1 from public.draft_approval_batch(100000, '{}', true)
+   where domain = 'price-homepage.test');
+select 'a banner price counts: ' ||
+  (select count(*) = 1 from public.draft_approval_batch(100000, '{}', true)
+   where domain = 'price-banner.test');
+
+/*
+  A reply quoting only a gambling rate has quoted a real price.
+  `hasAnyPrice` counts the sensitive-niche prices, so this must too - the two
+  definitions drifting apart is what 0060 exists to stop.
+*/
+select 'a niche-only price counts: ' ||
+  (select count(*) = 1 from public.draft_approval_batch(100000, '{}', true)
+   where domain = 'price-niche-only.test');
+
+-- And the one case that genuinely has nothing to record is still refused.
+select 'a draft with no price anywhere is still refused: ' ||
+  (select count(*) = 0 from public.draft_approval_batch(100000, '{}', true)
+   where domain = 'no-price.test');
+
+select 'the helper agrees with the batch on every one: ' || (
+  select bool_and(public.draft_has_any_price(proposed))
+  from public.listing_drafts
+  where domain in ('price-they-write.test', 'price-insertion.test',
+                   'price-homepage.test', 'price-banner.test', 'price-niche-only.test')
+);
+select 'and disagrees for the one with none: ' ||
+  (select not public.draft_has_any_price(proposed)
+   from public.listing_drafts where domain = 'no-price.test');

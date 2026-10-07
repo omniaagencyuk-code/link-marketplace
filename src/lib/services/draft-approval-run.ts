@@ -279,8 +279,17 @@ export async function advanceApprovalRun(budgetMs = DEFAULT_BUDGET_MS): Promise<
           button. Doing it here rather than earlier means the draft keeps the
           reading the model actually produced, so what the publisher said and
           what we decided to infer stay separable afterwards.
+
+          Only where there is a general price to spread. It fills each niche
+          from `guest_post_cost ?? null` and `link_insertion_cost ?? null`, so
+          on a draft whose only price is the one for the publisher writing it
+          themselves, every sensitive niche would come out accepted at no price
+          at all - which is a worse claim than leaving them unknown, because
+          "yes at nothing" reads as an offer.
         */
-        const listing = spreadNiches ? applyGeneralPriceToNiches(parsed.data) : parsed.data;
+        const canSpread =
+          parsed.data.guest_post_cost != null || parsed.data.link_insertion_cost != null;
+        const listing = spreadNiches && canSpread ? applyGeneralPriceToNiches(parsed.data) : parsed.data;
 
         try {
           await approveDraft(String(draft.id), listing, {
