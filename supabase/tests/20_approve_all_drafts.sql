@@ -203,8 +203,17 @@ select 'and one the model was unsure about, if it states a price: ' ||
 select 'but never a price with no currency: ' ||
   (select count(*) = 0 from public.draft_approval_batch(1000, '{}', true)
    where domain = 'no-currency.test');
-select 'nor a reply about a different site: ' ||
-  (select count(*) = 0 from public.draft_approval_batch(1000, '{}', true)
+/*
+  0061: a relationship note is not a different site.
+
+  This asserted the opposite until the real backlog showed the flag firing on
+  7,304 drafts out of 7,307 - "owner", "Site from the publisher's rate card",
+  "Agency/reseller offering guest posts". The extraction rule says the offered
+  site IS the listing, so the draft's domain was never the wrong one and the
+  exclusion was built on a misreading of it.
+*/
+select 'a relationship note no longer blocks approval: ' ||
+  (select count(*) = 1 from public.draft_approval_batch(1000, '{}', true)
    where domain = 'other-site.test');
 select 'nor one with no price at all: ' ||
   (select count(*) = 0 from public.draft_approval_batch(1000, '{}', true)
@@ -294,3 +303,32 @@ select 'the helper agrees with the batch on every one: ' || (
 select 'and disagrees for the one with none: ' ||
   (select not public.draft_has_any_price(proposed)
    from public.listing_drafts where domain = 'no-price.test');
+
+-- ---------------------------------------------------------------------------
+-- 0061: the one exclusion that stays
+--
+-- A price with no currency is a number with no unit, and it was read as
+-- pounds everywhere downstream - which is how a publisher quoting dollars came
+-- to be shown as quoting pounds. Unlike the relationship note, this one is
+-- real, and against the backlog it affects two drafts rather than seven
+-- thousand.
+-- ---------------------------------------------------------------------------
+
+select 'a price with no currency is still blocked: ' ||
+  (select count(*) = 0 from public.draft_approval_batch(100000, '{}', true)
+   where domain = 'no-currency.test');
+
+/*
+  A draft carrying both is still blocked, by the half that matters.
+
+  Removing one exclusion must not make a draft eligible that the other one
+  refuses, which is the way a two-condition filter usually breaks.
+*/
+insert into public.listing_drafts (email_id, domain, status, proposed, low_confidence_count, flags)
+select id, 'both-flags.test', 'pending', '{"guest_post_cost": 250}'::jsonb, 0,
+       '{price-without-currency,different-site-offered}'
+from public.inbound_emails where message_id = 'aa-1';
+
+select 'a draft with both flags is still blocked: ' ||
+  (select count(*) = 0 from public.draft_approval_batch(100000, '{}', true)
+   where domain = 'both-flags.test');

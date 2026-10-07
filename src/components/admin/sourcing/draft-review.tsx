@@ -247,7 +247,12 @@ export function DraftReview({
                           : flag === 'terms-from-network'
                           ? 'These terms were quoted for the publisher\u2019s network as a whole, not for this domain by name. The prices are the network rate.'
                           : flag === 'different-site-offered'
-                          ? `They offered a different site: ${draft.relationship ?? 'see notes'}`
+                          /* Kept for drafts extracted before this flag stopped
+                             being set, and reworded: the field holds how the
+                             publisher relates to the site, not a different
+                             domain, so this used to read "They offered a
+                             different site: owner". */
+                          ? `How the publisher described this site: ${draft.relationship ?? 'see notes'}`
                           : flag === 'price-changes-later'
                             ? 'These rates change on a date given in the email - check the validity fields.'
                             : flag === 'no-contact-email'

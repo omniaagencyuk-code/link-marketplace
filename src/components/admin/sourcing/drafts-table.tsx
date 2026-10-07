@@ -25,7 +25,7 @@ import type { DraftRow } from '@/app/admin/(protected)/sourcing/page';
 /** Reviewer prompts, in the words a reviewer needs rather than the slug. */
 const FLAG_LABELS: Record<string, string> = {
   'single-price-confirm-niches': 'Single price - confirm niches',
-  'different-site-offered': 'Different site offered',
+  'different-site-offered': 'Publisher relationship noted',
   'price-changes-later': 'Price changes later',
   'no-contact-email': 'No contact email',
   'price-without-currency': 'Price with no currency',

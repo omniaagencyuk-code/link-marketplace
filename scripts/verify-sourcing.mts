@@ -412,10 +412,35 @@ const itemised = blank({
 is('an itemised reply is not a single-price reply', flagsFor(itemised).includes('single-price-confirm-niches'), false);
 is('a reply with a contact is not flagged for one', flagsFor(itemised).includes('no-contact-email'), false);
 is('a reply with no contact is', flagsFor(blank({ guest_post_cost: 1 })).includes('no-contact-email'), true);
+/*
+  A relationship note is not a flag, and this assertion used to say it was.
+
+  `flagsFor` set `different-site-offered` on any non-empty `relationship`.
+  Against a real backlog that fired on 7,304 drafts out of 7,307 and held the
+  entire queue out of every bulk path, because what the model writes there is
+  how the publisher relates to the domain rather than an exception:
+
+    Site from the publisher's own rate card (network of ~2,000 sites)  2,708
+    owner                                                              1,020
+    Agency/reseller offering guest posts and link insertions             381
+
+  Reviewers were being told "They offered a different site: owner".
+
+  And the rule it was built on says the opposite - "If the publisher declines
+  for the site we asked about but offers another, THE OFFERED SITE IS THE
+  LISTING" - so the draft's domain is already the offered one and there was
+  never a mismatch to catch. A field populated on 99.96% of rows carries no
+  information as a flag, whatever it is called.
+*/
 is(
-  'an offered alternative site is flagged',
+  'a relationship note is not flagged as a different site',
+  flagsFor(blank({ relationship: 'owner', contact_email: 'a@b.example' })).includes('different-site-offered'),
+  false,
+);
+is(
+  'nor is the genuine offered-instead case, because the listing is already that site',
   flagsFor(blank({ relationship: 'offered instead of x.example', contact_email: 'a@b.example' })).includes('different-site-offered'),
-  true,
+  false,
 );
 is(
   'a future price rise is flagged',
