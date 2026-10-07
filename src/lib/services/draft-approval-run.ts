@@ -1,7 +1,7 @@
 import { getAdminScopedClient } from '@/lib/supabase/server';
 import { isSupabaseEnabled } from '@/lib/supabase/config';
 import { extractedListingSchema } from '@/lib/sourcing/schema';
-import { approveDraft } from './draft-approval';
+import { applyGeneralPriceToNiches, approveDraft } from './draft-approval';
 
 /**
  * Approving the whole queue, a slice at a time.
@@ -37,9 +37,23 @@ const STALE_CLAIM_SECONDS = 600;
 
 const DEFAULT_BUDGET_MS = 240_000;
 
+export type ApprovalMode = 'confident' | 'priced';
+
 export interface ApprovalRun {
   id: string;
   status: 'running' | 'finished' | 'cancelled' | 'failed';
+  /**
+   * Which rules this run used.
+   *
+   * `confident` is nothing flagged and nothing low-confidence. `priced` is
+   * anything carrying a general price, which lets through the three flags that
+   * mean "somebody should look" and still refuses the two that mean the row
+   * would be wrong - a price with no currency, and a reply about a different
+   * domain than the draft.
+   */
+  mode: ApprovalMode;
+  /** Whether the general price was applied to unmentioned sensitive niches. */
+  spreadNiches: boolean;
   total: number;
   approved: number;
   failed: number;
@@ -60,7 +74,7 @@ export interface ApprovalSlice {
 }
 
 const RUN_COLUMNS =
-  'id, status, total, approved, failed, first_error, failed_ids, ticks, started_by, started_at, finished_at';
+  'id, status, mode, spread_niches, total, approved, failed, first_error, failed_ids, ticks, started_by, started_at, finished_at';
 
 type Row = Record<string, unknown>;
 
@@ -68,6 +82,8 @@ function mapRun(row: Row): ApprovalRun {
   return {
     id: String(row.id),
     status: row.status as ApprovalRun['status'],
+    mode: (row.mode as ApprovalMode) ?? 'confident',
+    spreadNiches: Boolean(row.spread_niches),
     total: Number(row.total ?? 0),
     approved: Number(row.approved ?? 0),
     failed: Number(row.failed ?? 0),
@@ -79,10 +95,12 @@ function mapRun(row: Row): ApprovalRun {
   };
 }
 
-/** How many drafts an approve-all would touch right now. */
-export async function eligibleCount(): Promise<number> {
+/** How many drafts an approve-all would touch right now, under one mode. */
+export async function eligibleCount(mode: ApprovalMode = 'confident'): Promise<number> {
   if (!isSupabaseEnabled()) return 0;
-  const { data } = await getAdminScopedClient().rpc('draft_approval_eligible_count');
+  const { data } = await getAdminScopedClient().rpc('draft_approval_eligible_count', {
+    p_relaxed: mode === 'priced',
+  });
   return Number(data ?? 0);
 }
 
@@ -109,7 +127,18 @@ export async function latestApprovalRun(): Promise<ApprovalRun | null> {
  */
 export async function startApprovalRun(
   by: string,
+  options: { mode?: ApprovalMode; spreadNiches?: boolean } = {},
 ): Promise<{ ok: true; runId: string; total: number } | { ok: false; error: string }> {
+  const mode: ApprovalMode = options.mode === 'priced' ? 'priced' : 'confident';
+
+  /*
+    Spreading only means something under the priced rule.
+
+    Under `confident` every eligible draft already states its niches - that is
+    what unflagged means - so there is nothing unmentioned to apply a price to,
+    and recording `spread_niches` would claim a decision nobody made.
+  */
+  const spreadNiches = mode === 'priced' && options.spreadNiches === true;
   if (!isSupabaseEnabled()) return { ok: false, error: 'Not available right now.' };
 
   const supabase = getAdminScopedClient();
@@ -123,14 +152,14 @@ export async function startApprovalRun(
 
   if (running) return { ok: false, error: 'An approval run is already going.' };
 
-  const total = await eligibleCount();
+  const total = await eligibleCount(mode);
   if (total === 0) {
-    return { ok: false, error: 'There is nothing waiting that can be approved without a look.' };
+    return { ok: false, error: 'There is nothing waiting that this would approve.' };
   }
 
   const { data, error } = await supabase
     .from('draft_approval_runs')
-    .insert({ total, started_by: by })
+    .insert({ total, started_by: by, mode, spread_niches: spreadNiches })
     .select('id')
     .maybeSingle();
 
@@ -201,6 +230,8 @@ export async function advanceApprovalRun(budgetMs = DEFAULT_BUDGET_MS): Promise<
   let firstError = (row.first_error as string | null) ?? null;
   const failedIds = new Set<string>(((row.failed_ids as string[] | null) ?? []).map(String));
   const by = String(row.started_by ?? 'an admin');
+  const relaxed = (row.mode as string) === 'priced';
+  const spreadNiches = Boolean(row.spread_niches);
 
   let emptied = false;
 
@@ -209,6 +240,7 @@ export async function advanceApprovalRun(budgetMs = DEFAULT_BUDGET_MS): Promise<
       const { data: batch, error } = await supabase.rpc('draft_approval_batch', {
         p_limit: CHUNK,
         p_exclude: [...failedIds],
+        p_relaxed: relaxed,
       });
 
       if (error) throw new Error(error.message);
@@ -237,8 +269,21 @@ export async function advanceApprovalRun(budgetMs = DEFAULT_BUDGET_MS): Promise<
           continue;
         }
 
+        /*
+          The spread is applied to the listing being approved, not stored back
+          on the draft.
+
+          `applyGeneralPriceToNiches` marks every sensitive niche accepted at
+          the general price and skips any the publisher explicitly refused - a
+          publisher who said "no gambling" has not been talked round by a
+          button. Doing it here rather than earlier means the draft keeps the
+          reading the model actually produced, so what the publisher said and
+          what we decided to infer stay separable afterwards.
+        */
+        const listing = spreadNiches ? applyGeneralPriceToNiches(parsed.data) : parsed.data;
+
         try {
-          await approveDraft(String(draft.id), parsed.data, {
+          await approveDraft(String(draft.id), listing, {
             domain: String(draft.domain),
             matchedWebsiteId: (draft.matched_website_id as string | null) ?? null,
             emailId: String(draft.email_id),

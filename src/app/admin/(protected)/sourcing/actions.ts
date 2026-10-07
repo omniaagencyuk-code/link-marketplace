@@ -4,7 +4,11 @@ import { revalidatePath } from 'next/cache';
 import { requireAdminSession } from '@/lib/auth/admin-access';
 import { sourcingService } from '@/lib/services/sourcing-service';
 import { approveDraft, applyGeneralPriceToNiches } from '@/lib/services/draft-approval';
-import { cancelApprovalRun, startApprovalRun } from '@/lib/services/draft-approval-run';
+import {
+  cancelApprovalRun,
+  startApprovalRun,
+  type ApprovalMode,
+} from '@/lib/services/draft-approval-run';
 import { getAdminScopedClient } from '@/lib/supabase/server';
 import { extractedListingSchema, type ExtractedListing } from '@/lib/sourcing/schema';
 
@@ -819,9 +823,21 @@ export async function releaseStuckAction() {
  * It starts the run and returns. `/api/cron/draft-approvals` carries it on a
  * slice at a time, so closing the laptop does not stop it.
  */
-export async function startApproveAllAction() {
+export async function startApproveAllAction(options?: {
+  mode?: ApprovalMode;
+  spreadNiches?: boolean;
+}) {
   const by = await reviewer();
-  const outcome = await startApprovalRun(by ?? 'an admin');
+
+  /*
+    The mode is read from the argument rather than trusted wholesale: anything
+    that is not the word `priced` falls back to the stricter rule, so a
+    malformed or stale call approves less than asked rather than more.
+  */
+  const outcome = await startApprovalRun(by ?? 'an admin', {
+    mode: options?.mode === 'priced' ? 'priced' : 'confident',
+    spreadNiches: options?.spreadNiches === true,
+  });
 
   revalidatePath('/admin/sourcing');
   return outcome;
