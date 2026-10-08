@@ -1360,7 +1360,14 @@ const COMPONENTS: ComponentDef[] = [
       link('secondaryCta', 'Second button'),
       lineList('points', 'Reassurance points', 4),
       text('microcopy', 'Small print', { maxLength: 160 }),
-      image('image', 'Artwork'),
+      image('image', 'Artwork', {
+        help: 'Beside the headline. On desktop a hero banner replaces it, and this is what phones keep.',
+      }),
+      image('banner', 'Hero banner', {
+        help:
+          'Wide artwork behind the whole first screen on desktop, replacing the artwork there. ' +
+          'About 2000x700 with the subject on the right, because the headline sits over the left half.',
+      }),
     ],
     defaults: {
       eyebrow: '',
@@ -1371,6 +1378,7 @@ const COMPONENTS: ComponentDef[] = [
       points: [],
       microcopy: 'Free account - No subscription - Pay only for what you order',
       image: { src: '', alt: '' },
+      banner: { src: '', alt: '' },
     },
   },
 ];
