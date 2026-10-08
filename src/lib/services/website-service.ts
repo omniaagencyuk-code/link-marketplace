@@ -162,6 +162,58 @@ export const websiteService = {
     return { ...result, items: publicItems(result.items) };
   },
 
+  /**
+   * One page of the admin website table, and how many match.
+   *
+   * `getAllForAdmin` remains for the callers that genuinely want every row -
+   * the admin dashboard's counts, the exporters - but a page load is no
+   * longer one of them.
+   */
+  async adminPage(
+    search: string,
+    status: string,
+    page: number,
+    pageSize: number,
+  ): Promise<{ items: WebsiteListItem[]; total: number }> {
+    if (isSupabaseEnabled()) return supabaseWebsiteRepository.adminPage(search, status, page, pageSize);
+
+    const needle = search.trim().toLowerCase();
+    const all = listItems(true).filter((website) => {
+      if (status && status !== 'all' && website.status !== status) return false;
+      if (!needle) return true;
+      return `${website.domain} ${website.title} ${website.niche}`.toLowerCase().includes(needle);
+    });
+    const from = Math.max(0, (page - 1) * pageSize);
+    return { items: all.slice(from, from + pageSize), total: all.length };
+  },
+
+  /**
+   * Listings by id, with the admin's own columns.
+   *
+   * `getByIds` reads as the customer and strips costs; this is the admin
+   * equivalent, for the export and the rate card.
+   */
+  async adminRows(ids: string[]): Promise<WebsiteListItem[]> {
+    if (isSupabaseEnabled()) return supabaseWebsiteRepository.adminRows(ids);
+
+    const wanted = new Set(ids);
+    return listItems(true).filter((website) => wanted.has(website.id));
+  },
+
+  /** Every listing id a filter matches, for the select-all checkbox. */
+  async adminIds(search: string, status: string): Promise<string[]> {
+    if (isSupabaseEnabled()) return supabaseWebsiteRepository.adminIds(search, status);
+
+    const needle = search.trim().toLowerCase();
+    return listItems(true)
+      .filter((website) => {
+        if (status && status !== 'all' && website.status !== status) return false;
+        if (!needle) return true;
+        return `${website.domain} ${website.title} ${website.niche}`.toLowerCase().includes(needle);
+      })
+      .map((website) => website.id);
+  },
+
   /** What the sidebar may offer, and how much of it. */
   async facets(topic?: AcceptedNicheSlug): Promise<MarketplaceFacets> {
     if (isSupabaseEnabled()) return supabaseWebsiteRepository.facets(topic);

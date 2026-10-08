@@ -4,20 +4,19 @@ import { PageTitle } from '@/components/dashboard/page-title';
 import { AdminWebsitesTable } from '@/components/admin/admin-websites-table';
 import { ImportHistory } from '@/components/admin/import/import-history';
 import { Button } from '@/components/ui/button';
-import { importHistoryService, websiteService } from '@/lib/services';
-import { pricingService } from '@/lib/services/pricing-service';
+import { importHistoryService } from '@/lib/services';
 
 export const dynamic = 'force-dynamic';
 
 export default async function AdminWebsitesPage() {
-  const [websites, imports, trueCosts] = await Promise.all([
-    websiteService.getAllForAdmin(),
-    importHistoryService.getRecent(5),
-    // What each listing costs us in GBP. Without it a dollar publisher shows
-    // no cost and no profit at all, which is honest but not much use in a
-    // table somebody scans.
-    pricingService.trueCostsByWebsite().catch(() => ({})),
-  ]);
+  /*
+    Five recent imports, and nothing else.
+
+    This used to read every non-archived listing with costs, contacts and
+    commercials joined on, and price all of them, to render fifty rows - about
+    a minute to open. Both of those now happen per page, inside the table.
+  */
+  const imports = await importHistoryService.getRecent(5);
 
   return (
     <>
@@ -41,7 +40,7 @@ export default async function AdminWebsitesPage() {
           </div>
         }
       />
-      <AdminWebsitesTable websites={websites} trueCosts={trueCosts} />
+      <AdminWebsitesTable />
       <ImportHistory runs={imports} />
     </>
   );
