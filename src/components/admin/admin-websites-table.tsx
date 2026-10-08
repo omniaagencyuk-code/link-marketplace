@@ -101,6 +101,15 @@ const SELECTION_CHUNK = 200;
  */
 const DOMAIN_CHUNK = 500;
 
+/**
+ * Above this, a selection is a backlog rather than a batch.
+ *
+ * Five hundred listings is twenty requests with the tab open, which is a
+ * wait somebody will sit through. Seven thousand is two hundred and ninety,
+ * and that is what the publisher inbox's run is for.
+ */
+const BACKLOG_SIZE = 500;
+
 /** How many columns the header has, for the full-width rate card row. */
 const COLUMNS = 13;
 
@@ -325,6 +334,27 @@ export function AdminWebsitesTable() {
       try {
         const ids = await adminWebsiteIdsAction(term, status);
         setSelected(new Set(ids));
+
+        /*
+          A short selection is never allowed to look like a whole one.
+
+          This read was capped at a thousand rows by the server for a while
+          and said nothing: the box reported "1000 selected" against 12,246
+          listings, and a bulk action on that selection would have reported
+          success having touched the first thousand. The count is checked
+          against the filter's own total now, so a selection that does not
+          match the filter is visible before anything is run on it.
+        */
+        if (total > 0 && ids.length !== total) {
+          setResult({
+            changed: 0,
+            skipped: [],
+            error:
+              `Selected ${ids.length.toLocaleString('en-GB')} listings, but the filter matches ` +
+              `${total.toLocaleString('en-GB')}. Reload the page before running anything on this selection.`,
+            verb: 'selected',
+          });
+        }
       } catch {
         setResult({
           changed: 0,
@@ -819,8 +849,26 @@ export function AdminWebsitesTable() {
       {selected.size > 0 ? (
         <div className="flex flex-wrap items-center gap-2 rounded-[var(--radius-card)] border border-navy-900/15 bg-navy-900/[0.03] px-4 py-3">
           <p className="text-[13px] font-medium text-ink">
-            {selected.size} selected
+            {selected.size.toLocaleString('en-GB')} selected
           </p>
+
+          {/*
+            A backlog is not a batch.
+
+            These buttons send twenty-five listings a request with the tab
+            held open, which is right for a few hundred and is five minutes of
+            waiting for seven thousand. The publisher inbox starts a run that
+            cron carries on instead, with the same guard on every listing.
+          */}
+          {selected.size > BACKLOG_SIZE ? (
+            <p className="text-[12px] text-muted">
+              Publishing this many?{' '}
+              <Link href="/admin/sourcing" className="underline hover:text-ink">
+                Start a run from the publisher inbox
+              </Link>{' '}
+              and close the tab.
+            </p>
+          ) : null}
 
           <div className="ml-auto flex flex-wrap items-center gap-2">
             {/*
