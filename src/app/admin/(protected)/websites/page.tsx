@@ -8,7 +8,23 @@ import { importHistoryService } from '@/lib/services';
 
 export const dynamic = 'force-dynamic';
 
-export default async function AdminWebsitesPage() {
+export default async function AdminWebsitesPage({
+  searchParams,
+}: {
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  /*
+    A term the admin search bar arrived with.
+
+    Passed as a prop *and* as the key, so navigating here again with a
+    different term remounts the table rather than leaving it showing the
+    previous search. The table holds its own query state - that is what makes
+    typing in it cheap - and state does not re-seed on a prop it was only
+    given once.
+  */
+  const query = (await searchParams)?.q;
+  const search = (Array.isArray(query) ? query[0] : query) ?? '';
+
   /*
     Five recent imports, and nothing else.
 
@@ -40,7 +56,7 @@ export default async function AdminWebsitesPage() {
           </div>
         }
       />
-      <AdminWebsitesTable />
+      <AdminWebsitesTable key={search} initialSearch={search} />
       <ImportHistory runs={imports} />
     </>
   );
