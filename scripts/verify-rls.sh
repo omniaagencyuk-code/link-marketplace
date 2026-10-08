@@ -161,3 +161,6 @@ run -f "$ROOT/supabase/tests/23_publish_backlog.sql" 2>&1 | grep -v '^$'
 echo
 echo "--- one page of the admin website table ---"
 run -f "$ROOT/supabase/tests/24_admin_website_page.sql" 2>&1 | grep -v '^$'
+echo
+echo "--- selecting a whole filter, a window at a time ---"
+run -f "$ROOT/supabase/tests/25_admin_ids_in_pages.sql" 2>&1 | grep -v '^$'
