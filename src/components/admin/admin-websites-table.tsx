@@ -29,6 +29,7 @@ import { DEFAULT_PAGE_SIZE, type PageSize } from '@/lib/admin/paging';
 import { WebsiteStatusBadge } from '@/components/shared/status-badge';
 import { WebsiteRateCard } from '@/components/admin/website-rate-card';
 import {
+  adminWebsiteDomainsAction,
   adminWebsiteIdsAction,
   adminWebsitePageAction,
   adminWebsitesByIdsAction,
@@ -84,6 +85,21 @@ const SEARCH_PAUSE_MS = 300;
  * missing rows with nothing saying so.
  */
 const SELECTION_CHUNK = 200;
+
+/**
+ * Ids per request when fetching only domains.
+ *
+ * Higher than the row chunk because a domain is a string: no metrics, no
+ * services, no contacts, and nothing priced. Twelve thousand listings is
+ * twenty-five requests rather than sixty-two, and none of them prices
+ * anything.
+ *
+ * Deliberately under the server's own limit rather than equal to it. A
+ * request that returns exactly the cap is indistinguishable from one that was
+ * truncated at it, and a response truncated without saying so is the bug this
+ * whole path was just fixed for.
+ */
+const DOMAIN_CHUNK = 500;
 
 /** How many columns the header has, for the full-width rate card row. */
 const COLUMNS = 13;
@@ -500,21 +516,19 @@ export function AdminWebsitesTable() {
   /**
    * The selection as a spreadsheet.
    *
-   * Built here rather than fetched: the table is already holding every row a
-   * download would ask the server for, so a round trip would be slower, cost
-   * a second query, and could disagree with what is on screen.
+   * Fetched, not filtered. The selection can be a whole filter rather than the
+   * page on screen, and the table no longer holds those rows - so they are
+   * asked for in chunks when the button is pressed, which is also the only
+   * moment anybody wants them.
    *
    * It carries costs and publisher contacts, which is the point - it is the
    * file you reconcile from - and it is why this button lives behind the
    * admin session like everything else on this page.
+   *
+   * Twelve thousand listings is sixty-two requests, so it reports progress.
+   * A button that looks like it did nothing for two minutes gets pressed
+   * again, and then there are two of them running.
    */
-  /*
-    Fetched, not filtered.
-
-    The selection can be a whole filter rather than the page on screen, and
-    the table no longer holds those rows. Asked for in chunks when the button
-    is pressed, which is also the only moment anybody wants them.
-  */
   async function selectedRows(): Promise<{
     items: WebsiteListItem[];
     costs: Record<string, TrueCostIndex>;
@@ -534,6 +548,14 @@ export function AdminWebsitesTable() {
       going and the caller is told how many of the selection it actually got.
     */
     for (const group of chunk(ids, SELECTION_CHUNK)) {
+      setProgress({
+        done: items.length,
+        total: ids.length,
+        changed: items.length,
+        skipped: [],
+        verb: 'read',
+        finished: false,
+      });
       try {
         const answer = await adminWebsitesByIdsAction(group);
         items.push(...(answer.items as WebsiteListItem[]));
@@ -542,7 +564,41 @@ export function AdminWebsitesTable() {
         // Nothing pushed, so the shortfall shows up in the count below.
       }
     }
+    setProgress(null);
     return { items, costs, asked: ids.length };
+  }
+
+  /**
+   * The domains behind the selection, and nothing else.
+   *
+   * What Copy domains is for: a list to paste into somebody else's tool.
+   * It used to go through `selectedRows`, which reads costs, contacts and
+   * commercials and prices every listing, to use one column of the answer -
+   * sixty-two requests for twelve thousand domains instead of twenty-five,
+   * and every one of them pricing listings nobody was going to look at.
+   */
+  async function selectedDomains(): Promise<{ domains: string[]; asked: number }> {
+    const ids = [...selected];
+    const domains: string[] = [];
+
+    for (const group of chunk(ids, DOMAIN_CHUNK)) {
+      setProgress({
+        done: domains.length,
+        total: ids.length,
+        changed: domains.length,
+        skipped: [],
+        verb: 'read',
+        finished: false,
+      });
+      try {
+        const answer = await adminWebsiteDomainsAction(group);
+        domains.push(...answer.map((row) => row.domain));
+      } catch {
+        // Counted as a shortfall rather than losing the whole list.
+      }
+    }
+    setProgress(null);
+    return { domains, asked: ids.length };
   }
 
   /** "1,840 of 1,900 selected" when some could not be read, and nothing when
@@ -594,8 +650,8 @@ export function AdminWebsitesTable() {
   function copyDomains() {
     if (selected.size === 0) return;
     startTransition(async () => {
-      const { items: chosen, asked } = await selectedRows();
-      if (chosen.length === 0) {
+      const { domains, asked } = await selectedDomains();
+      if (domains.length === 0) {
         setResult({
           changed: 0,
           skipped: [],
@@ -604,12 +660,11 @@ export function AdminWebsitesTable() {
         });
         return;
       }
-      const list = chosen.map((website) => website.domain).join('\n');
-      const copied = await copyText(list);
+      const copied = await copyText(domains.join('\n'));
       setResult({
-        changed: copied ? chosen.length : 0,
+        changed: copied ? domains.length : 0,
         skipped: copied
-          ? shortfall(chosen.length, asked)
+          ? shortfall(domains.length, asked)
           : [{ domain: 'Clipboard', reason: 'The browser would not allow it. Use the CSV export instead.' }],
         verb: 'copied, one per line',
       });

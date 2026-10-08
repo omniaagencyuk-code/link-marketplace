@@ -649,6 +649,35 @@ export async function adminWebsiteIdsAction(search: string, status: string) {
  * Capped per request; the caller chunks. A cap that trimmed silently would be
  * an export missing rows with nothing saying so, so it refuses instead.
  */
+/**
+ * How many ids one domain request may carry.
+ *
+ * Higher than the row cap because a domain is a string rather than a listing:
+ * no metrics, no services, no contacts, no pricing. Twelve thousand listings
+ * is a dozen requests rather than sixty-two, and none of them prices
+ * anything.
+ */
+const ADMIN_DOMAIN_MAX = 1_000;
+
+/**
+ * The domains behind a selection.
+ *
+ * What Copy domains needs, and all it needs. It used to go through the row
+ * fetch below, which reads costs, contacts and commercials and prices every
+ * listing, to use one column of the answer.
+ */
+export async function adminWebsiteDomainsAction(ids: string[]) {
+  await requireAdminSession();
+
+  const wanted = Array.isArray(ids) ? ids.filter((id) => typeof id === 'string') : [];
+  if (wanted.length === 0) return [];
+  if (wanted.length > ADMIN_DOMAIN_MAX) {
+    throw new Error(`Asked for ${wanted.length} domains at once; the limit is ${ADMIN_DOMAIN_MAX}.`);
+  }
+
+  return websiteService.adminDomains(wanted);
+}
+
 export async function adminWebsitesByIdsAction(ids: string[]) {
   await requireAdminSession();
 

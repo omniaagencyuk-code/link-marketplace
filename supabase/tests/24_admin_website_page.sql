@@ -223,9 +223,10 @@ select 'the default page size is fifty: ' ||
 
   It has always meant "everything these filters match" - filtering to "draft"
   and ticking it is how a couple of hundred listings get published in one go -
-  so it must not be capped, and it must agree with the page it sits above.
+  and it must agree with the page it sits above. 0068 gave it a window; what
+  it does across more than one window is tested in 25.
 */
-select 'the id list is not capped: ' ||
+select 'one window carries a filter this size: ' ||
   (select count(*) = 260 from public.admin_website_ids('awbulk-', 'all'));
 
 select 'the id list honours the status filter: ' ||

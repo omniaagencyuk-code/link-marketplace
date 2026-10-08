@@ -412,13 +412,44 @@ export const supabaseWebsiteRepository = {
    */
   async adminIds(search: string, status: string): Promise<string[]> {
     const supabase = getAdminScopedClient();
-    const { data, error } = await supabase.rpc('admin_website_ids', {
-      p_search: search.trim() || null,
-      p_status: status || 'all',
-    });
 
-    if (error) throw new Error(`Could not read the matching listings: ${error.message}`);
-    return ((data ?? []) as { id: string }[]).map((row) => row.id);
+    /*
+      Walked, not asked for once.
+
+      The first version of this called the function once and the checkbox
+      reported "1000 selected" against 12,246 listings. PostgREST caps what
+      one response carries - a thousand rows on a Supabase project - and
+      nothing in the answer says the cap was applied, which is the whole
+      reason `readAllPages` exists and the reason it advances by what arrived
+      rather than by what it asked for.
+    */
+    const rows = await readAllPages<{ id: string }>('the matching listings', (from, to) =>
+      supabase.rpc('admin_website_ids', {
+        p_search: search.trim() || null,
+        p_status: status || 'all',
+        p_limit: to - from + 1,
+        p_offset: from,
+      }),
+    );
+
+    return rows.map((row) => row.id);
+  },
+
+  /**
+   * The domains behind a selection, and nothing else.
+   *
+   * "Copy domains" produces a list for somebody else's tool. Reading it
+   * through the admin row select meant metrics, services, niche prices,
+   * contacts and commercials for every listing, and pricing all of them, to
+   * use one column - which at twelve thousand listings is a wait rather than
+   * a button.
+   */
+  async adminDomains(ids: string[]): Promise<{ id: string; domain: string }[]> {
+    if (ids.length === 0) return [];
+    const supabase = getAdminScopedClient();
+    const { data, error } = await supabase.rpc('admin_website_domains', { p_ids: ids });
+    if (error) throw new Error(`Could not read the domains: ${error.message}`);
+    return (data ?? []) as { id: string; domain: string }[];
   },
 
   async getAllForAdmin(): Promise<WebsiteListItem[]> {

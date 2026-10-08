@@ -200,6 +200,16 @@ export const websiteService = {
     return listItems(true).filter((website) => wanted.has(website.id));
   },
 
+  /** The domains behind a selection, for Copy domains. */
+  async adminDomains(ids: string[]): Promise<{ id: string; domain: string }[]> {
+    if (isSupabaseEnabled()) return supabaseWebsiteRepository.adminDomains(ids);
+
+    const wanted = new Set(ids);
+    return listItems(true)
+      .filter((website) => wanted.has(website.id))
+      .map((website) => ({ id: website.id, domain: website.domain }));
+  },
+
   /** Every listing id a filter matches, for the select-all checkbox. */
   async adminIds(search: string, status: string): Promise<string[]> {
     if (isSupabaseEnabled()) return supabaseWebsiteRepository.adminIds(search, status);
