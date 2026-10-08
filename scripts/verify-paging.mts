@@ -17,6 +17,11 @@
  * precisely the case a loop that advances by page size gets wrong.
  */
 import { readAllPages } from '../src/lib/services/supabase/paged';
+import {
+  LISTINGS_PER_REQUEST,
+  MOST_LISTINGS_PER_PAGE,
+  listingIdsToFetch,
+} from '../src/lib/dashboard/listing-batch';
 
 let failed = 0;
 const ok = (label: string) => console.log(`  PASS  ${label}`);
@@ -205,6 +210,69 @@ console.log('\n--- no full read in the repositories uses a bare limit ---');
   // hand itself the same failures until the budget ran out.
   is('and cannot re-send the same failures forever', /attempted\.has\(/.test(refresh), true);
 }
+
+
+/* ------------------------------------------- fetching a basket, not a table
+
+  The other half of the same problem. `readAllPages` is for the reads that
+  genuinely want every row; these are the pages that never did.
+
+  The basket and the shortlist live in local storage, so the server could not
+  know which listings they wanted and both pages were handed every active
+  listing to pick from - a few hundred rows when that was written, 3,405 now,
+  with 7,174 more approved and waiting. The ids go up instead.
+
+  Local storage is user-writable and outlives schema changes, so what comes
+  out of it is input rather than data.
+*/
+const uuidA = '11111111-2222-4333-8444-555555555555';
+const uuidB = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
+
+is('a real id is kept', listingIdsToFetch([uuidA]).length, 1);
+is('the same id twice is one lookup', listingIdsToFetch([uuidA, uuidA]).length, 1);
+is('and case does not make it two', listingIdsToFetch([uuidB, uuidB.toUpperCase()]).length, 1);
+is('ids are lowercased', listingIdsToFetch([uuidB.toUpperCase()])[0], uuidB);
+is('whitespace is trimmed', listingIdsToFetch([` ${uuidA} `])[0], uuidA);
+
+/*
+  Anything that is not a uuid is dropped rather than sent. A stale key, a
+  hand-edited array, a value from two schema versions ago - none of it should
+  reach a database query, and none of it should make the page fail either.
+*/
+is('a non-uuid string is dropped', listingIdsToFetch(['not-an-id']).length, 0);
+is('so is a number', listingIdsToFetch([42]).length, 0);
+is('so is null', listingIdsToFetch([null]).length, 0);
+is('so is an object', listingIdsToFetch([{ id: uuidA }]).length, 0);
+is('an empty list asks for nothing', listingIdsToFetch([]).length, 0);
+is('and the good ids survive beside the bad', listingIdsToFetch(['x', uuidA, null, uuidB]).length, 2);
+
+/*
+  The cap is the point of the exercise.
+
+  Without it a shortlist of fifty thousand ids is fifty thousand ids, and the
+  page that was supposed to stop loading the whole inventory loads it again
+  one id at a time.
+*/
+const many = Array.from({ length: MOST_LISTINGS_PER_PAGE + 500 }, (_, i) =>
+  `${String(i).padStart(8, '0')}-2222-4333-8444-555555555555`,
+);
+is('a huge list is capped', listingIdsToFetch(many).length, MOST_LISTINGS_PER_PAGE);
+
+/*
+  The chunk size and the server's per-request cap are the same number, from
+  the same module.
+
+  They used to be the kind of pair that lives in two files and drifts: a
+  client batching at one size against a server capping at another is a
+  silent truncation waiting for a big enough shortlist. The server refuses an
+  oversized batch rather than trimming it, so a drift would be an error
+  somebody sees rather than rows quietly missing.
+*/
+is('a page may ask about more ids than one request carries',
+  MOST_LISTINGS_PER_PAGE > LISTINGS_PER_REQUEST, true);
+is('so the cap is a whole number of requests',
+  MOST_LISTINGS_PER_PAGE % LISTINGS_PER_REQUEST, 0);
+
 
 console.log(failed === 0 ? '\nAll paging checks passed.\n' : `\n${failed} failed.\n`);
 process.exit(failed === 0 ? 0 : 1);
