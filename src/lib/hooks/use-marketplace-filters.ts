@@ -1,198 +1,21 @@
-'use client';
+'use client'
 
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState, useTransition } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { isBuyableTopic } from '@/lib/config/accepted-niches';
 import { sortOptions } from '@/lib/utils/labels';
-import type {
-  CountryCode,
-  LanguageCode,
-  LinkAttribute,
-  LinkTypeSlug,
-  NicheSlug,
-  SortKey,
-  WebsiteQuery,
-  AcceptedNicheSlug,
-} from '@/lib/types';
+import {
+  countActiveFilters,
+  emptyFilters,
+  parseFilters,
+  serialise,
+  type MarketplaceFilters,
+  type MarketplaceView,
+} from '@/lib/marketplace/filters';
+import type { SortKey } from '@/lib/types';
 
-export type MarketplaceView = 'table' | 'grid';
+export type { MarketplaceFilters, MarketplaceView } from '@/lib/marketplace/filters';
+export { countActiveFilters, emptyFilters, toWebsiteQuery } from '@/lib/marketplace/filters';
 
-export interface MarketplaceFilters {
-  search: string;
-  /**
-   * What the buyer is buying for.
-   *
-   * Not a filter like the others: it is the campaign's subject, set once, and
-   * it decides both which publishers appear and what they cost. Kept in the
-   * URL like everything else so a shortlist can be shared or bookmarked with
-   * the topic it was built for.
-   */
-  topic?: AcceptedNicheSlug;
-  niches: NicheSlug[];
-  countries: CountryCode[];
-  languages: LanguageCode[];
-  linkTypes: LinkTypeSlug[];
-  linkAttribute?: LinkAttribute;
-  drMin?: number;
-  drMax?: number;
-  trafficMin?: number;
-  trafficMax?: number;
-  rdMin?: number;
-  rdMax?: number;
-  /** Price bounds in whole pounds, converted to minor units for the query. */
-  priceMin?: number;
-  priceMax?: number;
-  maxTurnaroundDays?: number;
-  verifiedOnly: boolean;
-}
-
-export const emptyFilters: MarketplaceFilters = {
-  search: '',
-  niches: [],
-  countries: [],
-  languages: [],
-  linkTypes: [],
-  verifiedOnly: false,
-};
-
-function csv(value: string | null): string[] {
-  return value ? value.split(',').filter(Boolean) : [];
-}
-
-function num(value: string | null): number | undefined {
-  if (value === null || value === '') return undefined;
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : undefined;
-}
-
-/**
- * A topic from the URL, or nothing.
- *
- * The picker only offers topics a publisher ever states a position on, but a
- * link shared before that - `?topic=sports` - still exists. Honouring it would
- * filter the marketplace down to nobody while the dropdown showed blank,
- * because no option matches: an empty screen with no visible cause. Dropping
- * it shows the whole marketplace, which is what "any topic" means anyway.
- */
-function buyableTopic(value: string | null): AcceptedNicheSlug | undefined {
-  if (!value || !isBuyableTopic(value)) return undefined;
-  return value as AcceptedNicheSlug;
-}
-
-function parseFilters(params: URLSearchParams): MarketplaceFilters {
-  return {
-    search: params.get('q') ?? '',
-    topic: buyableTopic(params.get('topic')),
-    niches: csv(params.get('niche')) as NicheSlug[],
-    countries: csv(params.get('country')) as CountryCode[],
-    languages: csv(params.get('lang')) as LanguageCode[],
-    linkTypes: csv(params.get('service')) as LinkTypeSlug[],
-    linkAttribute: (params.get('attr') as LinkAttribute | null) ?? undefined,
-    drMin: num(params.get('drMin')),
-    drMax: num(params.get('drMax')),
-    trafficMin: num(params.get('trMin')),
-    trafficMax: num(params.get('trMax')),
-    rdMin: num(params.get('rdMin')),
-    rdMax: num(params.get('rdMax')),
-    priceMin: num(params.get('priceMin')),
-    priceMax: num(params.get('priceMax')),
-    maxTurnaroundDays: num(params.get('turnaround')),
-    verifiedOnly: params.get('verified') === '1',
-  };
-}
-
-function serialise(
-  filters: MarketplaceFilters,
-  sort: SortKey,
-  page: number,
-  pageSize: number,
-  view: MarketplaceView,
-) {
-  const params = new URLSearchParams();
-  const set = (key: string, value: string | number | undefined | null) => {
-    if (value === undefined || value === null || value === '') return;
-    params.set(key, String(value));
-  };
-
-  set('q', filters.search.trim());
-  if (filters.topic) set('topic', filters.topic);
-  if (filters.niches.length) set('niche', filters.niches.join(','));
-  if (filters.countries.length) set('country', filters.countries.join(','));
-  if (filters.languages.length) set('lang', filters.languages.join(','));
-  if (filters.linkTypes.length) set('service', filters.linkTypes.join(','));
-  set('attr', filters.linkAttribute);
-  set('drMin', filters.drMin);
-  set('drMax', filters.drMax);
-  set('trMin', filters.trafficMin);
-  set('trMax', filters.trafficMax);
-  set('rdMin', filters.rdMin);
-  set('rdMax', filters.rdMax);
-  set('priceMin', filters.priceMin);
-  set('priceMax', filters.priceMax);
-  set('turnaround', filters.maxTurnaroundDays);
-  if (filters.verifiedOnly) set('verified', '1');
-  if (sort !== 'relevance') set('sort', sort);
-  if (page > 1) set('page', page);
-  if (pageSize !== 25) set('size', pageSize);
-  if (view !== 'table') set('view', view);
-
-  return params.toString();
-}
-
-/** Count of filters the user has actively applied (drives "Clear all"). */
-export function countActiveFilters(filters: MarketplaceFilters) {
-  let count = 0;
-  if (filters.search.trim()) count += 1;
-  // The topic is not counted as a filter. It is the question being asked,
-  // not a narrowing of the answer, and showing "1 filter" beside it invites
-  // somebody to clear it without noticing what it was doing.
-  count += filters.niches.length;
-  count += filters.countries.length;
-  count += filters.languages.length;
-  count += filters.linkTypes.length;
-  if (filters.linkAttribute) count += 1;
-  if (filters.drMin !== undefined || filters.drMax !== undefined) count += 1;
-  if (filters.trafficMin !== undefined || filters.trafficMax !== undefined) count += 1;
-  if (filters.rdMin !== undefined || filters.rdMax !== undefined) count += 1;
-  if (filters.priceMin !== undefined || filters.priceMax !== undefined) count += 1;
-  if (filters.maxTurnaroundDays !== undefined) count += 1;
-  if (filters.verifiedOnly) count += 1;
-  return count;
-}
-
-/** Convert UI filter state into the service-layer query shape. */
-export function toWebsiteQuery(
-  filters: MarketplaceFilters,
-  sort: SortKey,
-  page: number,
-  pageSize: number,
-): WebsiteQuery {
-  return {
-    search: filters.search,
-    niches: filters.niches.length ? filters.niches : undefined,
-    countries: filters.countries.length ? filters.countries : undefined,
-    languages: filters.languages.length ? filters.languages : undefined,
-    linkTypes: filters.linkTypes.length ? filters.linkTypes : undefined,
-    linkAttribute: filters.linkAttribute,
-    domainRating: { min: filters.drMin, max: filters.drMax },
-    organicTraffic: { min: filters.trafficMin, max: filters.trafficMax },
-    referringDomains: { min: filters.rdMin, max: filters.rdMax },
-    price: {
-      min: filters.priceMin !== undefined ? filters.priceMin * 100 : undefined,
-      max: filters.priceMax !== undefined ? filters.priceMax * 100 : undefined,
-    },
-    maxTurnaroundDays: filters.maxTurnaroundDays,
-    verifiedOnly: filters.verifiedOnly || undefined,
-    sort,
-    page,
-    pageSize,
-  };
-}
-
-/**
- * Marketplace filter, sort and pagination state, mirrored into the URL so
- * results stay shareable and the back button works.
- */
 export function useMarketplaceFilters(defaultPageSize = 25) {
   const router = useRouter();
   const pathname = usePathname();
@@ -221,6 +44,19 @@ export function useMarketplaceFilters(defaultPageSize = 25) {
     (searchParams.get('view') as MarketplaceView | null) ?? 'table',
   );
 
+  /*
+    Filter changes are a server round trip now, so the page has to be able to
+    say so.
+
+    The search runs in the database since the marketplace stopped shipping the
+    whole inventory to the browser, which means a click is a request rather
+    than an array filter. Wrapping the navigation in a transition keeps the
+    current results on screen while the next ones are fetched - the alternative
+    is the list blanking on every tick of a checkbox - and hands the page a
+    `pending` flag to dim them with.
+  */
+  const [pending, startTransition] = useTransition();
+
   const sync = useCallback(
     (
       nextFilters: MarketplaceFilters,
@@ -230,7 +66,9 @@ export function useMarketplaceFilters(defaultPageSize = 25) {
       nextView: MarketplaceView,
     ) => {
       const query = serialise(nextFilters, nextSort, nextPage, nextPageSize, nextView);
-      router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
+      startTransition(() => {
+        router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
+      });
     },
     [pathname, router],
   );
@@ -301,5 +139,7 @@ export function useMarketplaceFilters(defaultPageSize = 25) {
     setView,
     reset,
     activeFilterCount: countActiveFilters(filters),
+    /** True while the next page of results is being fetched. */
+    pending,
   } as const;
 }

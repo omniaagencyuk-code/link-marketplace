@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { SearchX } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
@@ -14,26 +14,34 @@ import { WebsiteCard } from './website-card';
 import { WebsiteTable } from './website-table';
 import { SelectionBar } from './selection-bar';
 import {
-  toWebsiteQuery,
   useMarketplaceFilters,
   type MarketplaceFilters,
 } from '@/lib/hooks/use-marketplace-filters';
-import { runQuery } from '@/lib/services/query-engine';
-import { forTopic } from '@/lib/marketplace/topic';
-import type { CountryCode, LanguageCode, NicheSlug, WebsiteListItem } from '@/lib/types';
+import type { CountryCode, LanguageCode, NicheSlug, PaginatedResult, WebsiteListItem } from '@/lib/types';
+import type { MarketplaceFacets } from '@/lib/types/query';
 
 /**
  * The marketplace.
  *
- * Filtering, sorting and pagination run against the dataset supplied by the
- * server component, so interactions are instant. When Supabase is connected,
- * swap `runQuery` for a server action that calls `websiteService.search()`.
+ * Filtering, sorting and pagination happen in the database. This renders one
+ * page of the answer and nothing else - the filters are already written to the
+ * URL by `useMarketplaceFilters`, and the server component above re-runs the
+ * search whenever they change.
+ *
+ * It used to be handed every active listing and filter it here, which was
+ * instant and is why it was built that way. It stopped being tenable at 3,405
+ * listings with 7,174 approved and waiting: the page carried the whole
+ * inventory on every visit. What a customer gives up is the instant click;
+ * what they get back is a page that loads the same whatever the inventory
+ * does.
  */
 export function MarketplaceView({
-  websites,
+  result,
+  facets,
   defaultPageSize = 25,
 }: {
-  websites: WebsiteListItem[];
+  result: PaginatedResult<WebsiteListItem>;
+  facets: MarketplaceFacets;
   defaultPageSize?: number;
 }) {
   const {
@@ -41,14 +49,13 @@ export function MarketplaceView({
     setFilters,
     sort,
     setSort,
-    page,
     setPage,
-    pageSize,
     setPageSize,
     view,
     setView,
     reset,
     activeFilterCount,
+    pending,
   } = useMarketplaceFilters(defaultPageSize);
 
   const [filtersOpen, setFiltersOpen] = useState(false);
@@ -62,33 +69,8 @@ export function MarketplaceView({
   const toggleExpanded = (id: string) =>
     setExpandedId((current) => (current === id ? null : id));
 
-  /*
-    The topic is applied before the query, not inside it.
-
-    Narrowing to publishers who accept it and rewriting their prices to what
-    they charge for it means everything downstream - the sort, the price
-    range, the number on the card - agrees without a single one of them
-    having to know a topic exists.
-  */
-  const forSale = useMemo(() => forTopic(websites, filters.topic), [websites, filters.topic]);
-
-  const result = useMemo(
-    () => runQuery(forSale, toWebsiteQuery(filters, sort, page, pageSize)),
-    [forSale, filters, sort, page, pageSize],
-  );
-
-  const nicheCounts = useMemo(() => {
-    const counts: Partial<Record<NicheSlug, number>> = {};
-    for (const website of websites) {
-      counts[website.niche] = (counts[website.niche] ?? 0) + 1;
-    }
-    return counts;
-  }, [websites]);
-
-  const availableLanguages = useMemo(
-    () => Array.from(new Set(websites.map((website) => website.language))) as LanguageCode[],
-    [websites],
-  );
+  const nicheCounts = facets.niches as Partial<Record<NicheSlug, number>>;
+  const availableLanguages = facets.languages as LanguageCode[];
 
   /*
     Countries that actually have listings, biggest first, plus how many have no
@@ -100,25 +82,25 @@ export function MarketplaceView({
     only promise what it can deliver, and the number beside a country is the
     number a buyer gets.
 
-    Counted over `forSale` rather than `websites`, so choosing a topic first
-    updates the counts to that topic - a country with four publishers, none of
-    whom take gambling, should not read "4" to somebody buying for a casino.
+    Counted in the database now, and still over the topic rather than over the
+    whole inventory: a country with four publishers, none of whom take
+    gambling, should not read "4" to somebody buying for a casino.
   */
-  const countryCounts = useMemo(() => {
-    const counts = new Map<CountryCode, number>();
-    let unstated = 0;
-    for (const website of forSale) {
-      if (!website.country) {
-        unstated += 1;
-        continue;
-      }
-      counts.set(website.country, (counts.get(website.country) ?? 0) + 1);
-    }
-    return {
-      countries: [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])),
-      unstated,
-    };
-  }, [forSale]);
+  const countryCounts = {
+    countries: facets.countries as [CountryCode, number][],
+    unstated: facets.unstated,
+  };
+
+  /*
+    How many publishers take this topic at all.
+
+    The sum of the country counts and the listings with no stated market is
+    exactly the topic's set, because that is the set the database counted them
+    over. Derived rather than asked for separately: a second count of the same
+    rows is a second chance to disagree with the first.
+  */
+  const matchingTopic =
+    countryCounts.countries.reduce((sum, [, count]) => sum + count, 0) + countryCounts.unstated;
 
   function patchFilters(patch: Partial<MarketplaceFilters>) {
     setFilters((current) => ({ ...current, ...patch }));
@@ -147,7 +129,7 @@ export function MarketplaceView({
     <div className="space-y-5">
       <TopicPicker
         topic={filters.topic}
-        matching={forSale.length}
+        matching={matchingTopic}
         onChange={(topic) => patchFilters({ topic })}
       />
 
@@ -185,6 +167,19 @@ export function MarketplaceView({
             />
           ) : null}
 
+          {/*
+            Dimmed, not replaced, while the next page is fetched.
+
+            Swapping in a skeleton on every checkbox would flash the whole list
+            for what is usually under a tenth of a second. Keeping the current
+            results on screen and fading them says "working" without taking
+            away what the customer was reading - and `aria-busy` says the same
+            thing to a screen reader, which cannot see the fade.
+          */}
+          <div
+            aria-busy={pending}
+            className={pending ? 'opacity-60 transition-opacity' : 'transition-opacity'}
+          >
           {result.items.length === 0 ? (
             <EmptyState
               icon={SearchX}
@@ -255,6 +250,7 @@ export function MarketplaceView({
               />
             </>
           )}
+          </div>
         </div>
       </div>
 
