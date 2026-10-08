@@ -51,6 +51,14 @@ export function PricingRulesEditor({
   const [showAllRates, setShowAllRates] = useState(false);
   const [bands, setBands] = useState(settings.bands);
   const bandsEdited = JSON.stringify(bands) !== JSON.stringify(settings.bands);
+  /*
+    Recalculating rewrites every sell price in the inventory.
+
+    It is not destructive - a price can be recalculated again - but it is
+    expensive and it moves what customers are charged, so it asks first. The
+    buttons beside it are cheap and reversible and do not.
+  */
+  const [confirmingRecalculate, setConfirmingRecalculate] = useState(false);
 
   /*
     The base is fixed at 1 against itself; everything else has a real rate.
@@ -117,10 +125,23 @@ export function PricingRulesEditor({
   );
 
   return (
-    <Card>
-      <CardHeader className="flex flex-wrap items-center justify-between gap-2">
-        <CardTitle>The rules</CardTitle>
-        <div className="flex items-center gap-2">
+    <div className="space-y-4">
+      {/*
+        One card per group rather than one tall card with rules across it.
+
+        The sections were already separated by a hairline, which is a card in
+        all but name; what they lacked was a heading saying what the group is
+        for. Nothing moves between groups - the fields, their handlers and
+        their order are exactly where they were.
+      */}
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <h2 className="text-[15px] font-semibold text-ink">Pricing rules</h2>
+          <p className="mt-0.5 text-[12px] text-muted">
+            Every number here is a setting. Nothing saves without a preview first.
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
           <Button
             variant="outline"
             size="sm"
@@ -143,24 +164,55 @@ export function PricingRulesEditor({
             <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" />
             Refresh rates
           </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={busy}
-            onClick={() =>
-              startTransition(async () => {
-                const result = await recalculateAction();
-                setMessage(applySummary(result));
-              })
-            }
-          >
-            <Calculator className="h-3.5 w-3.5" aria-hidden="true" />
-            Recalculate all
-          </Button>
+          {confirmingRecalculate ? (
+            <>
+              <span className="text-[13px] text-ink">Reprice every listing?</span>
+              <Button
+                variant="accent"
+                size="sm"
+                disabled={busy}
+                onClick={() =>
+                  startTransition(async () => {
+                    setConfirmingRecalculate(false);
+                    const result = await recalculateAction();
+                    setMessage(applySummary(result));
+                  })
+                }
+              >
+                {busy ? 'Repricing...' : 'Yes, reprice'}
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={busy}
+                onClick={() => setConfirmingRecalculate(false)}
+              >
+                Cancel
+              </Button>
+            </>
+          ) : (
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={busy}
+              onClick={() => setConfirmingRecalculate(true)}
+            >
+              <Calculator className="h-3.5 w-3.5" aria-hidden="true" />
+              Recalculate all
+            </Button>
+          )}
         </div>
-      </CardHeader>
+      </div>
 
-      <CardContent className="space-y-5">
+      <Card>
+        <CardHeader>
+          <CardTitle>Margin, conversion and fees</CardTitle>
+          <p className="mt-0.5 text-[12px] text-muted">
+            What every price is built from: the buffer on a conversion, the floor under a margin,
+            and what each way of paying costs us.
+          </p>
+        </CardHeader>
+        <CardContent>
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {percent(
             'fxBufferPct',
@@ -200,8 +252,13 @@ export function PricingRulesEditor({
           </div>
         </div>
 
-        {/* -------------------------------------------------------- bands */}
-        <div className="border-t border-line pt-4">
+        </CardContent>
+      </Card>
+
+      {/* -------------------------------------------------------- bands */}
+      <Card>
+        <CardContent className="pt-5">
+        <div>
           <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
             <p className="text-[13px] font-medium text-ink">Markup bands</p>
             <Button
@@ -353,9 +410,20 @@ export function PricingRulesEditor({
           </div>
         </div>
 
-        {/* ---------------------------------------------------------- rates */}
-        <div className="border-t border-line pt-4">
-          <p className="mb-2 text-[13px] font-medium text-ink">Exchange rates</p>
+        </CardContent>
+      </Card>
+
+      {/* ---------------------------------------------------------- rates */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Exchange rates</CardTitle>
+          <p className="mt-0.5 text-[12px] text-muted">
+            Published by the ECB and refreshed at 02:00. The currencies our publishers actually
+            charge in are listed first.
+          </p>
+        </CardHeader>
+        <CardContent>
+        <div>
           {rates.length === 0 ? (
             <p className="text-[13px] text-muted">
               No rates stored yet. Press Refresh rates, or wait for the 02:00 job.
@@ -427,7 +495,12 @@ export function PricingRulesEditor({
           ) : null}
         </div>
 
-        {/* -------------------------------------------------------- preview */}
+        </CardContent>
+      </Card>
+
+      {/* -------------------------------------------------------- preview */}
+      <Card>
+        <CardContent className="space-y-4 pt-5">
         {preview ? (
           <div className="rounded-lg border border-line bg-surface-sunken p-3">
             <p className="text-[13px] font-medium text-ink">
@@ -492,8 +565,9 @@ export function PricingRulesEditor({
             <span className="text-[12px] text-muted">Preview first - this moves live prices.</span>
           ) : null}
         </div>
-      </CardContent>
-    </Card>
+        </CardContent>
+      </Card>
+    </div>
   );
 }
 

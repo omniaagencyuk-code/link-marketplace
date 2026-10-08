@@ -1,9 +1,10 @@
+import { Suspense } from 'react';
 import { AlertCircle } from 'lucide-react';
 import { PageTitle } from '@/components/dashboard/page-title';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { PricingRulesEditor } from '@/components/admin/pricing/pricing-rules-editor';
 import { MarginReport } from '@/components/admin/pricing/margin-report';
-import { pricingService } from '@/lib/services/pricing-service';
+import { pricingService, type PricingSettings } from '@/lib/services/pricing-service';
 import { fxService } from '@/lib/services/fx-service';
 import { isSupabaseEnabled } from '@/lib/supabase/config';
 import { formatPrice } from '@/lib/utils/format';
@@ -41,36 +42,23 @@ export default async function PricingPage() {
     );
   }
 
-  const [settings, rates, calculated, currenciesInUse] = await Promise.all([
+  /*
+    The settings, and nothing that depends on pricing the inventory.
+
+    `calculate()` prices every listing in the marketplace, which is the slow
+    half of this page and was blocking the fast half: the rules could not be
+    read, let alone edited, until twelve thousand listings had been costed.
+    It moved to `<PricedInventory>` below, inside a Suspense boundary, so the
+    settings arrive immediately and the report streams in behind them.
+
+    Nothing is dropped. The figures, the margin report and both warnings are
+    all still on the page and all still come from the same `calculate()`.
+  */
+  const [settings, rates, currenciesInUse] = await Promise.all([
     pricingService.getSettings(),
     fxService.list().catch(() => []),
-    pricingService
-      .calculate()
-      .catch(() => ({ rows: [], missingRates: [] as string[], noCurrency: [] as string[] })),
     pricingService.currenciesInUse().catch(() => []),
   ]);
-
-  const priced = calculated.rows;
-  const belowMinimum = priced.filter(
-    (row) => row.breakdown.marginMinor < settings.rules.minMarginMinor,
-  );
-  const overrides = priced.filter((row) => row.isOverride);
-  // An override whose cost has moved underneath it: the typed price stands,
-  // but it no longer clears the floor, which is exactly what the brief asks
-  // to be warned about.
-  const staleOverrides = overrides.filter(
-    (row) =>
-      row.currentMinor != null &&
-      row.currentMinor - row.breakdown.trueCostMinor < settings.rules.minMarginMinor,
-  );
-
-  const totalMargin = priced.reduce((sum, row) => sum + row.breakdown.marginMinor, 0);
-
-  // The age comes from the service, which may read a clock. A render may not.
-  //
-  // The base is excluded because it is never fetched - its row is written
-  // once and stays. Excluding GBP instead, from when GBP was the base, meant
-  // this warning counted USD and was therefore permanently on.
   const staleRateCount = staleRates(rates).length;
 
   return (
@@ -93,6 +81,62 @@ export default async function PricingPage() {
         </Card>
       ) : null}
 
+      <PricingRulesEditor
+        settings={settings}
+        rates={rates}
+        staleRateCount={staleRateCount}
+        currenciesInUse={currenciesInUse}
+      />
+
+      {/*
+        Streamed, because pricing the inventory takes seconds and the rules
+        above do not. The fallback is a real skeleton rather than a spinner,
+        so the page does not jump when the figures land.
+      */}
+      <Suspense fallback={<PricedInventorySkeleton />}>
+        <PricedInventory settings={settings} />
+      </Suspense>
+    </div>
+  );
+}
+
+/**
+ * Everything that needs the inventory priced.
+ *
+ * A component of its own so it can suspend: the rules above render from two
+ * cheap reads, and this one walks every listing. Split out rather than made
+ * faster, because the arithmetic is the product - it is what the page exists
+ * to show - and nothing here changes how a single price is worked out.
+ */
+async function PricedInventory({ settings }: { settings: PricingSettings }) {
+  const calculated = await pricingService
+    .calculate()
+    .catch(() => ({ rows: [], missingRates: [] as string[], noCurrency: [] as string[] }));
+
+  const priced = calculated.rows;
+  const belowMinimum = priced.filter(
+    (row) => row.breakdown.marginMinor < settings.rules.minMarginMinor,
+  );
+  const overrides = priced.filter((row) => row.isOverride);
+  // An override whose cost has moved underneath it: the typed price stands,
+  // but it no longer clears the floor, which is exactly what the brief asks
+  // to be warned about.
+  const staleOverrides = overrides.filter(
+    (row) =>
+      row.currentMinor != null &&
+      row.currentMinor - row.breakdown.trueCostMinor < settings.rules.minMarginMinor,
+  );
+
+  const totalMargin = priced.reduce((sum, row) => sum + row.breakdown.marginMinor, 0);
+
+  // The age comes from the service, which may read a clock. A render may not.
+  //
+  // The base is excluded because it is never fetched - its row is written
+  // once and stays. Excluding GBP instead, from when GBP was the base, meant
+  // this warning counted USD and was therefore permanently on.
+
+  return (
+    <div className="space-y-5">
       <div className="grid gap-3 sm:grid-cols-4">
         <Figure label="Prices calculated" value={String(priced.length)} />
         <Figure
@@ -112,13 +156,6 @@ export default async function PricingPage() {
           tone={staleOverrides.length > 0 ? 'bad' : undefined}
         />
       </div>
-
-      <PricingRulesEditor
-        settings={settings}
-        rates={rates}
-        staleRateCount={staleRateCount}
-        currenciesInUse={currenciesInUse}
-      />
 
       <Card>
         <CardHeader>
@@ -175,6 +212,28 @@ export default async function PricingPage() {
           </CardContent>
         </Card>
       ) : null}
+    </div>
+  );
+}
+
+function PricedInventorySkeleton() {
+  return (
+    <div className="space-y-5">
+      <div className="grid gap-3 sm:grid-cols-4">
+        {[0, 1, 2, 3].map((n) => (
+          <Card key={n}>
+            <CardContent className="py-4">
+              <div className="h-3 w-24 rounded bg-surface-sunken" />
+              <div className="mt-2 h-5 w-16 rounded bg-surface-sunken" />
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+      <Card>
+        <CardContent className="py-10 text-center text-[13px] text-muted">
+          Pricing every listing...
+        </CardContent>
+      </Card>
     </div>
   );
 }
