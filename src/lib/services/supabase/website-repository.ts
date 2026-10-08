@@ -2,6 +2,12 @@ import { getServerClient, getAdminClient, getAdminScopedClient } from '@/lib/sup
 import { inNiche } from '@/lib/marketplace/topic';
 import { readAllPages } from './paged';
 import {
+  COST_CURRENCY_MESSAGE,
+  costCurrencyBlocker,
+  usableCurrency,
+  writesACost,
+} from '@/lib/websites/cost-currency';
+import {
   WEBSITE_SELECT,
   WEBSITE_SELECT_ADMIN,
   mapWebsite,
@@ -288,6 +294,21 @@ async function syncContact(
  * Upserted rather than updated: a website added by hand has no commercials
  * row until something writes one.
  */
+/**
+ * The currency already on record for a listing.
+ *
+ * Read only when a write carries a cost and does not carry a currency, which
+ * is the one case where it decides anything.
+ */
+async function recordedCostCurrency(supabase: Client, websiteId: string): Promise<string | null> {
+  const { data } = await supabase
+    .from('website_commercials')
+    .select('cost_currency')
+    .eq('website_id', websiteId)
+    .maybeSingle();
+  return usableCurrency((data as { cost_currency: string | null } | null)?.cost_currency);
+}
+
 async function syncCostCurrency(
   supabase: Client,
   websiteId: string,
@@ -297,14 +318,14 @@ async function syncCostCurrency(
   // An update that does not mention it must not clear it.
   if (costCurrency === undefined) return;
 
-  const code = costCurrency.trim().toUpperCase();
-
   const { error } = await supabase.from('website_commercials').upsert(
     {
       website_id: websiteId,
       // Blank clears it back to "not recorded", which is a real answer and
-      // not the same as GBP.
-      cost_currency: code.length === 3 ? code : null,
+      // not the same as GBP. The same rule the write guard applies, from the
+      // same place, so the two cannot drift into disagreeing about what
+      // counts as a currency.
+      cost_currency: usableCurrency(costCurrency),
       updated_by: updatedBy ?? null,
     },
     { onConflict: 'website_id' },
@@ -892,6 +913,24 @@ export const supabaseWebsiteRepository = {
       status: input.status ?? 'draft',
     };
 
+    /*
+      Checked before the insert, not after.
+
+      A new listing has no commercials row to fall back on, so the currency
+      has to be in this write. Refusing after the insert would leave a website
+      row with no services behind it, which is worse than the thing being
+      refused.
+    */
+    if (
+      costCurrencyBlocker({
+        services: input.services,
+        supplied: input.costCurrency,
+        recorded: null,
+      })
+    ) {
+      throw new Error(COST_CURRENCY_MESSAGE);
+    }
+
     const { data, error } = await supabase
       .from('websites')
       .insert(row)
@@ -913,6 +952,28 @@ export const supabaseWebsiteRepository = {
   async update(id: string, patch: Partial<Website>): Promise<Website | null> {
     const supabase = getAdminScopedClient();
     const columns = websiteToRow(patch);
+
+    /*
+      A cost needs a currency, from this write or from the listing.
+
+      Checked first, so a patch that would have saved an unusable cost changes
+      nothing at all rather than writing the parts that passed. The read only
+      happens when a cost is being written without a currency beside it.
+    */
+    if (writesACost(patch.services)) {
+      // Read only when the patch is silent, which is the only case it decides.
+      const recorded =
+        patch.costCurrency === undefined ? await recordedCostCurrency(supabase, id) : null;
+      if (
+        costCurrencyBlocker({
+          services: patch.services,
+          supplied: patch.costCurrency,
+          recorded,
+        })
+      ) {
+        throw new Error(COST_CURRENCY_MESSAGE);
+      }
+    }
 
     // A patch that only changes services or niches has nothing to write here,
     // and Supabase rejects an empty update.
