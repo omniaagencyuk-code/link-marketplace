@@ -8,7 +8,9 @@ import { SourcingControls } from '@/components/admin/sourcing/sourcing-controls'
 import { DraftsTable } from '@/components/admin/sourcing/drafts-table';
 import { sourcingService } from '@/lib/services/sourcing-service';
 import { eligibleCount, latestApprovalRun } from '@/lib/services/draft-approval-run';
+import { latestPublishRun, publishableCount } from '@/lib/services/website-publish-run';
 import { ApproveAll } from '@/components/admin/sourcing/approve-all';
+import { PublishBacklog } from '@/components/admin/publish-backlog';
 import { getAdminScopedClient } from '@/lib/supabase/server';
 import { isSupabaseEnabled } from '@/lib/supabase/config';
 
@@ -57,6 +59,8 @@ async function load() {
     eligibleConfident,
     eligiblePriced,
     approvalRun,
+    publishable,
+    publishRun,
     emails,
     problems,
     batches,
@@ -75,6 +79,10 @@ async function load() {
     eligibleCount('confident').catch(() => 0),
     eligibleCount('priced').catch(() => 0),
     latestApprovalRun().catch(() => null),
+    // Both one query. The publish control needs its own number before it
+    // renders, the same way the approve-all does.
+    publishableCount().catch(() => 0),
+    latestPublishRun().catch(() => null),
     /*
       Counted in the database rather than here.
 
@@ -139,6 +147,8 @@ async function load() {
     eligibleConfident,
     eligiblePriced,
     approvalRun,
+    publishable,
+    publishRun,
     problems: (problems.data ?? []) as Record<string, unknown>[],
     batches: (batches.data ?? []) as Record<string, unknown>[],
     /*
@@ -304,6 +314,19 @@ export default async function SourcingPage() {
             eligiblePriced={state.eligiblePriced}
             run={state.approvalRun}
           />
+
+          {/*
+            Approving and publishing are one sequence, so they are in one
+            place. An approved draft becomes a listing priced at zero and
+            switched off; the pricing run gives it a price; this is the step
+            that makes it buyable, and until now it meant finding several
+            thousand rows in a table that shows twenty-five.
+
+            Here rather than on the websites table because that page reads the
+            whole inventory to render and is slow enough that a one-off job
+            should not be behind it.
+          */}
+          <PublishBacklog ready={state.publishable} run={state.publishRun} />
           {state.duplicateDrafts > 0 ? (
             <p className="rounded-lg border border-line bg-surface-sunken px-3 py-2 text-[13px] text-ink-soft">
               {state.duplicateDrafts} more {state.duplicateDrafts === 1 ? 'draft is' : 'drafts are'}{' '}

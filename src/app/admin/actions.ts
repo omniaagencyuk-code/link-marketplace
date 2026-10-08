@@ -4,6 +4,12 @@ import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { orderService, settingsService, websiteService } from '@/lib/services';
 import { requireAdminSession } from '@/lib/auth/admin-access';
+import {
+  advancePublishRun,
+  cancelPublishRun,
+  publishableCount,
+  startPublishRun,
+} from '@/lib/services/website-publish-run';
 import { deliveryService } from '@/lib/services/delivery-service';
 import { slugifyDomain } from '@/lib/utils/format';
 import {
@@ -528,4 +534,44 @@ export async function saveContentPricingAction(formData: FormData) {
   revalidatePath('/admin/settings');
   revalidatePath('/content-writing');
   revalidatePath('/dashboard/content/new');
+}
+
+/* ------------------------------------------------------- publishing the backlog
+
+  Selecting seven thousand rows in a table that shows twenty-five is not a
+  thing to ask of anybody, and the browser cannot hold the tab open long
+  enough anyway. One press starts a run; cron carries it on.
+*/
+
+export async function startPublishRunAction() {
+  const session = await requireAdminSession();
+  const outcome = await startPublishRun(session.email ?? 'an administrator');
+
+  if (outcome.ok) {
+    // Advanced once here so the first slice happens while somebody is
+    // watching, rather than the screen saying "started" and nothing moving
+    // until the next cron tick.
+    await advancePublishRun(20_000).catch(() => undefined);
+    revalidatePath('/admin/websites');
+  }
+  return outcome;
+}
+
+export async function advancePublishRunAction() {
+  await requireAdminSession();
+  const outcome = await advancePublishRun(20_000);
+  revalidatePath('/admin/websites');
+  return outcome;
+}
+
+export async function cancelPublishRunAction() {
+  await requireAdminSession();
+  const outcome = await cancelPublishRun();
+  revalidatePath('/admin/websites');
+  return outcome;
+}
+
+export async function publishableCountAction() {
+  await requireAdminSession();
+  return publishableCount();
 }
