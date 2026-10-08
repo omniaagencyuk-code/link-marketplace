@@ -33,7 +33,8 @@
     "verify:monitoring": "tsx scripts/verify-monitoring.mts",
     "verify:promos": "tsx scripts/verify-promos.mts",
     "verify:sales": "tsx scripts/verify-sales.mts",
-    "verify:gap": "tsx scripts/verify-gap.mts"
+    "verify:gap": "tsx scripts/verify-gap.mts",
+    "verify:search": "tsx scripts/verify-marketplace-search.mts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.128.0",

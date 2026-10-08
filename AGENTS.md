@@ -174,3 +174,10 @@ their project to somebody else.
   counts as a gap, and which competitors are worth suggesting. Pure arithmetic
   against the measured Ahrefs pricing model; no API key, no database, no
   network.
+- `npm run verify:search` — that the marketplace's database-side search returns
+  exactly what the browser-side filter it replaces returned. The same fixtures
+  are inserted into a real Postgres and built as `WebsiteListItem`s, and every
+  filter, every sort key and the topic repricing are run through both, with the
+  id sequences compared in order. Needs the same local Postgres `verify:rls`
+  wants. A port like this fails quietly - a customer sees a slightly different
+  set of publishers and nothing says so - so neither side is trusted.
