@@ -1,8 +1,10 @@
 import { mockAdmin, mockCustomer, users as seedUsers } from '@/lib/data/users';
 import { isAdminEmail } from '@/lib/auth/admin-access';
+import type { UserWithTotals } from './supabase/orders-repository';
 import type { UserProfile } from '@/lib/types';
 import { isSupabaseEnabled } from '@/lib/supabase/config';
 import { supabaseUserRepository } from './supabase/orders-repository';
+export type { UserWithTotals } from './supabase/orders-repository';
 
 const store: UserProfile[] = seedUsers.map((user) => ({ ...user }));
 
@@ -33,6 +35,22 @@ export const userService = {
     if (isSupabaseEnabled()) return supabaseUserRepository.getAll();
 
     return [...store];
+  },
+
+  /**
+   * Every account with its order count and lifetime spend.
+   *
+   * One query. The admin user list used to read every profile and every
+   * order and filter the orders once per user to produce these two numbers -
+   * a nested loop over two whole tables, growing as the product of both.
+   *
+   * Falls back to doing it the old way without a database, which is the mock
+   * store and is a handful of rows.
+   */
+  async listWithTotals(): Promise<UserWithTotals[]> {
+    if (isSupabaseEnabled()) return supabaseUserRepository.listWithTotals();
+
+    return store.map((user) => ({ ...user, orders: 0, spendMinor: 0 }));
   },
 
   async getById(id: string): Promise<UserProfile | null> {

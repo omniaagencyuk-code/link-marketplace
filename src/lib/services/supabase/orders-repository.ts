@@ -1,4 +1,4 @@
-import { getServerClient } from '@/lib/supabase/server';
+import { getAdminScopedClient, getServerClient } from '@/lib/supabase/server';
 import {
   mapContentItem,
   mapContentOrder,
@@ -361,7 +361,33 @@ export const supabaseContentRepository = {
 
 // ------------------------------------------------------------------ profiles
 
+/** A profile plus the two figures the admin user table shows beside it. */
+export interface UserWithTotals extends UserProfile {
+  orders: number;
+  spendMinor: number;
+}
+
 export const supabaseUserRepository = {
+  /**
+   * Every account with its order count and lifetime spend, in one query.
+   *
+   * The admin user list read every profile and every order and filtered the
+   * orders once per user - a nested loop over two whole tables, growing as
+   * the product of both. `admin_user_rows` does it as one grouped join.
+   */
+  async listWithTotals(): Promise<UserWithTotals[]> {
+    const supabase = getAdminScopedClient();
+    const { data, error } = await supabase.rpc('admin_user_rows');
+    if (error) throw new Error(`Failed to load the user list: ${error.message}`);
+
+    type Row = ProfileRow & { orders: number; spend_minor: number };
+    return ((data ?? []) as Row[]).map((row) => ({
+      ...mapProfile(row),
+      orders: Number(row.orders ?? 0),
+      spendMinor: Number(row.spend_minor ?? 0),
+    }));
+  },
+
   async getAll(): Promise<UserProfile[]> {
     const supabase = await getServerClient();
     const { data } = await supabase
