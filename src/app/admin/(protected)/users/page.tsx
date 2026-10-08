@@ -2,14 +2,22 @@ import { PageTitle } from '@/components/dashboard/page-title';
 import { Avatar } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableWrap, Td, Th, Tr } from '@/components/ui/table';
-import { orderService, userService } from '@/lib/services';
+import { userService } from '@/lib/services';
 import { formatDate, formatPrice } from '@/lib/utils/format';
 import { UserRoleButton } from '@/components/admin/user-role-button';
 
 export const dynamic = 'force-dynamic';
 
 export default async function AdminUsersPage() {
-  const [users, orders] = await Promise.all([userService.getAll(), orderService.getAll()]);
+  /*
+    One query, counted in the database.
+
+    This read every profile and every order and then filtered the orders once
+    per user to produce two numbers - a nested loop over two whole tables,
+    growing as the product of both. At nine hundred customers and thirteen
+    hundred orders that is over a million comparisons to draw a table.
+  */
+  const users = await userService.listWithTotals();
 
   return (
     <>
@@ -35,10 +43,9 @@ export default async function AdminUsersPage() {
           </thead>
           <tbody>
             {users.map((user) => {
-              const userOrders = orders.filter((order) => order.userId === user.id);
-              const spend = userOrders
-                .filter((order) => order.status !== 'cancelled' && order.status !== 'draft')
-                .reduce((sum, order) => sum + order.totalMinor, 0);
+              // Both figures arrive with the row, under the rule the page
+              // already used: no cancelled orders and no draft baskets.
+              const spend = user.spendMinor;
 
               return (
                 <Tr key={user.id}>
@@ -64,7 +71,7 @@ export default async function AdminUsersPage() {
                     {user.plan}
                   </Td>
                   <Td className="tabular text-right text-[13px] text-ink-soft">
-                    {userOrders.length}
+                    {user.orders}
                   </Td>
                   <Td className="tabular text-right text-[13px] font-semibold text-ink">
                     {formatPrice(spend)}

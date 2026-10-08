@@ -230,3 +230,57 @@ begin
   end loop;
 end;
 $$;
+
+-- ------------------------------------------------- the admin user list (0071)
+
+/*
+  The two figures beside each account.
+
+  The page worked them out by filtering every order once per user; this is
+  the same arithmetic in one grouped join, and the same exclusions. A test
+  that only checked the count would miss the exclusions, which are the part
+  that moves money on screen.
+*/
+/*
+  Customer one placed five orders: live, in progress, cancelled, draft, and
+  one live in the month before. Three of them count, for 45,000.
+*/
+select 'an account carries its own order count: ' ||
+  (select orders = 3 from public.admin_user_rows() where email = 'dash-one@test.test');
+
+select 'and its own spend: ' ||
+  (select spend_minor = 45000 from public.admin_user_rows() where email = 'dash-one@test.test');
+
+-- 55,000 would mean the cancelled one came too; 65,000, the draft as well.
+select 'the cancelled order is not in it: ' ||
+  (select spend_minor <> 55000 from public.admin_user_rows() where email = 'dash-one@test.test');
+
+select 'nor is the draft: ' ||
+  (select spend_minor <> 65000 from public.admin_user_rows() where email = 'dash-one@test.test');
+
+-- And the other customer's orders are not in it either.
+select 'one account''s figures are not another''s: ' ||
+  (select orders = 2 and spend_minor = 20000
+   from public.admin_user_rows() where email = 'dash-two@test.test');
+
+select 'an account with no orders is listed at zero rather than left out: ' ||
+  (select count(*) = 1 from public.admin_user_rows() where email = 'admin@test' and orders = 0);
+
+do $$
+declare
+  r text;
+  v_refused boolean;
+begin
+  foreach r in array array['anon', 'authenticated'] loop
+    v_refused := false;
+    begin
+      execute format('set local role %I', r);
+      execute 'select * from public.admin_user_rows()';
+    exception when insufficient_privilege then
+      v_refused := true;
+    end;
+    reset role;
+    raise notice '% is refused the user list: %', r, v_refused;
+  end loop;
+end;
+$$;
