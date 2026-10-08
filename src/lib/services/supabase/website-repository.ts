@@ -23,6 +23,7 @@ import type {
   WebsiteListItem,
   WebsiteStatus,
 } from '@/lib/types';
+import type { MarketplaceFacets, PaginatedResult, WebsiteQuery } from '@/lib/types/query';
 
 /**
  * Websites, backed by Supabase.
@@ -468,6 +469,109 @@ export const supabaseWebsiteRepository = {
     ];
 
     return rankRelated(rows.map(mapWebsite), relatedTarget(current), limit).map(toListItem);
+  },
+
+  /**
+   * One page of the marketplace, filtered in the database.
+   *
+   * The replacement this file has been describing since it was written. The
+   * full read it supersedes shipped every active listing to the browser so the
+   * browser could filter it - fine at a few hundred, and 3,405 live listings
+   * with 7,174 approved and waiting is not a few hundred.
+   *
+   * Two reads, both small. `marketplace_search` decides which listings and in
+   * what order and hands back ids; the rows themselves come through the select
+   * and mapper this file already uses, so nothing about what a listing *is*
+   * is defined twice. `verify:search` runs both engines over the same fixtures
+   * and compares the id sequences, because the way this goes wrong is quietly.
+   *
+   * The order comes from the function, not from the second read: `in (...)`
+   * returns rows in whatever order it likes, and a page that re-sorted them
+   * would undo the sort the customer asked for.
+   */
+  async search(
+    query: WebsiteQuery,
+    topic?: string,
+  ): Promise<PaginatedResult<WebsiteListItem>> {
+    const supabase = await getServerClient();
+    const page = Math.max(1, query.page ?? 1);
+    const pageSize = Math.max(1, query.pageSize ?? 25);
+
+    const { data, error } = await supabase.rpc('marketplace_search', {
+      p_search: query.search?.trim() || null,
+      p_niches: query.niches?.length ? query.niches : null,
+      p_countries: query.countries?.length ? query.countries : null,
+      p_languages: query.languages?.length ? query.languages : null,
+      p_link_types: query.linkTypes?.length ? query.linkTypes : null,
+      p_link_attribute: query.linkAttribute ?? null,
+      p_dr_min: query.domainRating?.min ?? null,
+      p_dr_max: query.domainRating?.max ?? null,
+      p_traffic_min: query.organicTraffic?.min ?? null,
+      p_traffic_max: query.organicTraffic?.max ?? null,
+      p_rd_min: query.referringDomains?.min ?? null,
+      p_rd_max: query.referringDomains?.max ?? null,
+      p_price_min: query.price?.min ?? null,
+      p_price_max: query.price?.max ?? null,
+      p_max_turnaround: query.maxTurnaroundDays ?? null,
+      p_verified: Boolean(query.verifiedOnly),
+      p_topic: topic ?? null,
+      p_sort: query.sort ?? 'relevance',
+      p_limit: pageSize,
+      p_offset: (page - 1) * pageSize,
+    });
+
+    if (error) throw new Error(`Could not search the marketplace: ${error.message}`);
+
+    const rows = (data ?? []) as { id: string; total: number }[];
+    const total = Number(rows[0]?.total ?? 0);
+    const ids = rows.map((row) => row.id);
+
+    const found = await supabaseWebsiteRepository.getByIds(ids);
+    const byId = new Map(found.map((item) => [item.id, item]));
+
+    return {
+      items: ids
+        .map((id) => byId.get(id))
+        .filter((item): item is WebsiteListItem => Boolean(item)),
+      total,
+      page,
+      pageSize,
+      totalPages: Math.max(1, Math.ceil(total / pageSize)),
+    };
+  },
+
+  /**
+   * What the sidebar may offer, and how much of it.
+   *
+   * Counted in the database because the page can no longer count what it is
+   * not holding. One call for all three, keyed by kind.
+   */
+  async facets(topic?: string): Promise<MarketplaceFacets> {
+    const supabase = await getServerClient();
+    const { data, error } = await supabase.rpc('marketplace_facets', {
+      p_topic: topic ?? null,
+    });
+
+    if (error) throw new Error(`Could not count the marketplace filters: ${error.message}`);
+
+    const rows = (data ?? []) as { kind: string; value: string; count: number }[];
+    const niches: Record<string, number> = {};
+    const countries: [string, number][] = [];
+    const languages: string[] = [];
+    let unstated = 0;
+
+    for (const row of rows) {
+      if (row.kind === 'niche') niches[row.value] = Number(row.count);
+      else if (row.kind === 'language') languages.push(row.value);
+      else if (row.kind === 'country') countries.push([row.value, Number(row.count)]);
+      else if (row.kind === 'country-unstated') unstated = Number(row.count);
+    }
+
+    // Biggest first, as the sidebar has always shown them.
+    countries.sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+    languages.sort();
+
+    return { niches, countries, unstated, languages };
   },
 
   async getByIds(ids: string[]): Promise<WebsiteListItem[]> {

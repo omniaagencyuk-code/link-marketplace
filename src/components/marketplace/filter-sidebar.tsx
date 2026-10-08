@@ -1,5 +1,6 @@
 'use client';
 
+import { useEffect, useRef, useState } from 'react';
 import { Search, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -31,6 +32,14 @@ function toggleValue<T>(list: T[], value: T): T[] {
   return list.includes(value) ? list.filter((item) => item !== value) : [...list, value];
 }
 
+/**
+ * How long a pause counts as having finished typing.
+ *
+ * Short enough not to feel laggy, long enough that an ordinary word is one
+ * search rather than one per letter.
+ */
+const SEARCH_PAUSE_MS = 300;
+
 export function FilterSidebar({
   filters,
   onChange,
@@ -53,6 +62,38 @@ export function FilterSidebar({
    */
   countryCounts: { countries: [CountryCode, number][]; unstated: number };
 }) {
+  /*
+    The typing is local; only the pause is a search.
+
+    This used to call `onChange` on every keystroke, which cost nothing while
+    the whole inventory sat in the browser - it was an array filter. The search
+    runs in the database now, so a keystroke is a request, and "gambling" would
+    be nine of them with only the last one's answer wanted.
+
+    The input holds what was typed and the filter is told a moment later. The
+    effect below syncs the other way for the times the filters change without
+    the keyboard - Reset, or a topic chosen from the URL - so the box does not
+    keep showing a term nothing is filtering by any more.
+  */
+  const [typed, setTyped] = useState(filters.search);
+  const committed = useRef(filters.search);
+
+  useEffect(() => {
+    if (filters.search !== committed.current) {
+      committed.current = filters.search;
+      setTyped(filters.search);
+    }
+  }, [filters.search]);
+
+  useEffect(() => {
+    if (typed === committed.current) return;
+    const timer = setTimeout(() => {
+      committed.current = typed;
+      onChange({ search: typed });
+    }, SEARCH_PAUSE_MS);
+    return () => clearTimeout(timer);
+  }, [typed, onChange]);
+
   const symbol = currencySymbol();
 
   return (
@@ -76,9 +117,9 @@ export function FilterSidebar({
           <Input
             id="filter-search"
             type="search"
-            value={filters.search}
+            value={typed}
             placeholder="Domain or keyword"
-            onChange={(event) => onChange({ search: event.target.value })}
+            onChange={(event) => setTyped(event.target.value)}
             className="h-9 pr-3 pl-9 text-[13px]"
           />
         </div>

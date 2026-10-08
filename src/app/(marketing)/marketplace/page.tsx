@@ -18,6 +18,9 @@ import { RedactedPreview } from '@/components/marketplace/redacted-preview';
 import { HandwrittenNote } from '@/components/shared/handwritten';
 import { getCurrentUser } from '@/lib/auth/customer-access';
 import { settingsService, websiteService } from '@/lib/services';
+import { parseFilters, toWebsiteQuery } from '@/lib/marketplace/filters';
+import { sortOptions } from '@/lib/utils/labels';
+import type { SortKey } from '@/lib/types';
 import { ADVERTISED_INVENTORY } from '@/lib/data/websites';
 import { marketingStats } from '@/lib/config/marketing';
 import { brand, siteUrl } from '@/lib/config/brand';
@@ -124,6 +127,19 @@ function marketplaceTarget(params: Record<string, string | string[] | undefined>
   return query ? `/marketplace?${query}` : '/marketplace';
 }
 
+
+/**
+ * The sort in the URL, if it is one the dropdown offers.
+ *
+ * The same rule the hook applies, for the same reason: an order that no longer
+ * exists would leave the control blank while the list was ordered by something
+ * unnameable.
+ */
+function sortFromParams(params: URLSearchParams): SortKey {
+  const asked = params.get('sort');
+  return sortOptions.some((option) => option.value === asked) ? (asked as SortKey) : 'relevance';
+}
+
 export default async function MarketplacePage({
   searchParams,
 }: {
@@ -132,9 +148,32 @@ export default async function MarketplacePage({
   const user = await getCurrentUser();
 
   if (user) {
-    const [websites, settings] = await Promise.all([
-      websiteService.getAll(),
-      settingsService.get(),
+    /*
+      Filtered in the database, not in the browser.
+
+      The URL is already where the filters live - `useMarketplaceFilters` has
+      always written them there - so the page can read them straight out of
+      `searchParams` and ask for the one page it needs. Reading them with the
+      same parser the browser writes with is the whole of why that parser moved
+      out of the hook: two readings of one URL is one filter's spelling away
+      from showing a customer a different list from the one their address bar
+      describes.
+    */
+    const params = new URLSearchParams();
+    for (const [key, value] of Object.entries(await searchParams)) {
+      const single = Array.isArray(value) ? value[0] : value;
+      if (typeof single === 'string' && single !== '') params.set(key, single);
+    }
+
+    const settings = await settingsService.get();
+    const filters = parseFilters(params);
+    const sort = sortFromParams(params);
+    const page = Math.max(1, Number(params.get('page') ?? '1') || 1);
+    const pageSize = Math.max(1, Number(params.get('size') ?? String(settings.defaultPageSize)) || settings.defaultPageSize);
+
+    const [result, facets] = await Promise.all([
+      websiteService.search(toWebsiteQuery(filters, sort, page, pageSize), filters.topic),
+      websiteService.facets(filters.topic),
     ]);
 
     return (
@@ -168,7 +207,11 @@ export default async function MarketplacePage({
 
         <Container size="wide" className="py-6 lg:py-8">
           <Suspense fallback={<MarketplaceSkeleton />}>
-            <MarketplaceView websites={websites} defaultPageSize={settings.defaultPageSize} />
+            <MarketplaceView
+              result={result}
+              facets={facets}
+              defaultPageSize={settings.defaultPageSize}
+            />
           </Suspense>
         </Container>
       </>

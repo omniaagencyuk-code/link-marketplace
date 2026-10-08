@@ -1,5 +1,5 @@
 import { websites as seedWebsites } from '@/lib/data/websites';
-import { inNiche } from '@/lib/marketplace/topic';
+import { forTopic, inNiche } from '@/lib/marketplace/topic';
 import { runQuery, toListItem } from './query-engine';
 import { slugifyDomain } from '@/lib/utils/format';
 import { normaliseDomain } from '@/lib/import/normalise';
@@ -11,6 +11,8 @@ import { rankRelated, relatedTarget } from '@/lib/websites/related';
 import { pricingService } from './pricing-service';
 import { supabaseWebsiteRepository } from './supabase/website-repository';
 import type { ImportPayloadRow, ImportBatchResult, DuplicateMode } from '@/lib/import/types';
+import type { AcceptedNicheSlug } from '@/lib/types';
+import type { MarketplaceFacets } from '@/lib/types/query';
 import type {
   NicheSlug,
   PaginatedResult,
@@ -138,10 +140,49 @@ export const websiteService = {
     return store.filter((website) => website.status === 'active').map((website) => website.slug);
   },
 
-  /** Filter, sort and paginate. Used by the marketplace page. */
-  async search(query: WebsiteQuery): Promise<PaginatedResult<WebsiteListItem>> {
-    const result = runQuery(listItems(), query);
+  /**
+   * Filter, sort and paginate. Used by the marketplace page.
+   *
+   * The database does it when there is a database. The in-memory path below is
+   * the mock store, and it runs the same `runQuery` the browser used to - which
+   * is also what `verify:search` compares the SQL against, so the two cannot
+   * drift apart unnoticed.
+   *
+   * The topic is applied after the page comes back rather than before. It
+   * narrows and reprices, and the narrowing already happened in SQL; repricing
+   * twenty-five rows here reuses `forTopic` instead of teaching the database a
+   * second version of what a placement costs.
+   */
+  async search(query: WebsiteQuery, topic?: AcceptedNicheSlug): Promise<PaginatedResult<WebsiteListItem>> {
+    if (isSupabaseEnabled()) {
+      const result = await supabaseWebsiteRepository.search(query, topic);
+      return { ...result, items: forTopic(publicItems(result.items), topic) };
+    }
+    const result = runQuery(forTopic(listItems(), topic), query);
     return { ...result, items: publicItems(result.items) };
+  },
+
+  /** What the sidebar may offer, and how much of it. */
+  async facets(topic?: AcceptedNicheSlug): Promise<MarketplaceFacets> {
+    if (isSupabaseEnabled()) return supabaseWebsiteRepository.facets(topic);
+
+    const source = forTopic(listItems(), topic);
+    const niches: Record<string, number> = {};
+    for (const website of listItems()) {
+      niches[website.niche] = (niches[website.niche] ?? 0) + 1;
+    }
+    const byCountry = new Map<string, number>();
+    let unstated = 0;
+    for (const website of source) {
+      if (!website.country) unstated += 1;
+      else byCountry.set(website.country, (byCountry.get(website.country) ?? 0) + 1);
+    }
+    return {
+      niches,
+      countries: [...byCountry.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])),
+      unstated,
+      languages: [...new Set(listItems().map((website) => website.language))].sort(),
+    };
   },
 
   /**

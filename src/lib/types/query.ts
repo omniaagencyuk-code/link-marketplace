@@ -80,3 +80,20 @@ export interface PaginatedResult<T> {
   pageSize: number;
   totalPages: number;
 }
+
+/**
+ * What the marketplace sidebar may offer, and how much of it.
+ *
+ * Counted in the database since filtering moved there: the page no longer
+ * holds the inventory, so it cannot count it. The shape mirrors what the
+ * sidebar renders - niche counts over every active listing, country counts
+ * over the topic being bought for, plus the listings with no stated market,
+ * which the sidebar shows as a line of its own rather than hiding.
+ */
+export interface MarketplaceFacets {
+  niches: Record<string, number>;
+  /** Biggest first, as the sidebar shows them. */
+  countries: [string, number][];
+  unstated: number;
+  languages: string[];
+}

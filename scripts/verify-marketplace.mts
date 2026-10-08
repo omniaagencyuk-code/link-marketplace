@@ -6,6 +6,7 @@
  * are checked here - a card reading "from $499" that cannot be bought at
  * $499 is worse than no price at all.
  */
+import { parseFilters } from '../src/lib/marketplace/filters';
 import { acceptsTopic, forTopic, pricedForTopic } from '../src/lib/marketplace/topic';
 import {
   BUYABLE_TOPICS,
@@ -187,26 +188,30 @@ console.log('\n--- a link built before the picker shrank ---');
   /*
     `?topic=sports` is still a shareable URL. Honouring it would filter the
     marketplace to nobody while the dropdown showed blank - no option matches -
-    which is an empty screen with no visible cause. The hook drops it, so the
+    which is an empty screen with no visible cause. The parser drops it, so the
     link opens the whole marketplace.
 
-    Checked against the source because the hook is a client module: importing
-    it here would pull in next/navigation.
+    Driven rather than grepped. This used to read the hook's source and look
+    for a call, because the hook is a client module and importing it here would
+    pull in next/navigation. The parsing moved into `lib/marketplace/filters`
+    when the server started reading the same URL, and that module is pure - so
+    the rule can be exercised instead of pattern-matched, which is the stronger
+    test and no longer notices if the call is merely renamed.
   */
-  const hook = readFileSync(
-    new URL('../src/lib/hooks/use-marketplace-filters.ts', import.meta.url),
-    'utf8',
-  ).replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
-
   is(
-    'the topic in the URL is checked before it is honoured',
-    /topic:\s*buyableTopic\(/.test(hook),
-    true,
+    'a topic the picker cannot offer is dropped from the URL',
+    parseFilters(new URLSearchParams('topic=sports')).topic,
+    undefined,
   );
   is(
-    'and is not cast straight out of the query string',
-    /params\.get\('topic'\)\s*as\s/.test(hook),
-    false,
+    'one it can offer is honoured',
+    parseFilters(new URLSearchParams('topic=gambling')).topic,
+    'gambling',
+  );
+  is(
+    'and nothing is invented when the URL says nothing',
+    parseFilters(new URLSearchParams('')).topic,
+    undefined,
   );
   is('a topic nobody can answer is not buyable', isBuyableTopic('sports'), false);
   is('one the picker offers is', isBuyableTopic('gambling'), true);
