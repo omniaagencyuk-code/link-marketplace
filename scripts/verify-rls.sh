@@ -155,3 +155,6 @@ run -f "$ROOT/supabase/tests/21_blocked_senders.sql" 2>&1 | grep -v '^$'
 echo
 echo "--- pricing every service in one statement ---"
 run -f "$ROOT/supabase/tests/22_pricing_bulk.sql" 2>&1 | grep -v '^$'
+echo
+echo "--- publishing the backlog ---"
+run -f "$ROOT/supabase/tests/23_publish_backlog.sql" 2>&1 | grep -v '^$'

@@ -44,6 +44,10 @@
     {
       "path": "/api/cron/sales-attribution",
       "schedule": "43 5 * * *"
+    },
+    {
+      "path": "/api/cron/publish-backlog",
+      "schedule": "*/5 * * * *"
     }
   ]
 }
