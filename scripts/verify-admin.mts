@@ -265,5 +265,64 @@ console.log('\n--- double-clicking the grip fills the screen ---');
   is('no room left still gives a usable box', fitTableHeight(laptop, laptop), MIN_TABLE_HEIGHT);
 }
 
+/*
+  The two shells stay two shells.
+
+  The admin area was restyled by giving it its own shell rather than a third
+  variant of the customer one. The whole guarantee that a customer's dashboard
+  did not change rests on that separation, and a separation nothing checks is
+  one somebody merges away in a tidy-up six weeks later - at which point the
+  customer dashboard turns navy and nobody meant it to.
+
+  Read off the files rather than asserted, so it keeps being true.
+*/
+console.log('\n--- the admin shell and the customer shell are separate ---');
+{
+  const { readFileSync, readdirSync, statSync } = await import('node:fs');
+  const { join } = await import('node:path');
+
+  const walk = (dir: string): string[] =>
+    readdirSync(dir).flatMap((entry) => {
+      const full = join(dir, entry);
+      return statSync(full).isDirectory()
+        ? walk(full)
+        : /\.tsx?$/.test(entry)
+          ? [full]
+          : [];
+    });
+
+  const adminFiles = [...walk('src/app/admin'), ...walk('src/components/admin')];
+  const borrowsCustomerShell = adminFiles.filter((file) =>
+    /from '@\/components\/dashboard\/dashboard-shell'/.test(readFileSync(file, 'utf8')),
+  );
+  is('no admin file renders the customer shell', borrowsCustomerShell.join(', '), '');
+
+  const shell = readFileSync('src/components/admin/shell/admin-shell.tsx', 'utf8');
+  yes('the admin shell reads the one navigation list', /from '@\/lib\/config\/navigation'/.test(shell));
+
+  /*
+    Every admin page is still reachable.
+
+    The restyle must not quietly drop a link by rebuilding the list, so the
+    nav is counted against the routes that exist rather than against a number
+    written down here.
+  */
+  const { adminNav } = await import('../src/lib/config/navigation');
+  const routes = new Set(
+    walk('src/app/admin')
+      .filter((file) => /[\\/]page\.tsx$/.test(file))
+      .map((file) =>
+        file
+          .replace(/^src[\\/]app/, '')
+          .replace(/[\\/]page\.tsx$/, '')
+          .replace(/\/\([^)]+\)/g, '') || '/admin',
+      ),
+  );
+
+  const missing = adminNav.map((item) => item.href).filter((href) => !routes.has(href));
+  is('every navigation link points at a page that exists', missing.join(', '), '');
+  yes('and the navigation still carries every one of them', adminNav.length >= 17);
+}
+
 console.log(failed ? `\n  ${failed} FAILED\n` : '\n  all passed\n');
 process.exit(failed ? 1 : 0);

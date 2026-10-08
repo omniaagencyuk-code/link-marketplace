@@ -113,9 +113,9 @@ const BACKLOG_SIZE = 500;
 /** How many columns the header has, for the full-width rate card row. */
 const COLUMNS = 13;
 
-export function AdminWebsitesTable() {
+export function AdminWebsitesTable({ initialSearch = '' }: { initialSearch?: string }) {
   const router = useRouter();
-  const [term, setTerm] = useState('');
+  const [term, setTerm] = useState(initialSearch);
   const [status, setStatus] = useState<WebsiteStatus | 'all'>('all');
   const [pending, startTransition] = useTransition();
   /** Live counts while a bulk action is running, so the bar means something. */
@@ -179,7 +179,7 @@ export function AdminWebsitesTable() {
     and a domain typed in full would be a dozen of them with only the last
     answer wanted.
   */
-  const [typed, setTyped] = useState('');
+  const [typed, setTyped] = useState(initialSearch);
   useEffect(() => {
     const timer = setTimeout(() => setTerm(typed), SEARCH_PAUSE_MS);
     return () => clearTimeout(timer);
