@@ -246,6 +246,30 @@ export const ARTWORK: ArtworkEntry[] = [
     description: 'The Press Parrot macaw in a sun hat with a suitcase and passport',
   },
 
+  // ------------------------------------------------------------- banners --
+  //
+  // Wide artwork for the slot behind a landing page's first screen, rather
+  // than a portrait for the column beside a headline. Landscape, and the
+  // picker warns on the shape, which is what stops one being chosen for a
+  // column it would be squashed into.
+  //
+  // Not filed under `niche`, deliberately. Those are one per *marketplace
+  // category* and are named for it, so a page about gambling and the picture
+  // on it are found by one name. CBD is an accepted niche - what a publisher
+  // will carry - and not a category, which is a different list for a
+  // different job. Filing it as `niche-cbd` would have claimed a category
+  // that does not exist; the catalogue's own check said so.
+  {
+    slug: 'banner-cbd',
+    name: 'CBD banner',
+    category: 'general',
+    placement: 'hero',
+    aspect: 'landscape',
+    description:
+      'The Press Parrot macaw in sunglasses among hemp leaves, on the right of a wide scene',
+    file: 'parrots/cbd-hero',
+  },
+
   // ------------------------------------------------------------- content --
   {
     slug: 'content-writer',

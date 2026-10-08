@@ -4,6 +4,7 @@ import { ArrowRight, Check } from 'lucide-react';
 import { Container } from '@/components/layout/container';
 import { Button } from '@/components/ui/button';
 import { formatNumber } from '@/lib/utils/format';
+import { NicheBanner } from '@/components/marketing/niche-banner';
 import { image, link, rows, str, type SectionProps } from './shared';
 
 /**
@@ -31,12 +32,23 @@ import { image, link, rows, str, type SectionProps } from './shared';
  * The image is `priority` for the same reason, and is the one image on a built
  * page that is: everything below the fold is lazy, and marking two images
  * priority makes them compete.
+ *
+ * ## A banner replaces the artwork column rather than joining it
+ *
+ * The same arrangement the niche hero already has, and for the same reason:
+ * wide artwork drawn to sit behind the whole first screen and a picture in a
+ * right-hand column are two answers to one question, and showing both puts
+ * two parrots on one screen. From `lg` up only - a 3:1 scene on a phone is a
+ * thin strip - so small screens keep the column artwork, which is what was
+ * drawn for that shape.
  */
 export function HeroSection({ values, variant, data }: SectionProps) {
   const heading = str(values, 'heading');
   if (!heading) return null;
 
   const artwork = image(values, 'image');
+  const banner = image(values, 'banner');
+  const hasBanner = Boolean(banner.src);
   const primary = link(values, 'primaryCta');
   const secondary = link(values, 'secondaryCta');
   const points = rows<{ label?: string }>(values, 'points');
@@ -44,8 +56,15 @@ export function HeroSection({ values, variant, data }: SectionProps) {
 
   return (
     <section className="tropical-wash relative overflow-hidden border-b border-line bg-white">
+      {hasBanner ? <NicheBanner src={banner.src} /> : null}
       <Container size="wide" className="relative py-14 lg:py-20">
-        <div className="grid items-center gap-10 lg:grid-cols-[minmax(0,1fr)_minmax(0,32rem)] lg:gap-14">
+        <div
+          className={
+            hasBanner
+              ? 'grid items-center gap-10 lg:grid-cols-1'
+              : 'grid items-center gap-10 lg:grid-cols-[minmax(0,1fr)_minmax(0,32rem)] lg:gap-14'
+          }
+        >
           <div className="min-w-0 max-w-2xl">
             {str(values, 'eyebrow') ? (
               <p className="text-[11px] font-semibold tracking-[0.14em] text-accent-700 uppercase">
@@ -106,8 +125,15 @@ export function HeroSection({ values, variant, data }: SectionProps) {
             ) : null}
           </div>
 
+          {/*
+            Hidden from `lg` up when there is a banner, rather than dropped.
+
+            The banner itself only renders from `lg`, so removing this would
+            leave a phone with no artwork at all. `lg:hidden` is what keeps
+            both true: the column below the breakpoint, the banner above it.
+          */}
           {artwork.src ? (
-            <div className="min-w-0">
+            <div className={hasBanner ? 'min-w-0 lg:hidden' : 'min-w-0'}>
               <Image
                 src={artwork.src}
                 alt={artwork.alt}
