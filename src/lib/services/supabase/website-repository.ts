@@ -847,18 +847,47 @@ export const supabaseWebsiteRepository = {
       Without a niche only a sample is wanted, and 120 by rank is plenty to
       draw six rows from, so that read stays a single page on purpose.
     */
-    const data = niche
-      ? await readAllPages<WebsiteRow>('the marketplace preview', (from, to) =>
-          supabase
-            .from('websites')
-            .select(WEBSITE_SELECT)
-            .eq('status', 'active')
-            .order('domain_rating', { ascending: false })
-            .order('id', { ascending: true })
-            .range(from, to),
-        )
-      : await (async () => {
-          const { data: page, error } = await supabase
+    /*
+      A niche page asks the database for its sample and its counts.
+
+      This used to page through every active listing - with services, niche
+      prices, categories and topics joined on - and filter by niche in
+      JavaScript, to show six rows. Twenty-six sequential round trips at the
+      current inventory, on pages that are public and indexed.
+
+      The sample is still a spread rather than the strongest six, because the
+      point of it is to represent the marketplace rather than advertise its
+      top end. `marketplace_niche_preview` walks the same order in the same
+      strides; what changed is that it returns six ids instead of everything.
+    */
+    if (niche) {
+      const { data: sampled, error } = await supabase.rpc('marketplace_niche_preview', {
+        p_niche: niche,
+        p_limit: limit,
+      });
+      if (error) throw new Error(`Failed to load the marketplace preview: ${error.message}`);
+
+      const picked = (sampled ?? []) as { id: string; total: number; countries: number }[];
+      const listings = picked.length
+        ? await supabaseWebsiteRepository.getByIds(picked.map((row) => row.id))
+        : [];
+
+      // The ids come back in sample order; `getByIds` does not promise one.
+      const byId = new Map(listings.map((website) => [website.id, website]));
+      const sample = picked
+        .map((row) => byId.get(row.id))
+        .filter((website): website is WebsiteListItem => Boolean(website));
+
+      return {
+        rows: toPreviewRows(sample, limit),
+        totalWebsites: Number(picked[0]?.total ?? 0),
+        totalNiches: 1,
+        totalCountries: Number(picked[0]?.countries ?? 0),
+      };
+    }
+
+    const data = await (async () => {
+      const { data: page, error } = await supabase
             .from('websites')
             .select(WEBSITE_SELECT)
             .eq('status', 'active')
@@ -870,8 +899,9 @@ export const supabaseWebsiteRepository = {
           return (page ?? []) as unknown as WebsiteRow[];
         })();
 
-    const all = data.map((row) => toListItem(mapWebsite(row)));
-    const websites = niche ? all.filter((website) => matchesNiche(website, niche)) : all;
+    // Past the early return above, this path is only ever the whole
+    // marketplace: a niche is answered by the database and has gone home.
+    const websites = data.map((row) => toListItem(mapWebsite(row)));
 
     // Spread across the inventory rather than taking the strongest few, so the
     // preview represents the marketplace instead of advertising its top end.
@@ -882,17 +912,6 @@ export const supabaseWebsiteRepository = {
     }
 
     const rows = toPreviewRows(sample, limit);
-
-    // Scoped to the niche when one was asked for: a page about gambling
-    // quoting the whole marketplace's total would be quoting the wrong number.
-    if (niche) {
-      return {
-        rows,
-        totalWebsites: websites.length,
-        totalNiches: 1,
-        totalCountries: new Set(websites.map((website) => website.country).filter(Boolean)).size,
-      };
-    }
 
     const stats = await supabaseWebsiteRepository.getStats();
     return {
