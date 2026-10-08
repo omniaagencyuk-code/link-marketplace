@@ -2,6 +2,7 @@ import { getAdminScopedClient } from '@/lib/supabase/server';
 import { websiteService } from './website-service';
 import { sensitiveNicheSlugs, legacyAcceptanceFlags } from '@/lib/config/accepted-niches';
 import { assumedNicheCosts, fillGeneralFromNiches, sellableNiches } from '@/lib/sourcing/review';
+import { commercialTerms } from '@/lib/sourcing/commercial-terms';
 import { pricingService } from './pricing-service';
 import type { ExtractedListing } from '@/lib/sourcing/schema';
 import type { Website } from '@/lib/types';
@@ -134,38 +135,38 @@ export async function approveDraft(
   }
 
   // -------------------------------------------------------- commercial terms
+  /*
+    Built through `commercialTerms`, which drops a field the column would
+    refuse instead of letting it fail the statement.
+
+    One row carries fifteen answers and five constrained columns. A banner
+    price of zero or a `price_valid_until` the model wrote as "end of the
+    year" used to fail the whole upsert - and the upsert that failed carried
+    `cost_currency`, the unit for a cost written a few lines above. That is
+    how 410 listings came to hold a figure with no money attached.
+  */
+  const terms = commercialTerms(listing);
+
   const { error: commercialsError } = await supabase.from('website_commercials').upsert(
     {
       website_id: websiteId,
-      ...(defined(listing.currency) ? { cost_currency: listing.currency.toUpperCase().slice(0, 3) } : {}),
-      ...(defined(listing.homepage_link_cost) ? { homepage_link_cost_minor: toMinor(listing.homepage_link_cost) } : {}),
-      ...(defined(listing.homepage_link_period) ? { homepage_link_period: listing.homepage_link_period } : {}),
-      ...(defined(listing.banner_cost) ? { banner_cost_minor: toMinor(listing.banner_cost) } : {}),
-      ...(defined(listing.banner_period) ? { banner_period: listing.banner_period } : {}),
-      ...(defined(listing.prices_exclude_vat) ? { prices_exclude_vat: listing.prices_exclude_vat } : {}),
-      ...(defined(listing.vat_notes) ? { vat_notes: listing.vat_notes } : {}),
-      ...(listing.payment_methods.length > 0 ? { payment_methods: listing.payment_methods } : {}),
-      ...(listing.payment_timing !== 'unknown' ? { payment_timing: listing.payment_timing } : {}),
-      ...(defined(listing.minimum_order) ? { minimum_order: listing.minimum_order } : {}),
-      ...(defined(listing.bulk_discount_notes) ? { bulk_discount_notes: listing.bulk_discount_notes } : {}),
-      ...(defined(listing.price_valid_until) ? { price_valid_until: listing.price_valid_until } : {}),
-      ...(defined(listing.future_price_notes) ? { future_price_notes: listing.future_price_notes } : {}),
-      ...(defined(listing.notes) ? { notes: listing.notes } : {}),
+      ...terms.row,
       source_email_id: options.emailId,
       last_quoted_at: new Date().toISOString(),
       updated_by: options.reviewer ?? null,
+      ...(terms.dropped.length > 0
+        ? {
+            // Named in the row itself, so a dropped answer is visible to
+            // whoever reads the terms rather than only to a log nobody opens.
+            notes: [listing.notes, `Not recorded, unreadable: ${terms.dropped.join(', ')}.`]
+              .filter(Boolean)
+              .join(' '),
+          }
+        : {}),
     },
     { onConflict: 'website_id' },
   );
 
-  /*
-    Checked, because this row carries the unit.
-
-    `cost_currency` lives here and the cost lives in `service_costs`. A write
-    that failed silently left the number with nothing saying what money it
-    was - and the costs used to be written first, so the failure arrived too
-    late to stop them. That is the shape 410 listings are in.
-  */
   if (commercialsError) {
     throw new Error(`Failed to record the commercial terms: ${commercialsError.message}`);
   }
