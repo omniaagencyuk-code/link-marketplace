@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
-import { DashboardShell } from '@/components/dashboard/dashboard-shell';
+import { CustomerShell } from '@/components/dashboard/shell/customer-shell';
+import { CustomerTopbar } from '@/components/dashboard/shell/customer-topbar';
 import { brand } from '@/lib/config/brand';
 
 export const metadata: Metadata = {
@@ -7,10 +8,14 @@ export const metadata: Metadata = {
   robots: { index: false, follow: false },
 };
 
+/**
+ * The customer dashboard's layout.
+ *
+ * `CustomerShell` rather than `DashboardShell`, which is now unused by either
+ * area and kept only until the last page that referenced it is gone. Two
+ * shells rather than one with variants: the admin redesign rests on those
+ * areas not sharing a shell, and `verify:admin` enforces it.
+ */
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
-  return (
-    <DashboardShell variant="dashboard" label="Dashboard">
-      {children}
-    </DashboardShell>
-  );
+  return <CustomerShell topbar={<CustomerTopbar />}>{children}</CustomerShell>;
 }

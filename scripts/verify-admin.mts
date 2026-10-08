@@ -278,7 +278,7 @@ console.log('\n--- double-clicking the grip fills the screen ---');
 */
 console.log('\n--- the admin shell and the customer shell are separate ---');
 {
-  const { readFileSync, readdirSync, statSync } = await import('node:fs');
+  const { existsSync, readFileSync, readdirSync, statSync } = await import('node:fs');
   const { join } = await import('node:path');
 
   const walk = (dir: string): string[] =>
@@ -292,10 +292,31 @@ console.log('\n--- the admin shell and the customer shell are separate ---');
     });
 
   const adminFiles = [...walk('src/app/admin'), ...walk('src/components/admin')];
+  const customerFiles = [...walk('src/app/dashboard'), ...walk('src/components/dashboard')];
+
   const borrowsCustomerShell = adminFiles.filter((file) =>
-    /from '@\/components\/dashboard\/dashboard-shell'/.test(readFileSync(file, 'utf8')),
+    /@\/components\/dashboard\/shell\//.test(readFileSync(file, 'utf8')),
   );
   is('no admin file renders the customer shell', borrowsCustomerShell.join(', '), '');
+
+  /*
+    And the other way round, which is the direction that matters now.
+
+    Both areas have a dark rail, so the temptation to merge them back into one
+    component with a flag is real - and the moment that happens, a change made
+    for one of them lands in the other. The old shared `DashboardShell` was
+    deleted rather than left unused for exactly that reason.
+  */
+  const borrowsAdminShell = customerFiles.filter((file) =>
+    /@\/components\/admin\/shell\//.test(readFileSync(file, 'utf8')),
+  );
+  is('no customer file renders the admin shell', borrowsAdminShell.join(', '), '');
+
+  is(
+    'the shell they used to share is gone rather than left to be re-adopted',
+    existsSync('src/components/dashboard/dashboard-shell.tsx'),
+    false,
+  );
 
   const shell = readFileSync('src/components/admin/shell/admin-shell.tsx', 'utf8');
   yes('the admin shell reads the one navigation list', /from '@\/lib\/config\/navigation'/.test(shell));
