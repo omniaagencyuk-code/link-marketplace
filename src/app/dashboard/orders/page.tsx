@@ -5,7 +5,7 @@ import { OrdersTable } from '@/components/dashboard/orders-table';
 import { DraftOrder } from '@/components/dashboard/draft-order';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { orderService, settingsService, websiteService } from '@/lib/services';
+import { orderService, settingsService } from '@/lib/services';
 import { requireCustomerSession } from '@/lib/auth/customer-access';
 import { tierFor } from '@/lib/utils/pricing';
 
@@ -20,10 +20,9 @@ export const metadata: Metadata = { title: 'Orders' };
 
 export default async function OrdersPage() {
   const user = await requireCustomerSession('/dashboard/orders');
-  const [orders, settings, websites] = await Promise.all([
+  const [orders, settings] = await Promise.all([
     orderService.getByUser(user.id),
     settingsService.get(),
-    websiteService.getAll(),
   ]);
 
   return (
@@ -38,7 +37,7 @@ export default async function OrdersPage() {
         }
       />
 
-      <DraftOrder websites={websites} tier={tierFor(user.plan)} />
+      <DraftOrder tier={tierFor(user.plan)} />
 
       <section className="mt-8" aria-labelledby="all-orders">
         <div className="mb-4 flex flex-wrap items-center gap-2">

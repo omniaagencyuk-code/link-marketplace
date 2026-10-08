@@ -9,9 +9,9 @@ import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
 import { DraftOrderItemCard } from './draft-order-item';
 import { useOrderDraft } from '@/lib/providers/order-draft-provider';
+import { useListings } from '@/lib/hooks/use-listings';
 import { formatPrice } from '@/lib/utils/format';
 import { needsTopic, type BuyerTier } from '@/lib/utils/pricing';
-import type { WebsiteListItem } from '@/lib/types';
 
 /**
  * The current order, and the only place placement details are collected.
@@ -25,14 +25,29 @@ import type { WebsiteListItem } from '@/lib/types';
  * charging, so a stale or edited basket cannot change what is paid.
  */
 export function DraftOrder({
-  websites,
   tier = 'standard',
 }: {
-  websites: WebsiteListItem[];
   /** From the viewer's profile on the server. Checkout re-reads it anyway. */
   tier?: BuyerTier;
 }) {
   const { items, totalMinor, incompleteCount, clear, hydrated } = useOrderDraft();
+
+  /*
+    The listings behind the basket, fetched rather than shipped.
+
+    The basket is local storage, so the server cannot know which listings this
+    page needs until the browser says. It used to be handed every active
+    listing instead and find its half dozen among them - which was a few
+    hundred rows when it was written and is 3,405 now, on the page a customer
+    opens to check out.
+
+    Everything below reads `websites` the same way it always did; only where
+    the rows come from has changed.
+  */
+  const { items: websites } = useListings(
+    items.map((item) => item.websiteId),
+    hydrated,
+  );
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [rejected, setRejected] = useState<{ websiteDomain: string; reason: string }[]>([]);
