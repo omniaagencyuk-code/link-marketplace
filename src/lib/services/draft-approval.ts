@@ -133,6 +133,51 @@ export async function approveDraft(
     await supabase.from('websites').update(columns).eq('id', websiteId);
   }
 
+  // -------------------------------------------------------- commercial terms
+  const { error: commercialsError } = await supabase.from('website_commercials').upsert(
+    {
+      website_id: websiteId,
+      ...(defined(listing.currency) ? { cost_currency: listing.currency.toUpperCase().slice(0, 3) } : {}),
+      ...(defined(listing.homepage_link_cost) ? { homepage_link_cost_minor: toMinor(listing.homepage_link_cost) } : {}),
+      ...(defined(listing.homepage_link_period) ? { homepage_link_period: listing.homepage_link_period } : {}),
+      ...(defined(listing.banner_cost) ? { banner_cost_minor: toMinor(listing.banner_cost) } : {}),
+      ...(defined(listing.banner_period) ? { banner_period: listing.banner_period } : {}),
+      ...(defined(listing.prices_exclude_vat) ? { prices_exclude_vat: listing.prices_exclude_vat } : {}),
+      ...(defined(listing.vat_notes) ? { vat_notes: listing.vat_notes } : {}),
+      ...(listing.payment_methods.length > 0 ? { payment_methods: listing.payment_methods } : {}),
+      ...(listing.payment_timing !== 'unknown' ? { payment_timing: listing.payment_timing } : {}),
+      ...(defined(listing.minimum_order) ? { minimum_order: listing.minimum_order } : {}),
+      ...(defined(listing.bulk_discount_notes) ? { bulk_discount_notes: listing.bulk_discount_notes } : {}),
+      ...(defined(listing.price_valid_until) ? { price_valid_until: listing.price_valid_until } : {}),
+      ...(defined(listing.future_price_notes) ? { future_price_notes: listing.future_price_notes } : {}),
+      ...(defined(listing.notes) ? { notes: listing.notes } : {}),
+      source_email_id: options.emailId,
+      last_quoted_at: new Date().toISOString(),
+      updated_by: options.reviewer ?? null,
+    },
+    { onConflict: 'website_id' },
+  );
+
+  /*
+    Checked, because this row carries the unit.
+
+    `cost_currency` lives here and the cost lives in `service_costs`. A write
+    that failed silently left the number with nothing saying what money it
+    was - and the costs used to be written first, so the failure arrived too
+    late to stop them. That is the shape 410 listings are in.
+  */
+  if (commercialsError) {
+    throw new Error(`Failed to record the commercial terms: ${commercialsError.message}`);
+  }
+
+  /*
+    The costs, after the currency they are quoted in.
+
+    Deliberately this way round: if the terms above cannot be written, this
+    throws before any number is stored, and the draft stays pending for
+    somebody to approve again. The other order stores a cost whose currency
+    never arrived, which nothing downstream can use and nothing reports.
+  */
   // ------------------------------------------------------------ what we pay
   await writeCosts(websiteId, listing, options.reviewer);
 
@@ -156,31 +201,6 @@ export async function approveDraft(
   if (policy.length > 0) {
     await supabase.from('website_niche_policy').upsert(policy, { onConflict: 'website_id,niche' });
   }
-
-  // -------------------------------------------------------- commercial terms
-  await supabase.from('website_commercials').upsert(
-    {
-      website_id: websiteId,
-      ...(defined(listing.currency) ? { cost_currency: listing.currency.toUpperCase().slice(0, 3) } : {}),
-      ...(defined(listing.homepage_link_cost) ? { homepage_link_cost_minor: toMinor(listing.homepage_link_cost) } : {}),
-      ...(defined(listing.homepage_link_period) ? { homepage_link_period: listing.homepage_link_period } : {}),
-      ...(defined(listing.banner_cost) ? { banner_cost_minor: toMinor(listing.banner_cost) } : {}),
-      ...(defined(listing.banner_period) ? { banner_period: listing.banner_period } : {}),
-      ...(defined(listing.prices_exclude_vat) ? { prices_exclude_vat: listing.prices_exclude_vat } : {}),
-      ...(defined(listing.vat_notes) ? { vat_notes: listing.vat_notes } : {}),
-      ...(listing.payment_methods.length > 0 ? { payment_methods: listing.payment_methods } : {}),
-      ...(listing.payment_timing !== 'unknown' ? { payment_timing: listing.payment_timing } : {}),
-      ...(defined(listing.minimum_order) ? { minimum_order: listing.minimum_order } : {}),
-      ...(defined(listing.bulk_discount_notes) ? { bulk_discount_notes: listing.bulk_discount_notes } : {}),
-      ...(defined(listing.price_valid_until) ? { price_valid_until: listing.price_valid_until } : {}),
-      ...(defined(listing.future_price_notes) ? { future_price_notes: listing.future_price_notes } : {}),
-      ...(defined(listing.notes) ? { notes: listing.notes } : {}),
-      source_email_id: options.emailId,
-      last_quoted_at: new Date().toISOString(),
-      updated_by: options.reviewer ?? null,
-    },
-    { onConflict: 'website_id' },
-  );
 
   // ---------------------------------------------------------- close the draft
   await supabase
