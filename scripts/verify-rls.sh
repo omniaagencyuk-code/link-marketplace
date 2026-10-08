@@ -167,3 +167,6 @@ run -f "$ROOT/supabase/tests/25_admin_ids_in_pages.sql" 2>&1 | grep -v '^$'
 echo
 echo "--- the admin dashboard's arithmetic ---"
 run -f "$ROOT/supabase/tests/26_admin_dashboard.sql" 2>&1 | grep -v '^$'
+echo
+echo "--- the customer dashboard, and whose figures it shows ---"
+run -f "$ROOT/supabase/tests/27_customer_dashboard.sql" 2>&1 | grep -v '^$'
