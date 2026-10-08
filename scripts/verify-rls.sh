@@ -152,3 +152,6 @@ run -f "$ROOT/supabase/tests/20_approve_all_drafts.sql" 2>&1 | grep -v '^$'
 echo
 echo "--- senders we will not buy from ---"
 run -f "$ROOT/supabase/tests/21_blocked_senders.sql" 2>&1 | grep -v '^$'
+echo
+echo "--- pricing every service in one statement ---"
+run -f "$ROOT/supabase/tests/22_pricing_bulk.sql" 2>&1 | grep -v '^$'

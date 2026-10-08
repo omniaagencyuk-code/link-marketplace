@@ -66,16 +66,6 @@ const WEBSITES_PER_READ = 200;
 /** How many rows to send in one upsert. */
 const ROWS_PER_WRITE = 500;
 
-/**
- * How many single-row updates to have in flight at once.
- *
- * Services have no unique constraint to upsert on, so each is its own
- * request. Sequentially, two and a half thousand of them is over a minute of
- * round trips on a screen somebody is watching; in tens it is seconds, and
- * ten concurrent writes is well inside what the connection pool expects.
- */
-const WRITES_AT_ONCE = 10;
-
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 /**
@@ -538,6 +528,17 @@ export const pricingService = {
    */
   async apply(websiteIds?: string[]): Promise<{
     priced: number;
+    /**
+     * Service rows the database actually wrote.
+     *
+     * Reported rather than inferred from the length of what was sent, because
+     * the two differ for a real reason - a `price_override` row is sent and
+     * deliberately not written - and because a recalculation that half
+     * finished is exactly the thing nobody noticed last time. A number that
+     * comes back from the write is the only one that can disagree with the
+     * plan, which is the whole point of printing it.
+     */
+    servicesWritten: number;
     skippedOverrides: number;
     missingRates: string[];
     noCurrency: string[];
@@ -600,35 +601,40 @@ export const pricingService = {
     }
 
     /*
-      Services are updated rather than upserted: the row already exists, and
-      an upsert on (website_id, type) would need a unique constraint that does
-      not exist.
+      Every service in one statement.
 
-      A few at a time rather than one after another. Nine hundred listings is
-      around two and a half thousand of these, and sequentially that is over a
-      minute of round trips for a screen somebody is watching - long enough to
-      be killed half way, leaving the inventory part priced.
+      This used to be one `UPDATE` per service, ten in flight at a time, and
+      the comment here said an upsert "would need a unique constraint that does
+      not exist". That was wrong - `0001_init.sql:161` declares
+      `unique (website_id, type)` - but the instinct was right, which is why
+      this is a function rather than an upsert: a PostgREST upsert rewrites the
+      whole row, so it would reset `turnaround_min_days`, `turnaround_max_days`
+      and `note` to their defaults on every service it touched.
+
+      The round trips were what killed it. Against 4,954 services, ten at a
+      time is 496 sequential waves - about fifty seconds before the niche
+      prices and calculations are even written - and the recalculation was cut
+      off part way, leaving 3,479 services on the new rules and 1,475 on the
+      old ones. That is the failure the old comment predicted and the reason
+      this is now a single call.
+
+      `price_override = false` is enforced inside the function rather than
+      here, so a hand-set price survives a bulk recalculation whoever runs it.
     */
-    const writeService = (service: Record<string, unknown>) =>
-      supabase
-        .from('services')
-        .update({
+    const { data: pricedServices, error: serviceError } = await supabase.rpc(
+      'pricing_apply_service_prices',
+      {
+        p_rows: services.map((service) => ({
+          website_id: service.website_id,
+          service_type: service.type,
           price_minor: service.price_minor,
           agency_price_minor: service.agency_price_minor,
-          // A service approved from the publisher inbox is created priced at
-          // zero and unavailable - "we know what it costs us, we do not know
-          // what we charge". This is the moment we know what we charge, so it
-          // becomes sellable. Without it a listing could be fully priced and
-          // still refuse to publish, which is exactly what happened: the
-          // table showed $195 and the guard said "no sell price yet".
-          available: true,
-        })
-        .eq('website_id', service.website_id)
-        .eq('type', service.type)
-        .eq('price_override', false);
+        })),
+      },
+    );
 
-    for (const group of chunk(services, WRITES_AT_ONCE)) {
-      await Promise.all(group.map(writeService));
+    if (serviceError) {
+      throw new Error(`Could not write the service prices: ${serviceError.message}`);
     }
 
     for (const group of chunk(nichePrices, ROWS_PER_WRITE)) {
@@ -645,6 +651,7 @@ export const pricingService = {
 
     return {
       priced: rows.length - skippedOverrides,
+      servicesWritten: typeof pricedServices === 'number' ? pricedServices : 0,
       skippedOverrides,
       missingRates,
       noCurrency,
