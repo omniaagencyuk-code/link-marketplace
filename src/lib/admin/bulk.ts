@@ -24,6 +24,19 @@ export const BULK_CHUNK_SIZE = 25;
 export interface SkippedRow {
   domain: string;
   reason: string;
+  /**
+   * The listing, when the caller knows which one it was.
+   *
+   * The domain is what a person reads; the id is what the table needs to keep
+   * that row selected. It used to match them back up by domain against the
+   * rows it was holding, which worked while it held the whole inventory and
+   * stopped working the day the database started paging it - a listing
+   * skipped on page nine is not among the fifty on screen.
+   *
+   * Optional because one skip is not a row: a request that never answered is
+   * recorded as a batch, and nobody knows which of its listings changed.
+   */
+  id?: string;
 }
 
 export interface BulkProgress {

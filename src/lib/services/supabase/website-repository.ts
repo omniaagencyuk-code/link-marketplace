@@ -335,6 +335,92 @@ export const supabaseWebsiteRepository = {
     return rows.map((row) => toListItem(mapWebsite(row)));
   },
 
+  /**
+   * One page of the admin website table.
+   *
+   * The full read below is still here and still correct; it is just no longer
+   * what a page load costs. 11,042 listings with costs, contacts and
+   * commercials joined on is twenty-three sequential round trips before
+   * anything is mapped, and the table shows fifty rows.
+   *
+   * Two reads, both small, the same split the marketplace uses: SQL decides
+   * which listings and in what order, and the rows come back through the
+   * admin select and mapper this file already has - so nothing about what a
+   * listing *is* gets defined twice.
+   */
+  async adminPage(
+    search: string,
+    status: string,
+    page: number,
+    pageSize: number,
+  ): Promise<{ items: WebsiteListItem[]; total: number }> {
+    const supabase = getAdminScopedClient();
+    const { data, error } = await supabase.rpc('admin_website_page', {
+      p_search: search.trim() || null,
+      p_status: status || 'all',
+      p_limit: pageSize,
+      p_offset: Math.max(0, (page - 1) * pageSize),
+    });
+
+    if (error) throw new Error(`Could not read the website list: ${error.message}`);
+
+    const rows = (data ?? []) as { id: string; total: number }[];
+    const total = Number(rows[0]?.total ?? 0);
+    const ids = rows.map((row) => row.id);
+    if (ids.length === 0) return { items: [], total };
+
+    const { data: full } = await supabase
+      .from('websites')
+      .select(WEBSITE_SELECT_ADMIN)
+      .in('id', ids);
+
+    const byId = new Map(
+      ((full as unknown as WebsiteRow[] | null) ?? []).map((row) => [
+        row.id,
+        toListItem(mapWebsite(row)),
+      ]),
+    );
+
+    // The order is the function's. `in (...)` returns rows in whatever order
+    // it likes, and re-sorting here would undo it.
+    return {
+      items: ids
+        .map((id) => byId.get(id))
+        .filter((item): item is WebsiteListItem => Boolean(item)),
+      total,
+    };
+  },
+
+  /** Listings by id with the admin select, for the export and the rate card. */
+  async adminRows(ids: string[]): Promise<WebsiteListItem[]> {
+    if (ids.length === 0) return [];
+    const supabase = getAdminScopedClient();
+    const { data } = await supabase.from('websites').select(WEBSITE_SELECT_ADMIN).in('id', ids);
+    return ((data as unknown as WebsiteRow[] | null) ?? []).map((row) => toListItem(mapWebsite(row)));
+  },
+
+  /**
+   * Every listing id a filter matches.
+   *
+   * For the header checkbox, which selects a whole filter rather than the
+   * page on screen - filtering to "draft" and ticking it is how a couple of
+   * hundred listings get status-changed in one go, and paging must not
+   * quietly turn that into "these fifty".
+   *
+   * Ids only. Eleven thousand uuids is around four hundred kilobytes and is
+   * fetched when somebody ticks the box, not on every page load.
+   */
+  async adminIds(search: string, status: string): Promise<string[]> {
+    const supabase = getAdminScopedClient();
+    const { data, error } = await supabase.rpc('admin_website_ids', {
+      p_search: search.trim() || null,
+      p_status: status || 'all',
+    });
+
+    if (error) throw new Error(`Could not read the matching listings: ${error.message}`);
+    return ((data ?? []) as { id: string }[]).map((row) => row.id);
+  },
+
   async getAllForAdmin(): Promise<WebsiteListItem[]> {
     const supabase = getAdminScopedClient();
 

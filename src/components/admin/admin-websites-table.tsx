@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { Fragment, useMemo, useState, useTransition } from 'react';
+import { Fragment, useEffect, useMemo, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   AlertTriangle,
@@ -25,10 +25,13 @@ import { Select } from '@/components/ui/select';
 import { Table, Td, Th, Tr } from '@/components/ui/table';
 import { TableScroll } from '@/components/ui/table-scroll';
 import { Pagination } from '@/components/ui/pagination';
-import { DEFAULT_PAGE_SIZE, paginate, type PageSize } from '@/lib/admin/paging';
+import { DEFAULT_PAGE_SIZE, type PageSize } from '@/lib/admin/paging';
 import { WebsiteStatusBadge } from '@/components/shared/status-badge';
 import { WebsiteRateCard } from '@/components/admin/website-rate-card';
 import {
+  adminWebsiteIdsAction,
+  adminWebsitePageAction,
+  adminWebsitesByIdsAction,
   bulkDeleteWebsitesAction,
   bulkSetWebsiteStatusAction,
   duplicateWebsiteAction,
@@ -69,22 +72,23 @@ const statusFilters: { value: WebsiteStatus | 'all'; label: string }[] = [
   { value: 'archived', label: 'Archived' },
 ];
 
+/** How long a pause counts as having finished typing. */
+const SEARCH_PAUSE_MS = 300;
+
+/**
+ * Listings per request when fetching a selection.
+ *
+ * The selection can be a whole filter - thousands - and Export wants every
+ * row. Chunked rather than asked for in one go, and the server refuses an
+ * oversized batch rather than trimming it, because a trimmed export is a file
+ * missing rows with nothing saying so.
+ */
+const SELECTION_CHUNK = 200;
+
 /** How many columns the header has, for the full-width rate card row. */
 const COLUMNS = 13;
 
-export function AdminWebsitesTable({
-  websites,
-  trueCosts = {},
-}: {
-  websites: WebsiteListItem[];
-  /**
-   * What each listing costs us in our own currency, by niche and then
-   * placement, from the pricing engine. Without it a publisher quoting in
-   * another currency can only be shown as "not priced" - their raw number is
-   * not comparable with our price.
-   */
-  trueCosts?: Record<string, TrueCostIndex>;
-}) {
+export function AdminWebsitesTable() {
   const router = useRouter();
   const [term, setTerm] = useState('');
   const [status, setStatus] = useState<WebsiteStatus | 'all'>('all');
@@ -103,6 +107,9 @@ export function AdminWebsitesTable({
    */
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
+  /* Bumped after a bulk action so the page is re-read rather than guessed at. */
+  const [reloadKey, setReloadKey] = useState(0);
+
   function toggleExpanded(id: string) {
     setExpanded((current) => {
       const next = new Set(current);
@@ -118,47 +125,135 @@ export function AdminWebsitesTable({
   // delete, and quietly misreports what just happened to the data.
   const [result, setResult] = useState<(BulkResult & { verb: string }) | null>(null);
 
+  /*
+    One page, fetched.
+
+    This component used to be handed every non-archived listing - 11,042 of
+    them, with costs, contacts and commercials joined on - and filter, sort
+    and page them here. That cost about a minute to open a table showing
+    fifty rows, and no amount of server grew out of it: the read was
+    twenty-three sequential round trips before any of it was mapped.
+
+    The filters are unchanged, and so is what they mean. They are answered by
+    the database now.
+  */
+  interface Answer {
+    /** The query this answer is for. Anything else on screen is stale. */
+    key: string;
+    items: WebsiteListItem[];
+    total: number;
+    trueCosts: Record<string, TrueCostIndex>;
+  }
+
+  const [answer, setAnswer] = useState<Answer | null>(null);
+
+  /*
+    Debounced, because typing is not searching.
+
+    Every keystroke used to be an array filter and free. It is a query now,
+    and a domain typed in full would be a dozen of them with only the last
+    answer wanted.
+  */
+  const [typed, setTyped] = useState('');
+  useEffect(() => {
+    const timer = setTimeout(() => setTerm(typed), SEARCH_PAUSE_MS);
+    return () => clearTimeout(timer);
+  }, [typed]);
+
+  const queryKey = JSON.stringify([term, status, page, pageSize, reloadKey]);
+  const current = answer?.key === queryKey ? answer : null;
+
+  /*
+    `loading` is derived from whether the answer matches what is being asked
+    for, rather than being a flag the effect sets. Setting state synchronously
+    inside an effect renders twice for every change, which React's own lint
+    rule refuses - and the marketplace's fetch hook had to be rewritten for
+    exactly this.
+  */
+  const loading = current === null;
+  const total = current?.total ?? 0;
+  /*
+    Memoised, not just defaulted.
+
+    `current?.items ?? []` is a fresh empty array on every render while the
+    answer is stale, and everything downstream of it - the losing set, the
+    visible rows, the selection - is a `useMemo` that would then recompute
+    every time anything else on this screen changed.
+  */
+  const rows = useMemo(() => current?.items ?? [], [current]);
+  const trueCosts = useMemo<Record<string, TrueCostIndex>>(() => current?.trueCosts ?? {}, [current]);
+
+  useEffect(() => {
+    let live = true;
+    adminWebsitePageAction({ search: term, status, page, pageSize })
+      .then((found) => {
+        if (!live) return;
+        setAnswer({
+          key: queryKey,
+          items: found.items as WebsiteListItem[],
+          total: found.total,
+          trueCosts: found.trueCosts as Record<string, TrueCostIndex>,
+        });
+      })
+      .catch(() => {
+        if (!live) return;
+        setAnswer({ key: queryKey, items: [], total: 0, trueCosts: {} });
+        setResult({ changed: 0, skipped: [], error: 'Could not load the website list.', verb: 'loaded' });
+      });
+    return () => {
+      live = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [queryKey]);
+
   /**
-   * Listings selling a placement at or below what it costs us.
+   * Listings on this page selling a placement at or below what it costs us.
    *
    * The engine cannot produce one - it adds the band's markup, lifts it to
    * the minimum margin and rounds up - so these come from a price set by
-   * hand, or from a publisher raising their price after we priced them, which
-   * moves the cost and leaves the sell price where it was. Nothing shouts
-   * when that happens, so it is counted here and the count is a filter.
+   * hand, or from a publisher raising their price after we priced them.
+   *
+   * Computed over the page rather than the inventory, which is the one thing
+   * this change costs: "only losing" now narrows what is on screen rather
+   * than searching all of it. Doing it across the inventory means pricing
+   * every listing on every page load, which is the minute this removed.
    */
   const losing = useMemo(
     () =>
       new Set(
-        websites
+        rows
           .filter(
             (website) => losingPlacements(placementMargins(website, trueCosts[website.id])).length > 0,
           )
           .map((website) => website.id),
       ),
-    [websites, trueCosts],
+    [rows, trueCosts],
   );
 
-  const rows = useMemo(() => {
-    const needle = term.trim().toLowerCase();
-    return websites.filter((website) => {
-      if (onlyLosing && !losing.has(website.id)) return false;
-      if (status !== 'all' && website.status !== status) return false;
-      if (!needle) return true;
-      return `${website.domain} ${website.title} ${website.niche}`.toLowerCase().includes(needle);
-    });
-  }, [websites, term, status, onlyLosing, losing]);
+  const visible = useMemo(
+    () => (onlyLosing ? rows.filter((website) => losing.has(website.id)) : rows),
+    [rows, onlyLosing, losing],
+  );
 
   /*
-    Paging is display only. The header checkbox still selects everything the
-    filter matches, not the fifty rows on this page.
+    Already one page, so the shape is built rather than sliced.
 
-    Filtering to "draft" and ticking the header is how two hundred drafts get
-    published in one go, and making that four page-loads of ticking would be
-    a page break getting in the way of the job it was added to help with. The
-    label says how many it will take, so it is never a surprise.
+    `paginate` did the arithmetic when the whole list was here. The numbers it
+    produced are what the footer renders - which row to which row, of how many
+    - and they have to keep meaning the same thing now the slicing happens in
+    the database. The off-by-ones here are the kind that look right and are
+    not, which is why that module says so in its own header.
   */
-  const paged = useMemo(() => paginate(rows, page, pageSize), [rows, page, pageSize]);
+  const size = pageSize || DEFAULT_PAGE_SIZE;
+  const pages = Math.max(1, Math.ceil(total / size));
+  const paged = {
+    rows: visible,
+    page: Math.min(page, pages),
+    pages,
+    total,
+    from: total === 0 ? 0 : (Math.min(page, pages) - 1) * size + 1,
+    to: (Math.min(page, pages) - 1) * size + visible.length,
+  };
 
   /*
     Back to the first page whenever the set changes underneath.
@@ -190,16 +285,38 @@ export function AdminWebsitesTable({
     });
   }
 
+  /*
+    The whole filter, not the page.
+
+    This checkbox has always meant "everything these filters match" - ticking
+    it after filtering to "draft" is how a couple of hundred listings get
+    status-changed in one go - and paging the table in the database would
+    quietly have turned it into "these fifty".
+
+    So the ids are fetched. Ids only: eleven thousand uuids is a few hundred
+    kilobytes, and none of the data a row renders comes with them.
+  */
   function toggleAllVisible(on: boolean) {
     setResult(null);
     setConfirmingDelete(false);
-    setSelected((current) => {
-      const next = new Set(current);
-      for (const id of visibleIds) {
-        if (on) next.add(id);
-        else next.delete(id);
+
+    if (!on) {
+      setSelected(new Set());
+      return;
+    }
+
+    startTransition(async () => {
+      try {
+        const ids = await adminWebsiteIdsAction(term, status);
+        setSelected(new Set(ids));
+      } catch {
+        setResult({
+          changed: 0,
+          skipped: [],
+          error: 'Could not work out which listings the filter matches.',
+          verb: 'selected',
+        });
       }
-      return next;
     });
   }
 
@@ -234,6 +351,9 @@ export function AdminWebsitesTable({
       let changed = 0;
       let done = 0;
       const skipped: BulkResult['skipped'] = [];
+      /* Listings in a request that never answered, which is not the same as
+         listings that did not change. */
+      const unanswered = new Set<string>();
       let error: string | undefined;
 
       for (const part of chunks) {
@@ -258,6 +378,7 @@ export function AdminWebsitesTable({
             domain: `${part.length} in one batch`,
             reason: 'That request did not answer. Check the statuses below before retrying.',
           });
+          for (const id of part) unanswered.add(id);
         }
         done += part.length;
       }
@@ -265,20 +386,25 @@ export function AdminWebsitesTable({
       setProgress(null);
       setResult({ changed, skipped, error, verb });
 
-      // Rows that were skipped stay selected, so the admin can see which ones
-      // still need a decision rather than losing them from the selection.
+      /*
+        Rows that were skipped stay selected, so the admin can see which ones
+        still need a decision rather than losing them from the selection.
+
+        By id, which the action now reports. Matching the skipped domains
+        against the rows on screen was right while this component held the
+        whole inventory; with the database paging it, a listing skipped on page
+        nine is not among the fifty here and would be dropped from the
+        selection silently - exactly the row somebody needs to go and look at.
+      */
       if (changed > 0) {
-        const stillSkipped = new Set(skipped.map((entry) => entry.domain));
-        setSelected(
-          new Set(
-            ids.filter((id) => {
-              const row = websites.find((website) => website.id === id);
-              return row ? stillSkipped.has(row.domain) || stillSkipped.has(id) : false;
-            }),
-          ),
-        );
+        const keep = new Set<string>(unanswered);
+        for (const entry of skipped) {
+          if (entry.id) keep.add(entry.id);
+        }
+        setSelected(new Set(ids.filter((id) => keep.has(id))));
       }
 
+      setReloadKey((key) => key + 1);
       router.refresh();
     });
   }
@@ -382,18 +508,78 @@ export function AdminWebsitesTable({
    * file you reconcile from - and it is why this button lives behind the
    * admin session like everything else on this page.
    */
-  function exportSelected() {
-    const chosen = websites.filter((website) => selected.has(website.id));
-    if (chosen.length === 0) return;
+  /*
+    Fetched, not filtered.
 
-    downloadTextFile(
-      csvFilename('press-parrot-websites'),
-      toCsv(chosen, websiteExportColumns(trueCosts)),
-    );
-    setResult({
-      changed: chosen.length,
-      skipped: [],
-      verb: `exported to ${csvFilename('press-parrot-websites')}`,
+    The selection can be a whole filter rather than the page on screen, and
+    the table no longer holds those rows. Asked for in chunks when the button
+    is pressed, which is also the only moment anybody wants them.
+  */
+  async function selectedRows(): Promise<{
+    items: WebsiteListItem[];
+    costs: Record<string, TrueCostIndex>;
+    /** How many were selected, so a short answer can be seen as short. */
+    asked: number;
+  }> {
+    const ids = [...selected];
+    const items: WebsiteListItem[] = [];
+    let costs: Record<string, TrueCostIndex> = {};
+
+    /*
+      A chunk that fails is counted, not thrown.
+
+      Throwing here means the button does nothing at all, and swallowing it
+      means a file quietly missing rows - which is the failure the server's
+      cap refuses rather than trims, for the same reason. So the loop keeps
+      going and the caller is told how many of the selection it actually got.
+    */
+    for (const group of chunk(ids, SELECTION_CHUNK)) {
+      try {
+        const answer = await adminWebsitesByIdsAction(group);
+        items.push(...(answer.items as WebsiteListItem[]));
+        costs = { ...costs, ...(answer.trueCosts as Record<string, TrueCostIndex>) };
+      } catch {
+        // Nothing pushed, so the shortfall shows up in the count below.
+      }
+    }
+    return { items, costs, asked: ids.length };
+  }
+
+  /** "1,840 of 1,900 selected" when some could not be read, and nothing when
+      they all could. A file missing rows has to say that it is. */
+  function shortfall(got: number, asked: number): BulkResult['skipped'] {
+    if (got >= asked) return [];
+    return [
+      {
+        domain: `${asked - got} of ${asked} selected`,
+        reason: 'Could not be read, so they are not in this. Try again for the rest.',
+      },
+    ];
+  }
+
+  function exportSelected() {
+    if (selected.size === 0) return;
+    startTransition(async () => {
+      const { items: chosen, costs, asked } = await selectedRows();
+      if (chosen.length === 0) {
+        setResult({
+          changed: 0,
+          skipped: [],
+          error: 'Could not read the selected listings, so there is nothing to export.',
+          verb: 'exported',
+        });
+        return;
+      }
+
+      downloadTextFile(
+        csvFilename('press-parrot-websites'),
+        toCsv(chosen, websiteExportColumns(costs)),
+      );
+      setResult({
+        changed: chosen.length,
+        skipped: shortfall(chosen.length, asked),
+        verb: `exported to ${csvFilename('press-parrot-websites')}`,
+      });
     });
   }
 
@@ -406,16 +592,24 @@ export function AdminWebsitesTable({
    * publishers into a third-party tool that has no business seeing it.
    */
   function copyDomains() {
-    const chosen = websites.filter((website) => selected.has(website.id));
-    if (chosen.length === 0) return;
-
-    const list = chosen.map((website) => website.domain).join('\n');
+    if (selected.size === 0) return;
     startTransition(async () => {
+      const { items: chosen, asked } = await selectedRows();
+      if (chosen.length === 0) {
+        setResult({
+          changed: 0,
+          skipped: [],
+          error: 'Could not read the selected listings, so there are no domains to copy.',
+          verb: 'copied',
+        });
+        return;
+      }
+      const list = chosen.map((website) => website.domain).join('\n');
       const copied = await copyText(list);
       setResult({
         changed: copied ? chosen.length : 0,
         skipped: copied
-          ? []
+          ? shortfall(chosen.length, asked)
           : [{ domain: 'Clipboard', reason: 'The browser would not allow it. Use the CSV export instead.' }],
         verb: 'copied, one per line',
       });
@@ -509,7 +703,7 @@ export function AdminWebsitesTable({
             id="admin-website-search"
             type="search"
             value={term}
-            onChange={(event) => filterTo(() => setTerm(event.target.value))}
+            onChange={(event) => filterTo(() => setTyped(event.target.value))}
             placeholder="Search domain, title or niche"
             className="h-9 pl-9 text-[13px]"
           />
@@ -534,9 +728,9 @@ export function AdminWebsitesTable({
           </Select>
         </div>
         <p className="tabular text-[13px] text-muted">
-          {rows.length === websites.length
-            ? `${websites.length.toLocaleString('en-GB')} websites`
-            : `${rows.length.toLocaleString('en-GB')} of ${websites.length.toLocaleString('en-GB')} websites`}
+          {loading
+            ? 'Loading…'
+            : `${total.toLocaleString('en-GB')} ${total === 1 ? 'website' : 'websites'}`}
         </p>
       </div>
 
@@ -936,6 +1130,7 @@ export function AdminWebsitesTable({
         paged={paged}
         size={pageSize}
         noun="websites"
+        allowAll={false}
         onPage={setPage}
         onSize={(next) => {
           setPageSize(next);

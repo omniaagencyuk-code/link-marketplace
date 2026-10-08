@@ -19,6 +19,7 @@ export function Pagination<T>({
   onPage,
   onSize,
   noun = 'rows',
+  allowAll = true,
   className,
 }: {
   paged: Paged<T>;
@@ -26,6 +27,15 @@ export function Pagination<T>({
   onPage: (page: number) => void;
   onSize: (size: PageSize) => void;
   noun?: string;
+  /**
+   * Whether "All" is offered.
+   *
+   * It is not, for a table the database pages: "all" there is a request for
+   * eleven thousand rows, which is the read that took a minute. The job it
+   * was offered for - selecting everything to act on it - is done by the
+   * header checkbox instead, which selects the whole filter either way.
+   */
+  allowAll?: boolean;
   className?: string;
 }) {
   const numbers = pageWindow(paged.page, paged.pages);
@@ -60,7 +70,7 @@ export function Pagination<T>({
             ))}
             {/* Worth offering: selecting everything to act on it is the one
                 job a page break gets in the way of. */}
-            <option value={0}>All</option>
+            {allowAll ? <option value={0}>All</option> : null}
           </Select>
         </label>
 

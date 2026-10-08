@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { orderService, settingsService, websiteService } from '@/lib/services';
 import { requireAdminSession } from '@/lib/auth/admin-access';
+import { pricingService } from '@/lib/services/pricing-service';
 import {
   advancePublishRun,
   cancelPublishRun,
@@ -367,7 +368,7 @@ const MAX_BULK_IDS = 500;
 export interface BulkResult {
   changed: number;
   /** Rows that were not changed, with the reason, for showing to the admin. */
-  skipped: { domain: string; reason: string }[];
+  skipped: { domain: string; reason: string; id?: string }[];
   error?: string;
 }
 
@@ -401,9 +402,10 @@ export async function bulkSetWebsiteStatusAction(
     try {
       const updated = await websiteService.setStatus(id, status);
       if (updated) changed += 1;
-      else skipped.push({ domain: label, reason: 'No longer exists.' });
+      else skipped.push({ id, domain: label, reason: 'No longer exists.' });
     } catch (error) {
       skipped.push({
+        id,
         domain: label,
         reason: error instanceof Error ? error.message : 'Could not be updated.',
       });
@@ -430,7 +432,7 @@ export async function bulkDeleteWebsitesAction(ids: unknown): Promise<BulkResult
 
     const result = await websiteService.delete(id);
     if (result.ok) changed += 1;
-    else skipped.push({ domain: label, reason: result.reason ?? 'Could not be deleted.' });
+    else skipped.push({ id, domain: label, reason: result.reason ?? 'Could not be deleted.' });
   }
 
   revalidateMarketplace();
@@ -574,4 +576,89 @@ export async function cancelPublishRunAction() {
 export async function publishableCountAction() {
   await requireAdminSession();
   return publishableCount();
+}
+
+/* ------------------------------------------------- the admin website table
+
+  One page at a time. The table used to be handed every non-archived listing
+  with costs, contacts and commercials joined on - 11,042 rows to render
+  fifty, and about a minute to open.
+*/
+
+/**
+ * How many rows one request may carry, whatever the page asks for.
+ *
+ * The largest size the table offers is 250, so this is that and not a round
+ * number: a cap below the biggest option would silently hand back a short
+ * page, which reads as a filter matching less than it does.
+ */
+const ADMIN_PAGE_MAX = 250;
+
+export async function adminWebsitePageAction(input: {
+  search: string;
+  status: string;
+  page: number;
+  pageSize: number;
+}) {
+  await requireAdminSession();
+
+  const page = Math.max(1, Math.floor(input.page) || 1);
+  const pageSize = Math.min(ADMIN_PAGE_MAX, Math.max(1, Math.floor(input.pageSize) || 50));
+
+  const { items, total } = await websiteService.adminPage(
+    String(input.search ?? ''),
+    String(input.status ?? 'all'),
+    page,
+    pageSize,
+  );
+
+  /*
+    Costs for the fifty rows on screen, not for the inventory.
+
+    The margin column needs the engine's converted cost including the rate
+    card, and working that out for every listing was the other half of the
+    minute. Asked for by id, it is one query for the page.
+  */
+  const trueCosts = await pricingService
+    .trueCostsByWebsite(items.map((item) => item.id))
+    .catch(() => ({}));
+
+  return { items, total, trueCosts };
+}
+
+/**
+ * Every listing id the filter matches.
+ *
+ * For the header checkbox, which has always selected a whole filter rather
+ * than the page on screen. Paging the table must not quietly turn that into
+ * "these fifty", so the ids are fetched when somebody ticks it.
+ */
+export async function adminWebsiteIdsAction(search: string, status: string) {
+  await requireAdminSession();
+  return websiteService.adminIds(String(search ?? ''), String(status ?? 'all'));
+}
+
+/**
+ * The admin rows behind a selection.
+ *
+ * The header checkbox selects a whole filter, which can be more listings than
+ * the page is showing, and Export and Copy domains need the rows rather than
+ * the ids. Fetched when one of those is pressed rather than held in the
+ * browser for the whole visit.
+ *
+ * Capped per request; the caller chunks. A cap that trimmed silently would be
+ * an export missing rows with nothing saying so, so it refuses instead.
+ */
+export async function adminWebsitesByIdsAction(ids: string[]) {
+  await requireAdminSession();
+
+  const wanted = Array.isArray(ids) ? ids.filter((id) => typeof id === 'string') : [];
+  if (wanted.length === 0) return { items: [], trueCosts: {} };
+  if (wanted.length > ADMIN_PAGE_MAX) {
+    throw new Error(`Asked for ${wanted.length} listings at once; the limit is ${ADMIN_PAGE_MAX}.`);
+  }
+
+  const items = await websiteService.adminRows(wanted);
+  const trueCosts = await pricingService.trueCostsByWebsite(wanted).catch(() => ({}));
+  return { items, trueCosts };
 }

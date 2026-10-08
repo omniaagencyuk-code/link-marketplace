@@ -158,3 +158,6 @@ run -f "$ROOT/supabase/tests/22_pricing_bulk.sql" 2>&1 | grep -v '^$'
 echo
 echo "--- publishing the backlog ---"
 run -f "$ROOT/supabase/tests/23_publish_backlog.sql" 2>&1 | grep -v '^$'
+echo
+echo "--- one page of the admin website table ---"
+run -f "$ROOT/supabase/tests/24_admin_website_page.sql" 2>&1 | grep -v '^$'

@@ -748,7 +748,15 @@ console.log('\n--- refreshing one tier ---');
     new URL('../src/lib/services/supabase/website-repository.ts', import.meta.url),
     'utf8',
   );
-  const body = repo.slice(repo.indexOf('async getRelated'), repo.indexOf('async getByIds'));
+  /*
+    The exact method, not a prefix of one.
+
+    `indexOf('async getByIds')` matched `getByIdsForAdmin` the day that was
+    added above `getRelated`, which made the slice empty - and an empty slice
+    fails every regex below for a reason that has nothing to do with the
+    query. The open bracket pins the name.
+  */
+  const body = repo.slice(repo.indexOf('async getRelated'), repo.indexOf('async getByIds('));
   is('the sixty-row fetch is gone', /limit\(60\)/.test(body), false);
   is('the niche is filtered in the query', /primary_category_id/.test(body), true);
   is('the rows are ordered', /order\('domain_rating'/.test(body), true);
