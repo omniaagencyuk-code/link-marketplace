@@ -164,3 +164,6 @@ run -f "$ROOT/supabase/tests/24_admin_website_page.sql" 2>&1 | grep -v '^$'
 echo
 echo "--- selecting a whole filter, a window at a time ---"
 run -f "$ROOT/supabase/tests/25_admin_ids_in_pages.sql" 2>&1 | grep -v '^$'
+echo
+echo "--- the admin dashboard's arithmetic ---"
+run -f "$ROOT/supabase/tests/26_admin_dashboard.sql" 2>&1 | grep -v '^$'

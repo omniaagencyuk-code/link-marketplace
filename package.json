@@ -37,7 +37,8 @@
     "verify:search": "tsx scripts/verify-marketplace-search.mts",
     "verify:selection": "tsx scripts/verify-admin-selection.mts",
     "verify:costs": "tsx scripts/verify-cost-currency.mts",
-    "verify:terms": "tsx scripts/verify-commercial-terms.mts"
+    "verify:terms": "tsx scripts/verify-commercial-terms.mts",
+    "verify:dashboard": "tsx scripts/verify-dashboard.mts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.128.0",
