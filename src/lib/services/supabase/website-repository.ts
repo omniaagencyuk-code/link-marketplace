@@ -1,3 +1,4 @@
+import { cache } from 'react';
 import { getServerClient, getAdminClient, getAdminScopedClient } from '@/lib/supabase/server';
 import { inNiche } from '@/lib/marketplace/topic';
 import { readAllPages } from './paged';
@@ -333,6 +334,31 @@ async function syncCostCurrency(
 
   if (error) throw new Error(`Failed to save the publisher currency: ${error.message}`);
 }
+
+/**
+ * The body behind `getStats`, kept out of the object so `cache` can wrap it.
+ *
+ * `cache` memoises per request, and it has to wrap one function for every
+ * caller to share the answer - a method that called a cached helper would
+ * work, but this says plainly that the memoised thing is the read itself.
+ */
+const readStats = cache(async () => {
+  const supabase = await getServerClient();
+  const { data } = await supabase.rpc('marketplace_stats').maybeSingle();
+  const stats = (data ?? {}) as {
+    total_websites?: number;
+    total_niches?: number;
+    total_countries?: number;
+  };
+
+  return {
+    totalWebsites: stats.total_websites ?? 0,
+    totalNiches: stats.total_niches ?? 0,
+    totalCountries: stats.total_countries ?? 0,
+    medianDomainRating: 0,
+    lowestPriceMinor: 0,
+  };
+});
 
 export const supabaseWebsiteRepository = {
   async getAll(): Promise<WebsiteListItem[]> {
@@ -764,24 +790,16 @@ export const supabaseWebsiteRepository = {
    * Uses the `marketplace_stats()` function, which is security-definer and
    * returns three numbers. A signed-out caller cannot read the websites table
    * directly, and this cannot leak a domain because it does not select one.
+   *
+   * Read once per request however many times it is asked for. The homepage
+   * asks twice without meaning to - once for the hero and the trust row, and
+   * again inside `getPublicPreview`, which uses the same three figures for
+   * its totals. Measured against the live database that second ask cost
+   * another 131ms, which is what one round trip costs from where this is
+   * deployed. Nothing writes these during a render, so there is no write for
+   * a stale answer to follow.
    */
-  async getStats() {
-    const supabase = await getServerClient();
-    const { data } = await supabase.rpc('marketplace_stats').maybeSingle();
-    const stats = (data ?? {}) as {
-      total_websites?: number;
-      total_niches?: number;
-      total_countries?: number;
-    };
-
-    return {
-      totalWebsites: stats.total_websites ?? 0,
-      totalNiches: stats.total_niches ?? 0,
-      totalCountries: stats.total_countries ?? 0,
-      medianDomainRating: 0,
-      lowestPriceMinor: 0,
-    };
-  },
+  getStats: readStats,
 
   /**
    * The redacted preview shown to signed-out visitors.
