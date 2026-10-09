@@ -1,6 +1,7 @@
 import { PageTitle } from '@/components/dashboard/page-title';
 import { Table, TableWrap, Td, Th, Tr } from '@/components/ui/table';
 import { getCurrentUser } from '@/lib/auth/customer-access';
+import { getServerClient } from '@/lib/supabase/server';
 import { pageContentService } from '@/lib/services/page-content-service';
 import { websiteService } from '@/lib/services';
 
@@ -15,20 +16,30 @@ export const dynamic = 'force-dynamic';
  * homepage's reads one at a time, in production, against the real database,
  * and prints what each one took.
  *
- * ## The row that answers the question
+ * ## The yardstick, and why it is not a service call any more
  *
- * `getStats` is a single RPC returning three numbers. Whatever it takes is
- * roughly what one round trip to the database costs from wherever this is
- * deployed, so it is the yardstick the others are read against:
+ * The first version of this used `getStats` called twice as the baseline,
+ * on the grounds that the second call was one round trip and nothing else.
+ * Then `getStats` was memoised - because this page showed it being asked for
+ * twice in one render - and the baseline started reporting 0ms, measuring
+ * the cache rather than the database. An instrument that its own findings
+ * invalidate is worse than no instrument, because it still prints a number.
  *
- *   * `getStats` fast and `countByNiche` slow means the count was the
- *     problem, which is what 0075 fixes.
- *   * `getStats` itself slow means every query is expensive - the compute
- *     and the database are probably far apart, or the database is small -
- *     and no amount of removing queries fixes that, because the homepage
- *     cannot get below one.
- *   * Everything fast and the total still small means the time is somewhere
- *     this page does not look: a cold start, or the platform in front of it.
+ * So the baseline is now its own query, made here, deliberately outside
+ * everything that might memoise it. It is read twice: the first carries
+ * whatever connection setup costs, the second is the steady-state price of
+ * one round trip from wherever this is deployed.
+ *
+ * Read the rest against that second figure:
+ *
+ *   * a read costing one baseline is doing one query, and the only way to
+ *     make it cheaper is not to make it;
+ *   * a read costing several is either making several queries or carrying
+ *     a lot of rows back, and both are fixable here;
+ *   * a baseline that is itself large means the compute and the database
+ *     are far apart, and nothing in this repository can fix it. Measured at
+ *     131ms from Washington against a London database, and at roughly a
+ *     third of that once the functions were moved to London.
  *
  * ## Why it is admin-only and why it does not cache
  *
@@ -55,9 +66,19 @@ export default async function AdminDiagnosticsPage() {
     The homepage runs four of these at once, so measuring them that way would
     report the slowest four times over and hide which one it was.
   */
+  /*
+    The baseline. Its own client and its own query, so nothing memoises it.
+  */
+  const probe = async () => {
+    const supabase = await getServerClient();
+    await supabase.rpc('marketplace_stats').maybeSingle();
+  };
+
   const rows = [];
-  rows.push(await timed('getStats - one RPC, three numbers', () => websiteService.getStats()));
-  rows.push(await timed('getStats again - the same call, warm', () => websiteService.getStats()));
+  rows.push(await timed('one round trip, cold - includes connecting', probe));
+  rows.push(await timed('one round trip, warm - THE YARDSTICK', probe));
+  rows.push(await timed('getStats - memoised, so free after the first ask', () => websiteService.getStats()));
+  rows.push(await timed('getStats again - should be 0ms', () => websiteService.getStats()));
   rows.push(await timed('countByNiche - the homepage niche cards', () => websiteService.countByNiche()));
   rows.push(await timed('getPublicPreview(5) - the sample rows', () => websiteService.getPublicPreview(5)));
   rows.push(await timed("content('home') - the page's copy", () => pageContentService.content('home')));
@@ -122,9 +143,12 @@ export default async function AdminDiagnosticsPage() {
         </p>
         <p>
           <strong className="text-ink">The second row is the yardstick.</strong> It is one
-          round trip to the database and nothing else. If it is slow on its own, every
-          query is expensive and removing queries cannot fix it - the compute and the
-          database are likely in different regions.
+          query returning three integers, made outside anything that memoises, so it is
+          the price of a single round trip from here. Everything below it costs some
+          multiple of that. If the yardstick itself is large, the compute and the
+          database are far apart and nothing in the code can fix it: it was 131ms with
+          the functions in Washington and a London database, and about a third of that
+          once they were moved to London.
         </p>
       </div>
     </>

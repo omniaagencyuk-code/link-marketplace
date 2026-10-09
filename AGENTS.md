@@ -158,6 +158,25 @@ only tables here with a customer-facing policy - scoped to `user_id` on
 `using` *and* `with check`, because without the second half a customer can hand
 their project to somebody else.
 
+## Where it runs
+
+The functions run in `lhr1` and the database is in London. They have to match,
+and `vercel.json` pins it rather than leaving it to a dashboard setting nobody
+can see from here.
+
+This is not a preference. Every query this application makes is an HTTP round
+trip to Supabase, and with the functions in `iad1` - Vercel's default, in
+Washington - one of them cost **131ms before the database did any work**. The
+homepage's reads totalled 1,318ms; moving the functions to London took the
+same reads to 434ms, and no query was changed to do it.
+
+So before optimising a query, check what a round trip costs: `/admin/diagnostics`
+times each of the homepage's reads against the live database and prints a
+measured baseline to read them against. A page that makes four queries cannot
+go faster than four baselines, and that arithmetic decides whether the work is
+in the SQL or in the infrastructure. Changing the region in the Vercel
+dashboard will not take effect while `vercel.json` names one.
+
 ## Verification
 
 - `npm run verify:rls` — replays every migration into a local Postgres and
