@@ -1,6 +1,5 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
 import { Search, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -11,6 +10,7 @@ import { categories } from '@/lib/data/categories';
 import { countryName } from '@/lib/data/countries';
 import { languageLabels, linkTypeLabels } from '@/lib/utils/labels';
 import { currencySymbol } from '@/lib/utils/format';
+import { useDebouncedSearch } from '@/lib/hooks/use-debounced-search';
 import type { MarketplaceFilters } from '@/lib/hooks/use-marketplace-filters';
 import type {
   CountryCode,
@@ -31,14 +31,6 @@ const turnaroundOptions = [
 function toggleValue<T>(list: T[], value: T): T[] {
   return list.includes(value) ? list.filter((item) => item !== value) : [...list, value];
 }
-
-/**
- * How long a pause counts as having finished typing.
- *
- * Short enough not to feel laggy, long enough that an ordinary word is one
- * search rather than one per letter.
- */
-const SEARCH_PAUSE_MS = 300;
 
 export function FilterSidebar({
   filters,
@@ -65,34 +57,13 @@ export function FilterSidebar({
   /*
     The typing is local; only the pause is a search.
 
-    This used to call `onChange` on every keystroke, which cost nothing while
-    the whole inventory sat in the browser - it was an array filter. The search
-    runs in the database now, so a keystroke is a request, and "gambling" would
-    be nine of them with only the last one's answer wanted.
-
-    The input holds what was typed and the filter is told a moment later. The
-    effect below syncs the other way for the times the filters change without
-    the keyboard - Reset, or a topic chosen from the URL - so the box does not
-    keep showing a term nothing is filtering by any more.
+    This logic used to live here, and now there are two boxes bound to this
+    one filter - this and the one over the listings - so it lives in
+    `useDebouncedSearch` and both call it. Two copies would be two debounces
+    to drift apart, and the failure would be a term typed in one box
+    silently not matching the other.
   */
-  const [typed, setTyped] = useState(filters.search);
-  const committed = useRef(filters.search);
-
-  useEffect(() => {
-    if (filters.search !== committed.current) {
-      committed.current = filters.search;
-      setTyped(filters.search);
-    }
-  }, [filters.search]);
-
-  useEffect(() => {
-    if (typed === committed.current) return;
-    const timer = setTimeout(() => {
-      committed.current = typed;
-      onChange({ search: typed });
-    }, SEARCH_PAUSE_MS);
-    return () => clearTimeout(timer);
-  }, [typed, onChange]);
+  const { typed, setTyped } = useDebouncedSearch(filters.search, (search) => onChange({ search }));
 
   const symbol = currencySymbol();
 

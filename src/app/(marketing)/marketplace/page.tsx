@@ -21,7 +21,6 @@ import { settingsService, websiteService } from '@/lib/services';
 import { parseFilters, toWebsiteQuery } from '@/lib/marketplace/filters';
 import { sortOptions } from '@/lib/utils/labels';
 import type { SortKey } from '@/lib/types';
-import { ADVERTISED_INVENTORY } from '@/lib/data/websites';
 import { marketingStats } from '@/lib/config/marketing';
 import { brand, siteUrl } from '@/lib/config/brand';
 
@@ -61,7 +60,15 @@ const filterChips = [
   'Link Type',
 ];
 
-const gatewayPoints = [
+/**
+ * The signed-out gateway's three selling points.
+ *
+ * A function rather than a constant because one of them quotes the size of
+ * the marketplace, and that figure is counted per request. It used to be a
+ * literal in the array - which is exactly how it came to say 5,247 against
+ * an inventory of 12,190 and stayed that way.
+ */
+const gatewayPoints = (inventory: number) => [
   {
     icon: ShieldCheck,
     title: 'Every site vetted by hand',
@@ -75,7 +82,7 @@ const gatewayPoints = [
   {
     icon: Globe2,
     title: 'Broad coverage, no filler',
-    body: `${marketingStats.nicheCount}+ niches and ${marketingStats.inventory.toLocaleString('en-GB')}+ websites across ${'50'}+ countries, including the hard niches most marketplaces quietly skip.`,
+    body: `${marketingStats.nicheCount}+ niches and ${inventory.toLocaleString('en-GB')} websites across ${'50'}+ countries, including the hard niches most marketplaces quietly skip.`,
   },
   {
     icon: Timer,
@@ -147,6 +154,26 @@ export default async function MarketplacePage({
 }) {
   const user = await getCurrentUser();
 
+  /*
+    The inventory figure, counted rather than advertised, for both halves of
+    this page.
+
+    It was `marketingStats.inventory` - a constant of 5,247 declared in the
+    mock data file. Measured against the live marketplace it was wrong by
+    more than half: there are 12,190 active listings. Wrong in the direction
+    nobody checks, too, because a number that undersells is not a number
+    anybody disputes.
+
+    The same failure the homepage had with "5,000+ vetted websites" against a
+    real number nearer nine hundred. That one was caught because it
+    overstated; this one sat here understating for just as long.
+
+    `getStats` counts in the database and is memoised for the request, so the
+    signed-out hero and the signed-in heading share one read.
+  */
+  const stats = await websiteService.getStats();
+  const inventory = stats.totalWebsites;
+
   if (user) {
     /*
       Filtered in the database, not in the browser.
@@ -180,12 +207,17 @@ export default async function MarketplacePage({
       <>
         <section className="border-b border-line bg-white">
           <Container size="wide" className="py-8 lg:py-10">
-            <h1 className="text-2xl font-semibold tracking-tight text-ink sm:text-3xl">
-              Browse {ADVERTISED_INVENTORY.toLocaleString('en-GB')}+ Vetted Websites
+            <h1 className="text-2xl font-semibold tracking-tight text-ink sm:text-[2rem]">
+              Find the right websites for your backlinks
             </h1>
             <p className="mt-2 max-w-2xl text-[15px] leading-relaxed text-muted">
-              Filter by niche, country, domain rating, traffic and price, then order guest posts,
-              niche edits and digital PR placements.
+              Search, filter and discover{' '}
+              {inventory > 0 ? (
+                <strong className="font-semibold text-ink">
+                  {inventory.toLocaleString('en-GB')}
+                </strong>
+              ) : null}{' '}
+              vetted websites with real traffic and transparent metrics.
             </p>
             <ul className="mt-5 flex flex-wrap items-center gap-x-6 gap-y-2">
               {[
@@ -237,7 +269,7 @@ export default async function MarketplacePage({
               </p>
 
               <h1 className="mt-5 text-[2.25rem] leading-[1.06] font-semibold tracking-tight text-ink sm:text-5xl">
-                {marketingStats.inventory.toLocaleString('en-GB')}+ vetted websites.
+                {inventory.toLocaleString('en-GB')} vetted websites.
                 <br />
                 <span className="text-accent-600">One marketplace.</span>
               </h1>
@@ -265,7 +297,7 @@ export default async function MarketplacePage({
 
               <dl className="mt-9 grid max-w-lg grid-cols-3 gap-4 border-t border-line pt-6">
                 {[
-                  { value: `${marketingStats.inventory.toLocaleString('en-GB')}+`, label: 'Vetted websites' },
+                  { value: inventory.toLocaleString('en-GB'), label: 'Vetted websites' },
                   { value: `${marketingStats.nicheCount}+`, label: 'Niches' },
                   { value: '50+', label: 'Countries' },
                 ].map((stat) => (
@@ -315,7 +347,7 @@ export default async function MarketplacePage({
           </div>
 
           <div className="mt-10 grid gap-5 sm:grid-cols-2">
-            {gatewayPoints.map((point) => (
+            {gatewayPoints(inventory).map((point) => (
               <div
                 key={point.title}
                 className="rounded-[var(--radius-card)] border border-line bg-white p-6 shadow-[var(--shadow-card)]"
