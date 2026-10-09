@@ -113,7 +113,15 @@ async function categoryIds(supabase: Client, slugs: string[]): Promise<Map<strin
 async function syncCategories(
   supabase: Client,
   websiteId: string,
-  niche: string | undefined,
+  /**
+   * `undefined` leaves the primary category alone; `null` clears it.
+   *
+   * The distinction was already load-bearing and is now reachable: a listing
+   * can legitimately have no category, so an editor saving one has to be
+   * able to say so. The body below already wrote null for a falsy slug - only
+   * the type refused to let one through.
+   */
+  niche: string | null | undefined,
   secondary: string[] | undefined,
 ) {
   // An update that touches neither must not clear what is already there.
@@ -122,7 +130,15 @@ async function syncCategories(
   const ids = await categoryIds(supabase, [...(niche ? [niche] : []), ...(secondary ?? [])]);
 
   if (niche !== undefined) {
-    const primaryId = ids.get(niche) ?? null;
+    /*
+      Ternary, not `(niche && ids.get(niche)) ?? null`.
+
+      That reads correctly and is wrong: `'' && …` short-circuits to `''`,
+      and `?? ` only catches null and undefined - so the empty string the
+      admin form sends for "Not categorised" would have been written into
+      `primary_category_id` as an empty uuid rather than a null.
+    */
+    const primaryId = niche ? (ids.get(niche) ?? null) : null;
     await supabase.from('websites').update({ primary_category_id: primaryId }).eq('id', websiteId);
   }
 

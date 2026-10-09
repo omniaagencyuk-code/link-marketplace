@@ -84,7 +84,12 @@ export default async function WebsiteDetailPage({ params }: PageProps) {
           </aside>
         </div>
 
-        <RelatedWebsites websites={related} niche={website.niche} />
+        {/* Nothing to be related by when the listing has no category, and
+            `related` is empty in that case anyway - the component is given a
+            real niche or not rendered at all. */}
+        {website.niche ? (
+          <RelatedWebsites websites={related} niche={website.niche} />
+        ) : null}
       </Container>
     </>
   );

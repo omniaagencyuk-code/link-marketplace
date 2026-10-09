@@ -51,7 +51,7 @@ function relevanceScore(item: WebsiteListItem, term: string) {
   if (item.domain.toLowerCase().startsWith(needle)) score += 100;
   if (item.domain.toLowerCase().includes(needle)) score += 60;
   if (item.title.toLowerCase().includes(needle)) score += 30;
-  if (item.niche.includes(needle)) score += 20;
+  if (item.niche?.includes(needle)) score += 20;
   if (item.description.toLowerCase().includes(needle)) score += 10;
   return score;
 }
@@ -59,12 +59,24 @@ function relevanceScore(item: WebsiteListItem, term: string) {
 export function matchesQuery(item: WebsiteListItem, query: WebsiteQuery) {
   const term = query.search?.trim().toLowerCase() ?? '';
   if (term) {
-    const haystack = `${item.domain} ${item.title} ${item.description} ${item.niche} ${item.secondaryNiches.join(' ')}`.toLowerCase();
+    /*
+      `?? ''`, not the interpolation's own `null`.
+
+      A template literal renders a null niche as the four characters "null",
+      so a customer searching for "null" would have matched every
+      uncategorised listing and nothing else - the JavaScript version of the
+      trap the SQL has with `||`, where a null nulls the whole string and the
+      listing vanishes from search entirely. Both sides coalesce to empty,
+      which is what "no niche to match on" should mean.
+    */
+    const haystack = `${item.domain} ${item.title} ${item.description} ${item.niche ?? ''} ${item.secondaryNiches.join(' ')}`.toLowerCase();
     if (!term.split(/\s+/).every((part) => haystack.includes(part))) return false;
   }
 
+  // Uncategorised is excluded by a niche filter, not included in every one -
+  // the rule the country filter below already follows.
   if (query.niches?.length) {
-    const inPrimary = query.niches.includes(item.niche);
+    const inPrimary = item.niche !== null && query.niches.includes(item.niche);
     const inSecondary = item.secondaryNiches.some((niche) => query.niches!.includes(niche));
     if (!inPrimary && !inSecondary) return false;
   }

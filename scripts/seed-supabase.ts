@@ -72,7 +72,7 @@ async function main() {
       slug: website.slug,
       domain: website.domain,
       title: website.title,
-      primary_category_id: categoryId.get(website.niche) ?? null,
+      primary_category_id: (website.niche && categoryId.get(website.niche)) ?? null,
     };
 
     const { data, error } = await supabase

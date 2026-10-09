@@ -215,7 +215,14 @@ function buildPatch(formData: FormData, websiteId: string, existing?: Website): 
     title: readString(formData, 'title', domain),
     description: readString(formData, 'description'),
     overview: readString(formData, 'overview', existing?.overview ?? ''),
-    niche: readString(formData, 'niche', 'technology') as NicheSlug,
+    /*
+      Blank means not categorised, and has to survive as not categorised -
+      the same rule the country line below has always stated, three lines
+      apart from a field that did the opposite. The fallback here was
+      'technology', so saving any listing whose select was blank filed it
+      under Technology; it is the third copy of that default and the last.
+    */
+    niche: (readString(formData, 'niche') || null) as NicheSlug | null,
     secondaryNiches,
     // Blank means not stated, and has to survive as not stated rather than
     // becoming a country the publisher never named. A country chosen here is

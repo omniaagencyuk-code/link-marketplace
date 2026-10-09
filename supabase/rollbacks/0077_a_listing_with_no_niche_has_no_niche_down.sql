@@ -1,0 +1,31 @@
+-- ---------------------------------------------------------------------------
+-- Undo 0077.
+--
+-- DESTROYS: nothing. Four read-only objects - one view and three functions.
+-- No column, no row and no category assignment is touched either way; 0077
+-- only changed what the marketplace says about a listing that has none.
+--
+-- There is nothing to run here. Re-running the three migrations below puts
+-- the previous definitions back, and doing it in this order matters because
+-- the functions read the view:
+--
+--   1. `0076_audience_country_filter.sql`   the view with coalesce(..., 'technology'),
+--                                           and the matching marketplace_search
+--   2. `0065_marketplace_facets.sql`        the facet counts without the null guard
+--   3. `0073_niche_preview_without_reading_everything.sql`
+--                                           the niche sample with the default
+--
+-- ## What going back costs
+--
+-- The 1,840 active listings with no primary category - one in seven, as
+-- measured when 0077 was written - go back to being sold as Technology. The
+-- homepage's niche card and the marketplace's own Technology count go back
+-- to disagreeing by exactly that number, because `marketplace_niche_counts`
+-- excludes them and the view does not.
+--
+-- Do it only to restore a working marketplace while something else is
+-- diagnosed. It is a claim about publishers that none of them made, and it
+-- is the thing 0077 exists to stop.
+-- ---------------------------------------------------------------------------
+
+-- Nothing to drop. Re-run the three migrations named above, in that order.

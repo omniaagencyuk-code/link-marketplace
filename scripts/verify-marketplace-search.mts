@@ -79,7 +79,15 @@ interface Fixture {
   domain: string;
   title: string;
   description: string;
-  niche: string;
+  /**
+   * The primary category, or null where nobody has set one.
+   *
+   * Null is not an edge case here: 1,840 of 12,190 active listings are in
+   * this state, and none of them carries a secondary category either. A
+   * suite whose every fixture has a niche never finds out what a null does
+   * to a `||` chain.
+   */
+  niche: string | null;
   secondary: string[];
   /** null means no stated market; 'default' means stored but hidden. */
   country: string | null;
@@ -172,6 +180,24 @@ const fixtures: Fixture[] = [
     attribute: 'dofollow', accepted: ['gambling', 'adult'],
     services: [{ type: 'niche-edit', price: 9000, available: true, turnMin: 2, turnMax: 4 }],
     nichePrices: [['gambling', 'niche-edit', 7000]] },
+
+  /*
+    No category at all - no primary, no secondary.
+
+    The live shape of 1,840 listings, and the one the old view hid by
+    calling them Technology. Given a distinctive word in the title so the
+    text search has something to find: with a bare `|| m.niche ||` the whole
+    haystack is null, `bool_and` is null, and this row disappears from every
+    search while every filter still returns it. That failure is silent, and
+    nothing else in this suite would have caught it.
+  */
+  { n: 7, domain: 'eta-unfiled.test',
+    audience: [], title: 'Eta Unfiled Review', description: 'General interest writing',
+    niche: null, secondary: [], country: 'GB', countrySource: 'stated', language: 'en',
+    dr: 44, traffic: 7000, rd: 300, keywords: 600, verified: false, completedOrders: 0,
+    attribute: 'dofollow', accepted: ['gambling'],
+    services: [{ type: 'guest-post', price: 18000, available: true, turnMin: 2, turnMax: 5 }],
+    nichePrices: [] },
 ];
 
 const uuid = (n: number) => `000000${String(n).padStart(2, '0')}-0000-4000-8000-000000000000`;
@@ -180,7 +206,9 @@ const sqlText = (value: string) => `'${value.replace(/'/g, "''")}'`;
 const sqlArray = (values: string[]) =>
   values.length === 0 ? `'{}'::text[]` : `array[${values.map(sqlText).join(', ')}]::text[]`;
 
-const categorySlugs = [...new Set(fixtures.flatMap((f) => [f.niche, ...f.secondary]))];
+const categorySlugs = [
+  ...new Set(fixtures.flatMap((f) => [...(f.niche ? [f.niche] : []), ...f.secondary])),
+];
 for (const slug of categorySlugs) {
   psql(`insert into public.categories (slug, name) values (${sqlText(slug)}, ${sqlText(slug)})
         on conflict (slug) do nothing;`);
@@ -195,7 +223,7 @@ for (const f of fixtures) {
     values (
       ${sqlText(uuid(f.n))}, ${sqlText(f.domain.replace(/\./g, '-'))}, ${sqlText(f.domain)},
       ${sqlText(f.title)}, ${sqlText(f.description)},
-      (select id from public.categories where slug = ${sqlText(f.niche)}),
+      ${f.niche ? `(select id from public.categories where slug = ${sqlText(f.niche)})` : 'null'},
       ${f.country ? sqlText(f.country) : 'null'},
       ${f.countrySource ? sqlText(f.countrySource) : 'null'},
       ${sqlText(f.language)}, 'active', ${f.verified}, ${f.completedOrders},
@@ -247,7 +275,7 @@ function listItem(f: Fixture): WebsiteListItem {
     title: f.title || f.domain,
     description: f.description,
     overview: '',
-    niche: f.niche,
+    niche: f.niche as WebsiteListItem['niche'],
     secondaryNiches: f.secondary,
     // `mapWebsite` hides a country whose source is 'default'.
     country: f.countrySource === 'default' ? undefined : (f.country ?? undefined),
@@ -336,6 +364,52 @@ const cases: Case[] = [
   { label: 'an audience country combined with a niche',
     query: q({ audienceCountry: 'GB', niches: ['igaming'] }),
     sql: `select * from public.marketplace_search(p_audience_country := 'GB', p_niches := array['igaming'])` },
+
+  /*
+    The listing with no category, which is the state 1,840 of them are in.
+
+    Four cases, and each one is a way the null could have gone wrong:
+
+      * a niche filter must not return it - the rule the country filter
+        already follows, and the reason it is `m.niche is not null and
+        m.niche = any(...)` rather than relying on three-valued logic;
+      * a text search must still return it. This is the one that matters.
+        `m.domain || ' ' || ... || m.niche || ...` is null the moment the
+        niche is, so `position(part in null)` is null, `bool_and` is null,
+        the predicate fails and the row leaves the marketplace - findable by
+        no search, while every filter still returns it;
+      * searching the word the old default used must not reach it. "It was
+        Technology" is precisely the claim being removed, and a listing that
+        still answers to the word has not stopped making it;
+      * relevance has to keep working. Five `case` expressions are added up
+        and one null nulls the sum, which sorts differently from zero - so
+        an unfiltered relevance sort is compared in full.
+  */
+  { label: 'a niche filter does not return the uncategorised listing',
+    query: q({ niches: ['technology'] }),
+    sql: `select * from public.marketplace_search(p_niches := array['technology'])` },
+  { label: 'but a search still finds it',
+    query: q({ search: 'unfiled' }),
+    sql: `select * from public.marketplace_search(p_search := 'unfiled')` },
+  { label: 'and searching "technology" does not reach it',
+    query: q({ search: 'technology' }),
+    sql: `select * from public.marketplace_search(p_search := 'technology')` },
+  { label: 'and it sorts by relevance with everything else',
+    query: q({ search: 'e' }),
+    sql: `select * from public.marketplace_search(p_search := 'e')` },
+  /*
+    Both engines must return nothing for this, and they fail it differently.
+
+    SQL coalesces a null niche to the empty string, which matches no term.
+    JavaScript builds its haystack with a template literal, and `${null}`
+    renders the four characters "null" - so without the `?? ''` beside it,
+    searching for "null" returns every uncategorised listing and nothing
+    else. Neither the share nor the relevance cases above would notice,
+    because the word "null" contains no letter they look for.
+  */
+  { label: 'and neither engine matches the word "null"',
+    query: q({ search: 'null' }),
+    sql: `select * from public.marketplace_search(p_search := 'null')` },
   { label: 'a language', query: q({ languages: ['es'] }),
     sql: `select * from public.marketplace_search(p_languages := array['es'])` },
   { label: 'a link type', query: q({ linkTypes: ['niche-edit'] }),
@@ -399,6 +473,22 @@ const hidden = psql(
 );
 if (hidden === 'NULL') ok('a country whose source is "default" is hidden, as mapWebsite hides it');
 else bad('a country whose source is "default" is hidden', `got ${hidden}`);
+
+const unfiledNiche = psql(
+  `select coalesce(niche, 'NULL') from public.marketplace_listings where domain = 'eta-unfiled.test'`,
+);
+if (unfiledNiche === 'NULL') ok('a listing with no category has no niche, rather than "technology"');
+else bad('a listing with no category has no niche', `got ${unfiledNiche}`);
+
+/*
+  `group by` on a nullable column makes a null group, and that row would
+  have reached the sidebar as a facet counted under no name.
+*/
+const nullFacet = psql(
+  `select count(*) from public.marketplace_facets(null) where kind = 'niche' and value is null`,
+);
+if (nullFacet === '0') ok('and the sidebar is not offered a niche with no name');
+else bad('and the sidebar is not offered a niche with no name', `got ${nullFacet} such rows`);
 
 const blankTitle = psql(`select title from public.marketplace_listings where domain = 'gamma-tech.test'`);
 if (blankTitle === 'gamma-tech.test') ok('a blank title reads as the domain');

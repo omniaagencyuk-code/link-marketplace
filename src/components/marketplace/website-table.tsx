@@ -214,12 +214,30 @@ export function WebsiteTable({
                     </div>
                   </Td>
                   <Td>
-                    <span
-                      className="inline-block max-w-full truncate rounded-md bg-surface-sunken px-1.5 py-0.5 text-[11px] font-medium text-ink-soft"
-                      title={nicheName(website.niche)}
-                    >
-                      {nicheName(website.niche)}
-                    </span>
+                    {/*
+                      A dash, not a pill reading "Uncategorised".
+
+                      Two reasons, and the second is the one that matters.
+                      The column is 74px, so the word truncates to
+                      "Uncategor…" anyway. And a filled pill is what a
+                      category looks like in this table - wearing one would
+                      say this listing is filed under something, when the
+                      whole point is that it is not and no niche filter will
+                      return it. The country cell beside it has always shown
+                      an unknown this way.
+                    */}
+                    {website.niche ? (
+                      <span
+                        className="inline-block max-w-full truncate rounded-md bg-surface-sunken px-1.5 py-0.5 text-[11px] font-medium text-ink-soft"
+                        title={nicheName(website.niche)}
+                      >
+                        {nicheName(website.niche)}
+                      </span>
+                    ) : (
+                      <span className="text-[13px] text-muted" title="No category set">
+                        —
+                      </span>
+                    )}
                   </Td>
                   <Td className="text-[13px] text-ink-soft">
                     {website.country ? (
