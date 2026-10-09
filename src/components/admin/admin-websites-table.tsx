@@ -117,6 +117,13 @@ export function AdminWebsitesTable({ initialSearch = '' }: { initialSearch?: str
   const router = useRouter();
   const [term, setTerm] = useState(initialSearch);
   const [status, setStatus] = useState<WebsiteStatus | 'all'>('all');
+  /*
+    The backlog 0077 exposed: 1,840 of 12,190 active listings with no
+    category at all. Server-side, like the status filter beside it and
+    unlike "show only these" below - this set spans every page, so a filter
+    applied to the rows in hand would narrow fifty and call it the answer.
+  */
+  const [uncategorised, setUncategorised] = useState(false);
   const [pending, startTransition] = useTransition();
   /** Live counts while a bulk action is running, so the bar means something. */
   const [progress, setProgress] = useState<BulkProgress | null>(null);
@@ -185,7 +192,7 @@ export function AdminWebsitesTable({ initialSearch = '' }: { initialSearch?: str
     return () => clearTimeout(timer);
   }, [typed]);
 
-  const queryKey = JSON.stringify([term, status, page, pageSize, reloadKey]);
+  const queryKey = JSON.stringify([term, status, uncategorised, page, pageSize, reloadKey]);
   const current = answer?.key === queryKey ? answer : null;
 
   /*
@@ -210,7 +217,7 @@ export function AdminWebsitesTable({ initialSearch = '' }: { initialSearch?: str
 
   useEffect(() => {
     let live = true;
-    adminWebsitePageAction({ search: term, status, page, pageSize })
+    adminWebsitePageAction({ search: term, status, uncategorised, page, pageSize })
       .then((found) => {
         if (!live) return;
         setAnswer({
@@ -332,7 +339,7 @@ export function AdminWebsitesTable({ initialSearch = '' }: { initialSearch?: str
 
     startTransition(async () => {
       try {
-        const ids = await adminWebsiteIdsAction(term, status);
+        const ids = await adminWebsiteIdsAction({ search: term, status, uncategorised });
         setSelected(new Set(ids));
 
         /*
@@ -810,6 +817,22 @@ export function AdminWebsitesTable({ initialSearch = '' }: { initialSearch?: str
                 {option.label}
               </option>
             ))}
+          </Select>
+        </div>
+        <div className="w-44">
+          <label htmlFor="admin-category-filter" className="sr-only">
+            Filter by category
+          </label>
+          <Select
+            id="admin-category-filter"
+            size="sm"
+            value={uncategorised ? 'none' : 'any'}
+            onChange={(event) =>
+              filterTo(() => setUncategorised(event.target.value === 'none'))
+            }
+          >
+            <option value="any">Any category</option>
+            <option value="none">Not categorised</option>
           </Select>
         </div>
         <p className="tabular text-[13px] text-muted">

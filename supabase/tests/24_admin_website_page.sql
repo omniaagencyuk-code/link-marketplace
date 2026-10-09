@@ -44,24 +44,24 @@ on conflict (slug) do nothing;
 -- ------------------------------------------------------------ the search rule
 
 select 'the domain is searched: ' ||
-  (select count(*) = 2 from public.admin_website_page('zqadmin-', 'all', 50, 0) p
+  (select count(*) = 2 from public.admin_website_page(p_search := 'zqadmin-', p_status := 'all', p_limit := 50, p_offset := 0) p
    join public.websites w on w.id = p.id
    where w.slug in ('aw-one', 'aw-two'));
 
 select 'the title is searched: ' ||
-  (select count(*) = 1 from public.admin_website_page('gamma', 'all', 50, 0) p
+  (select count(*) = 1 from public.admin_website_page(p_search := 'gamma', p_status := 'all', p_limit := 50, p_offset := 0) p
    join public.websites w on w.id = p.id where w.slug = 'aw-three');
 
 select 'the niche is searched: ' ||
-  (select count(*) = 1 from public.admin_website_page('igaming', 'all', 50, 0) p
+  (select count(*) = 1 from public.admin_website_page(p_search := 'igaming', p_status := 'all', p_limit := 50, p_offset := 0) p
    join public.websites w on w.id = p.id where w.slug = 'aw-four');
 
 select 'case does not matter: ' ||
-  (select count(*) = 1 from public.admin_website_page('ALPHA REVIEW', 'all', 50, 0) p
+  (select count(*) = 1 from public.admin_website_page(p_search := 'ALPHA REVIEW', p_status := 'all', p_limit := 50, p_offset := 0) p
    join public.websites w on w.id = p.id where w.slug = 'aw-one');
 
 select 'surrounding space does not matter: ' ||
-  (select count(*) = 1 from public.admin_website_page('   alpha  ', 'all', 50, 0) p
+  (select count(*) = 1 from public.admin_website_page(p_search := '   alpha  ', p_status := 'all', p_limit := 50, p_offset := 0) p
    join public.websites w on w.id = p.id where w.slug = 'aw-one');
 
 /*
@@ -73,26 +73,26 @@ select 'surrounding space does not matter: ' ||
   why it is used instead; this is the check that says so.
 */
 select 'a per cent sign is a literal, not a wildcard: ' ||
-  (select count(*) = 0 from public.admin_website_page('zqadmin%one', 'all', 50, 0));
+  (select count(*) = 0 from public.admin_website_page(p_search := 'zqadmin%one', p_status := 'all', p_limit := 50, p_offset := 0));
 
 select 'an underscore is a literal too: ' ||
-  (select count(*) = 0 from public.admin_website_page('zqadmin_one.test', 'all', 50, 0));
+  (select count(*) = 0 from public.admin_website_page(p_search := 'zqadmin_one.test', p_status := 'all', p_limit := 50, p_offset := 0));
 
 -- -------------------------------------------------------------- the statuses
 
 select 'a filter with no status matches all five: ' ||
-  (select count(*) = 5 from public.admin_website_page('awtok', 'all', 50, 0));
+  (select count(*) = 5 from public.admin_website_page(p_search := 'awtok', p_status := 'all', p_limit := 50, p_offset := 0));
 
 select 'a status narrows it to the one listing in that status: ' ||
   (select count(*) = 1 and coalesce(min(w.slug), '') = 'aw-two'
-   from public.admin_website_page('awtok', 'draft', 50, 0) p
+   from public.admin_website_page(p_search := 'awtok', p_status := 'draft', p_limit := 50, p_offset := 0) p
    join public.websites w on w.id = p.id);
 
 select 'the draft filter finds the draft: ' ||
-  (select count(*) = 1 from public.admin_website_page('zqadmin-two', 'draft', 50, 0));
+  (select count(*) = 1 from public.admin_website_page(p_search := 'zqadmin-two', p_status := 'draft', p_limit := 50, p_offset := 0));
 
 select 'and not a listing in another status: ' ||
-  (select count(*) = 0 from public.admin_website_page('zqadmin-two', 'active', 50, 0));
+  (select count(*) = 0 from public.admin_website_page(p_search := 'zqadmin-two', p_status := 'active', p_limit := 50, p_offset := 0));
 
 /*
   Archived listings are shown.
@@ -103,13 +103,13 @@ select 'and not a listing in another status: ' ||
   archive is how somebody re-imports a site they deliberately retired.
 */
 select 'an archived listing is matched by "all": ' ||
-  (select count(*) = 1 from public.admin_website_page('epsilon', 'all', 50, 0));
+  (select count(*) = 1 from public.admin_website_page(p_search := 'epsilon', p_status := 'all', p_limit := 50, p_offset := 0));
 
 select 'and by its own status: ' ||
-  (select count(*) = 1 from public.admin_website_page('epsilon', 'archived', 50, 0));
+  (select count(*) = 1 from public.admin_website_page(p_search := 'epsilon', p_status := 'archived', p_limit := 50, p_offset := 0));
 
 select 'a null status means every status: ' ||
-  (select count(*) = 1 from public.admin_website_page('epsilon', null, 50, 0));
+  (select count(*) = 1 from public.admin_website_page(p_search := 'epsilon', p_status := null, p_limit := 50, p_offset := 0));
 
 -- ------------------------------------------------------------------ the order
 
@@ -123,12 +123,12 @@ select 'a null status means every status: ' ||
 select 'the page is ordered by when it was last updated, newest first: ' ||
   coalesce((select string_agg(w.slug, ',' order by p.ord)
             from (select id, row_number() over () as ord
-                  from public.admin_website_page('awtok', 'all', 50, 0)) p
+                  from public.admin_website_page(p_search := 'awtok', p_status := 'all', p_limit := 50, p_offset := 0)) p
             join public.websites w on w.id = p.id)
            = 'aw-one,aw-two,aw-three,aw-four,aw-five', false)::text ||
   ' (got ' || coalesce((select string_agg(w.slug, ',' order by p.ord)
                         from (select id, row_number() over () as ord
-                              from public.admin_website_page('awtok', 'all', 50, 0)) p
+                              from public.admin_website_page(p_search := 'awtok', p_status := 'all', p_limit := 50, p_offset := 0)) p
                         join public.websites w on w.id = p.id), 'nothing') || ')';
 
 -- Four listings sharing a timestamp, so the id tiebreak is the only thing
@@ -144,12 +144,12 @@ on conflict (slug) do nothing;
 select 'listings updated at the same moment are ordered by id: ' ||
   coalesce((select string_agg(w.slug, ',' order by p.ord)
             from (select id, row_number() over () as ord
-                  from public.admin_website_page('awtie-', 'all', 50, 0)) p
+                  from public.admin_website_page(p_search := 'awtie-', p_status := 'all', p_limit := 50, p_offset := 0)) p
             join public.websites w on w.id = p.id)
            = 'aw-tie-a,aw-tie-b,aw-tie-c,aw-tie-d', false)::text ||
   ' (got ' || coalesce((select string_agg(w.slug, ',' order by p.ord)
                         from (select id, row_number() over () as ord
-                              from public.admin_website_page('awtie-', 'all', 50, 0)) p
+                              from public.admin_website_page(p_search := 'awtie-', p_status := 'all', p_limit := 50, p_offset := 0)) p
                         join public.websites w on w.id = p.id), 'nothing') || ')';
 
 -- ------------------------------------------------------- the total, and paging
@@ -162,29 +162,29 @@ select 'listings updated at the same moment are ordered by id: ' ||
   on every page of a four-page list.
 */
 select 'the total counts the whole filter: ' ||
-  (select coalesce(min(total) = 4, false) from public.admin_website_page('awtie-', 'all', 2, 0));
+  (select coalesce(min(total) = 4, false) from public.admin_website_page(p_search := 'awtie-', p_status := 'all', p_limit := 2, p_offset := 0));
 
 select 'and is the same on the second page: ' ||
-  (select coalesce(min(total) = 4, false) from public.admin_website_page('awtie-', 'all', 2, 2));
+  (select coalesce(min(total) = 4, false) from public.admin_website_page(p_search := 'awtie-', p_status := 'all', p_limit := 2, p_offset := 2));
 
 select 'a page is the size asked for: ' ||
-  (select count(*) = 2 from public.admin_website_page('awtie-', 'all', 2, 0));
+  (select count(*) = 2 from public.admin_website_page(p_search := 'awtie-', p_status := 'all', p_limit := 2, p_offset := 0));
 
 select 'the two pages together are the whole filter, with nothing twice: ' ||
   coalesce((select string_agg(w.slug, ',' order by w.slug)
-            from (select id from public.admin_website_page('awtie-', 'all', 2, 0)
+            from (select id from public.admin_website_page(p_search := 'awtie-', p_status := 'all', p_limit := 2, p_offset := 0)
                   union all
-                  select id from public.admin_website_page('awtie-', 'all', 2, 2)) p
+                  select id from public.admin_website_page(p_search := 'awtie-', p_status := 'all', p_limit := 2, p_offset := 2)) p
             join public.websites w on w.id = p.id)
            = 'aw-tie-a,aw-tie-b,aw-tie-c,aw-tie-d', false)::text ||
   ' (got ' || coalesce((select string_agg(w.slug, ',' order by w.slug)
-                        from (select id from public.admin_website_page('awtie-', 'all', 2, 0)
+                        from (select id from public.admin_website_page(p_search := 'awtie-', p_status := 'all', p_limit := 2, p_offset := 0)
                               union all
-                              select id from public.admin_website_page('awtie-', 'all', 2, 2)) p
+                              select id from public.admin_website_page(p_search := 'awtie-', p_status := 'all', p_limit := 2, p_offset := 2)) p
                         join public.websites w on w.id = p.id), 'nothing') || ')';
 
 select 'past the end is empty rather than an error: ' ||
-  (select count(*) = 0 from public.admin_website_page('awtie-', 'all', 2, 99));
+  (select count(*) = 0 from public.admin_website_page(p_search := 'awtie-', p_status := 'all', p_limit := 2, p_offset := 99));
 
 -- ------------------------------------------------------------------- the cap
 
@@ -205,16 +205,16 @@ select 'the filter really does have more rows than the cap: ' ||
   (select count(*) = 260 from public.admin_website_ids('awbulk-', 'all'));
 
 select 'a page is capped at 250 however large the ask: ' ||
-  (select count(*) = 250 from public.admin_website_page('awbulk-', 'all', 100000, 0));
+  (select count(*) = 250 from public.admin_website_page(p_search := 'awbulk-', p_status := 'all', p_limit := 100000, p_offset := 0));
 
 select 'and a negative ask is still at least one row: ' ||
-  (select count(*) = 1 from public.admin_website_page('awbulk-', 'all', -5, 0));
+  (select count(*) = 1 from public.admin_website_page(p_search := 'awbulk-', p_status := 'all', p_limit := -5, p_offset := 0));
 
 select 'a negative offset starts at the beginning: ' ||
-  (select count(*) = 2 from public.admin_website_page('awtie-', 'all', 2, -10));
+  (select count(*) = 2 from public.admin_website_page(p_search := 'awtie-', p_status := 'all', p_limit := 2, p_offset := -10));
 
 select 'the default page size is fifty: ' ||
-  (select count(*) = 50 from public.admin_website_page('awbulk-', 'all', null, 0));
+  (select count(*) = 50 from public.admin_website_page(p_search := 'awbulk-', p_status := 'all', p_limit := null, p_offset := 0));
 
 -- ------------------------------------------------------------- the whole filter
 
@@ -235,14 +235,14 @@ select 'the id list honours the status filter: ' ||
 select 'the id list agrees with the total the page reports: ' ||
   (select coalesce(
     (select count(*) from public.admin_website_ids('awbulk-', 'all'))
-      = (select min(total) from public.admin_website_page('awbulk-', 'all', 25, 0)),
+      = (select min(total) from public.admin_website_page(p_search := 'awbulk-', p_status := 'all', p_limit := 25, p_offset := 0)),
     false));
 
 select 'the page is the front of the id list, in the same order: ' ||
   (select coalesce(
     (select array_agg(id order by ord)
      from (select id, row_number() over () as ord
-           from public.admin_website_page('awtie-', 'all', 3, 0)) a)
+           from public.admin_website_page(p_search := 'awtie-', p_status := 'all', p_limit := 3, p_offset := 0)) a)
       = (select array_agg(id order by ord)
          from (select id, row_number() over () as ord
                from public.admin_website_ids('awtie-', 'all')) b
@@ -265,7 +265,7 @@ declare
   v_refused boolean;
 begin
   foreach fn in array array[
-    'select * from public.admin_website_page(''a'', ''all'', 5, 0)',
+    'select * from public.admin_website_page(p_search := ''a'', p_status := ''all'', p_limit := 5, p_offset := 0)',
     'select * from public.admin_website_ids(''a'', ''all'')'
   ] loop
     v_refused := false;
@@ -287,7 +287,7 @@ declare
   v_refused boolean;
 begin
   foreach fn in array array[
-    'select * from public.admin_website_page(''a'', ''all'', 5, 0)',
+    'select * from public.admin_website_page(p_search := ''a'', p_status := ''all'', p_limit := 5, p_offset := 0)',
     'select * from public.admin_website_ids(''a'', ''all'')'
   ] loop
     v_refused := false;
@@ -302,3 +302,80 @@ begin
   end loop;
 end;
 $$;
+
+-- ------------------------------------------------- listings with no category
+/*
+  The backlog 0077 exposed, and the filter that makes it workable.
+
+  The fixtures above are already the right shape for this and it is worth
+  saying why: four of the five were inserted with no `primary_category_id`
+  and one was given `igaming`. So "uncategorised" here is a real split of a
+  real set, not a single row contrived for the assertion.
+
+  Each check names the rows it expects rather than counting them. A count of
+  four would pass against a filter that returned the wrong four.
+*/
+select 'the filter is off by default: ' ||
+  (select count(*) = 5 from public.admin_website_page(
+     p_search := 'awtok', p_status := 'all', p_limit := 50, p_offset := 0));
+
+select 'and off when it is asked for and false: ' ||
+  (select count(*) = 5 from public.admin_website_page(
+     p_search := 'awtok', p_status := 'all', p_uncategorised := false,
+     p_limit := 50, p_offset := 0));
+
+select 'uncategorised returns exactly the ones with no category: ' ||
+  (select array_agg(w.slug order by w.slug) = array['aw-five','aw-one','aw-three','aw-two']
+   from public.admin_website_page(
+     p_search := 'awtok', p_status := 'all', p_uncategorised := true,
+     p_limit := 50, p_offset := 0) p
+   join public.websites w on w.id = p.id);
+
+select 'and never the one that has one: ' ||
+  (select count(*) = 0 from public.admin_website_page(
+     p_search := 'awtok', p_status := 'all', p_uncategorised := true,
+     p_limit := 50, p_offset := 0) p
+   join public.websites w on w.id = p.id
+   where w.slug = 'aw-four');
+
+-- It narrows with the other filters rather than replacing them.
+select 'it combines with status: ' ||
+  (select array_agg(w.slug order by w.slug) = array['aw-one','aw-three']
+   from public.admin_website_page(
+     p_search := 'awtok', p_status := 'active', p_uncategorised := true,
+     p_limit := 50, p_offset := 0) p
+   join public.websites w on w.id = p.id);
+
+select 'and with the search: ' ||
+  (select array_agg(w.slug) = array['aw-three']
+   from public.admin_website_page(
+     p_search := 'gamma', p_status := 'all', p_uncategorised := true,
+     p_limit := 50, p_offset := 0) p
+   join public.websites w on w.id = p.id);
+
+-- The total counts the filter, not the page - the rule the rest of this file
+-- pins for search and status, applied to the new one.
+select 'the total counts the filter and not the page: ' ||
+  (select distinct total = 4 from public.admin_website_page(
+     p_search := 'awtok', p_status := 'all', p_uncategorised := true,
+     p_limit := 2, p_offset := 0));
+
+/*
+  The two functions have to agree, and this is the check that says so.
+
+  `admin_website_ids` is what the header checkbox selects. If it ignored a
+  filter the page honoured, ticking the box with that filter on would select
+  rows the table is not showing - and a bulk action would then touch them.
+  Adding a filter to one and not the other is the easy mistake here, so the
+  assertion compares the two sets rather than testing each alone.
+*/
+select 'the select-all ids match the page under the same filter: ' ||
+  (select coalesce(
+     (select array_agg(id order by id) from public.admin_website_ids(
+        p_search := 'awtok', p_status := 'all', p_uncategorised := true,
+        p_limit := 1000, p_offset := 0))
+     =
+     (select array_agg(id order by id) from public.admin_website_page(
+        p_search := 'awtok', p_status := 'all', p_uncategorised := true,
+        p_limit := 250, p_offset := 0)),
+     false));

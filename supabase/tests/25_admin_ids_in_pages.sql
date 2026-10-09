@@ -22,7 +22,7 @@ from generate_series(1, 450) as n
 on conflict (slug) do nothing;
 
 select 'the filter is larger than the window being used: ' ||
-  (select count(*) = 450 from public.admin_website_ids('awwalk-', 'all', 1000, 0));
+  (select count(*) = 450 from public.admin_website_ids(p_search := 'awwalk-', p_status := 'all', p_limit := 1000, p_offset := 0));
 
 -- ------------------------------------------------------------------- the walk
 
@@ -35,7 +35,7 @@ select 'the filter is larger than the window being used: ' ||
 select 'consecutive windows cover the whole filter: ' ||
   (select coalesce(count(distinct w.id) = 450, false)
    from generate_series(0, 400, 100) as off
-   cross join lateral public.admin_website_ids('awwalk-', 'all', 100, off) w);
+   cross join lateral public.admin_website_ids(p_search := 'awwalk-', p_status := 'all', p_limit := 100, p_offset := off) w);
 
 /*
   Distinct against total, not against 450.
@@ -49,13 +49,13 @@ select 'consecutive windows cover the whole filter: ' ||
 select 'and no listing arrives in two of them: ' ||
   (select coalesce(count(*) = count(distinct w.id), false)
    from generate_series(0, 400, 100) as off
-   cross join lateral public.admin_website_ids('awwalk-', 'all', 100, off) w);
+   cross join lateral public.admin_website_ids(p_search := 'awwalk-', p_status := 'all', p_limit := 100, p_offset := off) w);
 
 select 'a window past the end is empty rather than an error: ' ||
-  (select count(*) = 0 from public.admin_website_ids('awwalk-', 'all', 100, 450));
+  (select count(*) = 0 from public.admin_website_ids(p_search := 'awwalk-', p_status := 'all', p_limit := 100, p_offset := 450));
 
 select 'the last window is short rather than padded: ' ||
-  (select count(*) = 50 from public.admin_website_ids('awwalk-', 'all', 100, 400));
+  (select count(*) = 50 from public.admin_website_ids(p_search := 'awwalk-', p_status := 'all', p_limit := 100, p_offset := 400));
 
 /*
   The order is the same one the page uses.
@@ -69,10 +69,10 @@ select 'the id list is in the same order as the page: ' ||
   (select coalesce(
     (select array_agg(id order by ord)
      from (select id, row_number() over () as ord
-           from public.admin_website_page('awwalk-', 'all', 25, 0)) a)
+           from public.admin_website_page(p_search := 'awwalk-', p_status := 'all', p_limit := 25, p_offset := 0)) a)
       = (select array_agg(id order by ord)
          from (select id, row_number() over () as ord
-               from public.admin_website_ids('awwalk-', 'all', 25, 0)) b),
+               from public.admin_website_ids(p_search := 'awwalk-', p_status := 'all', p_limit := 25, p_offset := 0)) b),
     false));
 
 -- -------------------------------------------------------------------- the cap
@@ -93,15 +93,15 @@ select 'the filter really does have more rows than the cap: ' ||
   (select count(*) = 1100 from public.websites where slug like 'aw-many-%');
 
 select 'a window is capped at a thousand however large the ask: ' ||
-  (select count(*) = 1000 from public.admin_website_ids('awmany-', 'all', 100000, 0));
+  (select count(*) = 1000 from public.admin_website_ids(p_search := 'awmany-', p_status := 'all', p_limit := 100000, p_offset := 0));
 
 select 'and the walk still reaches the end past the cap: ' ||
   (select coalesce(count(distinct w.id) = 1100, false)
    from generate_series(0, 1000, 500) as off
-   cross join lateral public.admin_website_ids('awmany-', 'all', 500, off) w);
+   cross join lateral public.admin_website_ids(p_search := 'awmany-', p_status := 'all', p_limit := 500, p_offset := off) w);
 
 select 'a null limit is the default rather than everything: ' ||
-  (select count(*) = 1000 from public.admin_website_ids('awmany-', 'all', null, 0));
+  (select count(*) = 1000 from public.admin_website_ids(p_search := 'awmany-', p_status := 'all', p_limit := null, p_offset := 0));
 
 -- ---------------------------------------------------------------- the domains
 
@@ -153,7 +153,7 @@ declare
 begin
   foreach r in array array['anon', 'authenticated'] loop
     foreach fn in array array[
-      'select * from public.admin_website_ids(''a'', ''all'', 10, 0)',
+      'select * from public.admin_website_ids(p_search := ''a'', p_status := ''all'', p_limit := 10, p_offset := 0)',
       'select * from public.admin_website_domains(''{}''::uuid[])'
     ] loop
       v_refused := false;

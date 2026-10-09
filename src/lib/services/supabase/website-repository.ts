@@ -30,7 +30,12 @@ import type {
   WebsiteListItem,
   WebsiteStatus,
 } from '@/lib/types';
-import type { MarketplaceFacets, PaginatedResult, WebsiteQuery } from '@/lib/types/query';
+import type {
+  AdminWebsiteFilter,
+  MarketplaceFacets,
+  PaginatedResult,
+  WebsiteQuery,
+} from '@/lib/types/query';
 
 /**
  * Websites, backed by Supabase.
@@ -412,15 +417,15 @@ export const supabaseWebsiteRepository = {
    * listing *is* gets defined twice.
    */
   async adminPage(
-    search: string,
-    status: string,
+    filter: AdminWebsiteFilter,
     page: number,
     pageSize: number,
   ): Promise<{ items: WebsiteListItem[]; total: number }> {
     const supabase = getAdminScopedClient();
     const { data, error } = await supabase.rpc('admin_website_page', {
-      p_search: search.trim() || null,
-      p_status: status || 'all',
+      p_search: filter.search.trim() || null,
+      p_status: filter.status || 'all',
+      p_uncategorised: filter.uncategorised ?? false,
       p_limit: pageSize,
       p_offset: Math.max(0, (page - 1) * pageSize),
     });
@@ -473,7 +478,7 @@ export const supabaseWebsiteRepository = {
    * Ids only. Eleven thousand uuids is around four hundred kilobytes and is
    * fetched when somebody ticks the box, not on every page load.
    */
-  async adminIds(search: string, status: string): Promise<string[]> {
+  async adminIds(filter: AdminWebsiteFilter): Promise<string[]> {
     const supabase = getAdminScopedClient();
 
     /*
@@ -488,8 +493,9 @@ export const supabaseWebsiteRepository = {
     */
     const rows = await readAllPages<{ id: string }>('the matching listings', (from, to) =>
       supabase.rpc('admin_website_ids', {
-        p_search: search.trim() || null,
-        p_status: status || 'all',
+        p_search: filter.search.trim() || null,
+        p_status: filter.status || 'all',
+        p_uncategorised: filter.uncategorised ?? false,
         p_limit: to - from + 1,
         p_offset: from,
       }),

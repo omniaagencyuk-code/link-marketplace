@@ -10,6 +10,7 @@ import { publishBlocker, publishBlockerMessage } from '@/lib/websites/publishing
 import { rankRelated, relatedTarget } from '@/lib/websites/related';
 import { pricingService } from './pricing-service';
 import { supabaseWebsiteRepository } from './supabase/website-repository';
+import type { AdminWebsiteFilter } from '@/lib/types/query';
 import type { ImportPayloadRow, ImportBatchResult, DuplicateMode } from '@/lib/import/types';
 import type { AcceptedNicheSlug } from '@/lib/types';
 import type { MarketplaceFacets } from '@/lib/types/query';
@@ -104,6 +105,30 @@ export interface MarketplaceStats {
   lowestPriceMinor: number;
 }
 
+/**
+ * The admin table's filter, applied in memory.
+ *
+ * One copy, because `adminPage` and `adminIds` must agree: the second is what
+ * the header checkbox selects, so a listing the page shows and the ids call
+ * skips is a row that vanishes from a bulk action without saying so.
+ *
+ * `?? ''` on the niche, not the interpolation's own `null`. A template
+ * literal renders a null niche as the four characters "null", so searching
+ * for "null" would have matched every uncategorised listing - and the SQL
+ * beside it coalesces to empty, so the two would have disagreed. The same
+ * trap `query-engine.ts` has, in the same shape.
+ */
+function matchesAdminFilter(website: WebsiteListItem, filter: AdminWebsiteFilter): boolean {
+  if (filter.status && filter.status !== 'all' && website.status !== filter.status) return false;
+  if (filter.uncategorised && website.niche) return false;
+
+  const needle = filter.search.trim().toLowerCase();
+  if (!needle) return true;
+  return `${website.domain} ${website.title} ${website.niche ?? ''}`
+    .toLowerCase()
+    .includes(needle);
+}
+
 export const websiteService = {
   /** Every active listing, as list items. */
   async getAll(): Promise<WebsiteListItem[]> {
@@ -170,19 +195,13 @@ export const websiteService = {
    * longer one of them.
    */
   async adminPage(
-    search: string,
-    status: string,
+    filter: AdminWebsiteFilter,
     page: number,
     pageSize: number,
   ): Promise<{ items: WebsiteListItem[]; total: number }> {
-    if (isSupabaseEnabled()) return supabaseWebsiteRepository.adminPage(search, status, page, pageSize);
+    if (isSupabaseEnabled()) return supabaseWebsiteRepository.adminPage(filter, page, pageSize);
 
-    const needle = search.trim().toLowerCase();
-    const all = listItems(true).filter((website) => {
-      if (status && status !== 'all' && website.status !== status) return false;
-      if (!needle) return true;
-      return `${website.domain} ${website.title} ${website.niche}`.toLowerCase().includes(needle);
-    });
+    const all = listItems(true).filter((website) => matchesAdminFilter(website, filter));
     const from = Math.max(0, (page - 1) * pageSize);
     return { items: all.slice(from, from + pageSize), total: all.length };
   },
@@ -211,16 +230,11 @@ export const websiteService = {
   },
 
   /** Every listing id a filter matches, for the select-all checkbox. */
-  async adminIds(search: string, status: string): Promise<string[]> {
-    if (isSupabaseEnabled()) return supabaseWebsiteRepository.adminIds(search, status);
+  async adminIds(filter: AdminWebsiteFilter): Promise<string[]> {
+    if (isSupabaseEnabled()) return supabaseWebsiteRepository.adminIds(filter);
 
-    const needle = search.trim().toLowerCase();
     return listItems(true)
-      .filter((website) => {
-        if (status && status !== 'all' && website.status !== status) return false;
-        if (!needle) return true;
-        return `${website.domain} ${website.title} ${website.niche}`.toLowerCase().includes(needle);
-      })
+      .filter((website) => matchesAdminFilter(website, filter))
       .map((website) => website.id);
   },
 
