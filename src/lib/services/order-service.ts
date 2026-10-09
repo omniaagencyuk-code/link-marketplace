@@ -38,6 +38,40 @@ export const orderService = {
     return [...store.all].sort((a, b) => Date.parse(b.placedAt) - Date.parse(a.placedAt));
   },
 
+  /**
+   * One page of the admin order table.
+   *
+   * Without Supabase the store is a handful of orders in memory, so the same
+   * filter and the same slice are applied here rather than pretending the
+   * screen has two behaviours.
+   */
+  async adminPage(
+    search: string,
+    status: string,
+    page: number,
+    pageSize: number,
+  ): Promise<{ items: Order[]; total: number }> {
+    if (isSupabaseEnabled()) return supabaseOrderRepository.adminPage(search, status, page, pageSize);
+
+    const term = search.trim().toLowerCase();
+    const matched = (await orderService.getAll()).filter((order) => {
+      if (status && status !== 'all' && order.status !== status) return false;
+      if (!term) return true;
+      const haystack = [
+        order.reference,
+        order.customerName,
+        order.customerEmail,
+        ...order.items.map((item) => item.websiteDomain),
+      ]
+        .join(' ')
+        .toLowerCase();
+      return haystack.includes(term);
+    });
+
+    const from = Math.max(0, (page - 1) * pageSize);
+    return { items: matched.slice(from, from + pageSize), total: matched.length };
+  },
+
   async getByUser(userId: string): Promise<Order[]> {
     if (isSupabaseEnabled()) return supabaseOrderRepository.getByUser(userId);
 
