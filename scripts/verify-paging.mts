@@ -175,11 +175,14 @@ console.log('\n--- no full read in the repositories uses a bare limit ---');
 
     `readAllPages` was written for the website reads and applied only there,
     so every list read in `orders-repository.ts` stayed as it was: one
-    request, no range, and the error thrown away. `/admin/orders` was the
-    caller, and at thirteen hundred orders it was showing a thousand and
-    printing the cap as the count - the same sentence the website table
-    printed before 0067, found a year later only because somebody went
-    looking at the orders page for an unrelated reason.
+    request, no range, and the error thrown away.
+
+    Measured afterwards, the cap was not biting - there are 2 orders, and
+    the figure that said thirteen hundred was invented in a comment and then
+    believed. What was real at that size is the discarded error, which turns
+    a failed query into an empty table. The paging is kept because the
+    website reads show what happens when nobody notices in time, and because
+    these are the reads whose row count is whatever the business does next.
 
     Named individually, as above. The whole point is that a file nobody
     listed is a file nobody checked.

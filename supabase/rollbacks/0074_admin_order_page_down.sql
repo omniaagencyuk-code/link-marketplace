@@ -9,9 +9,10 @@
 --
 -- Run it alongside 0073-era code, and know what comes back with it: that
 -- version read every order with every item and every issue joined on and
--- rendered all of them into one table with no paging, which PostgREST caps
--- at a thousand rows without saying so. The oldest orders are then missing
--- and the count above the table is the cap rather than the truth.
+-- rendered all of them with no paging, in one request whose error it threw
+-- away. That is survivable while the order book is small - it was 2 orders
+-- when 0074 was written - and stops being so without any sign, because
+-- PostgREST caps the response and says nothing in it.
 -- ---------------------------------------------------------------------------
 
 drop function if exists public.admin_order_page(text, text, integer, integer);

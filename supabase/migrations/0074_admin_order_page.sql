@@ -2,17 +2,30 @@
 -- 0074  The admin order table, one page at a time
 --
 -- `/admin/orders` reads every order - with every item and every issue joined
--- on - and renders all of them into one table with no paging at all. That is
--- slow, and it is also wrong in a way nobody can see:
+-- on - and renders all of them into one table with no paging at all, from a
+-- read that asks for everything in one request and discards its error.
 --
---   * PostgREST caps a single response and says nothing. The read asks for
---     everything, is handed a thousand, and the page prints "1000 orders" -
---     the same sentence the website table printed against a larger inventory
---     before 0067. Ordered by `placed_at desc`, what goes missing is the
---     oldest, so the list stays plausible while it stops being complete.
+-- A correction, because the first version of this header got it wrong and
+-- the wrong version is the one somebody would quote. It said the cap was
+-- already biting. Counted afterwards: 2 orders, 0 content orders, 4
+-- profiles. The inventory is 12,000 sites and the customer side has not
+-- launched. The figure behind that claim - "thirteen hundred orders" - was
+-- invented in a comment on the admin users page a day earlier and then read
+-- back as evidence.
+--
+-- What is true at 2 orders and at 200,000:
+--
 --   * The read discards its error. A failed query becomes an empty array,
 --     and an empty array renders as a marketplace that has never sold
---     anything.
+--     anything - which nobody reports as a bug, only as "no orders".
+--   * PostgREST caps a single response and says nothing in it. The page
+--     would print the length of whatever came back as the number of orders.
+--     That is the sentence the website table printed before 0067, against
+--     an inventory that really had outgrown it.
+--
+-- So this is paging ahead of needing it, on the one table whose row count is
+-- whatever the business does next. Worth saying plainly rather than
+-- dressing it up as a fire.
 --
 -- The same shape as 0067, for the same reasons: this returns the ids for one
 -- page and the total, and the caller maps those few rows through the select
