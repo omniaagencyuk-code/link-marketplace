@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Sheet } from '@/components/ui/sheet';
 import { CategoryPills } from './category-pills';
+import { MarketplaceSearch } from './marketplace-search';
 import { TopicPicker } from './topic-picker';
 import { FilterSidebar } from './filter-sidebar';
 import { Pagination } from './pagination';
@@ -127,6 +128,11 @@ export function MarketplaceView({
 
   return (
     <div className="space-y-5">
+      <MarketplaceSearch
+        value={filters.search}
+        onChange={(search) => patchFilters({ search })}
+      />
+
       <TopicPicker
         topic={filters.topic}
         matching={matchingTopic}
@@ -140,7 +146,7 @@ export function MarketplaceView({
         counts={nicheCounts}
       />
 
-      <div className="grid gap-6 lg:grid-cols-[16rem_minmax(0,1fr)] xl:grid-cols-[17rem_minmax(0,1fr)]">
+      <div className="grid gap-5 lg:grid-cols-[14.5rem_minmax(0,1fr)] xl:grid-cols-[15rem_minmax(0,1fr)]">
         <aside className="hidden lg:block" aria-label="Marketplace filters">
           <div className="sticky top-20 max-h-[calc(100dvh-6rem)] overflow-y-auto rounded-[var(--radius-card)] border border-line bg-white p-5 shadow-[var(--shadow-card)]">
             {sidebar}

@@ -12,6 +12,7 @@ import { VerifiedBadge } from '@/components/shared/verified-badge';
 import { FavouriteButton } from './favourite-button';
 import { AddToOrderButton } from './add-to-order-button';
 import { WebsiteSnippet } from './website-snippet';
+import { AudienceBars } from './audience-bars';
 import { nicheName } from '@/lib/data/categories';
 import { Flag } from '@/components/shared/flag';
 import {
@@ -50,7 +51,7 @@ const sortableColumns: Record<string, SortableColumn> = {
 };
 
 /** Columns in the row, which the snippet row has to span. */
-const COLUMN_COUNT = 12;
+const COLUMN_COUNT = 13;
 
 /**
  * Clicks that belong to something else.
@@ -94,31 +95,51 @@ export function WebsiteTable({
         </caption>
         {/* Fixed widths keep every column, including the row actions, inside a
             1440px viewport without the table scrolling sideways. */}
+        {/*
+          Thirteen columns in about 1,100px, which is what a 1440 screen
+          leaves once the filter rail is out. Every width below is measured
+          against that rather than chosen: the header labels are short words
+          that cannot wrap, so a column narrower than its own heading clips
+          it, and the sum has to come in under the space or the table
+          scrolls sideways inside the page.
+        */}
         <colgroup>
-          <col className="w-[34px]" />
-          {/* Website */}
-          <col className="w-[170px]" />
+          <col className="w-[32px]" />
+          {/*
+            Website. Narrow, because the row no longer carries the
+            description under the domain - the mockup has none, it was the
+            widest thing in the table, and what it bought was a sentence
+            nobody reads while scanning for a domain. Long domains truncate
+            with the full name in the title attribute.
+          */}
+          <col className="w-[158px]" />
           {/* Niche */}
-          <col className="w-[96px]" />
-          {/* Country. The cell is only a flag now, but the column still has to
-              hold the word "Country" in the header without truncating it. */}
-          <col className="w-[64px]" />
-          {/* DR */}
-          <col className="w-[52px]" />
-          {/* Organic traffic */}
-          <col className="w-[82px]" />
-          {/* Keywords */}
-          <col className="w-[82px]" />
-          {/* Referring domains */}
-          <col className="w-[82px]" />
-          {/* Link type */}
-          <col className="w-[98px]" />
-          {/* Turnaround */}
-          <col className="w-[88px]" />
-          {/* Price */}
+          <col className="w-[74px]" />
+          {/* Country. Sized by the word "Country", not by a flag. */}
           <col className="w-[72px]" />
-          {/* Actions */}
-          <col className="w-[183px]" />
+          {/* DR - the ring is 36px and the cell padding is 20. */}
+          <col className="w-[56px]" />
+          {/* Organic traffic */}
+          <col className="w-[74px]" />
+          {/*
+            Country traffic. The widest of the metric columns because it is
+            two rows of flag, code, bar and figure - and because it is the
+            one a buyer is actually scanning for: domain rating says how
+            strong a site is, this says whether its readers are theirs.
+          */}
+          <col className="w-[98px]" />
+          {/* Keywords */}
+          <col className="w-[72px]" />
+          {/* Referring domains */}
+          <col className="w-[70px]" />
+          {/* Link type */}
+          <col className="w-[78px]" />
+          {/* Turnaround */}
+          <col className="w-[92px]" />
+          {/* Price */}
+          <col className="w-[90px]" />
+          {/* Actions: bookmark, Add and View, which is what sets this width. */}
+          <col className="w-[150px]" />
         </colgroup>
         <thead>
           <tr>
@@ -135,6 +156,11 @@ export function WebsiteTable({
             <Th>Country</Th>
             <SortableTh column={sortableColumns.dr!} sort={sort} onSort={onSort} />
             <SortableTh column={sortableColumns.traffic!} sort={sort} onSort={onSort} />
+            {/* Not sortable: there is no single figure to sort a distribution
+                by, and sorting by the leading country's share would rank a
+                site with one measured country above a better-matched one
+                with three. The filters are where this gets narrowed. */}
+            <Th>Country split</Th>
             <SortableTh column={sortableColumns.kw!} sort={sort} onSort={onSort} />
             <SortableTh column={sortableColumns.rd!} sort={sort} onSort={onSort} />
             <Th>Link Type</Th>
@@ -186,12 +212,14 @@ export function WebsiteTable({
                       </button>
                       {website.verified ? <VerifiedBadge /> : null}
                     </div>
-                    <p className="mt-0.5 truncate text-[12px] text-muted" title={website.description}>
-                      {website.description}
-                    </p>
                   </Td>
-                  <Td className="truncate text-[13px] text-ink-soft" title={nicheName(website.niche)}>
-                    {nicheName(website.niche)}
+                  <Td>
+                    <span
+                      className="inline-block max-w-full truncate rounded-md bg-surface-sunken px-1.5 py-0.5 text-[11px] font-medium text-ink-soft"
+                      title={nicheName(website.niche)}
+                    >
+                      {nicheName(website.niche)}
+                    </span>
                   </Td>
                   <Td className="text-[13px] text-ink-soft">
                     {website.country ? (
@@ -209,6 +237,9 @@ export function WebsiteTable({
                     <span title={formatNumber(website.metrics.organicTraffic)}>
                       {formatCompactNumber(website.metrics.organicTraffic)}
                     </span>
+                  </Td>
+                  <Td>
+                    <AudienceBars split={website.metrics.audienceSplit} />
                   </Td>
                   <Td className="tabular text-[13px] text-ink-soft">
                     {typeof website.metrics.organicKeywords === 'number' ? (
@@ -241,7 +272,7 @@ export function WebsiteTable({
                     {formatPrice(website.headlinePriceMinor)}
                   </Td>
                   <Td>
-                    <div className="flex items-center justify-end gap-1">
+                    <div className="flex items-center justify-end gap-1.5 pl-3">
                       <FavouriteButton websiteId={website.id} domain={website.domain} />
                       <AddToOrderButton website={website} />
                       <Button asChild variant="outline" size="sm">
@@ -302,19 +333,26 @@ function SortableTh({
       <button
         type="button"
         onClick={() => onSort(next)}
+        /*
+          `items-start` and a wrapping label, not `items-center` and one
+          line. Four of these headings are two words - Organic Traffic, Ref.
+          Domains - and the columns under them are sized for the figures
+          rather than for the words. Held on one line they were cut off
+          mid-word, which is the one thing a column heading cannot be.
+        */
         className={cn(
-          'inline-flex items-center gap-1 text-[11px] font-semibold tracking-wide uppercase transition-colors hover:text-ink',
-          alignment === 'right' && 'w-full justify-end',
+          'flex w-full items-start gap-1 text-left text-[10px] leading-[1.2] font-semibold tracking-[0.04em] uppercase transition-colors hover:text-ink',
+          alignment === 'right' && 'justify-end text-right',
           isActive ? 'text-ink' : 'text-muted',
         )}
       >
-        {column.label}
+        <span className="min-w-0">{column.label}</span>
         {!isActive ? (
-          <ChevronsUpDown className="h-3 w-3 opacity-60" aria-hidden="true" />
+          <ChevronsUpDown className="h-3 w-3 shrink-0 translate-y-px opacity-60" aria-hidden="true" />
         ) : ariaSort === 'ascending' ? (
-          <ArrowUp className="h-3 w-3" aria-hidden="true" />
+          <ArrowUp className="h-3 w-3 shrink-0 translate-y-px" aria-hidden="true" />
         ) : (
-          <ArrowDown className="h-3 w-3" aria-hidden="true" />
+          <ArrowDown className="h-3 w-3 shrink-0 translate-y-px" aria-hidden="true" />
         )}
       </button>
     </Th>

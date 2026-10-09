@@ -307,5 +307,15 @@ export const websites: Website[] = rawWebsites.map(buildWebsite);
 export const websiteById = new Map(websites.map((website) => [website.id, website]));
 export const websiteBySlug = new Map(websites.map((website) => [website.slug, website]));
 
-/** Total inventory figure advertised across the marketing site. */
-export const ADVERTISED_INVENTORY = 5247;
+/*
+  `ADVERTISED_INVENTORY = 5247` was here.
+
+  It was printed on the marketplace as "Browse 5,247+ Vetted Websites" and in
+  three places on the signed-out gateway, while the marketplace held 12,190
+  active listings. Understating, which is why it survived: an overstated
+  figure gets challenged and an understated one does not.
+
+  Counted at the point of use now, through `websiteService.getStats()`. Not
+  replaced with a corrected constant, because a corrected constant is the
+  same bug with a later expiry date.
+*/
