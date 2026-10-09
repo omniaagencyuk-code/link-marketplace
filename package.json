@@ -38,7 +38,8 @@
     "verify:selection": "tsx scripts/verify-admin-selection.mts",
     "verify:costs": "tsx scripts/verify-cost-currency.mts",
     "verify:terms": "tsx scripts/verify-commercial-terms.mts",
-    "verify:dashboard": "tsx scripts/verify-dashboard.mts"
+    "verify:dashboard": "tsx scripts/verify-dashboard.mts",
+    "verify:errors": "tsx scripts/verify-errors.mts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.128.0",

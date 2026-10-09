@@ -835,19 +835,6 @@ export const supabaseWebsiteRepository = {
     const supabase = admin ?? (await getServerClient());
 
     /*
-      A niche landing page needs every listing in its niche counted, so the
-      read pages rather than taking a first page of it - the count under that
-      heading is the one number on the page nobody can check by eye, and it
-      was being drawn from a thousand rows however many there were.
-
-      The filtering happens here rather than in the query because a listing's
-      niche lives in a join table and its secondary niches in another row -
-      the same reason `countByNiche` counts in JavaScript.
-
-      Without a niche only a sample is wanted, and 120 by rank is plenty to
-      draw six rows from, so that read stays a single page on purpose.
-    */
-    /*
       A niche page asks the database for its sample and its counts.
 
       This used to page through every active listing - with services, niche
@@ -886,22 +873,27 @@ export const supabaseWebsiteRepository = {
       };
     }
 
-    const data = await (async () => {
-      const { data: page, error } = await supabase
-            .from('websites')
-            .select(WEBSITE_SELECT)
-            .eq('status', 'active')
-            .order('domain_rating', { ascending: false })
-            .limit(120);
-          // This read used to discard its error and count the empty array,
-          // which showed a live marketplace as holding no listings at all.
-          if (error) throw new Error(`Failed to load the marketplace preview: ${error.message}`);
-          return (page ?? []) as unknown as WebsiteRow[];
-        })();
+    /*
+      No niche: one page, on purpose.
 
-    // Past the early return above, this path is only ever the whole
-    // marketplace: a niche is answered by the database and has gone home.
-    const websites = data.map((row) => toListItem(mapWebsite(row)));
+      120 listings by rank is plenty to draw six rows from, and nothing on
+      this path is counted from them - the three figures below come from
+      `getStats`, which counts in the database. A capped read is only a bug
+      when something is counted from it.
+    */
+    const { data: page, error } = await supabase
+      .from('websites')
+      .select(WEBSITE_SELECT)
+      .eq('status', 'active')
+      .order('domain_rating', { ascending: false })
+      .limit(120);
+    // This read used to discard its error and count the empty array, which
+    // showed a live marketplace as holding no listings at all.
+    if (error) throw new Error(`Failed to load the marketplace preview: ${error.message}`);
+
+    const websites = ((page ?? []) as unknown as WebsiteRow[]).map((row) =>
+      toListItem(mapWebsite(row)),
+    );
 
     // Spread across the inventory rather than taking the strongest few, so the
     // preview represents the marketplace instead of advertising its top end.

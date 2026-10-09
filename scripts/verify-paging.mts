@@ -121,14 +121,54 @@ console.log('\n--- no full read in the repositories uses a bare limit ---');
 {
   const { readFileSync } = await import('node:fs');
 
-  // The five reads that were truncated. Named individually because a regex
-  // over the whole file would pass the day somebody adds a sixth.
+  // The reads that were truncated. Named individually because a regex over
+  // the whole file would pass the day somebody adds another.
   const repo = readFileSync('src/lib/services/supabase/website-repository.ts', 'utf8');
-  for (const read of ['getAll', 'getAllForAdmin', 'countByNiche', 'getPublicPreview', 'getDomainIndex']) {
+  for (const read of ['getAll', 'getAllForAdmin', 'countByNiche', 'getDomainIndex']) {
     const start = repo.indexOf(`async ${read}(`);
     const body = repo.slice(start, start + 1_400);
     is(`${read} pages rather than capping`, start > 0 && body.includes('readAllPages'), true);
   }
+
+  /*
+    `getPublicPreview` is the one that stopped paging, and it is not an
+    exception to the rule - the rule is narrower than "page everything".
+
+    It used to page the whole marketplace, join services and categories onto
+    every row, and filter by niche in JavaScript, to draw six. 0073 moved that
+    into `marketplace_niche_preview`, so there is nothing left to page: the
+    sample arrives as six ids. What was actually at stake in the old
+    assertion is the count under the heading - the one number on a public
+    page nobody can check by eye, and which was being taken from a thousand
+    rows however many there really were.
+
+    So this asserts that invariant directly instead of asserting the paging
+    loop that used to carry it. A niche takes its totals from the function,
+    which counts over the whole niche; without one they come from `getStats`,
+    which counts in the database. Neither counts the array it just read, and
+    `length` appearing in either total is the bug coming back.
+  */
+  const preview = repo.slice(
+    repo.indexOf('async getPublicPreview('),
+    repo.indexOf('async create('),
+  );
+  is('the preview exists to be checked', preview.length > 0, true);
+  is(
+    'a niche page counts in the database, not over what it read',
+    /marketplace_niche_preview/.test(preview),
+    true,
+  );
+  is('and the whole marketplace counts through getStats', /getStats\(\)/.test(preview), true);
+  is(
+    'no total on the preview is a length',
+    /total(?:Websites|Niches|Countries):[^,\n]*\.length/.test(preview),
+    false,
+  );
+  is(
+    'and its single-page read stays single-page on purpose',
+    /readAllPages/.test(preview),
+    false,
+  );
 
   // The two properties live in one file on purpose. A second copy of this
   // loop is a second place to get the stride wrong, which is what the
