@@ -156,10 +156,17 @@ console.log('\n--- no full read in the repositories uses a bare limit ---');
     the three reads beside it all waiting on the slowest. 0075 made it one
     `group by`.
   */
-  const counts = repo.slice(
-    repo.indexOf('async countByNiche('),
-    repo.indexOf('async getStats('),
-  );
+  /*
+    A bounded window rather than a slice between two names.
+
+    The first version of this ended the slice at `async getStats(`, and then
+    `getStats` was memoised and stopped being written that way - so the slice
+    ran to the end of the file, found `readAllPages` somewhere else in it,
+    and reported this read as walking the marketplace when it does not. A
+    check anchored to a name somewhere else is a check that fails when that
+    other thing changes.
+  */
+  const counts = repo.slice(repo.indexOf('async countByNiche('), repo.indexOf('async countByNiche(') + 1_400);
   is('the niche counts exist to be checked', counts.length > 0, true);
   is('the niches are counted in the database', /marketplace_niche_counts/.test(counts), true);
   is('and not by walking the marketplace', /readAllPages/.test(counts), false);
@@ -204,6 +211,27 @@ console.log('\n--- no full read in the repositories uses a bare limit ---');
     /readAllPages/.test(preview),
     false,
   );
+
+  /*
+    The reads a page makes twice without meaning to.
+
+    Measured against the live database, one round trip costs 131ms from
+    where this is deployed, so a duplicate read is not a tidiness point - it
+    is a tenth of a second on the homepage. Two of them were found that way:
+    the page's copy, resolved once for `generateMetadata` and again to
+    render, and the marketplace totals, asked for by the hero and again
+    inside `getPublicPreview`, which uses the same three figures.
+
+    `cache` from React memoises for the length of one request, which is the
+    right scope: it cannot serve a stale answer into a later request, and
+    nothing writes either of these during a render.
+  */
+  const content = readFileSync('src/lib/services/page-content-service.ts', 'utf8');
+  is("the page's copy is read once per request", /resolve: cache\(/.test(content), true);
+  is('and the memoisation is request-scoped', /from 'react'/.test(content), true);
+
+  is('the marketplace totals are read once per request', /getStats: readStats/.test(repo), true);
+  is('and that read is the memoised one', /const readStats = cache\(/.test(repo), true);
 
   /*
     The orders repository, which this check had never looked at.
