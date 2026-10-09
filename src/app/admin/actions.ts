@@ -594,6 +594,34 @@ export async function publishableCountAction() {
  */
 const ADMIN_PAGE_MAX = 250;
 
+/**
+ * One page of the admin order table.
+ *
+ * `/admin/orders` used to be handed every order - with every item and every
+ * issue joined on - and render all of them into one table with no paging.
+ * That read is capped by PostgREST at a thousand rows and says nothing about
+ * it, so the oldest orders were missing and the count above the table was
+ * the cap rather than the truth.
+ */
+export async function adminOrderPageAction(input: {
+  search: string;
+  status: string;
+  page: number;
+  pageSize: number;
+}) {
+  await requireAdminSession();
+
+  const page = Math.max(1, Math.floor(input.page) || 1);
+  const pageSize = Math.min(ADMIN_PAGE_MAX, Math.max(1, Math.floor(input.pageSize) || 50));
+
+  return orderService.adminPage(
+    String(input.search ?? ''),
+    String(input.status ?? 'all'),
+    page,
+    pageSize,
+  );
+}
+
 export async function adminWebsitePageAction(input: {
   search: string;
   status: string;

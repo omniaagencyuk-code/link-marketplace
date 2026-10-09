@@ -1,4 +1,5 @@
 import { getAdminScopedClient, getServerClient } from '@/lib/supabase/server';
+import { readAllPages } from './paged';
 import {
   mapContentItem,
   mapContentOrder,
@@ -51,23 +52,109 @@ const activeContentStatuses: ContentOrderStatus[] = [
 // ------------------------------------------------------------------- orders
 
 export const supabaseOrderRepository = {
+  /**
+   * Every order, paged.
+   *
+   * This asked for all of them in one request and discarded the error. Both
+   * halves were wrong in the same direction - quietly short. PostgREST caps a
+   * response at a thousand rows and puts nothing in it to say so, and a
+   * failed query arrived as an empty array, which renders as a marketplace
+   * that has never sold anything.
+   *
+   * `/admin/orders` used to be the caller and now asks for one page through
+   * `adminPage`; this stays correct for anything that genuinely wants the
+   * lot, and ordered by `id` as well because paging by offset over
+   * `placed_at` alone walks an order the database may break ties in
+   * differently on each request.
+   */
   async getAll(): Promise<Order[]> {
     const supabase = await getServerClient();
-    const { data } = await supabase
-      .from('orders')
-      .select(ORDER_SELECT)
-      .order('placed_at', { ascending: false });
-    return ((data as unknown as OrderRow[] | null) ?? []).map(mapOrder);
+    const rows = await readAllPages<OrderRow>('every order', (from, to) =>
+      supabase
+        .from('orders')
+        .select(ORDER_SELECT)
+        .order('placed_at', { ascending: false })
+        .order('id', { ascending: true })
+        .range(from, to),
+    );
+    return rows.map(mapOrder);
   },
 
-  async getByUser(userId: string): Promise<Order[]> {
-    const supabase = await getServerClient();
-    const { data } = await supabase
+  /**
+   * One page of the admin order table.
+   *
+   * The same arrangement as the website table's: the function returns the ids
+   * for the page and the total, and the rows are read through the select this
+   * file already has, so nothing duplicates the row-to-object mapping.
+   *
+   * The service role rather than the signed-in client. An administrator may
+   * hold a Supabase account carrying `role = 'admin'`, in which case the
+   * policy on `orders` would let this through - but they may equally be
+   * signed in with the shared password alone, which carries no `auth.uid()`
+   * at all and would return an empty table. The admin area's own convention
+   * settles it: admin reads go through the service role, so the screen does
+   * not depend on which way somebody happened to sign in.
+   */
+  async adminPage(
+    search: string,
+    status: string,
+    page: number,
+    pageSize: number,
+  ): Promise<{ items: Order[]; total: number }> {
+    const supabase = getAdminScopedClient();
+    const { data, error } = await supabase.rpc('admin_order_page', {
+      p_search: search.trim() || null,
+      p_status: status || 'all',
+      p_limit: pageSize,
+      p_offset: Math.max(0, (page - 1) * pageSize),
+    });
+
+    if (error) throw new Error(`Could not read the order list: ${error.message}`);
+
+    const rows = (data ?? []) as { id: string; total: number }[];
+    const total = Number(rows[0]?.total ?? 0);
+    const ids = rows.map((row) => row.id);
+    if (ids.length === 0) return { items: [], total };
+
+    const { data: full, error: rowsError } = await supabase
       .from('orders')
       .select(ORDER_SELECT)
-      .eq('user_id', userId)
-      .order('placed_at', { ascending: false });
-    return ((data as unknown as OrderRow[] | null) ?? []).map(mapOrder);
+      .in('id', ids);
+
+    if (rowsError) throw new Error(`Could not read the order list: ${rowsError.message}`);
+
+    const byId = new Map(
+      ((full as unknown as OrderRow[] | null) ?? []).map((row) => [row.id, mapOrder(row)]),
+    );
+
+    // The order is the function's. `in (...)` returns rows in whatever order
+    // it likes, and re-sorting here would undo it.
+    return {
+      items: ids.map((id) => byId.get(id)).filter((order): order is Order => Boolean(order)),
+      total,
+    };
+  },
+
+  /**
+   * One customer's orders.
+   *
+   * Paged and checked for the same reason as `getAll`, though the number that
+   * bites is different: nobody has a thousand orders, but anybody can have a
+   * query fail, and this one failing used to show a paying customer an empty
+   * order history rather than an error.
+   */
+  async getByUser(userId: string): Promise<Order[]> {
+    const supabase = await getServerClient();
+    const rows = await readAllPages<OrderRow>('a customer\'s orders', (from, to) =>
+      supabase
+        .from('orders')
+        .select(ORDER_SELECT)
+        .eq('user_id', userId)
+        .order('placed_at', { ascending: false })
+        .order('id', { ascending: true })
+        .range(from, to),
+    );
+    return rows.map(mapOrder);
   },
 
   async getById(id: string): Promise<Order | null> {

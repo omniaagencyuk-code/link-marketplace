@@ -170,6 +170,45 @@ console.log('\n--- no full read in the repositories uses a bare limit ---');
     false,
   );
 
+  /*
+    The orders repository, which this check had never looked at.
+
+    `readAllPages` was written for the website reads and applied only there,
+    so every list read in `orders-repository.ts` stayed as it was: one
+    request, no range, and the error thrown away. `/admin/orders` was the
+    caller, and at thirteen hundred orders it was showing a thousand and
+    printing the cap as the count - the same sentence the website table
+    printed before 0067, found a year later only because somebody went
+    looking at the orders page for an unrelated reason.
+
+    Named individually, as above. The whole point is that a file nobody
+    listed is a file nobody checked.
+  */
+  const ordersRepo = readFileSync('src/lib/services/supabase/orders-repository.ts', 'utf8');
+  for (const read of ['getAll', 'getByUser']) {
+    const start = ordersRepo.indexOf(`async ${read}(`);
+    const body = ordersRepo.slice(start, start + 1_400);
+    is(`orders ${read} pages rather than capping`, start > 0 && body.includes('readAllPages'), true);
+  }
+
+  /*
+    And the admin table asks for one page rather than every order.
+
+    `adminPage` is the read the screen uses. It must go through the function,
+    because a `.select()` here with no range is the bug coming straight back
+    - and through the service role, because an administrator signed in with
+    the shared password carries no `auth.uid()` and the policy on `orders`
+    would hand them an empty table.
+  */
+  const adminPage = ordersRepo.slice(
+    ordersRepo.indexOf('async adminPage('),
+    ordersRepo.indexOf('async getByUser('),
+  );
+  is('the admin order table exists to be checked', adminPage.length > 0, true);
+  is('it asks the database for one page', /admin_order_page/.test(adminPage), true);
+  is('as the service role', /getAdminScopedClient\(\)/.test(adminPage), true);
+  is('and never silently', (adminPage.match(/throw new Error/g) ?? []).length >= 2, true);
+
   // The two properties live in one file on purpose. A second copy of this
   // loop is a second place to get the stride wrong, which is what the
   // pricing service had before this.
