@@ -731,35 +731,29 @@ export const supabaseWebsiteRepository = {
     return ((data as unknown as WebsiteRow[] | null) ?? []).map((row) => toListItem(mapWebsite(row)));
   },
 
+  /**
+   * How many active listings sit in each niche.
+   *
+   * One `group by` in the database. This used to page through every active
+   * listing and count the rows here - correctly paged, which was the
+   * problem: 3,405 listings at 500 a page is seven requests one after
+   * another, and the homepage's four parallel reads all waited for it.
+   *
+   * The shape is unchanged: a record keyed by niche slug, with niches that
+   * have no listings simply absent, exactly as counting produced.
+   */
   async countByNiche(): Promise<Record<NicheSlug, number>> {
     const supabase = await getServerClient();
 
-    // PostgREST returns an embedded one-to-one as an object, but the generated
-    // types describe it as an array. Accept either rather than trusting one.
-    type CategoryJoin = { slug: string } | { slug: string }[] | null;
-    // One small column, paged. These counts are the figures on the homepage's
-    // niche cards, so a truncated read here is a wrong number on the page a
-    // stranger judges the business by. `id` is selected only to order on.
-    const data = await readAllPages<{ primary_category: CategoryJoin }>(
-      'the niche counts',
-      (from, to) =>
-        supabase
-          .from('websites')
-          .select('id, primary_category:categories!websites_primary_category_id_fkey (slug)')
-          .eq('status', 'active')
-          .order('id', { ascending: true })
-          .range(from, to),
-    );
+    const { data, error } = await supabase.rpc('marketplace_niche_counts');
+    if (error) throw new Error(`Failed to load the niche counts: ${error.message}`);
 
     const counts = {} as Record<NicheSlug, number>;
-
-    for (const row of data) {
-      const joined = row.primary_category;
-      const slug = (Array.isArray(joined) ? joined[0]?.slug : joined?.slug) as
-        | NicheSlug
-        | undefined;
-      if (!slug) continue;
-      counts[slug] = (counts[slug] ?? 0) + 1;
+    for (const row of (data ?? []) as { niche: string; listings: number }[]) {
+      // A slug the application does not know about is skipped rather than
+      // added: these index a fixed set of niche cards, and an unknown key
+      // would render as a card with no name.
+      if (row.niche) counts[row.niche as NicheSlug] = Number(row.listings);
     }
     return counts;
   },

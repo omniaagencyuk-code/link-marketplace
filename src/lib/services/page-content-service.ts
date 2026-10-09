@@ -1,3 +1,4 @@
+import { cache } from 'react';
 import { getRegisteredPage, listRegisteredPages } from '@/lib/cms/registry';
 import { isSupabaseEnabled } from '@/lib/supabase/config';
 import { supabasePageContentRepository } from './supabase/cms-repository';
@@ -68,13 +69,21 @@ export const pageContentService = {
    * Defaults merged with overrides, ready to render.
    *
    * Returns null only for a slug that is not a registered page.
+   *
+   * Read once per request however many times it is asked for. Every CMS page
+   * asks twice without meaning to - `generateMetadata` resolves the page to
+   * find its title and description, then the component resolves the same
+   * page again to render it - so every one of them made two identical reads
+   * of one row. Nothing here is written during a render, and a save
+   * revalidates rather than re-reading, so there is no write for a stale
+   * answer to follow.
    */
-  async resolve(slug: string): Promise<ResolvedContent | null> {
+  resolve: cache(async (slug: string): Promise<ResolvedContent | null> => {
     const page = getRegisteredPage(slug);
     if (!page) return null;
     const record = await pageContentService.getOverrides(slug);
     return resolvePage(page.definition, page.defaults, record?.values);
-  },
+  }),
 
   /**
    * `resolve`, wrapped in the typed accessors components use.
