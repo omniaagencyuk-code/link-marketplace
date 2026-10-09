@@ -183,7 +183,18 @@ export const categoryBySlug = new Map<NicheSlug, Category>(
   categories.map((category) => [category.slug, category]),
 );
 
-export function nicheName(slug: NicheSlug) {
+/**
+ * A category's display name.
+ *
+ * Takes null, because a listing may genuinely have no category and the
+ * alternative is every caller writing its own fallback - which is how the
+ * last one came to be the word "technology". `UNCATEGORISED` is the one
+ * label, so a listing with no niche reads the same wherever it appears.
+ */
+export const UNCATEGORISED = 'Uncategorised';
+
+export function nicheName(slug: NicheSlug | null | undefined) {
+  if (!slug) return UNCATEGORISED;
   return categoryBySlug.get(slug)?.name ?? slug;
 }
 

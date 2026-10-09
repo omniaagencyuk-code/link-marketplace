@@ -119,7 +119,14 @@ export function WebsiteEditor({
             />
           </Field>
           <Field label="Niche" htmlFor="niche">
-            <Select id="niche" name="niche" defaultValue={website?.niche}>
+            {/*
+              An explicit "not categorised" option, because that is a real
+              state now rather than one the view papered over - and without
+              it the form would quietly file every uncategorised listing
+              under whichever category happened to be first.
+            */}
+            <Select id="niche" name="niche" defaultValue={website?.niche ?? ''}>
+              <option value="">Not categorised</option>
               {categories.map((category) => (
                 <option key={category.slug} value={category.slug}>
                   {category.name}

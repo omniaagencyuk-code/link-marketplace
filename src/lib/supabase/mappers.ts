@@ -252,7 +252,9 @@ function costCurrencyFromRow(row: WebsiteRow): string | undefined {
 
 export function mapWebsite(row: WebsiteRow): Website {
   const costCurrency = costCurrencyFromRow(row);
-  const primaryNiche = (row.primary_category?.slug ?? 'technology') as NicheSlug;
+  // Null where nobody has categorised the listing. The default this
+  // replaces is the one the view carried too; see `Website.niche`.
+  const primaryNiche = (row.primary_category?.slug ?? null) as NicheSlug | null;
   const secondary = (row.website_categories ?? [])
     .map((entry) => entry.categories?.slug)
     .filter((slug): slug is string => Boolean(slug) && slug !== primaryNiche) as NicheSlug[];

@@ -229,8 +229,11 @@ export const websiteService = {
     if (isSupabaseEnabled()) return supabaseWebsiteRepository.facets(topic);
 
     const source = forTopic(listItems(), topic);
+    // Uncategorised listings are in no niche count, because no niche filter
+    // returns them. `marketplace_facets` skips them the same way.
     const niches: Record<string, number> = {};
     for (const website of listItems()) {
+      if (!website.niche) continue;
       niches[website.niche] = (niches[website.niche] ?? 0) + 1;
     }
     const byCountry = new Map<string, number>();
@@ -333,6 +336,10 @@ export const websiteService = {
     const counts = {} as Record<NicheSlug, number>;
     for (const website of store) {
       if (website.status !== 'active') continue;
+      // As `marketplace_niche_counts` does: it joins the primary category,
+      // so a listing without one is counted under nothing rather than under
+      // a guess.
+      if (!website.niche) continue;
       counts[website.niche] = (counts[website.niche] ?? 0) + 1;
     }
     return counts;

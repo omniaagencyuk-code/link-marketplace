@@ -24,7 +24,9 @@ export interface PreviewRow {
   key: string;
   /** e.g. "••••••••.com" - the TLD only, which identifies nothing. */
   maskedDomain: string;
-  niche: NicheSlug;
+  /** Null where the listing has none; the preview prints the same dash the
+   *  marketplace does rather than inventing a category for a stranger. */
+  niche: NicheSlug | null;
   /** A dash where the publisher's market is unknown, which is most of them. */
   country: string;
   /** Rounded to the nearest 5 so an exact DR cannot be matched against a tool. */

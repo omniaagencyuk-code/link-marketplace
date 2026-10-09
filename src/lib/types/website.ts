@@ -245,7 +245,20 @@ export interface Website {
   description: string;
   /** Longer editorial overview shown on the listing page. */
   overview: string;
-  niche: NicheSlug;
+  /**
+   * The primary category, or null where nobody has set one.
+   *
+   * Null rather than a default. It was `coalesce(pc.slug, 'technology')` in
+   * the view and `?? 'technology'` in the mapper, which sold 1,840 of 12,190
+   * active listings - one in seven, none of them carrying any other category
+   * - as technology sites. The field beside it has always done this
+   * correctly: `country` is null when its source is a default, rather than
+   * guessing from the domain.
+   *
+   * A null niche means no niche filter returns the listing, no niche page
+   * lists it and no count includes it. Everything else still finds it.
+   */
+  niche: NicheSlug | null;
   secondaryNiches: NicheSlug[];
   /**
    * The publisher's primary market, where it is known.
