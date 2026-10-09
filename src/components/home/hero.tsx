@@ -1,57 +1,55 @@
 import Link from 'next/link';
-import { ArrowRight, Check, Globe, Layers, LineChart } from 'lucide-react';
+import { ArrowRight, Check } from 'lucide-react';
 import { Container } from '@/components/layout/container';
 import { Button } from '@/components/ui/button';
-import { ParrotHero } from './parrot-hero';
-import { formatNumber } from '@/lib/utils/format';
+import { HeroBackdrop, HeroBand } from './hero-backdrop';
 import type { ContentAccessors } from '@/lib/cms/resolve';
-import type { MarketplaceStats } from '@/lib/services';
 
 /**
  * Homepage hero.
  *
- * Two columns: the argument on the left, the mascot on the right with three
- * cards floating over it. Below 1024px it stacks in reading order - headline,
- * copy, buttons, reassurance, then the artwork, which is decoration and goes
- * last.
+ * A photograph across the whole section - coastline on the left, the macaw
+ * with its laptop on the right - and the argument set over the quiet half of
+ * it. `HeroBackdrop` holds the picture and the scrim that makes the text
+ * readable on it; everything here is the words.
  *
- * ## The cards say true things
+ * ## What went, and why it is not a loss
  *
- * The design they come from had "+237% Higher Rankings", "+180% More Traffic",
- * "+197% More Visibility". Those are the right shape and the wrong content:
- * they are performance claims about other people's SEO that nobody here can
- * substantiate, on the page a first-time visitor judges the business by.
+ * It had a drawn mascot in a right-hand column with three cards floating
+ * over it, each carrying a counted figure: publishers listed, niches,
+ * countries. Both are gone.
  *
- * So the cards keep the device and carry facts instead - how many publishers
- * are listed, how many niches, how many countries - counted from the
- * marketplace on every render. The labels are editable; the figures are not,
- * because a figure somebody types is a figure that is wrong within the year
- * and wrong silently. The homepage claimed "5,000+ vetted websites" against a
- * real number closer to nine hundred until this.
+ * The mascot, because the photograph has a parrot in it and two parrots side
+ * by side is not a design. The cards, because the strip directly below this
+ * section already states those same three figures, and a number printed
+ * twice on one screen reads as two claims that happen to agree. The strip is
+ * the one that stays: it has room for the fourth figure as well, and it is
+ * not sitting on top of a photograph.
  *
- * A card whose figure is zero does not render, so the row is never padded
- * with a claim of nothing.
+ * The rule those cards existed for is unchanged and still enforced where the
+ * figures now live - they are counted from the marketplace on every render,
+ * never typed. The homepage claimed "5,000+ vetted websites" against a real
+ * number nearer nine hundred until that rule existed.
+ *
+ * Below `lg` the columns stack and the picture holds its left edge, so the
+ * headline is never over the bird.
  */
-export function Hero({ content, stats }: { content: ContentAccessors; stats: MarketplaceStats }) {
+export function Hero({ content }: { content: ContentAccessors }) {
   const primaryCta = content.link('hero', 'primaryCta');
   const secondaryCta = content.link('hero', 'secondaryCta');
   const reassurance = content.list<{ label: string }>('hero', 'reassurance');
 
-  const cards = [
-    { icon: LineChart, value: stats.totalWebsites, label: content.text('hero', 'cardWebsites') },
-    { icon: Layers, value: stats.totalNiches, label: content.text('hero', 'cardNiches') },
-    { icon: Globe, value: stats.totalCountries, label: content.text('hero', 'cardCountries') },
-  ].filter((card) => card.value > 0 && card.label);
-
   return (
-    <section className="tropical-wash relative overflow-hidden border-b border-line bg-white">
-      <div
-        aria-hidden="true"
-        className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-accent-400/40 to-transparent"
-      />
+    <section className="relative overflow-hidden border-b border-line bg-white">
+      <HeroBackdrop />
 
-      <Container size="wide" className="relative py-12 lg:py-20">
-        <div className="grid items-center gap-12 lg:grid-cols-[minmax(0,1.05fr)_minmax(0,0.95fr)] lg:gap-16">
+      <Container size="wide" className="relative py-14 lg:py-24">
+        {/*
+          The second column is empty on purpose. It is the space the bird
+          occupies in the photograph: without it the copy would run the full
+          width on a wide screen and finish on top of the laptop.
+        */}
+        <div className="grid items-center gap-12 lg:grid-cols-[minmax(0,1fr)_minmax(0,0.85fr)] lg:gap-16">
           <div className="relative z-20 min-w-0">
             <p className="text-[11px] font-semibold tracking-[0.14em] text-accent-700 uppercase">
               {content.text('hero', 'eyebrow')}
@@ -102,39 +100,10 @@ export function Hero({ content, stats }: { content: ContentAccessors; stats: Mar
             ) : null}
           </div>
 
-          <div className="relative z-10 min-w-0">
-            <ParrotHero annotation={content.text('hero', 'annotation')} />
-
-            {/*
-              Floated over the artwork from `sm` up, and stacked underneath it
-              below that. Absolute positioning at 375px would put three cards
-              on top of a parrot and make both unreadable, and the cards are
-              the half carrying information.
-            */}
-            <ul className="mt-5 grid gap-3 sm:absolute sm:inset-y-0 sm:left-0 sm:mt-0 sm:flex sm:flex-col sm:justify-center sm:gap-4">
-              {cards.map((card) => (
-                <li
-                  key={card.label}
-                  className="flex items-center gap-3 rounded-[var(--radius-card)] border border-line bg-white/95 px-3.5 py-2.5 shadow-[var(--shadow-raised)] backdrop-blur-sm sm:max-w-[13rem]"
-                >
-                  <span
-                    aria-hidden="true"
-                    className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-accent-50 text-accent-700"
-                  >
-                    <card.icon className="h-4 w-4" />
-                  </span>
-                  <span className="min-w-0">
-                    <span className="tabular block text-[15px] leading-tight font-semibold text-ink">
-                      {formatNumber(card.value)}
-                    </span>
-                    <span className="block text-[12px] leading-tight text-muted">{card.label}</span>
-                  </span>
-                </li>
-              ))}
-            </ul>
-          </div>
         </div>
       </Container>
+
+      <HeroBand />
     </section>
   );
 }

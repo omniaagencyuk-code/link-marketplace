@@ -169,7 +169,7 @@ function LegacyHomePage({
         in it, how it works, what it looks like inside - then the reading for
         anybody not ready to act, and the ask.
       */}
-      <Hero content={content} stats={stats} />
+      <Hero content={content} />
 
       <section className="border-b border-line bg-surface">
         <Container size="wide" className="py-10">
