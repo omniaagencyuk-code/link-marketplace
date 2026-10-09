@@ -29,20 +29,46 @@ import type { AudienceCountry } from '@/lib/types';
  * Two countries, because that is what fits a table row at a glance and the
  * long tail is in the expanded panel. A site with one measured country shows
  * one bar rather than a blank second slot.
+ *
+ * The marketplace card uses the same component laid out across instead of
+ * down, so a phone and the table cannot come to differ about what the top
+ * two countries are or how a share is drawn.
  */
-export function AudienceBars({ split }: { split: AudienceCountry[] }) {
+export function AudienceBars({
+  split,
+  direction = 'stack',
+  emptyLabel = '—',
+}: {
+  split: AudienceCountry[];
+  /**
+   * Stacked in a table cell, side by side on a card.
+   *
+   * The table has 98px and two rows to give this; a card has the width of the
+   * card and one line, so the same two countries read better across than down.
+   */
+  direction?: 'stack' | 'inline';
+  /**
+   * What stands in for the bars where nothing has been measured.
+   *
+   * A dash in a table cell, because the column heading beside it already says
+   * what is missing and there is no room for words. On a card there is room,
+   * and half the inventory has no reading - so saying so in words beats a
+   * dash a buyer has to interpret.
+   */
+  emptyLabel?: string;
+}) {
   const top = split.filter((entry) => entry.country && entry.share > 0).slice(0, 2);
 
   if (top.length === 0) {
     return (
       <span className="text-[12px] text-muted" title="Country traffic has not been measured for this publisher">
-        —
+        {emptyLabel}
       </span>
     );
   }
 
   return (
-    <ul className="space-y-1">
+    <ul className={direction === 'inline' ? 'flex flex-wrap gap-x-4 gap-y-1' : 'space-y-1'}>
       {top.map((entry) => (
         <li key={entry.country} className="flex items-center gap-1.5">
           <Flag country={entry.country} className="h-3 w-4 shrink-0 rounded-[2px]" />

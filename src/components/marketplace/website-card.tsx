@@ -8,6 +8,7 @@ import { DurabilityBadge } from '@/components/shared/durability-badge';
 import { FavouriteButton } from './favourite-button';
 import { AddToOrderButton } from './add-to-order-button';
 import { WebsiteSnippet } from './website-snippet';
+import { AudienceBars } from './audience-bars';
 import { nicheName } from '@/lib/data/categories';
 import { FlowMetrics, TopicChips } from './majestic-badges';
 import { countryName } from '@/lib/data/countries';
@@ -117,6 +118,30 @@ export function WebsiteCard({
             {lead ? formatTurnaround(lead.turnaroundMinDays, lead.turnaroundMaxDays) : '—'}
           </span>
         </Metric>
+
+        {/*
+          Where the readers are, which the table shows as its own column and
+          this card did not show at all.
+
+          That gap mattered more than it looks: the table is desktop-only, so
+          on a phone the metric the redesign put in front of everything else
+          was the one metric missing - and the filter that narrows by it can
+          be set from a phone. Spanning the full width rather than taking a
+          sixth cell, because two flags, two bars and two figures do not fit
+          in a fifth of a card.
+        */}
+        <div className="col-span-3 mt-1 border-t border-line pt-3 sm:col-span-5">
+          <dt className="text-[10px] font-medium tracking-wide text-muted uppercase">
+            Readers in
+          </dt>
+          <dd className="mt-1.5">
+            <AudienceBars
+              split={website.metrics.audienceSplit}
+              direction="inline"
+              emptyLabel="Not measured yet"
+            />
+          </dd>
+        </div>
       </dl>
 
       <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2 text-[12px] text-muted">
@@ -173,10 +198,25 @@ export function WebsiteCard({
   );
 }
 
+/**
+ * One figure in the metric strip.
+ *
+ * Labels along the top of the row, figures along the bottom, rather than each
+ * pair stacked where it falls. In the three-up grid a card is about 340px, so
+ * "Ref. domains" is the one label that takes two lines - and with the pairs
+ * stacked that pushed its figure a line below every other figure, which reads
+ * as a column that failed to load rather than a label that wrapped.
+ *
+ * `justify-between` over a full-height cell does it without reserving a
+ * second line everywhere: the grid row is already as tall as its tallest
+ * cell, so this only moves what is inside it.
+ */
 function Metric({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div>
-      <dt className="text-[10px] font-medium tracking-wide text-muted uppercase">{label}</dt>
+    <div className="flex h-full flex-col justify-between">
+      <dt className="text-[10px] leading-[1.2] font-medium tracking-wide text-muted uppercase">
+        {label}
+      </dt>
       <dd className="mt-1">{children}</dd>
     </div>
   );

@@ -26,7 +26,7 @@ export function SiteHeader() {
   const pathname = usePathname();
   const router = useRouter();
   const { user, status } = useAuth();
-  const { count: favouriteCount } = useFavourites();
+  const { count: favouriteCount, hydrated: favouritesReady } = useFavourites();
   const { count: draftCount } = useOrderDraft();
   const { count: contentCount } = useContentDraft();
   const [menuOpen, setMenuOpen] = useState(false);
@@ -68,6 +68,14 @@ export function SiteHeader() {
   }, [searchOpen]);
 
   const isActive = (href: string) => pathname === href || pathname.startsWith(`${href}/`);
+
+  /*
+    Saved sites live in localStorage, so until the store has been read the
+    count is not zero - it is unknown. Rendering "Saved Sites 0" through that
+    moment and correcting it reads as a site that lost the shortlist, the same
+    reason the login button is held back below.
+  */
+  const savedShown = favouritesReady && favouriteCount > 0;
 
   function submitSearch(event: React.FormEvent) {
     event.preventDefault();
@@ -127,13 +135,46 @@ export function SiteHeader() {
                 >
                   <Search className="h-4 w-4" />
                 </Button>
+                {/*
+                  Saved sites, named rather than guessed at.
+
+                  It was a bookmark glyph with a dot on it, which tells you
+                  there are some of something. The count is worth showing
+                  because it is the one number on this page that is the
+                  customer's own, so above `xl` - where the nav leaves the
+                  room - it reads "Saved Sites 12". Narrower than that the
+                  label is dropped and the dot comes back.
+
+                  Both counts are rendered and one is hidden by breakpoint.
+                  `display: none` takes an element out of the accessibility
+                  tree as well as the layout, so a screen reader reads the
+                  number once, not twice.
+                */}
                 <Link
                   href="/dashboard/saved"
-                  aria-label={`Saved websites (${favouriteCount})`}
-                  className="relative hidden h-8 w-8 items-center justify-center rounded-md text-ink-soft transition-colors hover:bg-surface-sunken hover:text-ink sm:inline-flex"
+                  aria-label={
+                    favouritesReady
+                      ? `Saved sites (${favouriteCount})`
+                      : 'Saved sites'
+                  }
+                  className="relative hidden h-8 items-center justify-center gap-1.5 rounded-md px-2 text-ink-soft transition-colors hover:bg-surface-sunken hover:text-ink sm:inline-flex xl:px-2.5"
                 >
-                  <Bookmark className="h-4 w-4" />
-                  {favouriteCount > 0 ? <CountDot value={favouriteCount} /> : null}
+                  <Bookmark
+                    className="h-4 w-4 shrink-0"
+                    fill={savedShown ? 'currentColor' : 'none'}
+                    aria-hidden="true"
+                  />
+                  <span className="hidden text-sm font-medium whitespace-nowrap xl:inline">
+                    Saved Sites
+                  </span>
+                  {savedShown ? (
+                    <>
+                      <CountDot value={favouriteCount} className="xl:hidden" />
+                      <span className="tabular hidden rounded-full bg-accent-50 px-1.5 py-0.5 text-[11px] font-semibold text-accent-700 xl:inline-block">
+                        {favouriteCount > 99 ? '99+' : favouriteCount}
+                      </span>
+                    </>
+                  ) : null}
                 </Link>
                 <Link
                   href="/dashboard/orders"
@@ -265,7 +306,9 @@ export function SiteHeader() {
                 {user ? (
                   <>
                     <Button asChild variant="outline" size="sm" className="flex-1">
-                      <Link href="/dashboard/saved">Saved ({favouriteCount})</Link>
+                      <Link href="/dashboard/saved">
+                        Saved Sites{savedShown ? ` (${favouriteCount})` : ''}
+                      </Link>
                     </Button>
                     <Button asChild variant="primary" size="sm" className="flex-1">
                       <Link href="/dashboard">Dashboard</Link>
@@ -346,9 +389,14 @@ function NavEntry({
   );
 }
 
-function CountDot({ value }: { value: number }) {
+function CountDot({ value, className }: { value: number; className?: string }) {
   return (
-    <span className="tabular absolute -top-0.5 -right-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-accent-600 px-1 text-[10px] font-semibold text-white">
+    <span
+      className={cn(
+        'tabular absolute -top-0.5 -right-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-accent-600 px-1 text-[10px] font-semibold text-white',
+        className,
+      )}
+    >
       {value > 99 ? '99+' : value}
     </span>
   );
