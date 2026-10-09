@@ -37,6 +37,17 @@ export interface MarketplaceFilters {
   topic?: AcceptedNicheSlug;
   niches: NicheSlug[];
   countries: CountryCode[];
+  /**
+   * Where the readers are, rather than where the publisher is.
+   *
+   * Separate from `countries` on purpose: that one is the publisher's own
+   * market, this is a share of the measured audience, and a US publication
+   * can be read mostly in the UK. Folding them together would change what
+   * the older filter means for anybody who has it set.
+   */
+  audienceCountry?: CountryCode;
+  audienceShareMin?: number;
+  audienceTrafficMin?: number;
   languages: LanguageCode[];
   linkTypes: LinkTypeSlug[];
   linkAttribute?: LinkAttribute;
@@ -92,6 +103,9 @@ export function parseFilters(params: URLSearchParams): MarketplaceFilters {
     topic: buyableTopic(params.get('topic')),
     niches: csv(params.get('niche')) as NicheSlug[],
     countries: csv(params.get('country')) as CountryCode[],
+    audienceCountry: (params.get('audCountry') as CountryCode | null) ?? undefined,
+    audienceShareMin: num(params.get('audShare')),
+    audienceTrafficMin: num(params.get('audTraffic')),
     languages: csv(params.get('lang')) as LanguageCode[],
     linkTypes: csv(params.get('service')) as LinkTypeSlug[],
     linkAttribute: (params.get('attr') as LinkAttribute | null) ?? undefined,
@@ -125,6 +139,16 @@ export function serialise(
   if (filters.topic) set('topic', filters.topic);
   if (filters.niches.length) set('niche', filters.niches.join(','));
   if (filters.countries.length) set('country', filters.countries.join(','));
+  /*
+    The thresholds only mean anything alongside a country, so they are not
+    written without one. A URL carrying `audShare=30` and no country would
+    restore as a filter that reads as set and narrows nothing.
+  */
+  if (filters.audienceCountry) {
+    set('audCountry', filters.audienceCountry);
+    set('audShare', filters.audienceShareMin);
+    set('audTraffic', filters.audienceTrafficMin);
+  }
   if (filters.languages.length) set('lang', filters.languages.join(','));
   if (filters.linkTypes.length) set('service', filters.linkTypes.join(','));
   set('attr', filters.linkAttribute);
@@ -155,6 +179,10 @@ export function countActiveFilters(filters: MarketplaceFilters) {
   // somebody to clear it without noticing what it was doing.
   count += filters.niches.length;
   count += filters.countries.length;
+  // One, whatever thresholds are on it: the country is the filter and the
+  // two numbers are how tight it is, so counting them separately would read
+  // as three filters where somebody set one.
+  if (filters.audienceCountry) count += 1;
   count += filters.languages.length;
   count += filters.linkTypes.length;
   if (filters.linkAttribute) count += 1;
@@ -178,6 +206,10 @@ export function toWebsiteQuery(
     search: filters.search,
     niches: filters.niches.length ? filters.niches : undefined,
     countries: filters.countries.length ? filters.countries : undefined,
+    // Without a country the thresholds are not a filter, so they are not sent.
+    audienceCountry: filters.audienceCountry,
+    audienceShareMin: filters.audienceCountry ? filters.audienceShareMin : undefined,
+    audienceTrafficMin: filters.audienceCountry ? filters.audienceTrafficMin : undefined,
     languages: filters.languages.length ? filters.languages : undefined,
     linkTypes: filters.linkTypes.length ? filters.linkTypes : undefined,
     linkAttribute: filters.linkAttribute,
