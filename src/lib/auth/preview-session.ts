@@ -1,4 +1,4 @@
-import { cookies } from 'next/headers';
+import { cookies, draftMode } from 'next/headers';
 import { signToken, verifyToken } from './session-token';
 
 /**
@@ -58,10 +58,20 @@ export async function hasPreviewGrant(): Promise<boolean> {
   return (await verifyPreviewToken(store.get(PREVIEW_COOKIE)?.value)) !== null;
 }
 
-/** Issue the grant. Called only from an action that has already checked. */
+/**
+ * Issue the grant. Called only from an action that has already checked.
+ *
+ * Draft mode is turned on alongside it, and the two have to move together:
+ * the grant is the authorisation - who, and for how long - and draft mode
+ * is what makes the framework stop serving this browser the prerendered
+ * copy. A grant without draft mode would authorise somebody to see drafts
+ * and then hand them the cached page anyway.
+ */
 export async function grantPreview(email: string): Promise<void> {
   const token = await createPreviewToken(email);
   if (!token) return;
+
+  (await draftMode()).enable();
 
   const store = await cookies();
   store.set(PREVIEW_COOKIE, token, {
@@ -74,6 +84,10 @@ export async function grantPreview(email: string): Promise<void> {
 }
 
 export async function revokePreview(): Promise<void> {
+  // Draft mode first. If this threw half way, the safe half to have done is
+  // the one that puts the browser back on the cached, published page.
+  (await draftMode()).disable();
+
   const store = await cookies();
   store.delete({ name: PREVIEW_COOKIE, path: '/' });
 }

@@ -1603,13 +1603,57 @@ console.log('\n--- an unpublished change cannot reach a visitor ---');
     'src/app/(marketing)/[slug]/page.tsx',
   ]) {
     const source = read(route);
-    yes(`${route.split('/').at(-2)} asks isPreview()`, source.includes('isPreview(searchParams)'));
-    yes('and nothing else decides it', !/getAdminSession|hasPreviewGrant/.test(source));
+    yes(`${route.split('/').at(-2)} asks isPreview()`, /isPreview\(\)/.test(source));
+    yes('and nothing else decides it', !/getAdminSession|hasPreviewGrant|draftMode/.test(source));
   }
 
+  /*
+    Two conditions, and which two changed.
+
+    It used to be `?preview=1` plus the grant. Reading a search parameter
+    makes a page dynamic, and these are the marketing pages - so the
+    homepage and every CMS page were rendered from scratch on every request
+    for a query string almost nobody sends. Draft mode replaced the
+    parameter: the framework serves everybody else the prerendered copy and
+    only a request carrying its signed cookie renders fresh.
+
+    The grant is untouched and still the authorisation - it is the one that
+    carries who and for how long. So the assertion is the same shape as
+    before: two conditions, neither sufficient alone.
+  */
   const check = read('src/lib/cms/preview.ts');
-  yes('a preview needs the parameter', /params\.preview/.test(check));
-  yes('and the grant', /hasPreviewGrant/.test(check));
+  yes('a preview needs draft mode', /draftMode\(\)/.test(check));
+  /*
+    Called and returned, not merely imported.
+
+    `/hasPreviewGrant/` matched the import line, so removing the call and
+    returning `true` left this passing - a preview requiring nothing but
+    draft mode, reported green. Only the ordering check below caught it,
+    and by accident.
+  */
+  yes('and the grant', /return hasPreviewGrant\(\)/.test(check));
+  yes('and neither alone is enough', /isEnabled/.test(check) && /if \(!isEnabled\) return false/.test(check));
+
+  /*
+    The grant is read second, and only if draft mode passed.
+
+    Not a style point. Reading a cookie is a request read, so a
+    `hasPreviewGrant()` called before the draft-mode check would make every
+    one of these pages dynamic again and quietly undo the whole change -
+    while still being correct, which is why nothing else would catch it.
+  */
+  yes(
+    'and the cookie is only read once draft mode has passed',
+    check.indexOf('draftMode()') < check.indexOf('hasPreviewGrant()'),
+  );
+
+  /*
+    Turning preview on has to turn both on. A grant without draft mode
+    authorises somebody to see drafts and then hands them the cached page.
+  */
+  const grant = read('src/lib/auth/preview-session.ts');
+  yes('granting preview enables draft mode', /\(await draftMode\(\)\)\.enable\(\)/.test(grant));
+  yes('and revoking it disables draft mode', /\(await draftMode\(\)\)\.disable\(\)/.test(grant));
 
   /*
     The role test asks the question that matters, against a row that exists.

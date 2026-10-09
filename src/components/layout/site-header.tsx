@@ -25,7 +25,7 @@ const memberNav = [
 export function SiteHeader() {
   const pathname = usePathname();
   const router = useRouter();
-  const { user } = useAuth();
+  const { user, status } = useAuth();
   const { count: favouriteCount } = useFavourites();
   const { count: draftCount } = useOrderDraft();
   const { count: contentCount } = useContentDraft();
@@ -152,6 +152,22 @@ export function SiteHeader() {
                   </Link>
                 </Button>
               </>
+            ) : status === 'loading' ? (
+              /*
+                Held, not guessed.
+
+                The account is fetched after the page arrives, so for a
+                moment nobody knows whether there is one. Rendering "Log in"
+                through that moment would be wrong for anybody signed in,
+                and they would watch it correct itself - which reads as a
+                site that forgot them. A space the right size says nothing
+                and moves nothing, and resolves within a few hundred
+                milliseconds either way.
+              */
+              <div
+                aria-hidden="true"
+                className="hidden h-8 w-[9.5rem] animate-pulse rounded-md bg-surface-sunken sm:block"
+              />
             ) : (
               <div className="hidden items-center gap-1.5 sm:flex">
                 <Button asChild variant="ghost" size="sm">

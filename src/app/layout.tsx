@@ -1,7 +1,6 @@
 import type { Metadata, Viewport } from 'next';
 import { Caveat, Inter } from 'next/font/google';
 import { AppProviders } from '@/lib/providers/app-providers';
-import { getCurrentUser } from '@/lib/auth/customer-access';
 import { SupportChat } from '@/components/support/support-chat';
 import { brand, siteUrl } from '@/lib/config/brand';
 import './globals.css';
@@ -59,11 +58,20 @@ export const viewport: Viewport = {
   initialScale: 1,
 };
 
-export default async function RootLayout({ children }: { children: React.ReactNode }) {
-  // Resolved from the signed session cookie, so client components render the
-  // same signed-in state the server enforces.
-  const user = await getCurrentUser();
-
+/**
+ * Nothing in here reads the request.
+ *
+ * It resolved the signed-in account before rendering anything, which is a
+ * reasonable thing for a layout to do and was the single most expensive line
+ * in the application: a cookie read in the root layout makes every page
+ * personalised, and a personalised page cannot be prerendered. 96 of 99
+ * routes were rendered from scratch on every request because of it.
+ *
+ * The account is fetched by `AuthProvider` now, from `/api/me`. Protected
+ * routes are unaffected - they check the cookie themselves, and always did;
+ * this only ever fed what the chrome draws.
+ */
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en-GB" className={`${inter.variable} ${caveat.variable}`}>
       <body className="min-h-dvh font-sans antialiased">
@@ -73,7 +81,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         >
           Skip to content
         </a>
-        <AppProviders user={user}>
+        <AppProviders>
           {children}
           <SupportChat />
         </AppProviders>
