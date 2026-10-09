@@ -12,6 +12,8 @@ import { readMbox, readPastedEmail, domainFromSubject, stripQuotedHistory } from
 import { extractionResultSchema, fromWire, wireResultSchema, type ExtractedListing } from '../src/lib/sourcing/schema';
 import { applyGeneralPriceToNiches, assumedNicheCosts, countLowConfidence, expandListings, fillGeneralFromNiches, flagsFor, sellableNiches, sensitiveRate } from '../src/lib/sourcing/review';
 import { sensitiveNicheSlugs } from '../src/lib/config/accepted-niches';
+import { hasAnyPrice } from '../src/lib/sourcing/review';
+import { usableCurrency } from '../src/lib/websites/cost-currency';
 import { extractLinks, looksLikeRateCardLead } from '../src/lib/sourcing/links';
 import { readBlockTarget } from '../src/lib/sourcing/blocklist';
 import {
@@ -412,6 +414,83 @@ console.log('\n--- a price with no currency ---');
 
   const banner = blank({ banner_cost: 50, contact_email: 'a@b.example' });
   is('and so does a banner price', flagsFor(banner).includes('price-without-currency'), true);
+
+  /*
+    Present is not the same as readable, and the gap between those two was a
+    hole straight through the safe path.
+
+    The flag asked `!listing.currency`; `commercialTerms` asked
+    `usableCurrency`. Everything in between - a symbol, a word, the mojibake
+    a rate-card CSV produces - passed the first and failed the second. So the
+    draft carried no flag, was therefore eligible for bulk approval, and the
+    cost was written while the currency column was dropped: a number with no
+    unit, reached by the route that exists to refuse exactly that.
+
+    The extraction rules ask the model for an ISO code, so a value that is
+    not one is the model departing from them - which is when a human should
+    be asked, not when a guard should relax.
+  */
+  for (const written of ['US$', 'Euro', '\u20ac', 'usd ', '\ufffd', 'dollars']) {
+    const odd = blank({ guest_post_cost: 109, currency: written, contact_email: 'a@b.example' });
+    const readable = usableCurrency(written) !== null;
+    is(
+      `"${written}" is flagged unless it is a code the write path can use`,
+      flagsFor(odd).includes('price-without-currency'),
+      !readable,
+    );
+  }
+  is('a lower-case code is a code', usableCurrency('usd'), 'USD');
+  is('and padding does not stop it being one', usableCurrency(' eur '), 'EUR');
+
+  /*
+    The predicate the refusal uses is the predicate the flag uses.
+
+    Two copies of "does this listing put a price on record" would drift, and
+    the one that drifted would be the one nobody reads - so `hasAnyPrice` is
+    exported and shared rather than restated in `draft-approval.ts`.
+  */
+  is('a banner price counts as a price', hasAnyPrice(banner), true);
+  is('and a niche-only one does', hasAnyPrice(nicheOnly), true);
+  is('and a reply quoting nothing does not', hasAnyPrice(noPrice), false);
+}
+
+console.log('\n--- approving cannot store a cost with no money attached ---');
+{
+  /*
+    `approveDraft` is the only path from a draft to a listing, which is what
+    makes it the right place for this and the only place it is needed: the
+    bulk runs call it too, so one guard covers the reviewer pressing Approve,
+    the two bulk modes, and every draft already sitting in the queue with an
+    unreadable currency and no flag stored against it.
+
+    Checked as source because the function wants a database and this suite
+    has none. What is asserted is the thing that would actually go wrong: not
+    that a check exists, but that it runs before the first write. A refusal
+    that fires after the listing and its commercial terms are saved leaves
+    half an approval on disk, which is worse than not refusing.
+  */
+  const read = (file: string) =>
+    fs.readFileSync(new URL(`../${file}`, import.meta.url), 'utf8');
+
+  const approval = read('src/lib/services/draft-approval.ts');
+  const guardAt = approval.indexOf('hasAnyPrice(listing)');
+  const firstWriteAt = approval.indexOf('supabase.from(');
+
+  is('approval refuses a price it cannot put a unit on', guardAt >= 0, true);
+  is('and uses the same reading of "a currency" as the write path',
+    /usableCurrency\(listing\.currency\)/.test(approval), true);
+  is('and refuses before anything is written',
+    guardAt >= 0 && firstWriteAt >= 0 && guardAt < firstWriteAt, true);
+
+  /*
+    And the screen stops telling reviewers to fix it afterwards. "Set it on
+    the listing after approving" is a second step done from memory, which is
+    how 410 of these accumulated; the currency box is on the same screen, so
+    the instruction is to fill it in first.
+  */
+  const review = read('src/components/admin/sourcing/draft-review.tsx');
+  is('the reviewer is told to set it before approving',
+    /approve again/.test(review) && !/Set it on the listing after approving/.test(review), true);
 }
 
 console.log('\n--- what is not flagged ---');

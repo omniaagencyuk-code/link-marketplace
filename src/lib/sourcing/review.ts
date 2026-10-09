@@ -1,5 +1,6 @@
 import { sensitiveNicheSlugs } from '@/lib/config/accepted-niches';
 import { normaliseDomain } from '@/lib/import/normalise';
+import { usableCurrency } from '@/lib/websites/cost-currency';
 import type { ExtractedListing } from './schema';
 
 /**
@@ -92,7 +93,7 @@ export function expandListings(listings: ExtractedListing[]): ExpandedDraft[] {
  * draft arrives with them all unknown and somebody has to say.
  */
 /** Whether the reply quoted any money at all, in any of the places it can. */
-function hasAnyPrice(listing: ExtractedListing): boolean {
+export function hasAnyPrice(listing: ExtractedListing): boolean {
   if (listing.guest_post_cost != null) return true;
   if (listing.guest_post_cost_written_by_publisher != null) return true;
   if (listing.link_insertion_cost != null) return true;
@@ -115,13 +116,26 @@ export function flagsFor(listing: ExtractedListing): string[] {
   if (listing.guest_post_cost != null && everyNicheUnknown) {
     flags.push('single-price-confirm-niches');
   }
-  // A price with no currency is a number that means nothing. It used to be
-  // stored anyway and read as pounds everywhere downstream, which is how a
-  // publisher quoting dollars came to be shown as quoting pounds. The reply
-  // rarely omits it outright - more often the symbol was the only clue and
-  // the model would not invent a code from it, which is the right call and
-  // exactly when a human should be asked.
-  if (hasAnyPrice(listing) && !listing.currency) flags.push('price-without-currency');
+  /*
+    A price with no currency is a number that means nothing. It used to be
+    stored anyway and read as pounds everywhere downstream, which is how a
+    publisher quoting dollars came to be shown as quoting pounds. The reply
+    rarely omits it outright - more often the symbol was the only clue and
+    the model would not invent a code from it, which is the right call and
+    exactly when a human should be asked.
+
+    `usableCurrency`, not a truthiness test. The two disagree on everything
+    that is present and not a code - 'US$', 'Euro', '€', and the mojibake a
+    rate-card CSV produces - and the disagreement had a direction. The flag
+    said the currency was there, so the draft was eligible for bulk
+    approval; `commercialTerms` then dropped the column, because it has
+    always used `usableCurrency`, and the cost was written without it. The
+    same number with no unit the flag exists to prevent, reached by the one
+    route that was supposed to be safe.
+  */
+  if (hasAnyPrice(listing) && !usableCurrency(listing.currency)) {
+    flags.push('price-without-currency');
+  }
   /*
     `relationship` is not a signal that a different site was offered.
 

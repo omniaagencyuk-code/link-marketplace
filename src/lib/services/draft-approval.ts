@@ -1,8 +1,14 @@
 import { getAdminScopedClient } from '@/lib/supabase/server';
 import { websiteService } from './website-service';
 import { sensitiveNicheSlugs, legacyAcceptanceFlags } from '@/lib/config/accepted-niches';
-import { assumedNicheCosts, fillGeneralFromNiches, sellableNiches } from '@/lib/sourcing/review';
+import {
+  assumedNicheCosts,
+  fillGeneralFromNiches,
+  hasAnyPrice,
+  sellableNiches,
+} from '@/lib/sourcing/review';
 import { commercialTerms } from '@/lib/sourcing/commercial-terms';
+import { usableCurrency } from '@/lib/websites/cost-currency';
 import { pricingService } from './pricing-service';
 import type { ExtractedListing } from '@/lib/sourcing/schema';
 import type { Website } from '@/lib/types';
@@ -48,6 +54,41 @@ export async function approveDraft(
   options: { domain: string; matchedWebsiteId: string | null; emailId: string; reviewer?: string },
 ): Promise<ApprovalResult> {
   const supabase = getAdminScopedClient();
+
+  /*
+    Before anything is written: a cost needs the money it is in.
+
+    The rule is not new - `cost-currency.ts` states it, the repository's own
+    update path enforces it, and `commercialTerms` has always dropped a
+    currency it cannot read. What was missing is the enforcement on the path
+    a human drives. A reviewer could see the "Price with no currency" badge,
+    press Approve, and get a listing carrying a figure with no unit:
+    `commercialTerms` dropped the column and `writeCosts` wrote the number
+    anyway. That is the state that produced 410 unusable listings, and the
+    screen was telling reviewers to set the currency afterwards - a second
+    step, done from memory, which is how they accumulated.
+
+    Here rather than inside `writeCosts`, because by the time that runs the
+    listing and its commercial terms are already saved, and a refusal that
+    leaves half the approval on disk is worse than no refusal. First
+    statement in the function, before the first `supabase.from`.
+
+    Guessing is not available, and it is the expensive kind of wrong: a `.fr`
+    publisher quoting 120 may well mean dollars, and the guess becomes a
+    margin we price against and a number we would have to honour.
+
+    The reviewer is one field away - the currency box is on the same screen,
+    above the prices - so this refuses something that takes a second to fix
+    rather than blocking the queue.
+  */
+  if (hasAnyPrice(listing) && !usableCurrency(listing.currency)) {
+    throw new Error(
+      `${options.domain} quotes a price but no currency we can read` +
+        (listing.currency ? ` ("${listing.currency}" is not an ISO code)` : '') +
+        '. Set the three-letter currency on the draft and approve again - a cost ' +
+        'stored without one cannot be converted, so the listing would never be priced.',
+    );
+  }
 
   // ------------------------------------------------------ the listing itself
   const patch: Partial<Website> = {};

@@ -258,7 +258,7 @@ export function DraftReview({
                             : flag === 'no-contact-email'
                               ? 'No contact address was found in the reply. The sender address is used unless you set one.'
                               : flag === 'price-without-currency'
-                                ? 'The reply quotes a price but never says which currency. Set it on the listing after approving - until it is set, this listing will not be priced, and a bare number read as pounds is how a dollar publisher ends up undersold.'
+                                ? 'The reply quotes a price with no currency we can read. Set the three-letter code in the Currency box above and approve again - approving without one is refused, because a cost with no unit cannot be converted and the listing would never be priced.'
                                 : flag}
                       </li>
                     ))}
