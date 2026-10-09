@@ -185,11 +185,34 @@ console.log('\n--- no full read in the repositories uses a bare limit ---');
     listed is a file nobody checked.
   */
   const ordersRepo = readFileSync('src/lib/services/supabase/orders-repository.ts', 'utf8');
-  for (const read of ['getAll', 'getByUser']) {
-    const start = ordersRepo.indexOf(`async ${read}(`);
-    const body = ordersRepo.slice(start, start + 1_400);
-    is(`orders ${read} pages rather than capping`, start > 0 && body.includes('readAllPages'), true);
-  }
+
+  /*
+    Every list read in the file, found rather than named.
+
+    The first version of this check named `getAll` and `getByUser` on the
+    orders and left the content orders and the profiles exactly as they
+    were - unpaged, error discarded - which is the same mistake one level up
+    that let the whole file go unchecked in the first place. A list is only
+    as good as whoever remembers to add to it.
+
+    So the rule is a property instead: a read that sorts is a read that
+    returns a list, and a read that returns a list has to say where in it to
+    start. `.order(...)` without `.range(...)` is the bug, whatever the
+    method is called. Single-row reads end in `.maybeSingle()` and never
+    sort, so they do not come up.
+  */
+  const orderedReads = [...ordersRepo.matchAll(/\.from\('([a-z_]+)'\)[\s\S]{0,420}?;/g)]
+    .map((match) => ({ table: match[1], chain: match[0] }))
+    .filter(({ chain }) => /\.order\(/.test(chain));
+
+  is('there are list reads in the orders repository to check', orderedReads.length > 0, true);
+
+  const unpaged = orderedReads.filter(({ chain }) => !/\.range\(/.test(chain));
+  is(
+    'every sorted read in the orders repository asks for a range',
+    unpaged.map(({ table }) => table).join(', '),
+    '',
+  );
 
   /*
     And the admin table asks for one page rather than every order.
