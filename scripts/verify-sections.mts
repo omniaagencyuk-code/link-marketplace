@@ -17,6 +17,7 @@ import { applyTokens, unknownTokens, TOKENS } from '../src/lib/cms/tokens';
 import { isAnimatable, renderableComponents } from '../src/lib/cms/components/render';
 import { staggers } from '../src/lib/cms/components/schema';
 import { neededBy, needsOf } from '../src/lib/cms/components/needs';
+import { safeReturnPath } from '../src/lib/cms/return-path';
 import {
   DELAYS,
   ENTRANCES,
@@ -213,6 +214,19 @@ console.log('\n--- a section that points at a global ---');
 const SCHEMA = 'src/lib/cms/components/schema.ts';
 const RENDER = 'src/lib/cms/components/render.tsx';
 const read = (path: string) => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8');
+
+/*
+  Prose is not code.
+
+  A check for the absence of an identifier reads its own explanation as a
+  hit: `preview-actions.ts` says in a comment that it deliberately does not
+  call `requireAdminSession()`, and the first version of the check below went
+  red on that sentence. A check that fails for the wrong reason gets loosened
+  until it stops failing for the right one. Same stripper, and the same
+  reasoning, as `verify-errors.mts`.
+*/
+const code = (src: string) =>
+  src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/[^\n]*/g, '$1');
 
 console.log('\n--- the two halves of the registry never meet ---');
 {
@@ -1681,6 +1695,81 @@ console.log('\n--- an unpublished change cannot reach a visitor ---');
   yes('the role test reads a draft as anon', /set role anon;[\s\S]*section_drafts/.test(roles));
   yes('and tries to join its way to one', /join public\.section_drafts/.test(roles));
   yes('and checks a signed-in customer too', /a signed-in customer sees drafts/.test(roles));
+
+  /*
+    The half of previewing that has no expiry.
+
+    The grant lasts thirty minutes; draft mode is a session cookie and lasts
+    until the browser closes. So the state this has to cope with is not
+    "previewing" - it is half an hour later, when the grant has lapsed, the
+    published page is what renders, and the browser is still bypassing the
+    cache with nothing on screen saying so.
+
+    Measured against `next start` with the grant deleted and only the
+    draft-mode cookie left: the homepage went 6-10ms cached to 35-53ms
+    rendered, and back to 5-6ms with a wrong cookie value. Against the live
+    database the same reads are 434ms.
+  */
+  const banner = read('src/components/cms/preview-banner.tsx');
+  yes('there is a way to tell you are in draft mode', /draftMode\(\)/.test(banner));
+  yes('and it covers the state where the grant has lapsed', /hasPreviewGrant\(\)/.test(banner));
+  yes(
+    'and it reads the cookie only once draft mode has passed',
+    banner.indexOf('draftMode()') < banner.indexOf('hasPreviewGrant()'),
+  );
+  yes(
+    'and it says something different in each state',
+    /Previewing unpublished changes/.test(banner) && /preview has ended/.test(banner),
+  );
+  yes('and it offers the way out in both', (banner.match(/Exit preview/g) ?? []).length >= 1);
+
+  /*
+    Mounted where every marketing page gets it, and outside the sticky
+    header - a bar that scrolls away is no use to somebody who has not
+    noticed they need it.
+  */
+  const marketingLayout = read('src/app/(marketing)/layout.tsx');
+  yes('the banner is in the marketing layout', /<PreviewBanner \/>/.test(marketingLayout));
+  /*
+    Both ends named, because `indexOf` returns -1 for what is not there and
+    -1 is less than everything: with the banner deleted this read as "above
+    the header" and passed. The check above it goes red either way, so the
+    suite was never wrong - but an assertion that holds because its subject
+    is missing is one nobody can trust the next time it is the only one left.
+  */
+  const bannerAt = marketingLayout.indexOf('<PreviewBanner />');
+  const headerAt = marketingLayout.indexOf('<SiteHeader />');
+  yes('and sits above the header rather than inside it', bannerAt >= 0 && bannerAt < headerAt);
+
+  /*
+    The exit must not require an admin session.
+
+    `stopPreviewingAction` does, correctly - it is the editor's button, and
+    the admin cookie is scoped to `/admin` so it is not even sent with a form
+    posted from a marketing page. The person who most needs the public one is
+    the one whose grant lapsed half an hour ago and who may have signed out
+    since. A check here would make the stuck state unexitable, which is the
+    exact failure this whole piece exists to fix.
+  */
+  const exitAction = code(read('src/app/(marketing)/preview-actions.ts'));
+  yes('leaving preview revokes it', /revokePreview\(\)/.test(exitAction));
+  yes('and asks nobody for permission to stop', !/requireAdminSession|getAdminSession/.test(exitAction));
+  yes(
+    'and the path guard is not itself exported as an action',
+    !/export .*safeReturnPath/.test(exitAction),
+  );
+
+  /*
+    Where it puts you back is a form field, so it is a value a stranger sets.
+    Run rather than grepped: every one of these returned the attacker's
+    target before the guard existed.
+  */
+  is('a site path is kept', safeReturnPath('/how-it-works'), '/how-it-works');
+  is('with its query string', safeReturnPath('/marketplace?audCountry=US'), '/marketplace?audCountry=US');
+  is('an absolute URL is refused', safeReturnPath('https://evil.test/x'), '/');
+  is('a protocol-relative URL is refused', safeReturnPath('//evil.test'), '/');
+  is('a backslash is refused', safeReturnPath('/\\evil.test'), '/');
+  is('and so is anything that is not a string', safeReturnPath(undefined), '/');
 }
 
 console.log('\n--- every colour an editor can choose is one they can read ---');
