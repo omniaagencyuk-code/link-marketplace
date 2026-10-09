@@ -57,6 +57,44 @@ between them is what the duplicates queue is for. The rule that protects that
 is in `sellerKey`: a free provider is not a company, so `joe@gmail.com` and
 `sara@gmail.com` are two sellers and only the identical address is a repeat.
 
+## What a publisher's site is about
+
+A listing's category is set by a person. Majestic proposes one from Topical
+Trust Flow and `src/lib/majestic/topics.ts` says why that is only ever a
+proposal: a topic there describes *who links to a site*, not what the site
+publishes.
+
+1,840 of 12,190 active listings have no category at all. Until 0077 the
+marketplace covered that up — `coalesce(pc.slug, 'technology')` in
+`marketplace_listings` sold every one of them as a technology site. A null
+niche now means no niche filter returns the listing and no count includes it,
+which is the rule `country` has always followed two lines above it.
+
+Majestic cannot close that gap: of the 1,840, only 167 carry a topic above
+`MIN_TOPIC_VALUE` and only 38 carry one that is not `Regional/*`. So the
+second source is the homepage, which is better evidence than backlinks for
+this question because it is the site itself.
+
+`src/lib/sourcing/niche-rules.ts` is a fourth prompt, on the same terms as
+the three below: **the file is the prompt**, it is the only copy, and
+`NICHE_PROMPT_VERSION` is bumped in the same edit as a rule change.
+
+The rules most worth keeping:
+
+- **`unknown` is a real answer.** The thing being fixed is an invented
+  category, and replacing it with a differently invented one is not a fix.
+- **The domain is not evidence.** Reading iGaming off `casinoguru.co.uk` is
+  the reasoning that put a country on a listing because of its suffix, which
+  0043 and 0044 exist to undo.
+- **A category without a quote is not a category.** `readNiche` checks the
+  quote is really in the page text rather than trusting it, the way
+  `checkDraft` checks a price rather than trusting it. An approximation is
+  thrown away with the category it came with.
+
+Nothing here writes a category. It proposes, and a person decides — the
+arrangement `draft-approval.ts` and the gap finder's competitor suggestions
+both have.
+
 ## Internal data
 
 `websites` is readable by every signed-in customer and row level security
