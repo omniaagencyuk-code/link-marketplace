@@ -75,6 +75,28 @@ export function matchesQuery(item: WebsiteListItem, query: WebsiteQuery) {
   if (query.countries?.length) {
     if (!item.country || !query.countries.includes(item.country)) return false;
   }
+  /*
+    Where the readers are, rather than where the publisher is.
+
+    `some` over the split, so an unmeasured listing is excluded rather than
+    waved through: an empty array satisfies nothing, which is the answer we
+    want. The share compared is the stored one - recomputing it from the
+    visit count would be a second definition of the same number, free to
+    disagree with the one drawn in the row.
+  */
+  if (query.audienceCountry) {
+    const wanted = query.audienceCountry.toUpperCase();
+    const matchesAudience = item.metrics.audienceSplit.some((slice) => {
+      if ((slice.country ?? '').toUpperCase() !== wanted) return false;
+      if (query.audienceShareMin !== undefined && slice.share < query.audienceShareMin) return false;
+      if (query.audienceTrafficMin !== undefined && (slice.traffic ?? 0) < query.audienceTrafficMin) {
+        return false;
+      }
+      return true;
+    });
+    if (!matchesAudience) return false;
+  }
+
   if (query.languages?.length && !query.languages.includes(item.language)) return false;
 
   if (query.linkTypes?.length) {

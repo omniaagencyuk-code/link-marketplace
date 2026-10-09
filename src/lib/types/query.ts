@@ -57,6 +57,23 @@ export interface WebsiteQuery {
   search?: string;
   niches?: NicheSlug[];
   countries?: CountryCode[];
+  /**
+   * Where the readers are, rather than where the publisher is.
+   *
+   * `countries` above means the publisher's own market. This is a share of
+   * the measured audience, and they are different questions with different
+   * answers - a US publication can be read mostly in the UK. Kept apart so
+   * that setting one does not quietly change what the other has meant.
+   *
+   * A listing with no measured split never satisfies these: we do not know
+   * that it does, and saying so would answer a question about our data as
+   * though it were one about the publisher.
+   */
+  audienceCountry?: CountryCode;
+  /** Whole per cent of organic traffic, 0-100. */
+  audienceShareMin?: number;
+  /** Monthly visits from that country, where the refresh reported them. */
+  audienceTrafficMin?: number;
   languages?: LanguageCode[];
   linkTypes?: LinkTypeSlug[];
   linkAttribute?: LinkAttribute;

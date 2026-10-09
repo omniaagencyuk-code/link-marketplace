@@ -147,6 +147,85 @@ export function FilterSidebar({
         ) : null}
       </Section>
 
+      {/*
+        Where the readers are, which is a different question from the one
+        above. That filter is the publisher's own market; this is a share of
+        the measured audience, and a US publication can be read mostly in the
+        UK. Kept as its own control rather than settings on the other one, so
+        that turning this on cannot change what that one has always meant.
+      */}
+      <Section title="Traffic from a country">
+        <label htmlFor="audience-country" className="sr-only">
+          Country the traffic comes from
+        </label>
+        <Select
+          id="audience-country"
+          size="sm"
+          value={filters.audienceCountry ?? ''}
+          onChange={(event) => {
+            const next = (event.target.value || undefined) as CountryCode | undefined;
+            // Clearing the country clears its thresholds with it, rather than
+            // leaving two numbers behind that filter nothing.
+            onChange(
+              next
+                ? { audienceCountry: next }
+                : {
+                    audienceCountry: undefined,
+                    audienceShareMin: undefined,
+                    audienceTrafficMin: undefined,
+                  },
+            );
+          }}
+        >
+          <option value="">Any country</option>
+          {countryCounts.countries.map(([code]) => (
+            <option key={code} value={code}>
+              {countryName(code)}
+            </option>
+          ))}
+        </Select>
+
+        {filters.audienceCountry ? (
+          <div className="mt-3 space-y-3">
+            {/*
+              Label above rather than beside. The rail is 232px, and a row of
+              label, box and unit left the box narrower than the number in
+              it - the value sat behind the stepper arrows. The arrows are
+              gone too: they are 16px of a 70px box for a value people type.
+            */}
+            <ThresholdRow
+              id="audience-share"
+              label="At least"
+              unit="% of traffic"
+              placeholder="30"
+              max={100}
+              value={filters.audienceShareMin}
+              onChange={(audienceShareMin) => onChange({ audienceShareMin })}
+            />
+            <ThresholdRow
+              id="audience-traffic"
+              label="And at least"
+              unit="visits a month"
+              placeholder="5000"
+              value={filters.audienceTrafficMin}
+              onChange={(audienceTrafficMin) => onChange({ audienceTrafficMin })}
+            />
+
+            {/*
+              The same warning the country filter carries, for the same
+              reason and a bigger number: just over half the active listings
+              have a measured split, and a listing nobody has measured cannot
+              satisfy "at least 30% from the UK" - we do not know that it
+              does. Silently hiding half the marketplace is how a filter
+              loses trust.
+            */}
+            <p className="text-[12px] text-muted">
+              Only listings whose country traffic has been measured can match this.
+            </p>
+          </div>
+        ) : null}
+      </Section>
+
       <Section title="Link Type">
         <div className="space-y-1.5">
           {linkTypes.map((type) => (
@@ -269,6 +348,55 @@ export function FilterSidebar({
           checked={filters.verifiedOnly}
           onChange={() => onChange({ verifiedOnly: !filters.verifiedOnly })}
         />
+      </div>
+    </div>
+  );
+}
+
+/**
+ * One "at least N" box, with its label above it.
+ *
+ * Two of these sit in a 232px rail, which is why the label is not beside the
+ * box: there is not room for a label, a box wide enough for its own number
+ * and a unit on one line.
+ */
+function ThresholdRow({
+  id,
+  label,
+  unit,
+  placeholder,
+  max,
+  value,
+  onChange,
+}: {
+  id: string;
+  label: string;
+  unit: string;
+  placeholder: string;
+  max?: number;
+  value?: number;
+  onChange: (next: number | undefined) => void;
+}) {
+  return (
+    <div>
+      <label htmlFor={id} className="block text-[12px] text-ink-soft">
+        {label}
+      </label>
+      <div className="mt-1 flex items-center gap-2">
+        <Input
+          id={id}
+          type="number"
+          min={0}
+          max={max}
+          inputMode="numeric"
+          placeholder={placeholder}
+          value={value ?? ''}
+          onChange={(event) =>
+            onChange(event.target.value === '' ? undefined : Number(event.target.value))
+          }
+          className="h-8 w-[4.5rem] text-[13px] [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+        />
+        <span className="text-[12px] text-muted">{unit}</span>
       </div>
     </div>
   );

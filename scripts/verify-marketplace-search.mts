@@ -89,6 +89,15 @@ interface Fixture {
   traffic: number;
   rd: number;
   keywords: number | null;
+  /**
+   * Where the readers are: [country, share, visits].
+   *
+   * Empty on most fixtures on purpose, because that is the live shape -
+   * just over half the active listings have a measured split - and a filter
+   * that is only ever tested against rows which have the data never finds
+   * out what it does to the rows which do not.
+   */
+  audience: [string, number, number][];
   verified: boolean;
   completedOrders: number;
   attribute: 'dofollow' | 'nofollow';
@@ -99,33 +108,44 @@ interface Fixture {
 }
 
 const fixtures: Fixture[] = [
-  { n: 1, domain: 'alpha-casino.test', title: 'Alpha Casino News', description: 'Gambling coverage',
+  { n: 1, domain: 'alpha-casino.test',
+    audience: [['GB', 62, 31000], ['IE', 18, 9000]], title: 'Alpha Casino News', description: 'Gambling coverage',
     niche: 'igaming', secondary: ['sports'], country: 'GB', countrySource: 'stated', language: 'en',
     dr: 72, traffic: 50000, rd: 900, keywords: 4200, verified: true, completedOrders: 12,
     attribute: 'dofollow', accepted: ['gambling', 'crypto'],
     services: [{ type: 'guest-post', price: 40000, available: true, turnMin: 2, turnMax: 5 },
                { type: 'niche-edit', price: 25000, available: true, turnMin: 1, turnMax: 3 }],
     nichePrices: [['gambling', 'guest-post', 90000]] },
-  { n: 2, domain: 'beta-finance.test', title: 'Beta Finance', description: 'Money and markets',
+  { n: 2, domain: 'beta-finance.test',
+    audience: [['US', 71, 8520], ['CA', 12, 1440]], title: 'Beta Finance', description: 'Money and markets',
     niche: 'finance', secondary: [], country: 'US', countrySource: 'stated', language: 'en',
     dr: 55, traffic: 12000, rd: 300, keywords: null, verified: false, completedOrders: 3,
     attribute: 'dofollow', accepted: ['forex'],
     services: [{ type: 'guest-post', price: 20000, available: true, turnMin: 3, turnMax: 9 }],
     nichePrices: [] },
-  { n: 3, domain: 'gamma-tech.test', title: '', description: 'Technology writing',
+  { n: 3, domain: 'gamma-tech.test',
+    audience: [['GB', 29, 2900], ['US', 41, 4100]], title: '', description: 'Technology writing',
     niche: 'technology', secondary: ['business'], country: 'GB', countrySource: 'default', language: 'en',
     dr: 40, traffic: 8000, rd: 150, keywords: 900, verified: true, completedOrders: 0,
     attribute: 'nofollow', accepted: [],
     services: [{ type: 'digital-pr', price: 60000, available: true, turnMin: 5, turnMax: 14 }],
     nichePrices: [] },
-  { n: 4, domain: 'delta-sport.test', title: 'Delta Sport', description: 'Football and racing',
+  { n: 4, domain: 'delta-sport.test',
+    audience: [], title: 'Delta Sport', description: 'Football and racing',
     niche: 'sports', secondary: ['igaming'], country: null, countrySource: null, language: 'de',
     dr: 61, traffic: 30000, rd: 500, keywords: 2100, verified: false, completedOrders: 7,
     attribute: 'dofollow', accepted: ['gambling'],
     services: [{ type: 'guest-post', price: 15000, available: true, turnMin: 1, turnMax: 2 },
                { type: 'digital-pr', price: 80000, available: false, turnMin: 7, turnMax: 21 }],
     nichePrices: [['gambling', 'guest-post', 30000]] },
-  { n: 5, domain: 'epsilon-health.test', title: 'Epsilon Health', description: 'Wellbeing',
+  { n: 5, domain: 'epsilon-health.test',
+    /*
+      The country asked about clears the share but not the visits, while a
+      different country clears the visits. Only this shape tells apart a
+      filter that requires both of one country from one that will take
+      either from anywhere - and without it that bug passes every check.
+    */
+    audience: [['GB', 40, 500], ['US', 12, 9000]], title: 'Epsilon Health', description: 'Wellbeing',
     niche: 'health', secondary: [], country: 'US', countrySource: 'stated', language: 'en',
     // Deliberately the same headline price as gamma-tech but a higher DR, so
     // a price sort ties and only the tiebreak can separate them. Without a
@@ -134,7 +154,19 @@ const fixtures: Fixture[] = [
     attribute: 'dofollow', accepted: ['cbd'],
     services: [{ type: 'guest-post', price: 60000, available: false, turnMin: 4, turnMax: 10 }],
     nichePrices: [] },
-  { n: 6, domain: 'zeta-travel.test', title: 'Zeta Travel', description: 'Trips and hotels',
+  { n: 6, domain: 'zeta-travel.test',
+    /*
+      Exactly on the thresholds the cases use: 30% and 2,000 visits.
+
+      The boundary is the only place "at least" and "more than" differ, so
+      without a fixture sitting on it both readings pass every check. There
+      was one until the case above needed this fixture's shape changed,
+      which is how an off-by-one went undetected for a run.
+
+      Fixture 4 keeps the unmeasured case, so nothing is lost by measuring
+      this one.
+    */
+    audience: [['GB', 30, 2000]], title: 'Zeta Travel', description: 'Trips and hotels',
     niche: 'travel', secondary: [], country: 'ES', countrySource: 'stated', language: 'es',
     dr: 20, traffic: 500, rd: 40, keywords: 80, verified: true, completedOrders: 1,
     attribute: 'dofollow', accepted: ['gambling', 'adult'],
@@ -158,7 +190,8 @@ for (const f of fixtures) {
   psql(`insert into public.websites
     (id, slug, domain, title, description, primary_category_id, country_code, country_source,
      language_code, status, verified, completed_orders, domain_rating, organic_traffic,
-     referring_domains, organic_keywords, link_attribute, accepted_niches, created_at)
+     referring_domains, organic_keywords, link_attribute, accepted_niches, audience_split,
+     created_at)
     values (
       ${sqlText(uuid(f.n))}, ${sqlText(f.domain.replace(/\./g, '-'))}, ${sqlText(f.domain)},
       ${sqlText(f.title)}, ${sqlText(f.description)},
@@ -168,6 +201,7 @@ for (const f of fixtures) {
       ${sqlText(f.language)}, 'active', ${f.verified}, ${f.completedOrders},
       ${f.dr}, ${f.traffic}, ${f.rd}, ${f.keywords ?? 'null'},
       ${sqlText(f.attribute)}::public.link_attribute, ${sqlArray(f.accepted)},
+      ${sqlText(JSON.stringify(f.audience.map(([country, share, traffic]) => ({ country, share, traffic }))))}::jsonb,
       timezone('utc', now()) - interval '${f.n} days'
     );`);
 
@@ -227,6 +261,7 @@ function listItem(f: Fixture): WebsiteListItem {
       organicTraffic: f.traffic,
       referringDomains: f.rd,
       ...(f.keywords === null ? {} : { organicKeywords: f.keywords }),
+      audienceSplit: f.audience.map(([country, share, traffic]) => ({ country, share, traffic })),
     },
     rules: { linkAttribute: f.attribute, acceptedNiches: f.accepted },
     nichePrices: f.nichePrices.map(([niche, linkType, price]) => ({
@@ -273,6 +308,34 @@ const cases: Case[] = [
     sql: `select * from public.marketplace_search(p_niches := array['business'])` },
   { label: 'a country', query: q({ countries: ['GB'] }),
     sql: `select * from public.marketplace_search(p_countries := array['GB'])` },
+  /*
+    Where the readers are, which the country filter above does not answer.
+
+    Four cases rather than one, because the ways this can disagree between
+    the two engines are not the same as the ways it can be wrong. The bare
+    country tests that a measured split is read at all; the share threshold
+    tests the comparison; the pair tests that both have to hold at once on
+    the *same* country rather than separately; and the last one is the
+    important one - a threshold nothing reaches must return nothing from
+    both, or one engine is quietly including the listings nobody measured.
+  */
+  { label: 'an audience country', query: q({ audienceCountry: 'GB' }),
+    sql: `select * from public.marketplace_search(p_audience_country := 'GB')` },
+  { label: 'an audience share threshold', query: q({ audienceCountry: 'GB', audienceShareMin: 30 }),
+    sql: `select * from public.marketplace_search(p_audience_country := 'GB', p_audience_share_min := 30)` },
+  { label: 'a share and a visit threshold together',
+    query: q({ audienceCountry: 'GB', audienceShareMin: 30, audienceTrafficMin: 1000 }),
+    sql: `select * from public.marketplace_search(p_audience_country := 'GB', p_audience_share_min := 30, p_audience_traffic_min := 1000)` },
+  { label: 'a visit threshold exactly met', query: q({ audienceCountry: 'GB', audienceTrafficMin: 2000 }),
+    sql: `select * from public.marketplace_search(p_audience_country := 'GB', p_audience_traffic_min := 2000)` },
+  { label: 'a visit threshold nothing reaches',
+    query: q({ audienceCountry: 'GB', audienceTrafficMin: 999999 }),
+    sql: `select * from public.marketplace_search(p_audience_country := 'GB', p_audience_traffic_min := 999999)` },
+  { label: 'an audience country nobody is measured in', query: q({ audienceCountry: 'JP' }),
+    sql: `select * from public.marketplace_search(p_audience_country := 'JP')` },
+  { label: 'an audience country combined with a niche',
+    query: q({ audienceCountry: 'GB', niches: ['igaming'] }),
+    sql: `select * from public.marketplace_search(p_audience_country := 'GB', p_niches := array['igaming'])` },
   { label: 'a language', query: q({ languages: ['es'] }),
     sql: `select * from public.marketplace_search(p_languages := array['es'])` },
   { label: 'a link type', query: q({ linkTypes: ['niche-edit'] }),
@@ -320,6 +383,9 @@ for (const testCase of cases) {
   const js = runQuery(source, testCase.query).items.map((item) => item.id);
 
   const rows = psql(testCase.sql).split('\n').filter(Boolean);
+  if (process.env.SHOW_COUNTS && /audience|threshold|visit/i.test(testCase.label)) {
+    console.log(`       ${testCase.label}: ${rows.length} rows`);
+  }
   const sql = rows.map((line) => line.split('|')[0] as string);
 
   if (js.join(',') === sql.join(',')) ok(testCase.label);
