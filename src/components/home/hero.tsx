@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { ArrowRight, Check } from 'lucide-react';
 import { Container } from '@/components/layout/container';
 import { Button } from '@/components/ui/button';
-import { HeroBackdrop, HeroBand } from './hero-backdrop';
+import { HeroBackdrop, HeroBackdropNarrow } from './hero-backdrop';
 import type { ContentAccessors } from '@/lib/cms/resolve';
 
 /**
@@ -42,8 +42,16 @@ export function Hero({ content }: { content: ContentAccessors }) {
   return (
     <section className="relative overflow-hidden border-b border-line bg-white">
       <HeroBackdrop />
+      <HeroBackdropNarrow />
 
-      <Container size="wide" className="relative py-14 lg:py-24">
+      {/*
+        The bottom padding is the bird. Below `lg` the copy is over the
+        photograph rather than beside it, and the scene occupies the
+        bottom third of that frame - so the ticks have to finish above it
+        or they sit on a laptop. On `lg` the two are side by side and it
+        goes back to ordinary spacing.
+      */}
+      <Container size="wide" className="relative pt-14 pb-[19rem] sm:pb-[22rem] md:pb-[27rem] lg:py-24">
         {/*
           The second column is empty on purpose. It is the space the bird
           occupies in the photograph: without it the copy would run the full
@@ -102,8 +110,6 @@ export function Hero({ content }: { content: ContentAccessors }) {
 
         </div>
       </Container>
-
-      <HeroBand />
     </section>
   );
 }

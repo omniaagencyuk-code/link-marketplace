@@ -15,30 +15,35 @@ import Image from 'next/image';
  *
  * ## Why two files rather than one picture positioned twice
  *
- * The first attempt was one file covering the section at every width, held
- * at 22% on narrow screens and right on wide ones. It is right on a desktop
- * and it was wrong at 820px, which is the width that matters most for
- * getting this sort of thing wrong: the section there is taller than it is
- * wide, `cover` zooms the picture by several times to fill it, and what
- * landed was the parrot sliced vertically by the viewport edge, half a mug
- * and a chair. Shifting the position only moves which part is mangled.
+ * The first attempt was one file covering the section at every width. It is
+ * right on a desktop and it was wrong at 820px, which is the width worth
+ * checking: the section there is taller than it is wide, `cover` zooms the
+ * picture several times to fill it, and what landed was the parrot sliced
+ * vertically by the viewport edge next to half a mug. Shifting the position
+ * only moves which part is mangled, because the problem is the shape - a
+ * 2.5:1 photograph has no crop that holds both the bird and somewhere to
+ * put a headline once the frame is taller than it is wide.
  *
- * So below `lg` the picture stops being a background. It becomes a band
- * under the copy, cropped to the right-hand portion where the subject is,
- * shown whole at its own shape. Nothing is behind the headline, nothing is
- * cut, and the text sits on plain white where it is guaranteed readable.
+ * So the narrow one is not a crop. It is the same photograph with its own
+ * sky continued upward: the scene sits in the bottom third of a 9:16 frame,
+ * its top edge faded into a gradient sampled from the sky inside it, and the
+ * two thirds above are where the headline goes. Built from the wide file by
+ * `scripts/build-hero-art.mjs` rather than supplied separately, so there is
+ * one photograph and the rest is derived - re-run it and both follow.
+ *
+ * 9:16 because a phone is near enough that to crop almost nothing, and a
+ * tablet only trims sky off the top. Anchored to the bottom at both, so
+ * whatever is lost is empty sky and never the bird.
  */
 
 /** The full scene. Dropped in `public`, so a missing file never draws. */
 const WIDE = '/images/parrots/home-hero.webp';
 
 /**
- * The same photograph cropped to its right-hand portion - bird, laptop, mug
- * and enough coast to keep the setting. Generated from the file above rather
- * than supplied separately, so there is one photograph and two framings of
- * it.
+ * The same photograph recomposed for a frame taller than it is wide: the
+ * scene in the bottom third, its own sky continued above it.
  */
-const NARROW = '/images/parrots/home-hero-narrow.webp';
+const PORTRAIT = '/images/parrots/home-hero-portrait.webp';
 
 const exists = (file: string) => fs.existsSync(path.join(process.cwd(), 'public', file));
 
@@ -77,32 +82,30 @@ export function HeroBackdrop() {
 }
 
 /**
- * Tablet and phone: the same photograph as a band beneath the copy.
+ * Tablet and phone: the recomposed photograph, behind the text as on desktop.
  *
- * Not `priority`. On these widths the headline is the Largest Contentful
- * Paint and it sits above this, so fetching the picture first would delay
- * the thing being measured to deliver the thing below it.
+ * `object-bottom`, so every width keeps the bird and loses only sky.
  *
- * `sizes="100vw"` because it spans the viewport, and the intrinsic size is
- * declared so the browser reserves the right box before it loads - a band
- * that appears late and pushes the page down is the layout shift this
- * avoids.
+ * The scrim is heavier here and runs top to bottom rather than left to
+ * right, because at this width the copy is over the picture rather than
+ * beside it. It clears before the bottom third, so the scene itself is not
+ * washed out - what gets veiled is the sky the words are on.
  */
-export function HeroBand() {
-  if (!exists(NARROW)) return null;
+export function HeroBackdropNarrow() {
+  if (!exists(PORTRAIT)) return null;
 
   return (
-    <div aria-hidden="true" className="relative lg:hidden">
+    <div aria-hidden="true" className="pointer-events-none absolute inset-0 overflow-hidden lg:hidden">
       <Image
-        src={NARROW}
+        src={PORTRAIT}
         alt=""
-        width={1223}
-        height={793}
+        fill
+        priority
         sizes="100vw"
-        className="h-auto w-full"
+        className="object-cover object-bottom"
       />
-      {/* A short fade at the top, so the picture meets the copy rather than butting against it. */}
-      <div className="absolute inset-x-0 top-0 h-10 bg-gradient-to-b from-white to-transparent" />
+
+      <div className="absolute inset-0 bg-[linear-gradient(to_bottom,rgba(255,255,255,0.86)_0%,rgba(255,255,255,0.8)_42%,rgba(255,255,255,0.35)_62%,rgba(255,255,255,0)_74%)]" />
     </div>
   );
 }
