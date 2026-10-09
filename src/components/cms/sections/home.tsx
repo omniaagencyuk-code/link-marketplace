@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import Image from 'next/image';
+import { HeroBackdrop, HeroBackdropNarrow } from '@/components/home/hero-backdrop';
 import {
   ArrowRight,
   BadgeCheck,
@@ -11,10 +12,8 @@ import {
   FileEdit,
   FileSpreadsheet,
   FolderKanban,
-  Globe,
   Globe2,
   Layers,
-  LineChart,
   Lock,
   Megaphone,
   Newspaper,
@@ -33,14 +32,13 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Avatar } from '@/components/ui/avatar';
 import { RedactedPreview } from '@/components/marketplace/redacted-preview';
-import { ParrotHero } from '@/components/home/parrot-hero';
 import { HandwrittenNote } from '@/components/shared/handwritten';
 import { Feather } from '@/components/shared/foliage';
 import { RichText, type RichTextValue } from '@/lib/cms/rich-text-render';
 import { linkTypeLabels } from '@/lib/utils/labels';
 import { formatNumber, initialsFromName } from '@/lib/utils/format';
 import { cn } from '@/lib/utils/cn';
-import { image, link as linkOf, rows, str, type SectionProps } from './shared';
+import { link as linkOf, rows, str, type SectionProps } from './shared';
 
 /**
  * The bands the homepage is made of.
@@ -66,46 +64,50 @@ import { image, link as linkOf, rows, str, type SectionProps } from './shared';
 // -------------------------------------------------------------------- hero
 
 /**
- * The first screen: the argument on the left, the mascot on the right with
- * cards floating over it.
+ * The first screen: a photograph across the section, with the argument set
+ * over the quiet half of it.
  *
  * Structural, so it arrives locked - it holds the page's only `h1`. It is not
- * animatable, because the headline and the artwork are the Largest
+ * animatable, because the headline and the picture are the Largest
  * Contentful Paint and an element at `opacity: 0` counts as unpainted.
  *
- * The three cards carry counted facts rather than performance claims. The
- * design they come from had "+237% Higher Rankings"; those are the right
- * shape and the wrong content, because nobody here can substantiate somebody
- * else's SEO on the page a first-time visitor judges the business by. A card
- * whose figure is zero does not render, so the row is never padded with a
- * claim of nothing.
+ * `HeroBackdrop` is shared with the pre-CMS hero rather than copied into it.
+ * These two have been near-identical twins since the page builder arrived,
+ * and whichever of them is rendering on a given day is a question about the
+ * database - so a change made to one and not the other is a change that
+ * might simply not appear. One component, both callers.
+ *
+ * The mascot column and the three figure cards that floated over it are
+ * gone. The mascot because the photograph has a parrot in it, and the cards
+ * because the strip directly below states the same three figures - printed
+ * twice on one screen they read as two claims that happen to agree. The rule
+ * they existed for is unchanged where those figures now live: counted from
+ * the marketplace on every render, never typed.
  */
-const HERO_CARD_ICONS: LucideIcon[] = [LineChart, Layers, Globe];
-
-export function HomeHeroSection({ values, data }: SectionProps) {
+export function HomeHeroSection({ values }: SectionProps) {
   const primaryCta = linkOf(values, 'primaryCta');
   const secondaryCta = linkOf(values, 'secondaryCta');
   const reassurance = rows<{ label?: string }>(values, 'reassurance');
-  const artwork = image(values, 'image');
-  const totals = data.totals;
-
-  const cards = [
-    { value: totals?.websites ?? 0, label: str(values, 'cardWebsites') },
-    { value: totals?.niches ?? 0, label: str(values, 'cardNiches') },
-    { value: totals?.countries ?? 0, label: str(values, 'cardCountries') },
-  ]
-    .map((card, index) => ({ ...card, icon: HERO_CARD_ICONS[index] as LucideIcon }))
-    .filter((card) => card.value > 0 && card.label);
 
   return (
-    <section className="tropical-wash relative overflow-hidden border-b border-line bg-white">
-      <div
-        aria-hidden="true"
-        className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-accent-400/40 to-transparent"
-      />
+    <section className="relative overflow-hidden border-b border-line bg-white">
+      <HeroBackdrop />
+      <HeroBackdropNarrow />
 
-      <Container size="wide" className="relative py-12 lg:py-20">
-        <div className="grid items-center gap-12 lg:grid-cols-[minmax(0,1.05fr)_minmax(0,0.95fr)] lg:gap-16">
+      {/*
+        The bottom padding is the bird. Below `lg` the copy is over the
+        photograph rather than beside it, and the scene occupies the
+        bottom third of that frame - so the ticks have to finish above it
+        or they sit on a laptop. On `lg` the two are side by side and it
+        goes back to ordinary spacing.
+      */}
+      <Container size="wide" className="relative pt-14 pb-[19rem] sm:pb-[22rem] md:pb-[27rem] lg:py-24">
+        {/*
+          The second column is empty on purpose: it is the space the bird
+          occupies in the photograph. Without it the copy runs the full width
+          on a wide screen and finishes on top of the laptop.
+        */}
+        <div className="grid items-center gap-12 lg:grid-cols-[minmax(0,1fr)_minmax(0,0.85fr)] lg:gap-16">
           <div className="relative z-20 min-w-0">
             <p className="text-[11px] font-semibold tracking-[0.14em] text-accent-700 uppercase">
               {str(values, 'eyebrow')}
@@ -162,37 +164,6 @@ export function HomeHeroSection({ values, data }: SectionProps) {
             ) : null}
           </div>
 
-          <div className="relative z-10 min-w-0">
-            <ParrotHero annotation={str(values, 'annotation')} src={artwork.src} />
-
-            {/*
-              Floated over the artwork from `sm` up, and stacked underneath it
-              below that. Absolute positioning at 375px would put three cards
-              on top of a parrot and make both unreadable, and the cards are
-              the half carrying information.
-            */}
-            <ul className="mt-5 grid gap-3 sm:absolute sm:inset-y-0 sm:left-0 sm:mt-0 sm:flex sm:flex-col sm:justify-center sm:gap-4">
-              {cards.map((card) => (
-                <li
-                  key={card.label}
-                  className="flex items-center gap-3 rounded-[var(--radius-card)] border border-line bg-white/95 px-3.5 py-2.5 shadow-[var(--shadow-raised)] backdrop-blur-sm sm:max-w-[13rem]"
-                >
-                  <span
-                    aria-hidden="true"
-                    className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-accent-50 text-accent-700"
-                  >
-                    <card.icon className="h-4 w-4" />
-                  </span>
-                  <span className="min-w-0">
-                    <span className="tabular block text-[15px] leading-tight font-semibold text-ink">
-                      {formatNumber(card.value)}
-                    </span>
-                    <span className="block text-[12px] leading-tight text-muted">{card.label}</span>
-                  </span>
-                </li>
-              ))}
-            </ul>
-          </div>
         </div>
       </Container>
     </section>

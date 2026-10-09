@@ -39,18 +39,20 @@ export const definition: PageDef = {
           itemLabelKey: 'label',
           maxItems: 4,
         }),
-        text('annotation', 'Handwritten note', {
-          maxLength: 60,
-          help: 'The scribble beside the parrot. Use a line break by typing two lines.',
-        }),
-        text('cardWebsites', 'First card label', {
-          maxLength: 40,
-          help: 'The figure beside it is counted from the marketplace, not typed here.',
-        }),
-        text('cardNiches', 'Second card label', { maxLength: 40 }),
-        text('cardCountries', 'Third card label', { maxLength: 40 }),
       ],
-      'The first screen. The three cards over the artwork count themselves - clear a label to remove a card.',
+      /*
+        The handwritten note and the three card labels used to be here. They
+        went with the mascot column and the cards that floated over it, which
+        the photograph replaced.
+
+        Removed rather than left in place, because a field that no longer
+        reaches the page is worse than no field: somebody types a label, saves
+        it, reloads the site and sees nothing, and the only way to find out
+        why is to read the component. Values already saved under those keys
+        are ignored by `resolvePage`, which builds from the definition rather
+        than from whatever is stored.
+      */
+      'The first screen. The photograph behind it is fixed artwork; everything here is the words over it.',
     ),
 
     section(
@@ -355,10 +357,6 @@ export const defaults: PageValues = {
       { label: 'No subscription' },
       { label: 'Pay only for what you order' },
     ],
-    annotation: 'Good links\nget you places.',
-    cardWebsites: 'Websites listed',
-    cardNiches: 'Niches covered',
-    cardCountries: 'Countries',
   },
 
   metrics: {

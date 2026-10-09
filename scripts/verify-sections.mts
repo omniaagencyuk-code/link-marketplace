@@ -698,14 +698,31 @@ console.log('\n--- the homepage counts rather than claims ---');
   const metrics = read('src/components/home/trust-metrics.tsx');
   const defaults = read('src/lib/cms/pages/home.ts');
 
-  yes('the hero cards read the live count', hero.includes('stats.totalWebsites'));
-  yes('the trust row does too', metrics.includes('stats.totalWebsites'));
+  /*
+    The hero used to carry three of these figures on cards floating over the
+    mascot, and this asserted them there. The cards are gone - the strip
+    below the hero already stated the same three, and a number printed twice
+    on one screen reads as two claims that happen to agree.
+
+    What the check is for did not change, so it follows the figures rather
+    than being deleted with the cards: wherever they are drawn, they are
+    counted on the render that draws them.
+  */
+  yes('the trust row reads the live count', metrics.includes('stats.totalWebsites'));
   yes('and the niche count', metrics.includes('stats.totalNiches'));
   yes('and the country count', metrics.includes('stats.totalCountries'));
 
+  /*
+    And the hero no longer prints a figure at all. Not a tidiness point: the
+    cards were removed because the strip says it better, and a figure
+    creeping back into the hero would be the duplication returning - or,
+    worse, a typed one, since the hero no longer receives the counts.
+  */
+  is('the hero prints no figure of its own', /stats\.|formatNumber/.test(hero), false);
+
   // A figure of zero is a marketplace that has not loaded, not a claim worth
   // printing.
-  yes('a figure of nothing is left out', /value > 0/.test(hero) && /value > 0/.test(metrics));
+  yes('a figure of nothing is left out', /value > 0/.test(metrics));
 
   /*
     And nothing that looks like a website count is typed into the defaults.
