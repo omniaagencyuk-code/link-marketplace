@@ -177,3 +177,7 @@ run -f "$ROOT/supabase/tests/28_niche_preview.sql" 2>&1 | grep -v '^$'
 echo
 echo "--- one page of the admin order table ---"
 run -f "$ROOT/supabase/tests/29_admin_order_page.sql" 2>&1 | grep -v '^$'
+
+echo
+echo "--- the homepage's niche counts ---"
+run -f "$ROOT/supabase/tests/30_niche_counts.sql" 2>&1 | grep -v '^$'

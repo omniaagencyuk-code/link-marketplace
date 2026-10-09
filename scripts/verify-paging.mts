@@ -121,14 +121,49 @@ console.log('\n--- no full read in the repositories uses a bare limit ---');
 {
   const { readFileSync } = await import('node:fs');
 
-  // The reads that were truncated. Named individually because a regex over
-  // the whole file would pass the day somebody adds another.
+  /*
+    Two rules here, and keeping them apart is the point.
+
+    "Pages rather than capping" was written when every one of these reads
+    walked the table, and it has now been the wrong assertion twice: once
+    when `getPublicPreview` stopped paging because 0073 moved its sample and
+    its counts into SQL, and again when `countByNiche` stopped because 0075
+    moved its counting there. Both times the check failed while the code had
+    got better, which is the kind of failure that teaches people to edit the
+    check.
+
+    What was ever at stake is narrower than paging. It is that no figure
+    anybody reads is derived from however many rows the server felt like
+    returning. A read that still walks the table has to page; a read that
+    asks the database for the number does not need to, and must not count
+    what it received.
+  */
+
+  // Reads that genuinely still carry the whole table back.
   const repo = readFileSync('src/lib/services/supabase/website-repository.ts', 'utf8');
-  for (const read of ['getAll', 'getAllForAdmin', 'countByNiche', 'getDomainIndex']) {
+  for (const read of ['getAll', 'getAllForAdmin', 'getDomainIndex']) {
     const start = repo.indexOf(`async ${read}(`);
     const body = repo.slice(start, start + 1_400);
     is(`${read} pages rather than capping`, start > 0 && body.includes('readAllPages'), true);
   }
+
+  /*
+    And the ones that stopped, each counting in the database instead.
+
+    `countByNiche` fills the homepage's niche cards. It read every active
+    listing and counted the rows here - paged correctly, which was the
+    problem: seven sequential requests before the homepage could render, and
+    the three reads beside it all waiting on the slowest. 0075 made it one
+    `group by`.
+  */
+  const counts = repo.slice(
+    repo.indexOf('async countByNiche('),
+    repo.indexOf('async getStats('),
+  );
+  is('the niche counts exist to be checked', counts.length > 0, true);
+  is('the niches are counted in the database', /marketplace_niche_counts/.test(counts), true);
+  is('and not by walking the marketplace', /readAllPages/.test(counts), false);
+  is('and the read is never silent', /throw new Error/.test(counts), true);
 
   /*
     `getPublicPreview` is the one that stopped paging, and it is not an
@@ -175,11 +210,14 @@ console.log('\n--- no full read in the repositories uses a bare limit ---');
 
     `readAllPages` was written for the website reads and applied only there,
     so every list read in `orders-repository.ts` stayed as it was: one
-    request, no range, and the error thrown away. `/admin/orders` was the
-    caller, and at thirteen hundred orders it was showing a thousand and
-    printing the cap as the count - the same sentence the website table
-    printed before 0067, found a year later only because somebody went
-    looking at the orders page for an unrelated reason.
+    request, no range, and the error thrown away.
+
+    Measured afterwards, the cap was not biting - there are 2 orders, and
+    the figure that said thirteen hundred was invented in a comment and then
+    believed. What was real at that size is the discarded error, which turns
+    a failed query into an empty table. The paging is kept because the
+    website reads show what happens when nobody notices in time, and because
+    these are the reads whose row count is whatever the business does next.
 
     Named individually, as above. The whole point is that a file nobody
     listed is a file nobody checked.

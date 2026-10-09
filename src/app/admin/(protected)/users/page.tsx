@@ -14,8 +14,15 @@ export default async function AdminUsersPage() {
 
     This read every profile and every order and then filtered the orders once
     per user to produce two numbers - a nested loop over two whole tables,
-    growing as the product of both. At nine hundred customers and thirteen
-    hundred orders that is over a million comparisons to draw a table.
+    growing as the product of both.
+
+    An earlier version of this comment put real figures on that - "nine
+    hundred customers and thirteen hundred orders" - and they were invented.
+    Measured, it is 4 profiles and 2 orders: the inventory is 12,000 sites
+    and the customer side has not launched. The function is kept because the
+    shape is wrong at any size and right at every size, not because the
+    table is big. Nothing here should be read as a measurement unless it
+    says where the number came from.
   */
   const users = await userService.listWithTotals();
 
