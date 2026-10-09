@@ -58,15 +58,9 @@ export async function generateMetadata({
   };
 }
 
-export default async function CustomPage({
-  params,
-  searchParams,
-}: {
-  params: Promise<{ slug: string }>;
-  searchParams?: Promise<Record<string, string | string[] | undefined>>;
-}) {
+export default async function CustomPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
-  const draft = await isPreview(searchParams);
+  const draft = await isPreview();
 
   const page = await customPageService.resolve(slug);
   if (!page) notFound();

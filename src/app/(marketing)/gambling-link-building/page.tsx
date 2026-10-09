@@ -26,13 +26,9 @@ export async function generateMetadata(): Promise<Metadata> {
   return metadataForPage(SLUG);
 }
 
-export default async function Page({
-  searchParams,
-}: {
-  searchParams?: Promise<Record<string, string | string[] | undefined>>;
-}) {
-  // `?preview=1`, and only for somebody signed in to the admin.
-  const draft = await isPreview(searchParams);
+export default async function Page() {
+  // Draft mode, and only for somebody signed in to the admin.
+  const draft = await isPreview();
 
   // Four rows, plus the count of everything in the niche. The rows are
   // redacted on the server before they reach this component.

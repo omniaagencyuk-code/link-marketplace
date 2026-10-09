@@ -1,11 +1,14 @@
+import { draftMode } from 'next/headers';
 import { hasPreviewGrant } from '@/lib/auth/preview-session';
 
 /**
  * Whether this request is an administrator looking at a preview.
  *
- * Two conditions, and the second is the one that matters: the URL asked, and
- * the browser is carrying a preview grant. A visitor who types `?preview=1`
- * gets the live page, because they have no grant and cannot mint one.
+ * Two conditions, and the second is the one that matters: the request is in
+ * draft mode, and the browser is carrying a preview grant. Both are set by
+ * the same admin action, and neither can be forged - draft mode's cookie is
+ * signed by the framework, and the grant is signed with the admin secret
+ * under its own purpose string.
  *
  * The grant is its own short-lived cookie rather than the admin session,
  * because that one is scoped to `/admin` so an admin token never travels
@@ -22,17 +25,28 @@ import { hasPreviewGrant } from '@/lib/auth/preview-session';
  * and row level security is row level. Anyone with the publishable key could
  * ask for the column by name.
  *
- * One helper rather than the same three lines in each route, so a new page
- * cannot get the check subtly wrong.
+ * ## Why draft mode, and why the order of these two lines matters
+ *
+ * This used to read `?preview=1` from the URL. Reading a search parameter
+ * makes a page dynamic, and these are the marketing pages - so the
+ * homepage, every CMS page and every niche landing page was rendered from
+ * scratch on every request, for a query string that is absent on all but a
+ * handful of them a week.
+ *
+ * Draft mode exists for exactly this. The framework prerenders the page
+ * with draft mode off, and serves the prerendered copy to everybody who is
+ * not carrying its cookie; a request that is carrying one bypasses the
+ * cache and renders fresh. So the check costs nothing on the pages where
+ * nobody is previewing.
+ *
+ * The grant is read *after* the draft-mode check and only if it passed,
+ * because reading a cookie is itself a request read. On the common path
+ * this function touches nothing request-specific at all, which is what
+ * keeps the page prerenderable.
  */
-export async function isPreview(
-  searchParams: Promise<Record<string, string | string[] | undefined>> | undefined,
-): Promise<boolean> {
-  if (!searchParams) return false;
-
-  const params = await searchParams;
-  const asked = params.preview;
-  if (asked !== '1' && asked !== 'true') return false;
+export async function isPreview(): Promise<boolean> {
+  const { isEnabled } = await draftMode();
+  if (!isEnabled) return false;
 
   return hasPreviewGrant();
 }

@@ -48,12 +48,8 @@ export async function generateMetadata(): Promise<Metadata> {
   return { ...meta, title: { absolute: `${meta.title as string} | ${brand.name}` } };
 }
 
-export default async function HomePage({
-  searchParams,
-}: {
-  searchParams?: Promise<Record<string, string | string[] | undefined>>;
-}) {
-  const draft = await isPreview(searchParams);
+export default async function HomePage() {
+  const draft = await isPreview();
 
   const [content, preview, nicheCounts, stats] = await Promise.all([
     pageContentService.content(SLUG),
