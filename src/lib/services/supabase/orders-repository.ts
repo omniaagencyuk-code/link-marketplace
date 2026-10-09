@@ -257,23 +257,40 @@ async function touchOrder(orderId: string) {
 }
 
 export const supabaseContentRepository = {
+  /**
+   * Every content order, paged.
+   *
+   * The same pair of faults the placement orders had, left behind when those
+   * were fixed: one request, which PostgREST caps without saying so, and a
+   * discarded error, which turns a failed query into "no content orders has
+   * ever been ordered". `/admin/content-orders` is the caller and renders
+   * every row it is given.
+   */
   async getAll(): Promise<ContentOrder[]> {
     const supabase = await getServerClient();
-    const { data } = await supabase
-      .from('content_orders')
-      .select(CONTENT_ORDER_SELECT)
-      .order('placed_at', { ascending: false });
-    return ((data as unknown as ContentOrderRow[] | null) ?? []).map(mapContentOrder);
+    const rows = await readAllPages<ContentOrderRow>('every content order', (from, to) =>
+      supabase
+        .from('content_orders')
+        .select(CONTENT_ORDER_SELECT)
+        .order('placed_at', { ascending: false })
+        .order('id', { ascending: true })
+        .range(from, to),
+    );
+    return rows.map(mapContentOrder);
   },
 
   async getByUser(userId: string): Promise<ContentOrder[]> {
     const supabase = await getServerClient();
-    const { data } = await supabase
-      .from('content_orders')
-      .select(CONTENT_ORDER_SELECT)
-      .eq('user_id', userId)
-      .order('placed_at', { ascending: false });
-    return ((data as unknown as ContentOrderRow[] | null) ?? []).map(mapContentOrder);
+    const rows = await readAllPages<ContentOrderRow>('a customer\'s content orders', (from, to) =>
+      supabase
+        .from('content_orders')
+        .select(CONTENT_ORDER_SELECT)
+        .eq('user_id', userId)
+        .order('placed_at', { ascending: false })
+        .order('id', { ascending: true })
+        .range(from, to),
+    );
+    return rows.map(mapContentOrder);
   },
 
   async getAllItems(): Promise<ContentRow[]> {
@@ -475,13 +492,27 @@ export const supabaseUserRepository = {
     }));
   },
 
+  /**
+   * Every profile, paged.
+   *
+   * Nothing calls this today - `/admin/users` counts in the database through
+   * `admin_user_rows` - but it was the last read in this file still asking
+   * for a whole table in one request and throwing its error away. Left as it
+   * was it is a trap: the next person to want a list of customers finds a
+   * method that looks right and silently stops at a thousand, which the
+   * marketplace is not far off.
+   */
   async getAll(): Promise<UserProfile[]> {
     const supabase = await getServerClient();
-    const { data } = await supabase
-      .from('profiles')
-      .select('*')
-      .order('created_at', { ascending: false });
-    return ((data as unknown as ProfileRow[] | null) ?? []).map(mapProfile);
+    const rows = await readAllPages<ProfileRow>('every profile', (from, to) =>
+      supabase
+        .from('profiles')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .order('id', { ascending: true })
+        .range(from, to),
+    );
+    return rows.map(mapProfile);
   },
 
   async getById(id: string): Promise<UserProfile | null> {
