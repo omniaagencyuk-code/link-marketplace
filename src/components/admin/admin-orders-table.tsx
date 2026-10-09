@@ -21,18 +21,21 @@ const SEARCH_PAUSE_MS = 300;
  * The admin order table, a page at a time.
  *
  * This was handed every order - with every item and every issue joined on -
- * and rendered all of them into one table with no paging. Two problems, and
- * only one of them was visible:
+ * and rendered all of them into one table with no paging, from a read that
+ * asked for everything in one request and discarded its error.
  *
- *   * Thirteen hundred rows of DOM, each carrying a status `<select>`.
- *   * The read behind it is capped by PostgREST at a thousand rows with
- *     nothing in the response saying so. Ordered newest first, what went
- *     missing was the oldest - so the table stayed plausible while it
- *     stopped being complete, and the count above it read the cap.
+ * Two things that are worth keeping apart, because the first was asserted
+ * here and was not true. PostgREST caps such a read at a thousand rows and
+ * says nothing about it, and this table would have shown the newest
+ * thousand and printed that as the count - but it had not, because there
+ * are 2 orders. The figure that said otherwise was invented in a comment
+ * elsewhere in the admin and then trusted. The discarded error was real at
+ * any size: a failed query rendered as a marketplace that had never sold
+ * anything, which nobody reports as a bug.
  *
- * The status filter is unchanged in meaning and answered by the database
- * now. The search is new: it was not possible before, because filtering an
- * array of every order is the thing that could not keep working.
+ * So this is paging ahead of needing it, deliberately, on the one screen
+ * whose row count is whatever the business does next. The status filter is
+ * unchanged in meaning and answered by the database. The search is new.
  */
 export function AdminOrdersTable() {
   const [typed, setTyped] = useState('');
@@ -156,11 +159,11 @@ export function AdminOrdersTable() {
           </Select>
         </div>
         {/*
-          The total, which is now the real one.
+          The total, counted in the database.
 
-          This printed `rows.length` - the length of a capped array - so it
-          said "1000 orders" against a larger book. It is counted in the
-          database and reported alongside what is on screen.
+          This printed `rows.length`, which is the length of whatever the
+          server chose to return rather than the number of orders. The two
+          agree today and would stop agreeing silently at a thousand.
         */}
         <p className="tabular text-[13px] text-muted" aria-live="polite">
           {failed ? 'Could not load the order list.' : loading ? 'Loading…' : `${total} orders`}
@@ -288,8 +291,8 @@ export function AdminOrdersTable() {
         noun="orders"
         /*
           No "All". The database pages this table, and "all" here is a
-          request for every order with every item joined on - the read that
-          was capped at a thousand in the first place.
+          request for every order with every item joined on - which is the
+          read this replaced.
         */
         allowAll={false}
         onPage={setPage}
