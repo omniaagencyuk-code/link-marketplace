@@ -1,6 +1,10 @@
 import { getAdminScopedClient } from '@/lib/supabase/server';
 import { isSupabaseEnabled } from '@/lib/supabase/config';
-import { brand } from '@/lib/config/brand';
+import {
+  CRAWLER_USER_AGENT,
+  FETCH_AT_ONCE,
+  FETCH_TIMEOUT_MS,
+} from '@/lib/crawl/politeness';
 import {
   MAX_BYTES,
   guessSegment,
@@ -24,12 +28,14 @@ import type { ProspectPage } from '@/lib/types/sales';
  *
  * ## These are other people's servers
  *
- * The constants below are the same ones `site-description-service.ts` arrived
- * at, and they are not arbitrary. A burst of hundreds of simultaneous requests
- * from one address is how a crawler gets blocked; a bot that will not say who
- * it is gets blocked by anybody paying attention. Six pages per company, eight
- * requests at a time, twelve seconds each, and a user-agent with our name and
- * a URL in it.
+ * The politeness constants live in `lib/crawl/politeness.ts` now, shared with
+ * `site-description-service.ts` - which arrived at the same values
+ * independently - and with the homepage category read. They are not
+ * arbitrary: a burst of hundreds of simultaneous requests from one address is
+ * how a crawler gets blocked, and a bot that will not say who it is gets
+ * blocked by anybody paying attention. Six pages per company, eight requests
+ * at a time, twelve seconds each, and a user-agent with our name and a URL in
+ * it.
  *
  * ## Costs nothing but time
  *
@@ -37,10 +43,6 @@ import type { ProspectPage } from '@/lib/types/sales';
  * it is safe to run over the whole list: everything expensive downstream reads
  * what this produced rather than going back to the network.
  */
-
-const TIMEOUT_MS = 12_000;
-const AT_ONCE = 8;
-const USER_AGENT = `Mozilla/5.0 (compatible; ${brand.name.replace(/\s+/g, '')}Bot/1.0; +https://pressparrot.com/)`;
 
 /** One slice's worth of prospects. The time budget decides, not this. */
 const CHUNK = 12;
@@ -62,9 +64,9 @@ interface Fetched {
 async function fetchPage(url: string, kind: ProspectPage['kind']): Promise<Fetched> {
   try {
     const response = await fetch(url, {
-      headers: { 'user-agent': USER_AGENT, accept: 'text/html,application/xhtml+xml' },
+      headers: { 'user-agent': CRAWLER_USER_AGENT, accept: 'text/html,application/xhtml+xml' },
       redirect: 'follow',
-      signal: AbortSignal.timeout(TIMEOUT_MS),
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
     });
 
     const type = response.headers.get('content-type') ?? '';
@@ -140,8 +142,8 @@ export async function researchProspect(
       (url) => pageKind(url) !== 'home',
     );
 
-    for (let index = 0; index < next.length; index += AT_ONCE) {
-      const group = next.slice(index, index + AT_ONCE);
+    for (let index = 0; index < next.length; index += FETCH_AT_ONCE) {
+      const group = next.slice(index, index + FETCH_AT_ONCE);
       const results = await Promise.all(group.map((url) => fetchPage(url, pageKind(url))));
       fetched.push(...results);
     }

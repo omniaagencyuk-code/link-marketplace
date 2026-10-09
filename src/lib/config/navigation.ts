@@ -23,6 +23,7 @@ import {
   TicketPercent,
   UserCircle,
   Users,
+  Tags,
 } from 'lucide-react';
 
 export interface NavItem {
@@ -138,6 +139,10 @@ export const adminNav: NavItem[] = [
   { label: 'Link monitor', href: '/admin/link-monitor', icon: ShieldCheck },
   { label: 'Link gap finder', href: '/admin/link-gap', icon: Radar },
   { label: 'Majestic', href: '/admin/majestic', icon: Network },
+  // Beside Majestic, because they answer the same question from different
+  // evidence: what is this site about. Majestic reads who links to it; this
+  // reads the site.
+  { label: 'Categorise', href: '/admin/categorise', icon: Tags },
   { label: 'Settings', href: '/admin/settings', icon: Settings },
 ];
 

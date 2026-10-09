@@ -54,6 +54,9 @@ const PRICING: Record<string, { input: number; output: number }> = {
   'claude-opus-5': { input: 5, output: 25 },
   'claude-sonnet-5': { input: 2, output: 10 },
   'claude-haiku-4-5': { input: 1, output: 5 },
+  // Reading a homepage for its category. The cheapest thing here by an order
+  // of magnitude, which is what makes categorising 1,840 sites cost pennies.
+  'claude-haiku-5-5': { input: 0.1, output: 0.5 },
 };
 
 /** The Batch API is half price, which is the reason it is worth the wait. */

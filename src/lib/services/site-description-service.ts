@@ -1,7 +1,11 @@
 import { getAdminScopedClient } from '@/lib/supabase/server';
 import { isSupabaseEnabled } from '@/lib/supabase/config';
 import { describeFromHtml } from '@/lib/websites/site-description';
-import { brand } from '@/lib/config/brand';
+import {
+  CRAWLER_USER_AGENT,
+  FETCH_AT_ONCE,
+  FETCH_TIMEOUT_MS,
+} from '@/lib/crawl/politeness';
 
 /**
  * Filling in what each publisher says their own site is about.
@@ -38,7 +42,6 @@ export interface DescriptionRun {
 }
 
 /** Long enough for a slow publisher, short enough that a dead host is cheap. */
-const TIMEOUT_MS = 12_000;
 
 /** A homepage is HTML. Reading more than this is reading a payload, not a page. */
 const MAX_BYTES = 400_000;
@@ -50,7 +53,6 @@ const MAX_BYTES = 400_000;
  * requests from one address is how a crawler gets blocked, and being blocked
  * loses the publisher relationship as well as the description.
  */
-const AT_ONCE = 8;
 
 /**
  * Identifies itself, and says why.
@@ -60,7 +62,6 @@ const AT_ONCE = 8;
  * recognisable is worth more than the handful of extra responses a browser
  * string would win.
  */
-const USER_AGENT = `Mozilla/5.0 (compatible; ${brand.name.replace(/\s+/g, '')}Bot/1.0; +https://pressparrot.com/)`;
 
 async function homepageDescription(domain: string): Promise<string | undefined> {
   /*
@@ -72,9 +73,9 @@ async function homepageDescription(domain: string): Promise<string | undefined> 
   for (const url of [`https://${domain}/`, `http://${domain}/`]) {
     try {
       const response = await fetch(url, {
-        headers: { 'user-agent': USER_AGENT, accept: 'text/html,application/xhtml+xml' },
+        headers: { 'user-agent': CRAWLER_USER_AGENT, accept: 'text/html,application/xhtml+xml' },
         redirect: 'follow',
-        signal: AbortSignal.timeout(TIMEOUT_MS),
+        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
       });
       if (!response.ok) continue;
 
@@ -314,13 +315,13 @@ export async function advanceDescriptionRun(
         break;
       }
 
-      for (let start = 0; start < candidates.length; start += AT_ONCE) {
+      for (let start = 0; start < candidates.length; start += FETCH_AT_ONCE) {
         if (Date.now() >= deadline) {
           result.outOfTime = true;
           break;
         }
 
-        const slice = candidates.slice(start, start + AT_ONCE);
+        const slice = candidates.slice(start, start + FETCH_AT_ONCE);
         const found = await Promise.all(
           slice.map(async (row) => {
             try {
@@ -413,7 +414,6 @@ export async function advanceDescriptionRun(
 
   return result;
 }
-
 
 /**
  * How many listings still have no description.
