@@ -1,3 +1,4 @@
+import { PreviewBanner } from '@/components/cms/preview-banner';
 import { SiteHeader } from '@/components/layout/site-header';
 import { SiteFooter } from '@/components/layout/site-footer';
 
@@ -28,6 +29,12 @@ export const revalidate = 600;
 export default function MarketingLayout({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex min-h-dvh flex-col">
+      {/*
+        Above the header, because it is a statement about the whole page
+        rather than part of it - and because the header is sticky, so a bar
+        inside it would scroll away from the person who needs it.
+      */}
+      <PreviewBanner />
       <SiteHeader />
       <main id="main" className="flex-1">
         {children}
