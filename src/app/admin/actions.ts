@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { orderService, settingsService, websiteService } from '@/lib/services';
+import type { AdminWebsiteFilter } from '@/lib/types/query';
 import { requireAdminSession } from '@/lib/auth/admin-access';
 import { pricingService } from '@/lib/services/pricing-service';
 import {
@@ -632,6 +633,7 @@ export async function adminOrderPageAction(input: {
 export async function adminWebsitePageAction(input: {
   search: string;
   status: string;
+  uncategorised?: boolean;
   page: number;
   pageSize: number;
 }) {
@@ -641,8 +643,7 @@ export async function adminWebsitePageAction(input: {
   const pageSize = Math.min(ADMIN_PAGE_MAX, Math.max(1, Math.floor(input.pageSize) || 50));
 
   const { items, total } = await websiteService.adminPage(
-    String(input.search ?? ''),
-    String(input.status ?? 'all'),
+    adminFilter(input),
     page,
     pageSize,
   );
@@ -668,9 +669,32 @@ export async function adminWebsitePageAction(input: {
  * than the page on screen. Paging the table must not quietly turn that into
  * "these fifty", so the ids are fetched when somebody ticks it.
  */
-export async function adminWebsiteIdsAction(search: string, status: string) {
+export async function adminWebsiteIdsAction(input: {
+  search: string;
+  status: string;
+  uncategorised?: boolean;
+}) {
   await requireAdminSession();
-  return websiteService.adminIds(String(search ?? ''), String(status ?? 'all'));
+  return websiteService.adminIds(adminFilter(input));
+}
+
+/**
+ * One reading of the filter, for the page and for the ids.
+ *
+ * Both are given the same object from the same function on purpose: the ids
+ * call is what the header checkbox selects, so a filter read differently by
+ * the two would select rows the table is not showing.
+ */
+function adminFilter(input: {
+  search?: string;
+  status?: string;
+  uncategorised?: boolean;
+}): AdminWebsiteFilter {
+  return {
+    search: String(input.search ?? ''),
+    status: String(input.status ?? 'all'),
+    uncategorised: Boolean(input.uncategorised),
+  };
 }
 
 /**

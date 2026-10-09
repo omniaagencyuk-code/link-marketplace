@@ -114,3 +114,20 @@ export interface MarketplaceFacets {
   unstated: number;
   languages: string[];
 }
+
+/**
+ * What the admin website table is filtering by.
+ *
+ * An object rather than positional arguments. It was
+ * `adminPage(search, status, page, pageSize)` and the next filter would have
+ * made it `(search, status, uncategorised, page, pageSize)` - two strings, a
+ * boolean and two numbers in a row, which is a swap waiting to happen and one
+ * the compiler cannot see.
+ */
+export interface AdminWebsiteFilter {
+  search: string;
+  /** A `WebsiteStatus`, or 'all'. */
+  status: string;
+  /** Only listings with no primary category - the backlog 0077 exposed. */
+  uncategorised?: boolean;
+}
