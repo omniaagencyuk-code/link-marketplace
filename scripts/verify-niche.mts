@@ -8,6 +8,7 @@
 import { categories } from '../src/lib/data/categories';
 import { NICHE_CONFIDENCE_FLOOR, NICHE_PROMPT_VERSION, NICHE_RULES } from '../src/lib/sourcing/niche-rules';
 import { readNiche, wireNicheSchema, type WireNiche } from '../src/lib/sourcing/niche-schema';
+import { requestBody } from '../src/lib/sourcing/niche-client';
 
 let failed = 0;
 const ok = (label: string) => console.log(`  PASS  ${label}`);
@@ -124,6 +125,52 @@ console.log('\n--- unknown is an answer, and the floor is a floor ---');
   if (over.kind === 'proposed') {
     is('and one above the maximum is clamped rather than ranked first', over.proposal.confidence, 100);
   } else bad('a confidence above the maximum is still a proposal');
+}
+
+console.log('\n--- the request, where the money and the truncation live ---');
+{
+  /*
+    None of this is checkable by reading the answer, because the failures are
+    silent: a ceiling too low truncates the JSON and arrives as a parse
+    error, and a breakpoint in the wrong place just costs more.
+  */
+  const body = requestBody({ domain: 'example.test', text: PAGE });
+
+  /*
+    Thinking is on by default on this model and its tokens count against the
+    ceiling. 1,000 was the first value here and it was wrong: the answer is
+    small, the thinking in front of it is not bounded by how small the answer
+    is.
+  */
+  yes('the output ceiling leaves room for thinking', body.max_tokens >= 2_000);
+
+  // A classification, not a problem. Effort is what thinking costs.
+  is('and the effort is low', body.output_config.effort, 'low');
+
+  /*
+    The rules are byte-identical on every call and the page is not. Reversed,
+    every site throws the cache away - which over 1,840 sites is the
+    difference between paying for the rules once and paying for them 1,840
+    times.
+  */
+  is('the rules carry the cache breakpoint', body.system[0]?.cache_control?.type, 'ephemeral');
+  yes('and the page is in the user turn, after them',
+    typeof body.messages[0]?.content === 'string' && body.messages[0].content.includes(PAGE.slice(0, 40)));
+  yes('the rules are not in the user turn',
+    !String(body.messages[0]?.content ?? '').includes('Never pick the closest category'));
+
+  // The domain is given so the model knows which site it is reading. The
+  // prompt is what says it is not evidence.
+  yes('the domain is given', String(body.messages[0]?.content ?? '').includes('example.test'));
+
+  /*
+    A long homepage is cut before it is sent, and `readNiche` is given the
+    same cut text to check the quote against - a quote from the part that was
+    dropped is one the model could not have read.
+  */
+  const long = requestBody({ domain: 'x.test', text: 'A'.repeat(50_000) });
+  yes('a long page is cut before it is paid for',
+    String(long.messages[0]?.content ?? '').length < 10_000);
 }
 
 console.log('\n--- the wire shape ---');

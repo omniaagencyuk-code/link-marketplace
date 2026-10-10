@@ -58,14 +58,30 @@ export interface PageToRead {
  */
 const MAX_PAGE_CHARS = 6_000;
 
-function requestBody(page: PageToRead) {
+/**
+ * Exported for the test, which asserts the things that only go wrong in
+ * production: that the rules sit before the page behind the cache
+ * breakpoint, and that the output ceiling leaves room for thinking the model
+ * does whether we ask for it or not.
+ */
+export function requestBody(page: PageToRead) {
   return {
     model: NICHE_MODEL,
     /*
-      A slug, a number, a quote and a sentence. The answers are tiny and the
-      ceiling only has to be past the longest quote a page might carry.
+      Room for the thinking as well as the answer.
+
+      The answer is a slug, a number, a quote and a sentence - a couple of
+      hundred tokens at most. 1,000 looked generous and was not: thinking is
+      on by default on this model and its tokens count against this ceiling,
+      so a page that takes some working out would have had its JSON cut off
+      mid-object. That arrives as unparseable text rather than as an error,
+      and is charged for either way.
+
+      Billing is on tokens actually produced, so the headroom costs nothing
+      until it is used. `readMessage` in `client.ts` learned this the same
+      way and says so in its own comment.
     */
-    max_tokens: 1_000,
+    max_tokens: 4_000,
     system: [
       {
         type: 'text' as const,
@@ -93,7 +109,19 @@ function requestBody(page: PageToRead) {
         ].join('\n'),
       },
     ],
-    output_config: { format: zodOutputFormat(wireNicheSchema) },
+    output_config: {
+      /*
+        Low, because this is a classification and not a problem.
+
+        Thinking is on by default on this model and cannot be turned off
+        above `high`; what effort buys is depth, and the depth a one-slug
+        answer needs is small. Left at the default it would think harder
+        about every parked domain than the answer is worth - and the
+        thinking is output tokens, at five times the price of the input.
+      */
+      effort: 'low' as const,
+      format: zodOutputFormat(wireNicheSchema),
+    },
   };
 }
 
@@ -107,14 +135,51 @@ export async function readNicheFromPage(page: PageToRead): Promise<NicheOutcome>
   try {
     const message = await getClient().messages.create(requestBody(page));
 
-    const block = message.content.find((part) => part.type === 'text');
-    if (!block || block.type !== 'text') {
-      return { error: 'The model returned no text.', model: NICHE_MODEL };
+    const usage = {
+      inputTokens: message.usage.input_tokens ?? 0,
+      outputTokens: message.usage.output_tokens ?? 0,
+    };
+
+    /*
+      Every text block, joined - not the first one.
+
+      Thinking is on, so the answer is not the first block in the response,
+      and on a long answer it need not be a single block either. `textOf` in
+      `client.ts` has always joined them; taking `.find()` was me writing a
+      second, worse version of a thing that already worked.
+    */
+    const text = message.content
+      .map((part) => (part.type === 'text' ? part.text : ''))
+      .join('');
+
+    /*
+      Two different failures, told apart - the distinction `readMessage`
+      makes for the same reason. A truncated answer is not JSON, and
+      reported as a parse error it sends whoever reads it to look at the
+      schema; `stop_reason` has been saying what actually happened all
+      along.
+    */
+    let json: unknown;
+    try {
+      json = JSON.parse(text);
+    } catch {
+      return {
+        error:
+          message.stop_reason === 'max_tokens'
+            ? 'The answer ran past the output ceiling before it was finished.'
+            : `The model did not return JSON (stop reason: ${message.stop_reason ?? 'unknown'}). It produced ${text.trim().length} characters.`,
+        usage,
+        model: NICHE_MODEL,
+      };
     }
 
-    const parsed = wireNicheSchema.safeParse(JSON.parse(block.text));
+    const parsed = wireNicheSchema.safeParse(json);
     if (!parsed.success) {
-      return { error: `The answer did not match the schema: ${parsed.error.message}`, model: NICHE_MODEL };
+      return {
+        error: `The answer did not match the schema: ${parsed.error.message}`,
+        usage,
+        model: NICHE_MODEL,
+      };
     }
 
     return {
@@ -122,10 +187,7 @@ export async function readNicheFromPage(page: PageToRead): Promise<NicheOutcome>
       // page: a quote from the part that was cut off is a quote it could not
       // have read.
       reading: readNiche(parsed.data, page.text.slice(0, MAX_PAGE_CHARS)),
-      usage: {
-        inputTokens: message.usage.input_tokens ?? 0,
-        outputTokens: message.usage.output_tokens ?? 0,
-      },
+      usage,
       model: NICHE_MODEL,
     };
   } catch (error) {
