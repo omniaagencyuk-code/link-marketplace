@@ -1,69 +1,92 @@
 import Link from 'next/link';
-import { Check } from 'lucide-react';
+import { BadgeCheck, FileX2, Lock, type LucideIcon } from 'lucide-react';
 import { Logo } from '@/components/layout/logo';
+import { PromoPanel } from '@/components/auth/promo-panel';
 import { brand } from '@/lib/config/brand';
+import { websiteService, type MarketplaceStats } from '@/lib/services';
+
+/**
+ * The frame every account page sits in: the form on the left, the product on
+ * the right.
+ *
+ * The split is 44/56 rather than even. The form needs a readable column and
+ * nothing more; the panel beside it holds a heading, an illustration, four
+ * features and a card, and at 50/50 that stack is cramped while the form side
+ * is mostly whitespace.
+ *
+ * Below `lg` the panel is gone rather than stacked. Stacking it puts four
+ * feature rows and an illustration between a visitor and the password field
+ * on the screen where they are most likely in a hurry; the three indicators
+ * under the form carry what is worth carrying.
+ */
+
+interface Indicator {
+  icon: LucideIcon;
+  label: string;
+}
 
 /*
-  No counts here. This list sits beside the signup form on every account
-  page, and it claimed "5,000+ manually vetted websites across 20+ niches"
-  against a marketplace nearer nine hundred sites and sixteen categories. The
-  homepage carries the real figures, counted on every render; a page that
-  cannot count them says something true instead.
+  Three statements, each one checkable.
+
+  "Secure payments" is about the payment path - card details go to Stripe and
+  never touch this application - and not a certification. We hold none, and
+  the difference between the two sentences is the difference between a fact
+  and a badge somebody would eventually ask to see.
 */
-const highlights = [
-  'Manually vetted websites across every major niche',
-  'Live domain rating, traffic and referring domain data',
-  'Fixed prices with no negotiation or hidden fees',
-  'Average turnaround of 24 to 72 hours',
+const indicators: Indicator[] = [
+  { icon: BadgeCheck, label: 'Trusted by SEO professionals' },
+  { icon: FileX2, label: 'No long-term contracts' },
+  { icon: Lock, label: 'Secure payments' },
 ];
 
-export default function AuthLayout({ children }: { children: React.ReactNode }) {
+/**
+ * The marketplace figures for the panel.
+ *
+ * Wrapped, because this is the login page. `getStats` is one counted read and
+ * it is memoised for the request, but a database that is briefly unreachable
+ * must cost a card full of numbers, never the ability to sign in - and a page
+ * that throws on a read it only needed for decoration is exactly how the
+ * homepage took production down in October.
+ */
+async function marketplaceStats(): Promise<MarketplaceStats | null> {
+  try {
+    return await websiteService.getStats();
+  } catch {
+    return null;
+  }
+}
+
+export default async function AuthLayout({ children }: { children: React.ReactNode }) {
+  const stats = await marketplaceStats();
+
   return (
-    <div className="grid min-h-dvh lg:grid-cols-2">
-      <div className="flex flex-col px-5 py-8 sm:px-8 lg:px-12">
+    <div className="grid min-h-dvh lg:grid-cols-[44fr_56fr]">
+      <div className="flex flex-col bg-white px-5 py-7 sm:px-8 lg:px-12 xl:px-16">
         <div className="flex items-center justify-between">
           <Logo />
           <Link href="/" className="text-[13px] text-muted hover:text-ink">
             Back to site
           </Link>
         </div>
+
         <main id="main" className="flex flex-1 items-center justify-center py-10">
           <div className="w-full max-w-sm">{children}</div>
         </main>
-        <p className="text-[12px] text-muted">
+
+        <ul className="flex flex-wrap items-center justify-center gap-x-5 gap-y-2 border-t border-line pt-5 text-[12px] text-muted">
+          {indicators.map((indicator) => (
+            <li key={indicator.label} className="flex items-center gap-1.5">
+              <indicator.icon className="h-3.5 w-3.5 text-accent-600" aria-hidden="true" />
+              {indicator.label}
+            </li>
+          ))}
+        </ul>
+        <p className="mt-4 text-center text-[12px] text-muted-soft">
           &copy; {new Date().getFullYear()} {brand.company.legalName}
         </p>
       </div>
 
-      <aside className="dot-grid relative hidden flex-col justify-center overflow-hidden bg-navy-900 px-12 text-white lg:flex">
-        <div
-          aria-hidden="true"
-          className="absolute -top-20 -right-20 h-72 w-72 rounded-full bg-accent-500/10 blur-3xl"
-        />
-        <div className="relative max-w-md">
-          <p className="text-[11px] font-semibold tracking-[0.12em] text-accent-400 uppercase">
-            Quality links. Real websites. No hassle.
-          </p>
-          <h2 className="mt-4 text-3xl font-semibold tracking-tight">
-            The link building marketplace for serious SEOs
-          </h2>
-          <ul className="mt-8 space-y-3.5">
-            {highlights.map((highlight) => (
-              <li key={highlight} className="flex gap-3 text-[14px] text-white/75">
-                <Check className="mt-0.5 h-4 w-4 shrink-0 text-accent-400" aria-hidden="true" />
-                {highlight}
-              </li>
-            ))}
-          </ul>
-          <blockquote className="mt-10 border-l-2 border-accent-500/60 pl-4 text-[14px] leading-relaxed text-white/70">
-            &ldquo;We replaced three outreach contractors with {brand.name}. Same budget, roughly
-            double the placements, and every site is one we would have approved anyway.&rdquo;
-            <footer className="mt-2 text-[13px] text-white/50">
-              Marta Silva, Head of SEO at Velocity Search
-            </footer>
-          </blockquote>
-        </div>
-      </aside>
+      <PromoPanel stats={stats} />
     </div>
   );
 }

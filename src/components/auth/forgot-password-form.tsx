@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useActionState } from 'react';
 import { useFormStatus } from 'react-dom';
-import { AlertCircle, CheckCircle2 } from 'lucide-react';
+import { ArrowLeft, AlertCircle, CheckCircle2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -24,14 +24,19 @@ export function ForgotPasswordForm() {
 
   return (
     <div>
-      <h1 className="text-2xl font-semibold tracking-tight text-ink">Reset your password</h1>
-      <p className="mt-2 text-[14px] text-muted">
-        Enter your email address and we will send you a link to set a new password.
+      <p className="text-[11px] font-semibold tracking-[0.14em] text-accent-700 uppercase">
+        Forgot password
+      </p>
+      <h1 className="mt-3 text-[26px] leading-tight font-semibold tracking-tight text-ink">
+        Reset your password
+      </h1>
+      <p className="mt-2.5 text-[14px] leading-relaxed text-muted">
+        Enter your email address and we&rsquo;ll send you instructions to reset your password.
       </p>
 
       <form action={formAction} className="mt-7 space-y-4">
         <div>
-          <Label htmlFor="email">Email</Label>
+          <Label htmlFor="email">Work email</Label>
           <Input
             id="email"
             name="email"
@@ -39,7 +44,7 @@ export function ForgotPasswordForm() {
             autoComplete="email"
             required
             placeholder="you@agency.com"
-            className="mt-1.5"
+            className="mt-1.5 h-11"
           />
         </div>
 
@@ -66,10 +71,13 @@ export function ForgotPasswordForm() {
         <SubmitButton />
       </form>
 
-      <p className="mt-5 text-center text-[13px] text-muted">
-        Remembered it?{' '}
-        <Link href="/login" className="font-medium text-accent-700 hover:underline">
-          Log in
+      <p className="mt-6 text-center text-[13px]">
+        <Link
+          href="/login"
+          className="inline-flex items-center gap-1.5 font-medium text-accent-700 hover:underline"
+        >
+          <ArrowLeft className="h-3.5 w-3.5" aria-hidden="true" />
+          Back to login
         </Link>
       </p>
     </div>

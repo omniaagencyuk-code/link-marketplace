@@ -14,6 +14,7 @@ import {
   isCustomerAuthConfigured,
 } from '@/lib/auth/customer-session';
 import { RATE_LIMITS, consumeRateLimit, rateLimitMessage } from '@/lib/auth/rate-limit';
+import { isGoogleAuthEnabled } from '@/lib/auth/google';
 
 /**
  * Customer sign-in, sign-up, sign-out and password reset.
@@ -163,6 +164,41 @@ export async function signUpAction(
 
   revalidatePath('/', 'layout');
   redirect(safeRedirect(formData.get('next')));
+}
+
+/**
+ * Start the Google sign-in flow.
+ *
+ * Supabase builds the consent URL and we send the browser to it; Google
+ * returns to `/auth/confirm`, which already exchanges a `?code=` for a
+ * session and honours `next`. So this adds no new callback, no new session
+ * handling and no second source of truth about who is signed in - it is the
+ * existing door with a second key.
+ *
+ * It refuses unless `NEXT_PUBLIC_GOOGLE_AUTH` says the provider is actually
+ * configured. The button is gated on the same answer, so this is the second
+ * of two locks rather than the only one: a hand-posted form cannot send
+ * somebody to a provider that is not set up.
+ *
+ * Not rate limited, deliberately. Nothing here checks a credential, so there
+ * is nothing to brute force, and counting it against the sign-in budget would
+ * let a redirect lock somebody out of their own password form.
+ */
+export async function signInWithGoogleAction(formData: FormData): Promise<void> {
+  const next = safeRedirect(formData.get('next'));
+  const failed = `/login?error=google-unavailable&next=${encodeURIComponent(next)}`;
+
+  if (!isGoogleAuthEnabled()) redirect(failed);
+
+  const supabase = await getServerClient();
+  const { data, error } = await supabase.auth.signInWithOAuth({
+    provider: 'google',
+    options: { redirectTo: `${siteUrl}/auth/confirm?next=${encodeURIComponent(next)}` },
+  });
+
+  // `redirect` throws, so it cannot sit inside the branch that reads `data`.
+  if (error || !data?.url) redirect(failed);
+  redirect(data.url);
 }
 
 export async function signOutAction() {
