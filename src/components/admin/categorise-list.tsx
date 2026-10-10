@@ -4,9 +4,15 @@ import { useState, useTransition } from 'react';
 import Link from 'next/link';
 import { Check, ExternalLink, Search } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Table, TableWrap, Td, Th, Tr } from '@/components/ui/table';
 import { nicheName } from '@/lib/data/categories';
-import { readHomepageAction, applyCategoryAction } from '@/app/admin/(protected)/categorise/actions';
+import {
+  applyCategoryAction,
+  readHomepageAction,
+  readHomepagesAction,
+} from '@/app/admin/(protected)/categorise/actions';
+import { bulkProgressPercent, bulkProgressText, type BulkProgress } from '@/lib/admin/bulk';
 import type { CategoryRead } from '@/lib/services/category-read-service';
 
 /**
@@ -26,6 +32,15 @@ import type { CategoryRead } from '@/lib/services/category-read-service';
  * showed only successes would offer the same empty row for both - so the
  * same site would be read again and again at the same cost.
  */
+
+/**
+ * How many sites go in one request.
+ *
+ * The action caps at the same figure; this is the client's half of that
+ * agreement, and it is what keeps the bar moving - one request for the whole
+ * selection would be a single silence however long it took.
+ */
+const BATCH = 24;
 
 /** What each refusal means, in words a reviewer can act on. */
 const WHY: Record<string, string> = {
@@ -54,6 +69,104 @@ export function CategoriseList({
   const [live, setLive] = useState<Record<string, CategoryRead>>(reads);
   const [applied, setApplied] = useState<Set<string>>(new Set());
   const [working, setWorking] = useState<string | null>(null);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  /** Live counts while a batch runs, so the bar means something. */
+  const [progress, setProgress] = useState<BulkProgress | null>(null);
+
+  const ids = websites.map((website) => website.id);
+  const allSelected = ids.length > 0 && ids.every((id) => selected.has(id));
+  const someSelected = !allSelected && ids.some((id) => selected.has(id));
+
+  function toggle(id: string) {
+    setSelected((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  /*
+    Select-all is this page, not the backlog.
+
+    Seventy-four pages of them, and a control that quietly selected 1,840
+    sites would put a four-figure fetch behind one click. The count beside
+    the button says which it is.
+  */
+  function toggleAll() {
+    setSelected((current) => {
+      const next = new Set(current);
+      if (allSelected) ids.forEach((id) => next.delete(id));
+      else ids.forEach((id) => next.add(id));
+      return next;
+    });
+  }
+
+  /** The selected rows that are worth reading or worth accepting. */
+  const chosen = ids.filter((id) => selected.has(id));
+  const readable = chosen.filter((id) => !applied.has(id) && !live[id]?.appliedAt);
+  const acceptable = chosen.filter(
+    (id) => live[id]?.niche && !applied.has(id) && !live[id]?.appliedAt,
+  );
+
+  /*
+    In batches, with the answers landing as they arrive.
+
+    One request for the whole selection is one long silence and, past a
+    certain size, a function that never answers. The server reads eight at a
+    time inside each batch, which is the politeness limit rather than a
+    speed choice.
+  */
+  function readSelected() {
+    const queue = [...readable];
+    if (queue.length === 0) return;
+    setProgress({ done: 0, total: queue.length, changed: 0, skipped: [], verb: 'read', finished: false });
+
+    startTransition(async () => {
+      let done = 0;
+      let changed = 0;
+      for (let from = 0; from < queue.length; from += BATCH) {
+        const group = queue.slice(from, from + BATCH);
+        try {
+          const found = await readHomepagesAction(group);
+          setLive((current) => ({ ...current, ...found }));
+          changed += Object.values(found).filter((read) => read.niche).length;
+        } catch {
+          // A batch that failed is still a batch that is over. The rows stay
+          // unread and can be tried again; losing the rest of the run
+          // because one request died would be worse.
+        }
+        done += group.length;
+        setProgress({ done, total: queue.length, changed, skipped: [], verb: 'read', finished: false });
+      }
+      setProgress({ done, total: queue.length, changed, skipped: [], verb: 'read', finished: true });
+    });
+  }
+
+  function acceptSelected() {
+    const queue = [...acceptable];
+    if (queue.length === 0) return;
+    setProgress({ done: 0, total: queue.length, changed: 0, skipped: [], verb: 'categorised', finished: false });
+
+    startTransition(async () => {
+      let done = 0;
+      let changed = 0;
+      for (const id of queue) {
+        try {
+          const { applied: ok } = await applyCategoryAction(id);
+          if (ok) {
+            changed += 1;
+            setApplied((current) => new Set(current).add(id));
+          }
+        } catch {
+          // Counted as done and not as changed, which is what the bar says.
+        }
+        done += 1;
+        setProgress({ done, total: queue.length, changed, skipped: [], verb: 'categorised', finished: false });
+      }
+      setProgress({ done, total: queue.length, changed, skipped: [], verb: 'categorised', finished: true });
+    });
+  }
 
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
@@ -91,6 +204,67 @@ export function CategoriseList({
         {page} of {totalPages}.
       </p>
 
+      {progress ? (
+        <div className="rounded-[var(--radius-card)] border border-line bg-white p-4">
+          <p className="text-[13px] text-ink">{bulkProgressText(progress)}</p>
+          <div
+            className="mt-2 h-1.5 overflow-hidden rounded-full bg-surface-sunken"
+            role="progressbar"
+            aria-valuenow={bulkProgressPercent(progress.done, progress.total)}
+            aria-valuemin={0}
+            aria-valuemax={100}
+          >
+            <div
+              className="h-full rounded-full bg-accent-600 transition-[width]"
+              style={{ width: `${bulkProgressPercent(progress.done, progress.total)}%` }}
+            />
+          </div>
+          {progress.finished ? (
+            <Button
+              size="sm"
+              variant="ghost"
+              className="mt-2"
+              onClick={() => setProgress(null)}
+            >
+              Dismiss
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
+
+      {chosen.length > 0 ? (
+        <div className="flex flex-wrap items-center gap-2 rounded-[var(--radius-card)] border border-navy-900/15 bg-navy-900/[0.03] px-4 py-3">
+          <p className="text-[13px] font-medium text-ink">
+            {chosen.length} selected on this page
+          </p>
+          <div className="ml-auto flex items-center gap-2">
+            <Button size="sm" variant="ghost" onClick={() => setSelected(new Set())}>
+              Clear
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={busy || readable.length === 0}
+              onClick={readSelected}
+            >
+              <Search className="h-3.5 w-3.5" aria-hidden="true" />
+              Read {readable.length} {readable.length === 1 ? 'homepage' : 'homepages'}
+            </Button>
+            {/* Only ever the ones already carrying a proposal. Accepting is
+                the step that writes a category, so it cannot be the thing
+                that also decides what the category is. */}
+            <Button
+              size="sm"
+              variant="accent"
+              disabled={busy || acceptable.length === 0}
+              onClick={acceptSelected}
+            >
+              Accept {acceptable.length}
+            </Button>
+          </div>
+        </div>
+      ) : null}
+
       <TableWrap>
         <Table>
           <caption className="sr-only">
@@ -98,6 +272,14 @@ export function CategoriseList({
           </caption>
           <thead>
             <tr>
+              <Th className="w-8 pr-0">
+                <Checkbox
+                  checked={allSelected}
+                  indeterminate={someSelected}
+                  onChange={toggleAll}
+                  aria-label="Select every listing on this page"
+                />
+              </Th>
               <Th>Website</Th>
               <Th>What its homepage says</Th>
               <Th className="text-right">
@@ -113,6 +295,13 @@ export function CategoriseList({
 
               return (
                 <Tr key={website.id}>
+                  <Td className="pr-0 align-top">
+                    <Checkbox
+                      checked={selected.has(website.id)}
+                      onChange={() => toggle(website.id)}
+                      aria-label={`Select ${website.domain}`}
+                    />
+                  </Td>
                   <Td className="align-top">
                     <div className="flex items-center gap-1.5">
                       <Link

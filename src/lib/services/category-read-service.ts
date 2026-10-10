@@ -1,6 +1,6 @@
 import { getAdminScopedClient } from '@/lib/supabase/server';
 import { isSupabaseEnabled } from '@/lib/supabase/config';
-import { CRAWLER_USER_AGENT, FETCH_TIMEOUT_MS } from '@/lib/crawl/politeness';
+import { CRAWLER_USER_AGENT, FETCH_AT_ONCE, FETCH_TIMEOUT_MS } from '@/lib/crawl/politeness';
 import { MAX_BYTES, readPage } from '@/lib/sales/page-reading';
 import { NICHE_MODEL, readNicheFromPage } from '@/lib/sourcing/niche-client';
 import { categoryReadRow } from '@/lib/sourcing/niche-row';
@@ -185,6 +185,44 @@ export const categoryReadService = {
     if (error) throw new Error(`Could not record the homepage read: ${error.message}`);
 
     return mapRead(row);
+  },
+
+  /**
+   * Read several homepages at once.
+   *
+   * Concurrency is `FETCH_AT_ONCE`, the figure the prospect crawler and the
+   * description sweep both settled on, and it is about other people's
+   * servers rather than about speed: a burst of twenty-five simultaneous
+   * requests from one address is how a crawler gets blocked.
+   *
+   * Sequential would be politer still and is not an option - twenty-five
+   * sites at four seconds each is a request that never answers. Eight at a
+   * time is a few seconds, which is a request that does.
+   *
+   * One failure does not lose the others. `read` already returns rather than
+   * throws for a page that will not fetch; this adds the same for a listing
+   * that is not there at all, so a stale id in a selection cannot take the
+   * batch down with it.
+   */
+  async readMany(websiteIds: string[]): Promise<Record<string, CategoryRead>> {
+    const out: Record<string, CategoryRead> = {};
+    if (!isSupabaseEnabled() || websiteIds.length === 0) return out;
+
+    for (let from = 0; from < websiteIds.length; from += FETCH_AT_ONCE) {
+      const group = websiteIds.slice(from, from + FETCH_AT_ONCE);
+      const results = await Promise.all(
+        group.map(async (id) => {
+          try {
+            return await categoryReadService.read(id);
+          } catch {
+            return null;
+          }
+        }),
+      );
+      for (const read of results) if (read) out[read.websiteId] = read;
+    }
+
+    return out;
   },
 
   /**
