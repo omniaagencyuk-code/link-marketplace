@@ -6,6 +6,21 @@ import { categoryReadService } from '@/lib/services/category-read-service';
 export const dynamic = 'force-dynamic';
 
 /**
+ * Long enough to read a batch of homepages.
+ *
+ * A batch is twenty-four sites, fetched eight at a time, each with a twelve
+ * second timeout - so three waves, and a worst case near forty seconds
+ * before the model has said anything. The platform default is a good deal
+ * less than that, and a batch cut off half way is the worst shape this can
+ * fail in: some rows read, some not, and nothing saying which.
+ *
+ * Set at page level because that is what the Next docs say governs a page's
+ * Server Actions, and the reads are actions rather than routes. A platform
+ * may clamp it to whatever the plan allows; it cannot raise it.
+ */
+export const maxDuration = 120;
+
+/**
  * The listings nobody has categorised, and what their homepages say.
  *
  * The list comes from the filter 0078 added - `uncategorised: true` against
