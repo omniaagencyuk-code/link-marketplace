@@ -2,8 +2,8 @@ import { getAdminScopedClient } from '@/lib/supabase/server';
 import { isSupabaseEnabled } from '@/lib/supabase/config';
 import { CRAWLER_USER_AGENT, FETCH_TIMEOUT_MS } from '@/lib/crawl/politeness';
 import { MAX_BYTES, readPage } from '@/lib/sales/page-reading';
-import { NICHE_PROMPT_VERSION } from '@/lib/sourcing/niche-rules';
 import { NICHE_MODEL, readNicheFromPage } from '@/lib/sourcing/niche-client';
+import { categoryReadRow } from '@/lib/sourcing/niche-row';
 import { estimateCostUsd } from '@/lib/sourcing/client';
 import type { NicheSlug } from '@/lib/types';
 
@@ -149,74 +149,36 @@ export const categoryReadService = {
     const domain = String((site as { domain: string }).domain);
     const page = await fetchHomepage(domain);
 
-    const base = {
-      website_id: websiteId,
-      page_url: page.url,
-      http_status: page.httpStatus ?? null,
-      prompt_version: NICHE_PROMPT_VERSION,
-      model: NICHE_MODEL,
-      read_at: new Date().toISOString(),
-      // A re-read replaces what the last one found, and an unapplied
-      // proposal is what it replaces. Clearing this is deliberate: the row
-      // now describes the new read, and leaving the old timestamp would say
-      // a category had been accepted that never was.
-      applied_at: null,
-      applied_by: null,
-    };
+    const now = new Date().toISOString();
 
     /*
-      Nothing to read is a result, not an error to swallow. It costs no
-      tokens, so the figures stay zero and the row says why.
+      The row is built by a pure function in `niche-row.ts`, and checked
+      there without a database. The table constrains a row to say either
+      what it found or why it found nothing; a mapping that can break that
+      fails at the database on somebody's first click, as a 500 with a
+      constraint name in it.
     */
-    if (page.error || page.text.trim().length === 0) {
-      const row: Record<string, unknown> = {
-        ...base,
-        niche: null,
-        confidence: null,
-        quote: '',
-        reason: page.error ?? 'The page had no readable text.',
-        declined_because: 'could-not-read-the-page',
-        input_tokens: 0,
-        output_tokens: 0,
-      };
-      await supabase.from('website_category_reads').upsert(row, { onConflict: 'website_id' });
-      return mapRead(row);
-    }
+    const unreadable = Boolean(page.error) || page.text.trim().length === 0;
 
-    const outcome = await readNicheFromPage({
-      domain,
-      text: page.title ? `${page.title}\n\n${page.text}` : page.text,
-    });
+    // No call where there was nothing to read: it would cost tokens to be
+    // told the page was empty.
+    const outcome = unreadable
+      ? undefined
+      : await readNicheFromPage({
+          domain,
+          text: page.title ? `${page.title}\n\n${page.text}` : page.text,
+        });
 
-    const usage = outcome.usage ?? { inputTokens: 0, outputTokens: 0 };
-    const shared = {
-      ...base,
-      model: outcome.model,
-      input_tokens: usage.inputTokens,
-      output_tokens: usage.outputTokens,
-    };
+    const row = categoryReadRow({ websiteId, page, outcome, model: NICHE_MODEL, now });
 
-    const row: Record<string, unknown> =
-      outcome.reading?.kind === 'proposed'
-        ? {
-            ...shared,
-            niche: outcome.reading.proposal.niche,
-            confidence: outcome.reading.proposal.confidence,
-            quote: outcome.reading.proposal.quote,
-            reason: outcome.reading.proposal.reason,
-            declined_because: null,
-          }
-        : {
-            ...shared,
-            niche: null,
-            confidence: null,
-            quote: '',
-            reason: outcome.reading?.reason ?? outcome.error ?? '',
-            declined_because: outcome.reading?.kind === 'declined'
-              ? outcome.reading.because
-              : 'the-model-call-failed',
-          };
+    /*
+      Checked, where the unreadable-page branch used to drop it.
 
+      That branch upserted and ignored the result, so a write refused by the
+      constraint or by a policy returned as though it had been stored - and
+      the screen would show a read that is not on record, which is worse
+      than no read at all, because nothing would ever try that site again.
+    */
     const { error } = await supabase
       .from('website_category_reads')
       .upsert(row, { onConflict: 'website_id' });

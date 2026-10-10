@@ -8,7 +8,8 @@
 import { categories } from '../src/lib/data/categories';
 import { NICHE_CONFIDENCE_FLOOR, NICHE_PROMPT_VERSION, NICHE_RULES } from '../src/lib/sourcing/niche-rules';
 import { readNiche, wireNicheSchema, type WireNiche } from '../src/lib/sourcing/niche-schema';
-import { requestBody } from '../src/lib/sourcing/niche-client';
+import { requestBody, type NicheOutcome } from '../src/lib/sourcing/niche-client';
+import { CALL_FAILED, COULD_NOT_READ, categoryReadRow } from '../src/lib/sourcing/niche-row';
 
 let failed = 0;
 const ok = (label: string) => console.log(`  PASS  ${label}`);
@@ -125,6 +126,82 @@ console.log('\n--- unknown is an answer, and the floor is a floor ---');
   if (over.kind === 'proposed') {
     is('and one above the maximum is clamped rather than ranked first', over.proposal.confidence, 100);
   } else bad('a confidence above the maximum is still a proposal');
+}
+
+console.log('\n--- the row, which the table will not accept if it is wrong ---');
+{
+  /*
+    `website_category_reads` constrains a row to say either what it found or
+    why it found nothing - never both, never neither. A mapping that can
+    break that fails at the database, on somebody's first click, as a 500
+    with a constraint name in it. The constraint is the wall; this is the
+    thing that must never walk into it, so every shape is run through the
+    same assertion the constraint makes.
+  */
+  const good = { url: 'https://x.test/', httpStatus: 200, text: PAGE };
+  const row = (over: Partial<Parameters<typeof categoryReadRow>[0]> = {}) =>
+    categoryReadRow({
+      websiteId: 'w1',
+      page: good,
+      model: 'claude-haiku-5-5',
+      now: '2026-01-01T00:00:00.000Z',
+      ...over,
+    });
+
+  const holds = (r: Record<string, unknown>) =>
+    (r.niche !== null && r.declined_because === null) ||
+    (r.niche === null && r.declined_because !== null);
+
+  const proposed: NicheOutcome = {
+    reading: readNiche(answer(), PAGE),
+    usage: { inputTokens: 2400, outputTokens: 55 },
+    model: 'claude-haiku-5-5',
+  };
+  const declined: NicheOutcome = {
+    reading: readNiche(answer({ niche: 'unknown' }), PAGE),
+    usage: { inputTokens: 2400, outputTokens: 20 },
+    model: 'claude-haiku-5-5',
+  };
+  const failed: NicheOutcome = { error: 'overloaded', model: 'claude-haiku-5-5' };
+
+  const shapes: [string, Record<string, unknown>][] = [
+    ['a proposal', row({ outcome: proposed })],
+    ['a refusal', row({ outcome: declined })],
+    ['a failed call', row({ outcome: failed })],
+    ['a page that would not fetch', row({ page: { url: 'https://x.test/', text: '', error: 'HTTP 404' } })],
+    ['a page with nothing on it', row({ page: { url: 'https://x.test/', httpStatus: 200, text: '   ' } })],
+    ['no outcome at all', row({})],
+  ];
+  for (const [label, built] of shapes) {
+    yes(`${label} satisfies the one-or-the-other constraint`, holds(built));
+  }
+
+  is('a proposal carries the category', row({ outcome: proposed }).niche, 'sports');
+  is('and its quote', row({ outcome: proposed }).quote, answer().quote);
+  is('a refusal names the reason it was refused',
+    row({ outcome: declined }).declined_because, 'model-said-unknown');
+  is('a failed call is told apart from a refusal',
+    row({ outcome: failed }).declined_because, CALL_FAILED);
+  is('and an unfetchable page from both',
+    row({ page: { url: 'https://x.test/', text: '', error: 'HTTP 404' } }).declined_because,
+    COULD_NOT_READ);
+
+  /*
+    Spend is measured, not estimated - and a call that produced nothing
+    usable still cost what it cost. A figure that only counts the successes
+    is not a spend figure.
+  */
+  is('a refusal still records what it cost', row({ outcome: declined }).input_tokens, 2400);
+  is('a page nobody could fetch cost nothing',
+    row({ page: { url: 'https://x.test/', text: '', error: 'HTTP 404' } }).input_tokens, 0);
+
+  /*
+    A re-read describes the new read. Carrying the old applied timestamp
+    forward would say a category had been accepted that never was.
+  */
+  is('a fresh read is never already applied', row({ outcome: proposed }).applied_at, null);
+  is('and records which rules produced it',
+    row({ outcome: proposed }).prompt_version, NICHE_PROMPT_VERSION);
 }
 
 console.log('\n--- the request, where the money and the truncation live ---');
