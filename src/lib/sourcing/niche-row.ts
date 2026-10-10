@@ -25,7 +25,16 @@ export interface FetchedPage {
 /** Why a read produced nothing, when the page itself was the problem. */
 export const COULD_NOT_READ = 'could-not-read-the-page';
 
-/** Why a read produced nothing, when the call was. */
+/**
+ * Why a read produced nothing, when the call was the problem.
+ *
+ * No longer reachable from `category-read-service`, which returns a failed
+ * attempt without writing anything: a call that never answered says nothing
+ * about the publisher's site, and recording it would mark a site assessed
+ * that nobody has assessed. Kept because this mapping has to be total - any
+ * input must produce a row the table's constraint accepts - and because rows
+ * written before that distinction existed still carry it.
+ */
 export const CALL_FAILED = 'the-model-call-failed';
 
 export function categoryReadRow(args: {

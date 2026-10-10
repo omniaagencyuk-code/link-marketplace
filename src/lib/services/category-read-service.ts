@@ -39,6 +39,19 @@ export interface CategoryRead {
   appliedAt: string | null;
 }
 
+/**
+ * What one attempt produced.
+ *
+ * `failed` is not a read. A call that never got an answer says nothing about
+ * the publisher's website, so nothing is written: the row stays unread and
+ * the next attempt will try it properly. Recording it would be the opposite
+ * of why refusals are recorded at all - a future run skips what has been
+ * read, and it would skip 1,840 sites nobody ever assessed.
+ */
+export type ReadAttempt =
+  | { kind: 'recorded'; read: CategoryRead }
+  | { kind: 'failed'; message: string; accountProblem: boolean };
+
 type Row = Record<string, unknown>;
 
 function mapRead(row: Row): CategoryRead {
@@ -135,8 +148,10 @@ export const categoryReadService = {
    * next attempt fetches the same dead domain, and the one after that - and
    * a parked site looks identical to one nobody has got to yet.
    */
-  async read(websiteId: string): Promise<CategoryRead | null> {
-    if (!isSupabaseEnabled()) return null;
+  async read(websiteId: string): Promise<ReadAttempt> {
+    if (!isSupabaseEnabled()) {
+      return { kind: 'failed', message: 'The database is not connected.', accountProblem: false };
+    }
     const supabase = getAdminScopedClient();
 
     const { data: site } = await supabase
@@ -144,7 +159,9 @@ export const categoryReadService = {
       .select('id, domain')
       .eq('id', websiteId)
       .maybeSingle();
-    if (!site) return null;
+    if (!site) {
+      return { kind: 'failed', message: 'That listing no longer exists.', accountProblem: false };
+    }
 
     const domain = String((site as { domain: string }).domain);
     const page = await fetchHomepage(domain);
@@ -169,6 +186,23 @@ export const categoryReadService = {
           text: page.title ? `${page.title}\n\n${page.text}` : page.text,
         });
 
+    /*
+      A failure of ours is not a finding about theirs.
+
+      A page that would not fetch is a fact about that site and is written
+      down, so nothing fetches it again. A model call that never answered -
+      no credit, a rejected key, a rate limit - is a fact about us, and
+      writing it as a read would mark the site assessed when nobody has
+      assessed it.
+    */
+    if (outcome && !outcome.reading) {
+      return {
+        kind: 'failed',
+        message: outcome.error ?? 'The model call failed.',
+        accountProblem: Boolean(outcome.accountProblem),
+      };
+    }
+
     const row = categoryReadRow({ websiteId, page, outcome, model: NICHE_MODEL, now });
 
     /*
@@ -184,7 +218,7 @@ export const categoryReadService = {
       .upsert(row, { onConflict: 'website_id' });
     if (error) throw new Error(`Could not record the homepage read: ${error.message}`);
 
-    return mapRead(row);
+    return { kind: 'recorded', read: mapRead(row) };
   },
 
   /**
@@ -204,25 +238,45 @@ export const categoryReadService = {
    * that is not there at all, so a stale id in a selection cannot take the
    * batch down with it.
    */
-  async readMany(websiteIds: string[]): Promise<Record<string, CategoryRead>> {
-    const out: Record<string, CategoryRead> = {};
-    if (!isSupabaseEnabled() || websiteIds.length === 0) return out;
+  async readMany(
+    websiteIds: string[],
+  ): Promise<{ reads: Record<string, CategoryRead>; stopped?: string }> {
+    const reads: Record<string, CategoryRead> = {};
+    if (!isSupabaseEnabled() || websiteIds.length === 0) return { reads };
 
     for (let from = 0; from < websiteIds.length; from += FETCH_AT_ONCE) {
       const group = websiteIds.slice(from, from + FETCH_AT_ONCE);
       const results = await Promise.all(
-        group.map(async (id) => {
+        group.map(async (id): Promise<ReadAttempt> => {
           try {
             return await categoryReadService.read(id);
-          } catch {
-            return null;
+          } catch (error) {
+            return {
+              kind: 'failed',
+              message: error instanceof Error ? error.message : 'The read failed.',
+              accountProblem: false,
+            };
           }
         }),
       );
-      for (const read of results) if (read) out[read.websiteId] = read;
+
+      for (const result of results) {
+        if (result.kind === 'recorded') reads[result.read.websiteId] = result.read;
+      }
+
+      /*
+        Stop on the first failure that will repeat.
+
+        No credit does not become credit on the next site. Carrying on
+        fetched twenty-four homepages and made twenty-four identical calls
+        to be told the same thing twenty-four times - other people's
+        bandwidth spent to learn nothing.
+      */
+      const fatal = results.find((r) => r.kind === 'failed' && r.accountProblem);
+      if (fatal && fatal.kind === 'failed') return { reads, stopped: fatal.message };
     }
 
-    return out;
+    return { reads };
   },
 
   /**

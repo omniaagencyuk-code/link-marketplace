@@ -1,5 +1,5 @@
 import { zodOutputFormat } from '@anthropic-ai/sdk/helpers/zod';
-import { getClient } from './client';
+import { getClient, messageFor } from './client';
 import { NICHE_RULES } from './niche-rules';
 import { readNiche, wireNicheSchema, type NicheReading } from './niche-schema';
 
@@ -36,8 +36,32 @@ export interface NicheUsage {
 export interface NicheOutcome {
   reading?: NicheReading;
   error?: string;
+  /**
+   * The failure is ours, not this page's.
+   *
+   * No credit, a rejected key, a rate limit: nothing about the next site
+   * will make any of those go away, so a batch that meets one should stop
+   * rather than make the same call another twenty-three times. The
+   * distinction matters more than it looks - a failure about our account
+   * must not be recorded as a fact about a publisher's website.
+   */
+  accountProblem?: boolean;
   usage?: NicheUsage;
   model: string;
+}
+
+/**
+ * Will every other call fail the same way?
+ *
+ * Matched on the shape of the error rather than its wording where possible;
+ * the credit case has no typed class of its own, so it is matched on the
+ * phrase the API uses and `messageFor` already keys on the same one.
+ */
+function isAccountProblem(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  const status = (error as { status?: number }).status;
+  if (status === 401 || status === 403 || status === 429) return true;
+  return /credit balance|not scoped to a workspace/i.test(error.message);
 }
 
 /** The page, as it is handed to the model. */
@@ -191,8 +215,18 @@ export async function readNicheFromPage(page: PageToRead): Promise<NicheOutcome>
       model: NICHE_MODEL,
     };
   } catch (error) {
+    /*
+      `messageFor`, not the raw message.
+
+      It turns the three failures somebody can actually act on into a
+      sentence that says what to do - no credit, a key rejected, a key
+      scoped to the organisation rather than a workspace. Writing a second,
+      worse version of it put a JSON envelope and a request id on the screen
+      where "top the account up" belonged.
+    */
     return {
-      error: error instanceof Error ? error.message : 'The model call failed.',
+      error: messageFor(error),
+      accountProblem: isAccountProblem(error),
       model: NICHE_MODEL,
     };
   }

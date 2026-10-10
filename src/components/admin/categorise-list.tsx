@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from 'react';
 import Link from 'next/link';
-import { Check, ExternalLink, Search } from 'lucide-react';
+import { Check, ExternalLink, Search, TriangleAlert } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Table, TableWrap, Td, Th, Tr } from '@/components/ui/table';
@@ -49,7 +49,8 @@ const WHY: Record<string, string> = {
   'no-quote': 'No sentence was offered as evidence.',
   'quote-not-on-the-page': 'It quoted a sentence the page does not contain.',
   'could-not-read-the-page': 'The page could not be fetched or had nothing to read.',
-  'the-model-call-failed': 'The model call failed.',
+  // Only on rows written before a failed call stopped being recorded.
+  'the-model-call-failed': 'The model call failed - read this one again.',
 };
 
 export function CategoriseList({
@@ -72,6 +73,8 @@ export function CategoriseList({
   const [selected, setSelected] = useState<Set<string>>(new Set());
   /** Live counts while a batch runs, so the bar means something. */
   const [progress, setProgress] = useState<BulkProgress | null>(null);
+  /** A failure that is ours rather than a site's - shown once, not per row. */
+  const [notice, setNotice] = useState<string | null>(null);
 
   const ids = websites.map((website) => website.id);
   const allSelected = ids.length > 0 && ids.every((id) => selected.has(id));
@@ -127,16 +130,31 @@ export function CategoriseList({
       let changed = 0;
       for (let from = 0; from < queue.length; from += BATCH) {
         const group = queue.slice(from, from + BATCH);
+        let stopped: string | undefined;
         try {
           const found = await readHomepagesAction(group);
-          setLive((current) => ({ ...current, ...found }));
-          changed += Object.values(found).filter((read) => read.niche).length;
+          setLive((current) => ({ ...current, ...found.reads }));
+          changed += Object.values(found.reads).filter((read) => read.niche).length;
+          stopped = found.stopped;
         } catch {
           // A batch that failed is still a batch that is over. The rows stay
           // unread and can be tried again; losing the rest of the run
           // because one request died would be worse.
         }
         done += group.length;
+
+        /*
+          The server stops a batch when the failure will repeat - no credit,
+          a rejected key. Carrying on would fetch every remaining homepage
+          to be told the same thing each time, so the run ends here and says
+          why rather than filling the page with the same sentence.
+        */
+        if (stopped) {
+          setNotice(stopped);
+          setProgress({ done, total: queue.length, changed, skipped: [], verb: 'read', finished: true });
+          return;
+        }
+
         setProgress({ done, total: queue.length, changed, skipped: [], verb: 'read', finished: false });
       }
       setProgress({ done, total: queue.length, changed, skipped: [], verb: 'read', finished: true });
@@ -172,9 +190,17 @@ export function CategoriseList({
 
   function read(websiteId: string) {
     setWorking(websiteId);
+    setNotice(null);
     startTransition(async () => {
       const result = await readHomepageAction(websiteId);
-      if (result) setLive((current) => ({ ...current, [websiteId]: result }));
+      if (result.kind === 'recorded') {
+        setLive((current) => ({ ...current, [websiteId]: result.read }));
+      } else {
+        // Nothing was written, so the row stays as it was. The reason goes
+        // where a person will read it rather than into the row, which would
+        // say the site had been assessed.
+        setNotice(result.message);
+      }
       setWorking(null);
     });
   }
@@ -203,6 +229,16 @@ export function CategoriseList({
         active {total === 1 ? 'listing has' : 'listings have'} no category. Showing page{' '}
         {page} of {totalPages}.
       </p>
+
+      {notice ? (
+        <div className="flex items-start gap-2 rounded-[var(--radius-card)] border border-coral-200 bg-coral-50 px-4 py-3">
+          <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0 text-coral-700" aria-hidden="true" />
+          <p className="flex-1 text-[13px] text-coral-700">{notice}</p>
+          <Button size="sm" variant="ghost" onClick={() => setNotice(null)}>
+            Dismiss
+          </Button>
+        </div>
+      ) : null}
 
       {progress ? (
         <div className="rounded-[var(--radius-card)] border border-line bg-white p-4">
