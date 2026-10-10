@@ -5,11 +5,15 @@
  * checking are pure, which is the point of keeping them apart from the run
  * that fetches pages. The same arrangement `verify:sourcing` has.
  */
+import { readFileSync } from 'node:fs';
 import { categories } from '../src/lib/data/categories';
 import { NICHE_CONFIDENCE_FLOOR, NICHE_PROMPT_VERSION, NICHE_RULES } from '../src/lib/sourcing/niche-rules';
 import { readNiche, wireNicheSchema, type WireNiche } from '../src/lib/sourcing/niche-schema';
 import { requestBody, type NicheOutcome } from '../src/lib/sourcing/niche-client';
 import { CALL_FAILED, COULD_NOT_READ, categoryReadRow } from '../src/lib/sourcing/niche-row';
+
+const read = (file: string) =>
+  readFileSync(new URL(`../${file}`, import.meta.url), 'utf8');
 
 let failed = 0;
 const ok = (label: string) => console.log(`  PASS  ${label}`);
@@ -202,6 +206,59 @@ console.log('\n--- the row, which the table will not accept if it is wrong ---')
   is('a fresh read is never already applied', row({ outcome: proposed }).applied_at, null);
   is('and records which rules produced it',
     row({ outcome: proposed }).prompt_version, NICHE_PROMPT_VERSION);
+}
+
+console.log('\n--- a failure of ours is not a finding about theirs ---');
+{
+  /*
+    The account ran out of credit mid-batch and twenty-four listings were
+    written down as read, each carrying the billing error as its reason.
+    None of them had been assessed.
+
+    That is the opposite of why refusals are recorded. A refusal is kept so
+    a future run does not fetch the same parked domain again - and a run
+    that skips what has been read would have skipped twenty-four sites
+    nobody ever looked at. The service returns a failed attempt and writes
+    nothing now; these pin the two halves of the distinction.
+  */
+  const src = read('src/lib/services/category-read-service.ts');
+  yes(
+    'a model call with no reading is returned, not recorded',
+    /if \(outcome && !outcome\.reading\) \{[\s\S]{0,200}kind: 'failed'/.test(src),
+  );
+  /*
+    The first version of this asked whether the words "accountProblem" and
+    "stopped" appeared in the file. They appear in the type signature, so
+    deleting the thing that actually stops the run changed nothing and the
+    check stayed green. It asks for the early return now.
+  */
+  yes(
+    'and the batch stops when the failure will repeat',
+    /return \{ reads, stopped: [a-z]+\.message \};/.test(src),
+  );
+
+  /*
+    A page that would not fetch is the other half, and it IS recorded -
+    that one is a fact about the site. Checked here together because the
+    value of each is that it is not the other.
+  */
+  const row = categoryReadRow({
+    websiteId: 'w1',
+    page: { url: 'https://x.test/', text: '', error: 'HTTP 404' },
+    model: 'claude-haiku-5-5',
+    now: '2026-01-01T00:00:00.000Z',
+  });
+  is('a page that would not fetch is still written down', row.declined_because, COULD_NOT_READ);
+
+  const client = read('src/lib/sourcing/niche-client.ts');
+  yes(
+    'the error shown is the one somebody can act on',
+    /messageFor\(error\)/.test(client),
+  );
+  yes(
+    'and no-credit is recognised as ours rather than the page\'s',
+    /credit balance/.test(client),
+  );
 }
 
 console.log('\n--- the request, where the money and the truncation live ---');
