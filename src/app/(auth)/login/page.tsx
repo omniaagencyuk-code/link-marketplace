@@ -22,18 +22,29 @@ export default async function LoginPage({
   // Already signed in: no reason to show the form again.
   if (await getCurrentUser()) redirect(next ?? '/dashboard');
 
-  // Sent here by /auth/confirm when a one-time link has expired or been used.
-  const expired = params.error === 'link-expired';
+  /*
+    Two senders. `/auth/confirm` when a one-time link has expired or been
+    used, and `signInWithGoogleAction` when it was asked for a provider this
+    deployment has not configured - which should be unreachable, because the
+    button is behind the same check, and is handled anyway because a form can
+    be posted by hand.
+  */
+  const problem =
+    params.error === 'link-expired'
+      ? 'That link has expired or has already been used. Log in, or request a new one.'
+      : params.error === 'google-unavailable'
+        ? 'Google sign-in is not available on this deployment. Use your email and password.'
+        : null;
 
   return (
     <>
-      {expired ? (
+      {problem ? (
         <p
           role="alert"
           className="mb-5 flex gap-2 rounded-lg border border-amber-300 bg-amber-50 px-3.5 py-2.5 text-[13px] text-amber-900"
         >
           <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-          That link has expired or has already been used. Log in, or request a new one.
+          {problem}
         </p>
       ) : null}
       <AuthForm mode="login" next={next} />
