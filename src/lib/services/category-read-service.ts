@@ -1,0 +1,271 @@
+import { getAdminScopedClient } from '@/lib/supabase/server';
+import { isSupabaseEnabled } from '@/lib/supabase/config';
+import { CRAWLER_USER_AGENT, FETCH_TIMEOUT_MS } from '@/lib/crawl/politeness';
+import { MAX_BYTES, readPage } from '@/lib/sales/page-reading';
+import { NICHE_PROMPT_VERSION } from '@/lib/sourcing/niche-rules';
+import { NICHE_MODEL, readNicheFromPage } from '@/lib/sourcing/niche-client';
+import { estimateCostUsd } from '@/lib/sourcing/client';
+import type { NicheSlug } from '@/lib/types';
+
+/**
+ * Reading a publisher's homepage to find out what the site is about.
+ *
+ * One site at a time, on purpose and for now. The backlog is 1,840 listings
+ * and a run that works through them is the obvious next thing - but a run
+ * that fetches 1,840 third-party sites and spends tokens on all of them
+ * before anybody has seen whether the answers are any good is the wrong
+ * order. A handful of reads from this screen says whether the rules are
+ * right; the run is worth building once they are.
+ *
+ * Nothing here applies a category. `applyRead` does, and only when somebody
+ * presses Accept.
+ */
+
+export interface CategoryRead {
+  websiteId: string;
+  niche: NicheSlug | null;
+  confidence: number | null;
+  quote: string;
+  reason: string;
+  declinedBecause: string | null;
+  pageUrl: string | null;
+  httpStatus: number | null;
+  promptVersion: string;
+  model: string;
+  inputTokens: number;
+  outputTokens: number;
+  costUsd: number;
+  readAt: string;
+  appliedAt: string | null;
+}
+
+type Row = Record<string, unknown>;
+
+function mapRead(row: Row): CategoryRead {
+  const inputTokens = Number(row.input_tokens ?? 0);
+  const outputTokens = Number(row.output_tokens ?? 0);
+  const model = String(row.model ?? '');
+  return {
+    websiteId: String(row.website_id),
+    niche: (row.niche as NicheSlug | null) ?? null,
+    confidence: row.confidence === null || row.confidence === undefined ? null : Number(row.confidence),
+    quote: String(row.quote ?? ''),
+    reason: String(row.reason ?? ''),
+    declinedBecause: (row.declined_because as string | null) ?? null,
+    pageUrl: (row.page_url as string | null) ?? null,
+    httpStatus: row.http_status === null || row.http_status === undefined ? null : Number(row.http_status),
+    promptVersion: String(row.prompt_version ?? ''),
+    model,
+    inputTokens,
+    outputTokens,
+    // Measured, not estimated: the figures the API reported for this call,
+    // priced at the published rate. AGENTS.md's rule for model spend.
+    costUsd: estimateCostUsd(model, { inputTokens, outputTokens }, 'realtime'),
+    readAt: String(row.read_at ?? ''),
+    appliedAt: (row.applied_at as string | null) ?? null,
+  };
+}
+
+/**
+ * Fetch one homepage as plain text.
+ *
+ * Its own fetch rather than the prospect crawler's, which returns the links
+ * it found and a page kind this has no use for. The politeness constants are
+ * shared, which is the part that matters on somebody else's server.
+ */
+async function fetchHomepage(domain: string): Promise<{
+  url: string;
+  httpStatus?: number;
+  title?: string;
+  text: string;
+  error?: string;
+}> {
+  const url = `https://${domain.replace(/^https?:\/\//, '').replace(/\/+$/, '')}/`;
+  try {
+    const response = await fetch(url, {
+      headers: { 'user-agent': CRAWLER_USER_AGENT, accept: 'text/html,application/xhtml+xml' },
+      redirect: 'follow',
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+    });
+
+    if (!response.ok) {
+      return { url, httpStatus: response.status, text: '', error: `HTTP ${response.status}` };
+    }
+
+    const type = response.headers.get('content-type') ?? '';
+    if (!type.includes('html')) {
+      return { url, httpStatus: response.status, text: '', error: `Not HTML (${type.split(';')[0]})` };
+    }
+
+    const html = (await response.text()).slice(0, MAX_BYTES);
+    // Where the request ended up, so a site that redirects to www has its
+    // own address recorded rather than the one we aimed at.
+    const read = readPage(html, response.url || url);
+    return { url: response.url || url, httpStatus: response.status, title: read.title, text: read.text };
+  } catch (error) {
+    return {
+      url,
+      text: '',
+      error: error instanceof Error ? error.message : 'The page could not be fetched.',
+    };
+  }
+}
+
+export const categoryReadService = {
+  /** What previous reads concluded, for the listings on screen. */
+  async readsFor(websiteIds: string[]): Promise<Record<string, CategoryRead>> {
+    if (!isSupabaseEnabled() || websiteIds.length === 0) return {};
+    const { data } = await getAdminScopedClient()
+      .from('website_category_reads')
+      .select('*')
+      .in('website_id', websiteIds);
+
+    const out: Record<string, CategoryRead> = {};
+    for (const row of (data ?? []) as Row[]) {
+      const read = mapRead(row);
+      out[read.websiteId] = read;
+    }
+    return out;
+  },
+
+  /**
+   * Read one homepage and record what came of it.
+   *
+   * A failed fetch is recorded too, as a declined read. Without that the
+   * next attempt fetches the same dead domain, and the one after that - and
+   * a parked site looks identical to one nobody has got to yet.
+   */
+  async read(websiteId: string): Promise<CategoryRead | null> {
+    if (!isSupabaseEnabled()) return null;
+    const supabase = getAdminScopedClient();
+
+    const { data: site } = await supabase
+      .from('websites')
+      .select('id, domain')
+      .eq('id', websiteId)
+      .maybeSingle();
+    if (!site) return null;
+
+    const domain = String((site as { domain: string }).domain);
+    const page = await fetchHomepage(domain);
+
+    const base = {
+      website_id: websiteId,
+      page_url: page.url,
+      http_status: page.httpStatus ?? null,
+      prompt_version: NICHE_PROMPT_VERSION,
+      model: NICHE_MODEL,
+      read_at: new Date().toISOString(),
+      // A re-read replaces what the last one found, and an unapplied
+      // proposal is what it replaces. Clearing this is deliberate: the row
+      // now describes the new read, and leaving the old timestamp would say
+      // a category had been accepted that never was.
+      applied_at: null,
+      applied_by: null,
+    };
+
+    /*
+      Nothing to read is a result, not an error to swallow. It costs no
+      tokens, so the figures stay zero and the row says why.
+    */
+    if (page.error || page.text.trim().length === 0) {
+      const row: Record<string, unknown> = {
+        ...base,
+        niche: null,
+        confidence: null,
+        quote: '',
+        reason: page.error ?? 'The page had no readable text.',
+        declined_because: 'could-not-read-the-page',
+        input_tokens: 0,
+        output_tokens: 0,
+      };
+      await supabase.from('website_category_reads').upsert(row, { onConflict: 'website_id' });
+      return mapRead(row);
+    }
+
+    const outcome = await readNicheFromPage({
+      domain,
+      text: page.title ? `${page.title}\n\n${page.text}` : page.text,
+    });
+
+    const usage = outcome.usage ?? { inputTokens: 0, outputTokens: 0 };
+    const shared = {
+      ...base,
+      model: outcome.model,
+      input_tokens: usage.inputTokens,
+      output_tokens: usage.outputTokens,
+    };
+
+    const row: Record<string, unknown> =
+      outcome.reading?.kind === 'proposed'
+        ? {
+            ...shared,
+            niche: outcome.reading.proposal.niche,
+            confidence: outcome.reading.proposal.confidence,
+            quote: outcome.reading.proposal.quote,
+            reason: outcome.reading.proposal.reason,
+            declined_because: null,
+          }
+        : {
+            ...shared,
+            niche: null,
+            confidence: null,
+            quote: '',
+            reason: outcome.reading?.reason ?? outcome.error ?? '',
+            declined_because: outcome.reading?.kind === 'declined'
+              ? outcome.reading.because
+              : 'the-model-call-failed',
+          };
+
+    const { error } = await supabase
+      .from('website_category_reads')
+      .upsert(row, { onConflict: 'website_id' });
+    if (error) throw new Error(`Could not record the homepage read: ${error.message}`);
+
+    return mapRead(row);
+  },
+
+  /**
+   * Apply a proposal, which is the only thing here that changes a listing.
+   *
+   * The source is recorded as `homepage` rather than left blank, so the
+   * categories a model proposed stay distinguishable from the ones a person
+   * decided - the parallel of `country_source`, and what makes a future
+   * re-read able to leave the stated ones alone.
+   */
+  async apply(websiteId: string, reviewer: string): Promise<boolean> {
+    if (!isSupabaseEnabled()) return false;
+    const supabase = getAdminScopedClient();
+
+    const { data: read } = await supabase
+      .from('website_category_reads')
+      .select('niche, applied_at')
+      .eq('website_id', websiteId)
+      .maybeSingle();
+
+    const niche = (read as { niche: string | null } | null)?.niche ?? null;
+    // Nothing to apply, and an already-applied read is not applied twice.
+    if (!niche || (read as { applied_at: string | null } | null)?.applied_at) return false;
+
+    const { data: category } = await supabase
+      .from('categories')
+      .select('id')
+      .eq('slug', niche)
+      .maybeSingle();
+    const categoryId = (category as { id: string } | null)?.id;
+    if (!categoryId) return false;
+
+    const { error } = await supabase
+      .from('websites')
+      .update({ primary_category_id: categoryId, primary_category_source: 'homepage' })
+      .eq('id', websiteId);
+    if (error) throw new Error(`Could not apply the category: ${error.message}`);
+
+    await supabase
+      .from('website_category_reads')
+      .update({ applied_at: new Date().toISOString(), applied_by: reviewer })
+      .eq('website_id', websiteId);
+
+    return true;
+  },
+};
