@@ -183,3 +183,4 @@ echo "--- the homepage's niche counts ---"
 run -f "$ROOT/supabase/tests/30_niche_counts.sql" 2>&1 | grep -v '^$'
 run -f "$ROOT/supabase/tests/31_homepage_category_reads.sql" 2>&1 | grep -v '^$'
 run -f "$ROOT/supabase/tests/32_category_read_spend.sql" 2>&1 | grep -v '^$'
+run -f "$ROOT/supabase/tests/33_link_building_planner.sql" 2>&1 | grep -v '^$'
