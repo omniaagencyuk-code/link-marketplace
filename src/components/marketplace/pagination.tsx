@@ -124,7 +124,10 @@ function PageButton({
       className={cn(
         'tabular inline-flex h-8 min-w-8 items-center justify-center gap-1 rounded-md border px-2 text-[13px] font-medium transition-colors',
         active
-          ? 'border-navy-900 bg-navy-900 text-white'
+          ? // Green, not navy: the mockup's active page matches the primary
+            // action colour, which is also what every other selected state in
+            // this redesign uses - the tabs, the chips, the selection bar.
+            'border-accent-700 bg-accent-700 text-white'
           : 'border-line-strong bg-white text-ink-soft hover:border-muted-soft hover:text-ink',
         'disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-line-strong',
         className,

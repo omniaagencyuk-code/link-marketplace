@@ -1,3 +1,4 @@
+import { cache } from 'react';
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { userService } from '@/lib/services/user-service';
@@ -34,8 +35,22 @@ export async function getCustomerSession(): Promise<CustomerSession | null> {
   return verifyCustomerSessionToken(store.get(CUSTOMER_SESSION_COOKIE)?.value);
 }
 
-/** The signed-in account profile, or null when signed out. */
-export async function getCurrentUser(): Promise<UserProfile | null> {
+/**
+ * The signed-in account profile, or null when signed out.
+ *
+ * Memoised for the request, the way `getStats` is and for the same reason.
+ * Answering it costs a round trip to the auth server - `getUser()`
+ * re-validates rather than believing the cookie - and the marketplace now
+ * asks twice on one render: its layout, to decide whether to draw the
+ * customer rail or the public header, and its page, to decide whether to
+ * render the marketplace or the gateway. Two renders of one question against
+ * one request must not be two round trips to London.
+ *
+ * `cache` is per-request, so nothing is shared between two customers: a
+ * second request gets its own answer. That is the property that makes this
+ * safe to do to an auth call at all.
+ */
+export const getCurrentUser = cache(async (): Promise<UserProfile | null> => {
   if (isSupabaseEnabled()) return getSupabaseUser();
 
   const session = await getCustomerSession();
@@ -44,7 +59,7 @@ export async function getCurrentUser(): Promise<UserProfile | null> {
   // A deleted account loses access on its next request rather than waiting for
   // the token to expire.
   return user ?? null;
-}
+});
 
 async function getSupabaseUser(): Promise<UserProfile | null> {
   const supabase = await getServerClient();
