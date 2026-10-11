@@ -31,6 +31,20 @@ export const NICHE_MODEL = process.env.NICHE_MODEL?.trim() || 'claude-haiku-5-5'
 export interface NicheUsage {
   inputTokens: number;
   outputTokens: number;
+  /**
+   * The rules prefix, written into the cache and read back out of it.
+   *
+   * Kept apart from `inputTokens` rather than added to it, because the two
+   * are not priced the same - a write is about 1.25x an ordinary input
+   * token and a read about a tenth. This call puts a cache breakpoint after
+   * `NICHE_RULES`, which is the larger half of every request, so folding
+   * these in either direction is a mistake large enough to see in a budget:
+   * adding them overstates the input by ten times what the reads cost,
+   * leaving them out - which is what this did until 0080 - records the
+   * rules as free.
+   */
+  cacheWriteTokens: number;
+  cacheReadTokens: number;
 }
 
 export interface NicheOutcome {
@@ -159,9 +173,11 @@ export async function readNicheFromPage(page: PageToRead): Promise<NicheOutcome>
   try {
     const message = await getClient().messages.create(requestBody(page));
 
-    const usage = {
+    const usage: NicheUsage = {
       inputTokens: message.usage.input_tokens ?? 0,
       outputTokens: message.usage.output_tokens ?? 0,
+      cacheWriteTokens: message.usage.cache_creation_input_tokens ?? 0,
+      cacheReadTokens: message.usage.cache_read_input_tokens ?? 0,
     };
 
     /*

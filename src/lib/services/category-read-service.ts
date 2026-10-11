@@ -34,9 +34,44 @@ export interface CategoryRead {
   model: string;
   inputTokens: number;
   outputTokens: number;
+  cacheWriteTokens: number;
+  cacheReadTokens: number;
   costUsd: number;
   readAt: string;
   appliedAt: string | null;
+}
+
+/**
+ * What the backlog has cost so far, and what the rest of it would.
+ *
+ * Measured on both halves, which is the only reason the second number is
+ * worth printing. `spentUsd` is the sum of what the API reported for calls
+ * already made; `projectedUsd` is that divided by the reads it came from
+ * and multiplied by the listings still to read. No typed per-site estimate
+ * anywhere - the figure moves as the real one does, and on the first run it
+ * is absent rather than guessed.
+ */
+export interface CategorySpend {
+  /** Every row in the ledger, including the refusals that cost nothing. */
+  reads: number;
+  /**
+   * The subset that reached the model.
+   *
+   * A parked domain is a recorded read and a real outcome, and it costs
+   * nothing because no call was made. Averaging over those would say the
+   * backlog is cheaper than it is, by however many dead domains happen to
+   * be at the front of it.
+   */
+  pricedReads: number;
+  inputTokens: number;
+  outputTokens: number;
+  cacheWriteTokens: number;
+  cacheReadTokens: number;
+  spentUsd: number;
+  /** Uncategorised active listings with no read yet. */
+  remaining: number;
+  /** Absent until something has been measured to project from. */
+  projectedUsd: number | null;
 }
 
 /**
@@ -57,6 +92,8 @@ type Row = Record<string, unknown>;
 function mapRead(row: Row): CategoryRead {
   const inputTokens = Number(row.input_tokens ?? 0);
   const outputTokens = Number(row.output_tokens ?? 0);
+  const cacheWriteTokens = Number(row.cache_write_tokens ?? 0);
+  const cacheReadTokens = Number(row.cache_read_tokens ?? 0);
   const model = String(row.model ?? '');
   return {
     websiteId: String(row.website_id),
@@ -71,9 +108,17 @@ function mapRead(row: Row): CategoryRead {
     model,
     inputTokens,
     outputTokens,
+    cacheWriteTokens,
+    cacheReadTokens,
     // Measured, not estimated: the figures the API reported for this call,
-    // priced at the published rate. AGENTS.md's rule for model spend.
-    costUsd: estimateCostUsd(model, { inputTokens, outputTokens }, 'realtime'),
+    // priced at the published rate. AGENTS.md's rule for model spend. All
+    // four buckets, since 0080 - the cached ones are the larger half of
+    // every request here and were being priced at nothing.
+    costUsd: estimateCostUsd(
+      model,
+      { inputTokens, outputTokens, cacheWriteTokens, cacheReadTokens },
+      'realtime',
+    ),
     readAt: String(row.read_at ?? ''),
     appliedAt: (row.applied_at as string | null) ?? null,
   };
@@ -277,6 +322,74 @@ export const categoryReadService = {
     }
 
     return { reads };
+  },
+
+  /**
+   * What has been spent reading homepages, and what the rest would cost.
+   *
+   * Two functions rather than a read of the table: 0080 says why. Summing
+   * four integers across 1,840 rows by fetching all 1,840 of them to draw
+   * one line of text is the shape 0069 through 0074 each existed to undo,
+   * and this line sits on a screen that already pages the listings properly.
+   *
+   * Priced per model and then added, because `NICHE_MODEL` is overridable
+   * and two models have two rates. One total at one rate would be wrong in
+   * a way nothing on the screen could show.
+   */
+  async spend(backlogTotal: number): Promise<CategorySpend | null> {
+    if (!isSupabaseEnabled()) return null;
+    const supabase = getAdminScopedClient();
+
+    const [{ data: rows, error }, { data: alreadyRead }] = await Promise.all([
+      supabase.rpc('category_read_spend'),
+      supabase.rpc('category_reads_on_uncategorised'),
+    ]);
+
+    /*
+      Null, not zeroes.
+
+      A spend line that cannot be counted must say nothing rather than say
+      nothing has been spent - the whole point of the line is to be the
+      figure somebody budgets against, and a confident zero is the one
+      wrong answer that nobody checks.
+    */
+    if (error) return null;
+
+    const totals = {
+      reads: 0,
+      pricedReads: 0,
+      inputTokens: 0,
+      outputTokens: 0,
+      cacheWriteTokens: 0,
+      cacheReadTokens: 0,
+      spentUsd: 0,
+    };
+
+    for (const row of (rows ?? []) as Row[]) {
+      const usage = {
+        inputTokens: Number(row.input_tokens ?? 0),
+        outputTokens: Number(row.output_tokens ?? 0),
+        cacheWriteTokens: Number(row.cache_write_tokens ?? 0),
+        cacheReadTokens: Number(row.cache_read_tokens ?? 0),
+      };
+      totals.reads += Number(row.reads ?? 0);
+      totals.pricedReads += Number(row.priced_reads ?? 0);
+      totals.inputTokens += usage.inputTokens;
+      totals.outputTokens += usage.outputTokens;
+      totals.cacheWriteTokens += usage.cacheWriteTokens;
+      totals.cacheReadTokens += usage.cacheReadTokens;
+      totals.spentUsd += estimateCostUsd(String(row.model ?? ''), usage, 'realtime');
+    }
+
+    const remaining = Math.max(0, backlogTotal - Number(alreadyRead ?? 0));
+
+    return {
+      ...totals,
+      remaining,
+      // Absent rather than zero until there is something to divide by.
+      projectedUsd:
+        totals.pricedReads > 0 ? (totals.spentUsd / totals.pricedReads) * remaining : null,
+    };
   },
 
   /**

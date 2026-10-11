@@ -31,7 +31,30 @@ export interface ExtractionRequest {
 export interface ExtractionUsage {
   inputTokens: number;
   outputTokens: number;
+  /**
+   * `cache_creation_input_tokens`, when the caller records it.
+   *
+   * Optional because most callers here fold their cache reads into
+   * `inputTokens` and never see the write at all. Left out, it prices as
+   * zero, which is exactly what those callers computed before this field
+   * existed - adding it changed no existing figure.
+   */
+  cacheWriteTokens?: number;
+  /** `cache_read_input_tokens`, when the caller records it. */
+  cacheReadTokens?: number;
 }
+
+/**
+ * What a cached token costs, relative to an ordinary input token.
+ *
+ * Writing the prefix into the cache is dearer than sending it plainly;
+ * reading it back is a tenth. Both are a property of the API rather than of
+ * a model, so they are multipliers over `PRICING` rather than a second
+ * table - a per-model rate copied thirteen times is thirteen chances to
+ * update twelve of them.
+ */
+const CACHE_WRITE_MULTIPLIER = 1.25;
+const CACHE_READ_MULTIPLIER = 0.1;
 
 export interface ExtractionOutcome {
   emailId: string;
@@ -66,8 +89,23 @@ export function estimateCostUsd(
   mode: 'realtime' | 'batch',
 ): number {
   const rate = PRICING[model] ?? PRICING['claude-opus-5']!;
-  const full =
-    (usage.inputTokens / 1_000_000) * rate.input + (usage.outputTokens / 1_000_000) * rate.output;
+  /*
+    Three input buckets, priced apart.
+
+    A request behind a cache breakpoint is reported as three numbers, not
+    one, and the two the API keeps separate are separate because they cost
+    different amounts. Adding them into `inputTokens` prices a cache read at
+    ten times what it costs; leaving them out prices it at nothing. The
+    second is what `niche-client.ts` did until 0080, and because the cached
+    block there is the larger half of the request, the recorded spend was
+    roughly half the real one.
+  */
+  const inputMillions =
+    (usage.inputTokens +
+      (usage.cacheWriteTokens ?? 0) * CACHE_WRITE_MULTIPLIER +
+      (usage.cacheReadTokens ?? 0) * CACHE_READ_MULTIPLIER) /
+    1_000_000;
+  const full = inputMillions * rate.input + (usage.outputTokens / 1_000_000) * rate.output;
   return mode === 'batch' ? full / 2 : full;
 }
 

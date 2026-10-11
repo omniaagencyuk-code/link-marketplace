@@ -62,6 +62,11 @@ export function categoryReadRow(args: {
     applied_by: null,
     input_tokens: args.outcome?.usage?.inputTokens ?? 0,
     output_tokens: args.outcome?.usage?.outputTokens ?? 0,
+    // The rules prefix, recorded in the API's own two fields rather than
+    // folded into the one above. 0080 says why that distinction is the
+    // difference between a spend figure and half of one.
+    cache_write_tokens: args.outcome?.usage?.cacheWriteTokens ?? 0,
+    cache_read_tokens: args.outcome?.usage?.cacheReadTokens ?? 0,
   };
 
   /*
@@ -80,6 +85,8 @@ export function categoryReadRow(args: {
       declined_because: COULD_NOT_READ,
       input_tokens: 0,
       output_tokens: 0,
+      cache_write_tokens: 0,
+      cache_read_tokens: 0,
     };
   }
 
