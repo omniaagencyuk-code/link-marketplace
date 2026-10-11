@@ -3,7 +3,6 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import {
   ArrowRight,
-  BadgeCheck,
   Filter,
   Globe2,
   Lock,
@@ -14,10 +13,12 @@ import {
 import { Container } from '@/components/layout/container';
 import { Button } from '@/components/ui/button';
 import { MarketplaceView } from '@/components/marketplace/marketplace-view';
+import { ProjectsPanel } from '@/components/marketplace/projects-panel';
 import { RedactedPreview } from '@/components/marketplace/redacted-preview';
 import { HandwrittenNote } from '@/components/shared/handwritten';
 import { getCurrentUser } from '@/lib/auth/customer-access';
 import { settingsService, websiteService } from '@/lib/services';
+import { gapService } from '@/lib/services/gap-service';
 import { parseFilters, toWebsiteQuery } from '@/lib/marketplace/filters';
 import { sortOptions } from '@/lib/utils/labels';
 import type { SortKey } from '@/lib/types';
@@ -206,50 +207,51 @@ export default async function MarketplacePage({
       websiteService.facets(filters.topic),
     ]);
 
-    return (
-      <>
-        <section className="border-b border-line bg-white">
-          <Container size="wide" className="py-8 lg:py-10">
-            <h1 className="text-2xl font-semibold tracking-tight text-ink sm:text-[2rem]">
-              Find the right websites for your backlinks
-            </h1>
-            <p className="mt-2 max-w-2xl text-[15px] leading-relaxed text-muted">
-              Search, filter and discover{' '}
-              {inventory > 0 ? (
-                <strong className="font-semibold text-ink">
-                  {inventory.toLocaleString('en-GB')}
-                </strong>
-              ) : null}{' '}
-              vetted websites with real traffic and transparent metrics.
-            </p>
-            <ul className="mt-5 flex flex-wrap items-center gap-x-6 gap-y-2">
-              {[
-                { icon: ShieldCheck, label: 'All sites manually vetted' },
-                { icon: Timer, label: 'Fast turnaround' },
-                { icon: BadgeCheck, label: 'Transparent metrics' },
-              ].map((indicator) => (
-                <li
-                  key={indicator.label}
-                  className="flex items-center gap-2 text-[13px] font-medium text-ink-soft"
-                >
-                  <indicator.icon className="h-4 w-4 text-accent-600" aria-hidden="true" />
-                  {indicator.label}
-                </li>
-              ))}
-            </ul>
-          </Container>
-        </section>
+    const projects = user.id ? await gapService.projects(user.id, 5) : [];
 
-        <Container size="wide" className="py-6 lg:py-8">
-          <Suspense fallback={<MarketplaceSkeleton />}>
-            <MarketplaceView
-              result={result}
-              facets={facets}
-              defaultPageSize={settings.defaultPageSize}
+    return (
+      <div className="space-y-5">
+        {/*
+          The header and the projects panel share a row on a wide screen and
+          stack below it. Compact on purpose: this sits inside the customer
+          rail now, and a decorative band pushing the first publisher below
+          the fold is the opposite of what a marketplace is for.
+        */}
+        <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_26rem]">
+          <section className="relative flex flex-col justify-center overflow-hidden rounded-[var(--radius-card)] border border-accent-100 bg-accent-50/60 px-5 py-5 sm:px-6">
+            <div
+              aria-hidden="true"
+              className="pointer-events-none absolute -top-16 -right-10 h-48 w-48 rounded-full bg-accent-100/70 blur-3xl"
             />
-          </Suspense>
-        </Container>
-      </>
+            <div className="relative">
+              <h1 className="text-[26px] leading-tight font-semibold tracking-tight text-ink sm:text-[30px]">
+                Publisher Marketplace
+              </h1>
+              <p className="mt-1.5 max-w-xl text-[14px] leading-relaxed text-ink-soft">
+                Find high-quality websites and order backlinks from trusted publishers.
+              </p>
+              {inventory > 0 ? (
+                <p className="mt-3 text-[12px] text-muted">
+                  <strong className="tabular font-semibold text-ink">
+                    {inventory.toLocaleString('en-GB')}
+                  </strong>{' '}
+                  vetted websites, counted from the live marketplace.
+                </p>
+              ) : null}
+            </div>
+          </section>
+
+          <ProjectsPanel projects={projects} />
+        </div>
+
+        <Suspense fallback={<MarketplaceSkeleton />}>
+          <MarketplaceView
+            result={result}
+            facets={facets}
+            defaultPageSize={settings.defaultPageSize}
+          />
+        </Suspense>
+      </div>
     );
   }
 

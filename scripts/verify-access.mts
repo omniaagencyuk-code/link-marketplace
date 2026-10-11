@@ -107,7 +107,7 @@ console.log('\n--- crawl rules ---');
   yes('the private areas still are', /'\/dashboard\/'/.test(robots) && /'\/admin\/'/.test(robots));
 
   const layouts = [
-    'src/app/(marketing)/marketplace/layout.tsx',
+    'src/app/(app)/marketplace/layout.tsx',
     'src/app/(marketing)/websites/layout.tsx',
   ];
   for (const path of layouts) {

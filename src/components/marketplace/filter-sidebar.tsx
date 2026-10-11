@@ -39,6 +39,7 @@ export function FilterSidebar({
   activeFilterCount,
   availableLanguages,
   countryCounts,
+  layout = 'rail',
 }: {
   filters: MarketplaceFilters;
   onChange: (next: Partial<MarketplaceFilters>) => void;
@@ -53,6 +54,20 @@ export function FilterSidebar({
    * same failure the topic picker had.
    */
   countryCounts: { countries: [CountryCode, number][]; unstated: number };
+  /**
+   * Where these controls are being drawn.
+   *
+   * `rail` is the original: one narrow column, its own "Filters" heading,
+   * its own Clear all. `panel` is the same controls inside the advanced
+   * disclosure of the top filter panel, which already has both - so it
+   * drops the duplicate header and lets the sections flow into columns
+   * instead of stacking down a 240px rail.
+   *
+   * A variant rather than a second component, because the controls are the
+   * thing worth not having twice. Two copies writing one state is how a
+   * filter comes to behave differently depending on which one you opened.
+   */
+  layout?: 'rail' | 'panel';
 }) {
   /*
     The typing is local; only the pause is a search.
@@ -67,17 +82,31 @@ export function FilterSidebar({
 
   const symbol = currencySymbol();
 
+  const panel = layout === 'panel';
+
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between gap-2">
-        <h2 className="text-sm font-semibold text-ink">Filters</h2>
-        {activeFilterCount > 0 ? (
-          <Button variant="ghost" size="sm" onClick={onReset} className="h-7 px-2 text-[13px]">
-            <X className="h-3.5 w-3.5" />
-            Clear all ({activeFilterCount})
-          </Button>
-        ) : null}
-      </div>
+    <div
+      className={
+        panel
+          ? // Columns that break by content rather than a grid: the sections
+            // are wildly different heights - a country list against a single
+            // checkbox - and a grid would leave the short ones trailing
+            // whitespace down to the tallest row.
+            'gap-x-8 [column-fill:_balance] sm:columns-2 xl:columns-3 [&>*]:mb-6 [&>*]:break-inside-avoid'
+          : 'space-y-6'
+      }
+    >
+      {panel ? null : (
+        <div className="flex items-center justify-between gap-2">
+          <h2 className="text-sm font-semibold text-ink">Filters</h2>
+          {activeFilterCount > 0 ? (
+            <Button variant="ghost" size="sm" onClick={onReset} className="h-7 px-2 text-[13px]">
+              <X className="h-3.5 w-3.5" />
+              Clear all ({activeFilterCount})
+            </Button>
+          ) : null}
+        </div>
+      )}
 
       <Section title="Search domains" htmlFor="filter-search">
         <div className="relative">

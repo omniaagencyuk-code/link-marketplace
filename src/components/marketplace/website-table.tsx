@@ -96,12 +96,21 @@ export function WebsiteTable({
         {/* Fixed widths keep every column, including the row actions, inside a
             1440px viewport without the table scrolling sideways. */}
         {/*
-          Thirteen columns in about 1,100px, which is what a 1440 screen
-          leaves once the filter rail is out. Every width below is measured
-          against that rather than chosen: the header labels are short words
-          that cannot wrap, so a column narrower than its own heading clips
-          it, and the sum has to come in under the space or the table
-          scrolls sideways inside the page.
+          Thirteen columns, as ratios rather than as pixels.
+
+          `table-fixed` honours these and shares whatever is left over
+          between them in proportion, so what matters is their relation to
+          each other. They were measured against the ~1,100px a 1440 screen
+          left beside the old filter rail; the rail is now a panel across
+          the top, so the table has the full width and every column is
+          wider than the number below says.
+
+          The constraint they are solving is unchanged: a sortable heading
+          is a short word that cannot wrap plus a 12px sort glyph, and a
+          column narrower than the two together does not wrap the word - it
+          slices the glyph against the cell's `overflow-hidden`, which reads
+          as a stray mark rather than as a control. Keywords was 2px short
+          of its own heading and lost half its chevron.
         */}
         <colgroup>
           <col className="w-[32px]" />
@@ -128,14 +137,17 @@ export function WebsiteTable({
             strong a site is, this says whether its readers are theirs.
           */}
           <col className="w-[98px]" />
-          {/* Keywords */}
-          <col className="w-[72px]" />
-          {/* Referring domains */}
-          <col className="w-[70px]" />
+          {/* Keywords. "KEYWORDS" plus its glyph is the widest thing in
+              this column; the figures under it are narrower. */}
+          <col className="w-[84px]" />
+          {/* Referring domains. "REF. DOMAINS" wraps to two lines, so the
+              width is set by "DOMAINS" and the glyph beside it. */}
+          <col className="w-[78px]" />
           {/* Link type */}
           <col className="w-[78px]" />
-          {/* Turnaround */}
-          <col className="w-[92px]" />
+          {/* Turnaround. The longest heading in the table, and it cannot
+              wrap: "TURNAROUND" is one word. */}
+          <col className="w-[104px]" />
           {/* Price */}
           <col className="w-[90px]" />
           {/* Actions: bookmark, Add and View, which is what sets this width. */}
@@ -179,7 +191,19 @@ export function WebsiteTable({
             return (
               <Fragment key={website.id}>
                 <Tr
-                  className={cn('cursor-pointer', isSelected && 'bg-accent-50/40')}
+                  /*
+                    Green hover and green selection, overridden here rather
+                    than in `Tr`. That primitive is the admin tables' row
+                    too, and this redesign is the customer marketplace's -
+                    a green hover arriving on /admin/websites would be a
+                    change nobody asked for in a screen nobody reviewed.
+                    `cn` is tailwind-merge, so this replaces the primitive's
+                    grey rather than fighting it.
+                  */
+                  className={cn(
+                    'cursor-pointer hover:bg-accent-50/50',
+                    isSelected && 'bg-accent-50 hover:bg-accent-50',
+                  )}
                   onClick={(event) => {
                     if (!isOwnClick(event.target)) onToggleExpand(website.id);
                   }}

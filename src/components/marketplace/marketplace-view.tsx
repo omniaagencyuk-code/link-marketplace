@@ -1,25 +1,31 @@
-'use client';
+"use client";
 
-import { useState } from 'react';
-import { SearchX } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { EmptyState } from '@/components/ui/empty-state';
-import { Sheet } from '@/components/ui/sheet';
-import { CategoryPills } from './category-pills';
-import { MarketplaceSearch } from './marketplace-search';
-import { TopicPicker } from './topic-picker';
-import { FilterSidebar } from './filter-sidebar';
-import { Pagination } from './pagination';
-import { ResultsToolbar } from './results-toolbar';
-import { WebsiteCard } from './website-card';
-import { WebsiteTable } from './website-table';
-import { SelectionBar } from './selection-bar';
+import { useState } from "react";
+import { SearchX } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { EmptyState } from "@/components/ui/empty-state";
+import { Sheet } from "@/components/ui/sheet";
+import { TopicPicker } from "./topic-picker";
+import { FilterSidebar } from "./filter-sidebar";
+import { FilterPanel } from "./filter-panel";
+import { PlacementTabs } from "./placement-tabs";
+import { Pagination } from "./pagination";
+import { ResultsToolbar } from "./results-toolbar";
+import { WebsiteCard } from "./website-card";
+import { WebsiteTable } from "./website-table";
+import { SelectionBar } from "./selection-bar";
 import {
   useMarketplaceFilters,
   type MarketplaceFilters,
-} from '@/lib/hooks/use-marketplace-filters';
-import type { CountryCode, LanguageCode, NicheSlug, PaginatedResult, WebsiteListItem } from '@/lib/types';
-import type { MarketplaceFacets } from '@/lib/types/query';
+} from "@/lib/hooks/use-marketplace-filters";
+import type {
+  CountryCode,
+  LanguageCode,
+  NicheSlug,
+  PaginatedResult,
+  WebsiteListItem,
+} from "@/lib/types";
+import type { MarketplaceFacets } from "@/lib/types/query";
 
 /**
  * The marketplace.
@@ -101,18 +107,11 @@ export function MarketplaceView({
     rows is a second chance to disagree with the first.
   */
   const matchingTopic =
-    countryCounts.countries.reduce((sum, [, count]) => sum + count, 0) + countryCounts.unstated;
+    countryCounts.countries.reduce((sum, [, count]) => sum + count, 0) +
+    countryCounts.unstated;
 
   function patchFilters(patch: Partial<MarketplaceFilters>) {
     setFilters((current) => ({ ...current, ...patch }));
-  }
-
-  function toggleNiche(slug: NicheSlug) {
-    patchFilters({
-      niches: filters.niches.includes(slug)
-        ? filters.niches.filter((niche) => niche !== slug)
-        : [...filters.niches, slug],
-    });
   }
 
   const sidebar = (
@@ -127,65 +126,72 @@ export function MarketplaceView({
   );
 
   return (
-    <div className="space-y-5">
-      <MarketplaceSearch
-        value={filters.search}
-        onChange={(search) => patchFilters({ search })}
-      />
-
+    <div className="space-y-4">
+      {/*
+        The topic sits above the tabs and outside the filter panel, because
+        it is not a filter. It decides what a placement costs as well as
+        which publishers appear, so putting it in a row of things with an x
+        beside them would invite somebody to clear it like one.
+      */}
       <TopicPicker
         topic={filters.topic}
         matching={matchingTopic}
         onChange={(topic) => patchFilters({ topic })}
       />
 
-      <CategoryPills
-        selected={filters.niches}
-        onToggle={toggleNiche}
-        onClear={() => patchFilters({ niches: [] })}
-        counts={nicheCounts}
+      <PlacementTabs
+        selected={filters.linkTypes}
+        onChange={(linkTypes) => patchFilters({ linkTypes })}
       />
 
-      <div className="grid gap-5 lg:grid-cols-[14.5rem_minmax(0,1fr)] xl:grid-cols-[15rem_minmax(0,1fr)]">
-        <aside className="hidden lg:block" aria-label="Marketplace filters">
-          <div className="sticky top-20 max-h-[calc(100dvh-6rem)] overflow-y-auto rounded-[var(--radius-card)] border border-line bg-white p-5 shadow-[var(--shadow-card)]">
-            {sidebar}
-          </div>
-        </aside>
+      {/* The panel decides its own breakpoint: the controls are desktop-only
+          and open in a sheet on a phone, but the chips stay at every width
+          because they are the only thing that says what is being excluded. */}
+      <FilterPanel
+        filters={filters}
+        onChange={patchFilters}
+        onReset={reset}
+        activeFilterCount={activeFilterCount}
+        availableLanguages={availableLanguages}
+        countryCounts={countryCounts}
+        nicheCounts={nicheCounts}
+      />
 
-        <div className="min-w-0 space-y-4">
-          <ResultsToolbar
-            total={result.total}
-            sort={sort}
-            onSortChange={setSort}
-            view={view}
-            onViewChange={setView}
-            onOpenFilters={() => setFiltersOpen(true)}
-            activeFilterCount={activeFilterCount}
+      <div className="min-w-0 space-y-4">
+        <ResultsToolbar
+          total={result.total}
+          sort={sort}
+          onSortChange={setSort}
+          view={view}
+          onViewChange={setView}
+          onOpenFilters={() => setFiltersOpen(true)}
+          activeFilterCount={activeFilterCount}
+        />
+
+        {selected.length > 0 ? (
+          <SelectionBar
+            count={selected.length}
+            onClear={() => setSelected([])}
+            websites={result.items.filter((item) => selected.includes(item.id))}
+            topic={filters.topic}
           />
+        ) : null}
 
-          {selected.length > 0 ? (
-            <SelectionBar
-              count={selected.length}
-              onClear={() => setSelected([])}
-              websites={result.items.filter((item) => selected.includes(item.id))}
-              topic={filters.topic}
-            />
-          ) : null}
+        {/*
+          Dimmed, not replaced, while the next page is fetched.
 
-          {/*
-            Dimmed, not replaced, while the next page is fetched.
-
-            Swapping in a skeleton on every checkbox would flash the whole list
-            for what is usually under a tenth of a second. Keeping the current
-            results on screen and fading them says "working" without taking
-            away what the customer was reading - and `aria-busy` says the same
-            thing to a screen reader, which cannot see the fade.
-          */}
-          <div
-            aria-busy={pending}
-            className={pending ? 'opacity-60 transition-opacity' : 'transition-opacity'}
-          >
+          Swapping in a skeleton on every checkbox would flash the whole list
+          for what is usually under a tenth of a second. Keeping the current
+          results on screen and fading them says "working" without taking
+          away what the customer was reading - and `aria-busy` says the same
+          thing to a screen reader, which cannot see the fade.
+        */}
+        <div
+          aria-busy={pending}
+          className={
+            pending ? "opacity-60 transition-opacity" : "transition-opacity"
+          }
+        >
           {result.items.length === 0 ? (
             <EmptyState
               icon={SearchX}
@@ -199,7 +205,7 @@ export function MarketplaceView({
             />
           ) : (
             <>
-              {view === 'table' ? (
+              {view === "table" ? (
                 <WebsiteTable
                   websites={result.items}
                   selected={selected}
@@ -217,7 +223,9 @@ export function MarketplaceView({
                   onToggleSelectAll={() =>
                     setSelected((current) => {
                       const ids = result.items.map((item) => item.id);
-                      const allSelected = ids.every((id) => current.includes(id));
+                      const allSelected = ids.every((id) =>
+                        current.includes(id),
+                      );
                       return allSelected
                         ? current.filter((id) => !ids.includes(id))
                         : Array.from(new Set([...current, ...ids]));
@@ -228,9 +236,9 @@ export function MarketplaceView({
 
               <div
                 className={
-                  view === 'grid'
-                    ? 'grid gap-4 sm:grid-cols-2 xl:grid-cols-3'
-                    : 'grid gap-3 lg:hidden'
+                  view === "grid"
+                    ? "grid gap-4 sm:grid-cols-2 xl:grid-cols-3"
+                    : "grid gap-3 lg:hidden"
                 }
               >
                 {result.items.map((website) => (
@@ -250,13 +258,12 @@ export function MarketplaceView({
                 total={result.total}
                 onPageChange={(next) => {
                   setPage(next);
-                  window.scrollTo({ top: 0, behavior: 'smooth' });
+                  window.scrollTo({ top: 0, behavior: "smooth" });
                 }}
                 onPageSizeChange={setPageSize}
               />
             </>
           )}
-          </div>
         </div>
       </div>
 
@@ -264,14 +271,18 @@ export function MarketplaceView({
         open={filtersOpen}
         onClose={() => setFiltersOpen(false)}
         title="Filters"
-        description={`${result.total.toLocaleString('en-GB')} websites match`}
+        description={`${result.total.toLocaleString("en-GB")} websites match`}
         footer={
           <div className="flex gap-2">
             <Button variant="outline" className="flex-1" onClick={reset}>
               Clear all
             </Button>
-            <Button variant="accent" className="flex-1" onClick={() => setFiltersOpen(false)}>
-              Show {result.total.toLocaleString('en-GB')} results
+            <Button
+              variant="accent"
+              className="flex-1"
+              onClick={() => setFiltersOpen(false)}
+            >
+              Show {result.total.toLocaleString("en-GB")} results
             </Button>
           </div>
         }
