@@ -1,5 +1,6 @@
 import { PageTitle } from '@/components/dashboard/page-title';
 import { CategoriseList } from '@/components/admin/categorise-list';
+import { CategoriseSpend } from '@/components/admin/categorise-spend';
 import { websiteService } from '@/lib/services';
 import { categoryReadService } from '@/lib/services/category-read-service';
 
@@ -49,7 +50,15 @@ export default async function AdminCategorisePage({
     page,
     pageSize,
   );
-  const reads = await categoryReadService.readsFor(items.map((item) => item.id));
+  /*
+    Both after the page, because the spend line needs the backlog total to
+    say what the rest would cost - and both at once, because neither needs
+    the other. Two serial round trips to London is 70ms of nothing.
+  */
+  const [reads, spend] = await Promise.all([
+    categoryReadService.readsFor(items.map((item) => item.id)),
+    categoryReadService.spend(total),
+  ]);
 
   return (
     <>
@@ -57,6 +66,7 @@ export default async function AdminCategorisePage({
         title="Categorise"
         description="Active listings with no category. Read the homepage to get a proposal, then accept it or leave it - nothing is applied until you do."
       />
+      <CategoriseSpend spend={spend} />
       <CategoriseList
         websites={items.map((item) => ({
           id: item.id,

@@ -11,6 +11,7 @@ import { NICHE_CONFIDENCE_FLOOR, NICHE_PROMPT_VERSION, NICHE_RULES } from '../sr
 import { readNiche, wireNicheSchema, type WireNiche } from '../src/lib/sourcing/niche-schema';
 import { requestBody, type NicheOutcome } from '../src/lib/sourcing/niche-client';
 import { CALL_FAILED, COULD_NOT_READ, categoryReadRow } from '../src/lib/sourcing/niche-row';
+import { estimateCostUsd } from '../src/lib/sourcing/client';
 
 const read = (file: string) =>
   readFileSync(new URL(`../${file}`, import.meta.url), 'utf8');
@@ -333,6 +334,100 @@ console.log('\n--- the wire shape ---');
 
   const missing = wireNicheSchema.safeParse({ niche: 'sports', confidence: 90 });
   is('a missing field is refused rather than defaulted', missing.success, false);
+}
+
+console.log('\n--- what a read costs ---');
+{
+  /*
+    The bug 0080 exists to fix, as an assertion.
+
+    This call puts a cache breakpoint after the rules, so the API reports
+    the rules in `cache_creation_input_tokens` on the first call and in
+    `cache_read_input_tokens` on the rest - and `input_tokens` counts
+    neither. Priced as it was, a request whose cached half is larger than
+    its uncached half costs roughly half what it says.
+  */
+  const uncachedOnly = estimateCostUsd(
+    'claude-haiku-5-5',
+    { inputTokens: 1_000_000, outputTokens: 0 },
+    'realtime',
+  );
+  is('a million input tokens of Haiku is the published rate', Number(uncachedOnly.toFixed(6)), 0.1);
+
+  const write = estimateCostUsd(
+    'claude-haiku-5-5',
+    { inputTokens: 0, outputTokens: 0, cacheWriteTokens: 1_000_000 },
+    'realtime',
+  );
+  is('a cache write is 1.25x an input token', Number(write.toFixed(6)), 0.125);
+
+  const cacheRead = estimateCostUsd(
+    'claude-haiku-5-5',
+    { inputTokens: 0, outputTokens: 0, cacheReadTokens: 1_000_000 },
+    'realtime',
+  );
+  is('a cache read is a tenth of one', Number(cacheRead.toFixed(6)), 0.01);
+
+  /*
+    The two mistakes either side of it, each stated as the number it would
+    produce. A cached million priced as ordinary input is ten times its
+    cost; priced at nothing it is free. Neither is what the API charges.
+  */
+  yes('so folding a cache read into the input would overstate it tenfold',
+    Math.abs(uncachedOnly - cacheRead * 10) < 1e-9);
+  yes('and leaving it out would price it at nothing', cacheRead > 0);
+
+  /*
+    The existing callers pass no cache fields and must compute exactly what
+    they computed before the fields existed. A costing change that silently
+    moved the Sales Centre's budget guard would be a worse bug than the one
+    being fixed.
+  */
+  is('a usage with no cache fields is unchanged',
+    estimateCostUsd('claude-opus-5', { inputTokens: 1_000_000, outputTokens: 1_000_000 }, 'realtime'),
+    30);
+
+  is('and batch is still half of whatever that is',
+    Number(
+      estimateCostUsd(
+        'claude-haiku-5-5',
+        { inputTokens: 1_000_000, outputTokens: 0, cacheReadTokens: 1_000_000 },
+        'batch',
+      ).toFixed(6),
+    ),
+    0.055);
+}
+
+console.log('\n--- the row records what the call reported ---');
+{
+  const page = { url: 'https://example.com/', httpStatus: 200, text: PAGE };
+  const outcome: NicheOutcome = {
+    reading: readNiche(answer(), PAGE),
+    usage: { inputTokens: 1_200, outputTokens: 90, cacheWriteTokens: 0, cacheReadTokens: 1_150 },
+    model: 'claude-haiku-5-5',
+  };
+  const row = categoryReadRow({ websiteId: 'w1', page, outcome, model: 'claude-haiku-5-5', now: 'now' });
+
+  is('the input tokens are stored', row.input_tokens, 1_200);
+  is('the output tokens are stored', row.output_tokens, 90);
+  is('the cache read is stored in its own column', row.cache_read_tokens, 1_150);
+  is('and so is the cache write', row.cache_write_tokens, 0);
+
+  /*
+    A page that would not load made no call, so every figure is zero - and
+    all four have to be, or the spend line counts tokens nobody spent.
+  */
+  const dead = categoryReadRow({
+    websiteId: 'w2',
+    page: { url: 'https://gone.example/', text: '', error: 'fetch failed' },
+    model: 'claude-haiku-5-5',
+    now: 'now',
+  });
+  is('an unfetchable page is a read', dead.declined_because, COULD_NOT_READ);
+  is('and costs no input', dead.input_tokens, 0);
+  is('no output', dead.output_tokens, 0);
+  is('no cache write', dead.cache_write_tokens, 0);
+  is('and no cache read', dead.cache_read_tokens, 0);
 }
 
 console.log(failed === 0 ? '\n  all passed\n' : `\n  ${failed} FAILED\n`);
