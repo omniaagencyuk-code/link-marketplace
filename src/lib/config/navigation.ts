@@ -24,6 +24,7 @@ import {
   UserCircle,
   Users,
   Tags,
+  ClipboardList,
 } from 'lucide-react';
 
 export interface NavItem {
@@ -108,6 +109,9 @@ export const mainNav: NavGroup[] = [
 export const dashboardNav: NavItem[] = [
   { label: 'Dashboard', href: '/dashboard', icon: LayoutDashboard, exact: true },
   { label: 'Marketplace', href: '/marketplace', icon: Globe },
+  /* Under Marketplace, because finding a publisher and planning a link
+     against it are the same errand an hour apart. */
+  { label: 'Link Building Planner', href: '/dashboard/planner', icon: ClipboardList },
   { label: 'Content', href: '/dashboard/content', icon: PenLine },
   /*
     The basket and the order history are the same page: the draft sits at the
