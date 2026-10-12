@@ -42,6 +42,14 @@ export function domainKey(value: string): string {
       .split(':')[0]!;
   }
 
+  /*
+    A trailing dot is the same host. `example.com.` is the fully qualified
+    spelling and the URL parser keeps it, so without this a paste from a
+    DNS tool is a second row for a publisher already in the plan - and one
+    the marketplace lookup would never match.
+  */
+  host = host.replace(/\.$/, '');
+
   // A single leading `www.`, and only that. `www.www.example.com` is a
   // hostname somebody typed wrong, not two prefixes to peel.
   return host.replace(/^www\./, '');

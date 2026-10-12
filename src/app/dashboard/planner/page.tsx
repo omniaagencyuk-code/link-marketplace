@@ -6,6 +6,7 @@ import { plannerService } from '@/lib/services/planner-service';
 import { plannerMetrics } from '@/lib/services/planner-metrics';
 import { monthStart } from '@/lib/planner/domain-key';
 import { summariseMonth } from '@/lib/planner/summary';
+import { readFilter, readSort } from '@/lib/planner/filter';
 
 export const metadata: Metadata = { title: 'Link Building Planner' };
 
@@ -39,7 +40,17 @@ export default async function PlannerPage({
   const asked = one('project');
   const project = projects.find((candidate) => candidate.id === asked) ?? projects[0] ?? null;
 
-  const month = monthStart(one('month') ?? new Date().toISOString());
+  /*
+    `month=all` is the whole project rather than no month. It is what makes
+    a planned-date range mean anything - a range inside one month is a
+    range of at most thirty-one days - and it is what the add box and the
+    month figures are hidden for, because neither has a month to write to.
+  */
+  const asked_month = one('month') ?? new Date().toISOString();
+  const month = asked_month === 'all' ? null : monthStart(asked_month);
+
+  const filter = readFilter(one);
+  const sort = readSort(one);
 
   /*
     Statuses are fetched even with no project, because the empty state is
@@ -50,9 +61,18 @@ export default async function PlannerPage({
 
   const [sources, monthSettings, page, summaryRows] = await Promise.all([
     plannerService.sources(user.id),
-    project ? plannerService.monthSettings(user.id, project, month) : Promise.resolve(null),
+    project && month
+      ? plannerService.monthSettings(user.id, project, month)
+      : Promise.resolve(null),
     project
-      ? plannerService.links(user.id, project.id, month, 1, 50)
+      ? plannerService.links(user.id, {
+          projectId: project.id,
+          month,
+          page: 1,
+          pageSize: 50,
+          filter,
+          sort,
+        })
       : Promise.resolve({ items: [], total: 0 }),
     /* The whole month, but only the seven columns the cards add up. The
        table is paged at fifty; the summary counts all of them, and reading
@@ -74,14 +94,23 @@ export default async function PlannerPage({
     await plannerMetrics.listingSlugs(page.items.map((link) => link.domainKey)),
   );
 
-  const summary =
-    project && monthSettings
-      ? summariseMonth(summaryRows, statuses, {
-          target: monthSettings.linkTarget,
-          budgetMinor: monthSettings.budgetMinor,
-          currency: project.currency,
-        })
-      : null;
+  /*
+    The cards count the scope, not the filter: they describe the plan, and a
+    filter is how somebody finds a row in it. The table's own count says
+    how many the filter matched, so the two numbers never pretend to be the
+    same one.
+
+    Across the whole project there is no single target or budget to measure
+    against, so both are null - and `summariseMonth` reports no progress
+    rather than progress against nothing.
+  */
+  const summary = project
+    ? summariseMonth(summaryRows, statuses, {
+        target: monthSettings?.linkTarget ?? null,
+        budgetMinor: monthSettings?.budgetMinor ?? null,
+        currency: project.currency,
+      })
+    : null;
 
   return (
     <>
@@ -94,6 +123,8 @@ export default async function PlannerPage({
         project={project}
         month={month}
         monthSettings={monthSettings}
+        filter={filter}
+        sort={sort}
         links={page.items}
         total={page.total}
         statuses={statuses}

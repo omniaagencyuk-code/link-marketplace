@@ -2,17 +2,36 @@
 
 import { useState, useTransition } from 'react';
 import Link from 'next/link';
-import { ExternalLink, Search, Settings2, ShoppingBag, StickyNote, Trash2 } from 'lucide-react';
+import {
+  ArrowDown,
+  ArrowUp,
+  Download,
+  ExternalLink,
+  Search,
+  Settings2,
+  ShoppingBag,
+  StickyNote,
+  Trash2,
+} from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Select } from '@/components/ui/select';
 import { Table, TableWrap, Td, Th, Tr } from '@/components/ui/table';
 import { TextCell, SelectCell, DateCell, PriceCell } from './cell';
 import { ManageStatuses } from './manage-statuses';
+import { LinkCards } from './link-cards';
 import {
   updateLinkAction,
   deleteLinksAction,
   findMetricsAction,
+  bulkUpdateAction,
+  exportLinksAction,
 } from '@/app/dashboard/planner/actions';
+import { linksToCsv } from '@/lib/planner/csv';
+import { downloadCsv } from '@/lib/import/csv';
+import { monthLabel, monthStart } from '@/lib/planner/domain-key';
+import type { PlannerProject } from '@/lib/types/planner';
+import type { PlannerSort, PlannerSortKey } from '@/lib/planner/filter';
 import { cn } from '@/lib/utils/cn';
 import {
   ANCHOR_TYPES,
@@ -72,6 +91,10 @@ export function LinkTable({
   sources,
   currency,
   listings,
+  projects,
+  month,
+  sort,
+  onSort,
   onChanged,
 }: {
   links: PlannerLink[];
@@ -80,6 +103,12 @@ export function LinkTable({
   currency: string;
   /** Domain key to marketplace slug, for the rows we happen to sell. */
   listings: Record<string, string>;
+  /** Every project of theirs, so a selection can be moved to one. */
+  projects: PlannerProject[];
+  /** The month in view, or null across the whole project. */
+  month: string | null;
+  sort: PlannerSort;
+  onSort: (key: PlannerSortKey) => void;
   onChanged: () => void;
 }) {
   const [selected, setSelected] = useState<string[]>([]);
@@ -109,6 +138,21 @@ export function LinkTable({
   const save = (id: string) => async (patch: PlannerLinkPatch): Promise<string | null> => {
     const result = await updateLinkAction(id, patch);
     return 'error' in result && result.error ? result.error : null;
+  };
+
+  const bulk = (patch: Parameters<typeof bulkUpdateAction>[1]) => {
+    startTransition(async () => {
+      const outcome = await bulkUpdateAction(selected, patch);
+      if ('error' in outcome && outcome.error) {
+        setLookupNote(outcome.error);
+        return;
+      }
+      setLookupNote(null);
+      /* The selection is kept. Somebody setting a status on twelve rows
+         very often sets a source on the same twelve next, and clearing it
+         would make them pick all twelve again. */
+      onChanged();
+    });
   };
 
   const allSelected = links.length > 0 && links.every((link) => selected.includes(link.id));
@@ -149,6 +193,73 @@ export function LinkTable({
             <Search className="h-3.5 w-3.5" aria-hidden="true" />
             Find metrics
           </Button>
+          {/*
+            Five things a bulk change can mean, and no more. Price and
+            anchor are deliberately absent: a price is what one publisher
+            charged and an anchor is what one page says, so writing either
+            over forty rows destroys the record this tool exists to keep.
+            `bulkUpdateAction` is the allowlist; this is the half of it
+            somebody can see.
+          */}
+          <BulkSelect
+            label="Set status"
+            options={statuses
+              .filter((status) => !status.archivedAt)
+              .map((status) => ({ value: status.id, label: status.name }))}
+            disabled={pending}
+            onPick={(statusId) => bulk({ statusId })}
+          />
+          <BulkSelect
+            label="Set source"
+            options={[...new Set([...DEFAULT_SOURCES, ...sources])].map((name) => ({
+              value: name,
+              label: name,
+            }))}
+            disabled={pending}
+            onPick={(source) => bulk({ source })}
+          />
+          <BulkSelect
+            label="Set type"
+            options={DEFAULT_LINK_TYPES.map((type) => ({ value: type, label: type }))}
+            disabled={pending}
+            onPick={(linkType) => bulk({ linkType })}
+          />
+          <BulkSelect
+            label="Move to month"
+            options={monthChoices(month).map((value) => ({ value, label: monthLabel(value) }))}
+            disabled={pending}
+            onPick={(planMonth) => bulk({ planMonth })}
+          />
+          {projects.length > 1 ? (
+            <BulkSelect
+              label="Move to project"
+              options={projects.map((project) => ({
+                value: project.id,
+                label: `${project.name} · ${project.domain}`,
+              }))}
+              disabled={pending}
+              onPick={(projectId) => bulk({ projectId })}
+            />
+          ) : null}
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={pending}
+            onClick={() => {
+              /* The selection, read back from the server rather than taken
+                 from the rows on screen - the same reason the month export
+                 is a server read. A file built from what the browser
+                 happens to be holding is a file that silently stops at the
+                 page boundary. */
+              startTransition(async () => {
+                const { links: chosen, statuses: every } = await exportLinksAction(selected);
+                downloadCsv(`press-parrot-planner-selection.csv`, linksToCsv(chosen, every));
+              });
+            }}
+          >
+            <Download className="h-3.5 w-3.5" aria-hidden="true" />
+            Export selected
+          </Button>
           <Button
             variant="danger"
             size="sm"
@@ -180,8 +291,33 @@ export function LinkTable({
         </p>
       ) : null}
 
-      <TableWrap>
-        <Table className="min-w-[1700px]">
+      {/* Cards below `lg`, the table at `lg` and up. Both render and CSS
+          picks: a width measured in JavaScript is not known while the
+          server renders, so the alternative is a flash of the wrong one.
+          A `display: none` subtree is not focusable and not in the
+          accessibility tree, so the duplicate inputs are not a second tab
+          order. */}
+      <div className="lg:hidden">
+        <LinkCards
+          links={links}
+          statuses={statuses}
+          sources={sourceOptions}
+          currency={currency}
+          listings={listings}
+          selected={selected}
+          expanded={notesFor}
+          onToggleSelect={(id) =>
+            setSelected((current) =>
+              current.includes(id) ? current.filter((other) => other !== id) : [...current, id],
+            )
+          }
+          onToggleExpand={(id) => setNotesFor(notesFor === id ? null : id)}
+          save={save}
+        />
+      </div>
+
+      <TableWrap className="hidden lg:block">
+        <Table className="min-w-[1750px]">
           <caption className="sr-only">
             Your planned links, with every field editable in place
           </caption>
@@ -197,10 +333,19 @@ export function LinkTable({
                   aria-label="Select every link on this page"
                 />
               </Th>
-              <Th className="w-52">Domain</Th>
+              {/* Wider than the rest of the text columns: the badge shares
+                  the cell, and a truncated domain is the one value in the
+                  row nobody can work out from the others. */}
+              <Th className="w-64">
+                <SortButton label="Domain" sortKey="domain" sort={sort} onSort={onSort} />
+              </Th>
               <Th className="w-36">Source</Th>
-              <Th className="w-16">DR</Th>
-              <Th className="w-24">Traffic</Th>
+              <Th className="w-16">
+                <SortButton label="DR" sortKey="domainRating" sort={sort} onSort={onSort} />
+              </Th>
+              <Th className="w-24">
+                <SortButton label="Traffic" sortKey="organicTraffic" sort={sort} onSort={onSort} />
+              </Th>
               <Th className="w-24">Keywords</Th>
               <Th className="w-24">Ref. domains</Th>
               <Th className="w-36">Link type</Th>
@@ -209,7 +354,7 @@ export function LinkTable({
               <Th className="w-32">Anchor type</Th>
               <Th className="w-40">
                 <span className="flex items-center gap-1">
-                  Status
+                  <SortButton label="Status" sortKey="status" sort={sort} onSort={onSort} />
                   <button
                     type="button"
                     onClick={() => setManagingStatuses(true)}
@@ -221,10 +366,22 @@ export function LinkTable({
                   </button>
                 </span>
               </Th>
-              <Th className="w-36">Planned</Th>
-              <Th className="w-36">Live date</Th>
+              <Th className="w-36">
+                <SortButton label="Planned" sortKey="plannedDate" sort={sort} onSort={onSort} />
+              </Th>
+              <Th className="w-36">
+                <SortButton label="Live date" sortKey="liveDate" sort={sort} onSort={onSort} />
+              </Th>
               <Th className="w-48">Live link</Th>
-              <Th className="w-28 text-right">Price</Th>
+              <Th className="w-28 text-right">
+                <SortButton
+                  label="Price"
+                  sortKey="priceMinor"
+                  sort={sort}
+                  onSort={onSort}
+                  className="justify-end"
+                />
+              </Th>
               <Th className="w-16 text-right">
                 <span className="sr-only">Notes</span>
               </Th>
@@ -541,5 +698,114 @@ export function LinkTable({
         }}
       />
     </>
+  );
+}
+
+/**
+ * Twelve months to move a selection into: six back and five forward.
+ *
+ * A bounded list rather than a date picker, because "move these to a
+ * month" is always a month near this one - and a free date field invites
+ * somebody to type a day, which a plan month cannot be (0081 refuses it).
+ */
+function monthChoices(month: string | null): string[] {
+  const from = monthStart(month ?? new Date().toISOString());
+  const year = Number(from.slice(0, 4));
+  const index = Number(from.slice(5, 7)) - 1;
+  return Array.from({ length: 12 }, (_, step) => {
+    const date = new Date(Date.UTC(year, index - 6 + step, 1));
+    return date.toISOString().slice(0, 10);
+  });
+}
+
+/**
+ * A bulk change, as a dropdown that does not keep its answer.
+ *
+ * It resets to its label after each pick. A select left showing "Live" is
+ * a select that looks like a filter - and the next person to look at the
+ * bar would read it as a statement about the selection rather than as the
+ * last thing somebody did to it.
+ */
+function BulkSelect({
+  label,
+  options,
+  disabled,
+  onPick,
+}: {
+  label: string;
+  options: { value: string; label: string }[];
+  disabled: boolean;
+  onPick: (value: string) => void;
+}) {
+  return (
+    <label>
+      <span className="sr-only">{label}</span>
+      <Select
+        value=""
+        disabled={disabled}
+        aria-label={label}
+        className="h-8 w-auto text-[12px]"
+        onChange={(event) => {
+          if (!event.target.value) return;
+          onPick(event.target.value);
+          event.target.value = '';
+        }}
+      >
+        <option value="">{label}</option>
+        {options.map((option) => (
+          <option key={option.value} value={option.value}>
+            {option.label}
+          </option>
+        ))}
+      </Select>
+    </label>
+  );
+}
+
+/**
+ * A column heading that sorts.
+ *
+ * The arrow is drawn only on the column actually sorting, so the header
+ * row says what the order is rather than offering eight arrows and
+ * leaving somebody to guess which one is on. `aria-sort` on the cell would
+ * be better still, but `Th` is shared with four other tables and widening
+ * it for this is a change to screens this stage is not touching.
+ */
+function SortButton({
+  label,
+  sortKey,
+  sort,
+  onSort,
+  className,
+}: {
+  label: string;
+  sortKey: PlannerSortKey;
+  sort: PlannerSort;
+  onSort: (key: PlannerSortKey) => void;
+  className?: string;
+}) {
+  const on = sort.key === sortKey;
+  const Arrow = sort.ascending ? ArrowUp : ArrowDown;
+  return (
+    <button
+      type="button"
+      onClick={() => onSort(sortKey)}
+      className={cn(
+        'inline-flex items-center gap-1 hover:text-ink',
+        on && 'text-ink',
+        className,
+      )}
+      title={
+        on
+          ? `Sorted by ${label.toLowerCase()}, ${sort.ascending ? 'ascending' : 'descending'}. Click to reverse.`
+          : `Sort by ${label.toLowerCase()}`
+      }
+    >
+      {label}
+      {on ? <Arrow className="h-3 w-3" aria-hidden="true" /> : null}
+      <span className="sr-only">
+        {on ? `, sorted ${sort.ascending ? 'ascending' : 'descending'}` : ', sortable'}
+      </span>
+    </button>
   );
 }

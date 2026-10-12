@@ -231,6 +231,15 @@ dashboard will not take effect while `vercel.json` names one.
   counts as a gap, and which competitors are worth suggesting. Pure arithmetic
   against the measured Ahrefs pricing model; no API key, no database, no
   network.
+- `npm run verify:planner` — the Link Building Planner's arithmetic and rules:
+  what a month totals, which rows a filter keeps, what order they come back in,
+  and what a spreadsheet becomes on the way in and out. No API key, no
+  database, no network - and no lookup of any kind, which is the feature
+  rather than an economy. What it cannot prove is the translation in
+  `planner-service`: the filter and the comparator are applied directly here
+  and turned into PostgREST there, and only the first of those runs from a
+  clone. Every predicate in `src/lib/planner/filter.ts` is the simplest shape
+  that translates one-to-one for that reason.
 - `npm run verify:search` — that the marketplace's database-side search returns
   exactly what the browser-side filter it replaces returned. The same fixtures
   are inserted into a real Postgres and built as `WebsiteListItem`s, and every

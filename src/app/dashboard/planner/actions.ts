@@ -8,6 +8,7 @@ import { plannerMetrics } from '@/lib/services/planner-metrics';
 import { domainKey, looksLikeDomain, monthStart } from '@/lib/planner/domain-key';
 import { STATUS_CATEGORIES, type PlannerLinkPatch, type StatusCategory } from '@/lib/types/planner';
 import type { ImportRow } from '@/lib/planner/csv';
+import type { PlannerFilter } from '@/lib/planner/filter';
 
 /**
  * Everything the planner writes.
@@ -414,18 +415,94 @@ export async function importLinksAction(
   }
 }
 
-/** Every link in the month, for an export. Paging would truncate the file. */
-export async function exportMonthAction(projectId: string, month: string) {
+/**
+ * Every link in the month, for an export. Paging would truncate the file.
+ *
+ * The filter is passed through, so Export gives what the table is showing
+ * rather than what it would show with the filter cleared. A file that
+ * quietly contains more than the screen is the same failure as one that
+ * quietly contains less.
+ */
+export async function exportMonthAction(
+  projectId: string,
+  month: string | null,
+  filter?: PlannerFilter,
+) {
   const user = await requireCustomerSession(PATH);
-  const { items } = await plannerService.links(
-    user.id,
-    String(projectId),
-    monthStart(month),
-    1,
-    5000,
-  );
+  const { items } = await plannerService.links(user.id, {
+    projectId: String(projectId),
+    month: month === null ? null : monthStart(month),
+    page: 1,
+    pageSize: 5000,
+    filter,
+  });
   const statuses = await plannerService.statuses(user.id);
   return { links: items, statuses };
+}
+
+/** A selection, for Export selected. */
+export async function exportLinksAction(linkIds: string[]) {
+  const user = await requireCustomerSession(PATH);
+  const ids = (Array.isArray(linkIds) ? linkIds : []).map(String).slice(0, 5000);
+  const links = await plannerService.linksByIds(user.id, ids);
+  const statuses = await plannerService.statuses(user.id);
+  return { links, statuses };
+}
+
+/**
+ * One change, to a selection of rows.
+ *
+ * ## Five fields, and the type is the allowlist
+ *
+ * Status, source, link type, month, project. Price is deliberately absent:
+ * a price is what one publisher charged, and writing one figure over forty
+ * of them destroys the record this tool exists to keep. So is the anchor,
+ * for the same reason in words.
+ *
+ * ## A move between projects is checked, not merely refused
+ *
+ * The trigger in 0081 would refuse a project that is not the caller's, but
+ * a refused batch says nothing about which row was wrong. This checks the
+ * destination is theirs first and says so plainly.
+ */
+export async function bulkUpdateAction(
+  linkIds: string[],
+  patch: {
+    statusId?: string;
+    source?: string;
+    linkType?: string;
+    planMonth?: string;
+    projectId?: string;
+  },
+) {
+  const user = await requireCustomerSession(PATH);
+  const ids = (Array.isArray(linkIds) ? linkIds : []).map(String).slice(0, 500);
+  if (ids.length === 0) return { changed: 0 };
+
+  const clean: typeof patch = {};
+  if (patch.statusId !== undefined) {
+    const statuses = await plannerService.statuses(user.id);
+    const wanted = statuses.find((status) => status.id === String(patch.statusId));
+    if (!wanted) return { changed: 0, error: 'That status is not one of yours.' };
+    clean.statusId = wanted.id;
+  }
+  if (patch.source !== undefined) clean.source = text(patch.source, 60);
+  if (patch.linkType !== undefined) clean.linkType = text(patch.linkType, 40);
+  if (patch.planMonth !== undefined) clean.planMonth = monthStart(patch.planMonth);
+  if (patch.projectId !== undefined) {
+    const projects = await plannerService.projects(user.id);
+    const wanted = projects.find((project) => project.id === String(patch.projectId));
+    if (!wanted) return { changed: 0, error: 'That project is not one of yours.' };
+    clean.projectId = wanted.id;
+  }
+
+  try {
+    const changed = await plannerService.updateLinks(user.id, ids, clean);
+    revalidatePath(PATH);
+    return { changed };
+  } catch (error) {
+    return { changed: 0, error: error instanceof Error ? error.message : 'That did not save.' };
+  }
 }
 
 // ------------------------------------------------------------- statuses

@@ -1,6 +1,13 @@
 import { randomUUID } from 'node:crypto';
 import { monthStart } from '@/lib/planner/domain-key';
 import { STATUS_CATEGORIES } from '@/lib/types/planner';
+import {
+  compareLinks,
+  matchesFilter,
+  statusOrdering,
+  type PlannerFilter,
+  type PlannerSort,
+} from '@/lib/planner/filter';
 import type {
   MonthSettings,
   PlannerLink,
@@ -237,25 +244,43 @@ export const plannerMock = {
     return true;
   },
 
+  /**
+   * The same filter and the same order as the database, from the same rules.
+   *
+   * `matchesFilter` and `compareLinks` are the ones `planner-service`
+   * translates into PostgREST, applied here directly. Writing the predicate
+   * twice is how the two paths come to disagree, and a reviewer running
+   * from a clone only ever sees this one.
+   */
   links(
     userId: string,
-    projectId: string,
-    month: string,
-    page: number,
-    pageSize: number,
+    options: {
+      projectId: string;
+      month: string | null;
+      page: number;
+      pageSize: number;
+      filter: PlannerFilter;
+      sort: PlannerSort;
+    },
   ): { items: PlannerLink[]; total: number } {
-    const all = [...store().links.values()]
+    const db = store();
+    const order = statusOrdering(
+      [...db.statuses.values()].filter((entry) => entry.userId === userId).map((entry) => entry.row),
+    );
+
+    const all = [...db.links.values()]
       .filter(
         (entry) =>
           entry.userId === userId &&
-          entry.row.projectId === projectId &&
-          entry.row.planMonth === month,
+          entry.row.projectId === options.projectId &&
+          (options.month === null || entry.row.planMonth === options.month),
       )
       .map((entry) => entry.row)
-      .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+      .filter((row) => matchesFilter(row, options.filter))
+      .sort((a, b) => compareLinks(a, b, options.sort, order));
 
-    const from = (page - 1) * pageSize;
-    return { items: all.slice(from, from + pageSize), total: all.length };
+    const from = (options.page - 1) * options.pageSize;
+    return { items: all.slice(from, from + options.pageSize), total: all.length };
   },
 
   linksByIds(userId: string, linkIds: string[]): PlannerLink[] {
@@ -268,13 +293,13 @@ export const plannerMock = {
       .map((entry) => entry.row);
   },
 
-  monthSummaryRows(userId: string, projectId: string, month: string) {
+  monthSummaryRows(userId: string, projectId: string, month: string | null) {
     return [...store().links.values()]
       .filter(
         (entry) =>
           entry.userId === userId &&
           entry.row.projectId === projectId &&
-          entry.row.planMonth === month,
+          (month === null || entry.row.planMonth === month),
       )
       .map((entry) => ({
         statusId: entry.row.statusId,
@@ -406,6 +431,39 @@ export const plannerMock = {
         .filter((entry) => entry.userId === userId && entry.row.orderItemId)
         .map((entry) => String(entry.row.orderItemId)),
     );
+  },
+
+  updateLinks(
+    userId: string,
+    linkIds: string[],
+    patch: {
+      statusId?: string;
+      source?: string;
+      linkType?: string;
+      planMonth?: string;
+      projectId?: string;
+    },
+  ): number {
+    const db = store();
+    let changed = 0;
+    for (const id of linkIds) {
+      const entry = db.links.get(id);
+      if (!entry || entry.userId !== userId) continue;
+      db.links.set(id, {
+        userId,
+        row: {
+          ...entry.row,
+          ...(patch.statusId !== undefined ? { statusId: patch.statusId } : {}),
+          ...(patch.source !== undefined ? { source: patch.source } : {}),
+          ...(patch.linkType !== undefined ? { linkType: patch.linkType } : {}),
+          ...(patch.planMonth !== undefined ? { planMonth: monthStart(patch.planMonth) } : {}),
+          ...(patch.projectId !== undefined ? { projectId: patch.projectId } : {}),
+          updatedAt: now(),
+        },
+      });
+      changed += 1;
+    }
+    return changed;
   },
 
   deleteLinks(userId: string, linkIds: string[]): number {

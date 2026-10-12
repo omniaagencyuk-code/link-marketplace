@@ -29,6 +29,14 @@ import {
   saveMonthAction,
 } from '@/app/dashboard/planner/actions';
 import { monthLabel, shiftMonth } from '@/lib/planner/domain-key';
+import {
+  filterIsActive,
+  filterParams,
+  type PlannerFilter,
+  type PlannerSort,
+  type PlannerSortKey,
+} from '@/lib/planner/filter';
+import { LinkFilters } from './link-filters';
 import { linksToCsv } from '@/lib/planner/csv';
 import { downloadCsv } from '@/lib/import/csv';
 import type {
@@ -58,6 +66,8 @@ export function PlannerView({
   project,
   month,
   monthSettings,
+  filter,
+  sort,
   links,
   total,
   statuses,
@@ -67,8 +77,10 @@ export function PlannerView({
 }: {
   projects: PlannerProject[];
   project: PlannerProject | null;
-  month: string;
+  month: string | null;
   monthSettings: MonthSettings | null;
+  filter: PlannerFilter;
+  sort: PlannerSort;
   links: PlannerLink[];
   total: number;
   statuses: PlannerStatus[];
@@ -86,17 +98,49 @@ export function PlannerView({
   const [importing, setImporting] = useState(false);
   const [orderNote, setOrderNote] = useState<string | null>(null);
 
-  const go = (next: { project?: string; month?: string }) => {
+  /**
+   * Every navigation on this screen, through the URL.
+   *
+   * The project, the month, the filter and the sort all live there, which
+   * is what makes a view of a plan a link somebody can send - and what
+   * makes the back button work between months, between filters and
+   * between sort orders rather than only the first of those.
+   */
+  const go = (next: {
+    project?: string;
+    month?: string | null;
+    filter?: PlannerFilter;
+    sort?: PlannerSort;
+  }) => {
     const params = new URLSearchParams();
     params.set('project', next.project ?? project?.id ?? '');
-    params.set('month', next.month ?? month);
+    const wanted = next.month === undefined ? month : next.month;
+    params.set('month', wanted === null ? 'all' : wanted);
+    for (const [key, value] of Object.entries(
+      filterParams(next.filter ?? filter, next.sort ?? sort),
+    )) {
+      params.set(key, value);
+    }
     router.push(`/dashboard/planner?${params.toString()}`);
+  };
+
+  /* Clicking the column already sorting reverses it; clicking another
+     starts that column at its own sensible direction, which is what
+     `DEFAULT_SORT`'s neighbours in `readSort` decide - descending for a
+     number, ascending for a name. */
+  const sortBy = (key: PlannerSortKey) => {
+    const textual = key === 'domain' || key === 'added' || key === 'status';
+    go({
+      sort: key === sort.key ? { key, ascending: !sort.ascending } : { key, ascending: textual },
+    });
   };
 
   const refresh = () => router.refresh();
 
   const addLink = () => {
-    if (!project || !newDomain.trim()) return;
+    // Nothing to add to across the whole project: a link belongs to a
+    // month, and inventing one here would file it somewhere nobody chose.
+    if (!project || !month || !newDomain.trim()) return;
     const firstStatus = statuses.find((status) => !status.archivedAt);
     if (!firstStatus) return;
 
@@ -141,6 +185,9 @@ export function PlannerView({
 
   const target = monthSettings?.linkTarget ?? null;
   const budget = monthSettings?.budgetMinor ?? null;
+  /* What to call the scope in a sentence. One name, so "No links planned
+     for all" can never be written by accident. */
+  const scopeName = month ? monthLabel(month) : 'this project';
 
   return (
     <div className="space-y-4">
@@ -161,26 +208,49 @@ export function PlannerView({
           </Select>
         </label>
 
+        {/*
+          The month, and the way out of months. Whole project is not a
+          thirteenth month: it is the scope a planned-date range needs to
+          mean anything, since a range inside one month is a range of at
+          most thirty-one days. The arrows disappear with it, because there
+          is nothing to step through.
+        */}
         <div className="flex items-center gap-1 rounded-md border border-line-strong px-1">
+          {month ? (
+            <>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                aria-label="Previous month"
+                onClick={() => go({ month: shiftMonth(month, -1) })}
+              >
+                <ChevronLeft className="h-4 w-4" aria-hidden="true" />
+              </Button>
+              <span className="flex min-w-36 items-center justify-center gap-1.5 text-[13px] font-medium text-ink">
+                <CalendarRange className="h-3.5 w-3.5 text-accent-600" aria-hidden="true" />
+                {monthLabel(month)}
+              </span>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                aria-label="Next month"
+                onClick={() => go({ month: shiftMonth(month, 1) })}
+              >
+                <ChevronRight className="h-4 w-4" aria-hidden="true" />
+              </Button>
+            </>
+          ) : (
+            <span className="flex min-w-36 items-center justify-center gap-1.5 px-2 text-[13px] font-medium text-ink">
+              <CalendarRange className="h-3.5 w-3.5 text-accent-600" aria-hidden="true" />
+              Whole project
+            </span>
+          )}
           <Button
             variant="ghost"
-            size="icon-sm"
-            aria-label="Previous month"
-            onClick={() => go({ month: shiftMonth(month, -1) })}
+            size="sm"
+            onClick={() => go({ month: month ? null : new Date().toISOString().slice(0, 10) })}
           >
-            <ChevronLeft className="h-4 w-4" aria-hidden="true" />
-          </Button>
-          <span className="flex min-w-36 items-center justify-center gap-1.5 text-[13px] font-medium text-ink">
-            <CalendarRange className="h-3.5 w-3.5 text-accent-600" aria-hidden="true" />
-            {monthLabel(month)}
-          </span>
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            aria-label="Next month"
-            onClick={() => go({ month: shiftMonth(month, 1) })}
-          >
-            <ChevronRight className="h-4 w-4" aria-hidden="true" />
+            {month ? 'All months' : 'This month'}
           </Button>
         </div>
 
@@ -189,31 +259,39 @@ export function PlannerView({
           Writing one creates an override for this month only - the project's
           default stays what it was, which is what lets December be a bigger
           month than the rest without rewriting the project.
-        */}
-        <MonthField
-          label="Target links"
-          value={target === null ? '' : String(target)}
-          placeholder="—"
-          onSave={(value) =>
-            saveMonthAction(project.id, month, {
-              linkTarget: value === '' ? null : Number(value),
-              budgetMinor: budget,
-            })
-          }
-        />
-        <MonthField
-          label={`Budget (${project.currency})`}
-          value={budget === null ? '' : String(budget / 100)}
-          placeholder="—"
-          onSave={(value) =>
-            saveMonthAction(project.id, month, {
-              linkTarget: target,
-              budgetMinor: value === '' ? null : Math.round(Number(value) * 100),
-            })
-          }
-        />
 
-        <div className="flex items-center gap-2">
+          Absent across the whole project, because there is no one month to
+          write them to. A field that silently wrote to whichever month was
+          last open would be worse than no field.
+        */}
+        {month ? (
+          <>
+            <MonthField
+              label="Target links"
+              value={target === null ? '' : String(target)}
+              placeholder="—"
+              onSave={(value) =>
+                saveMonthAction(project.id, month, {
+                  linkTarget: value === '' ? null : Number(value),
+                  budgetMinor: budget,
+                })
+              }
+            />
+            <MonthField
+              label={`Budget (${project.currency})`}
+              value={budget === null ? '' : String(budget / 100)}
+              placeholder="—"
+              onSave={(value) =>
+                saveMonthAction(project.id, month, {
+                  linkTarget: target,
+                  budgetMinor: value === '' ? null : Math.round(Number(value) * 100),
+                })
+              }
+            />
+          </>
+        ) : null}
+
+        <div className="flex flex-wrap items-center gap-2">
           <Button variant="outline" size="sm" onClick={() => setEditingProject(project)}>
             Project settings
           </Button>
@@ -227,13 +305,23 @@ export function PlannerView({
       {monthSettings?.fromProjectDefaults && (target !== null || budget !== null) ? (
         <p className="text-[12px] text-muted">
           Showing this project&rsquo;s defaults. Changing either figure sets it for{' '}
-          {monthLabel(month)} only.
+          {scopeName} only.
         </p>
       ) : null}
 
       {summary ? (
-        <PlannerOverview summary={summary} currency={project.currency} monthName={monthLabel(month)} />
+        <PlannerOverview summary={summary} currency={project.currency} monthName={scopeName} />
       ) : null}
+
+      <LinkFilters
+        filter={filter}
+        statuses={statuses}
+        sources={sources}
+        currency={project.currency}
+        matched={total}
+        total={summary?.total ?? total}
+        onChange={(next) => go({ filter: next })}
+      />
 
       {/* -------------------------------------------------- add, and count */}
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -261,7 +349,11 @@ export function PlannerView({
           ) : null}
         </div>
 
-        <div className="flex items-center gap-2">
+        {/* Wraps. Five controls and a count do not fit a phone on one
+            line, and a row that does not wrap is a page that scrolls
+            sideways - the one responsive failure that makes a tool feel
+            broken. */}
+        <div className="flex flex-wrap items-center gap-2">
           <Button variant="outline" size="sm" onClick={() => setImporting(true)}>
             <Upload className="h-3.5 w-3.5" aria-hidden="true" />
             Import CSV
@@ -310,9 +402,13 @@ export function PlannerView({
                  screen: a file that quietly stops at the page boundary is
                  worse than no export at all. */
               startTransition(async () => {
-                const { links: all, statuses: every } = await exportMonthAction(project.id, month);
+                const { links: all, statuses: every } = await exportMonthAction(
+                  project.id,
+                  month,
+                  filter,
+                );
                 downloadCsv(
-                  `press-parrot-planner-${project.domain}-${month.slice(0, 7)}.csv`,
+                  `press-parrot-planner-${project.domain}-${month ? month.slice(0, 7) : 'all'}.csv`,
                   linksToCsv(all, every),
                 );
               });
@@ -329,7 +425,7 @@ export function PlannerView({
           </Button>
           <p className="tabular text-[13px] text-muted">
             <span className="font-semibold text-ink">{total}</span>{' '}
-            {total === 1 ? 'link' : 'links'} in {monthLabel(month)}
+            {total === 1 ? 'link' : 'links'} in {scopeName}
           </p>
         </div>
       </div>
@@ -346,13 +442,25 @@ export function PlannerView({
       {links.length === 0 ? (
         <EmptyState
           icon={CalendarRange}
-          title={`No links planned for ${monthLabel(month)}`}
-          description="Add your first domain above. Everything else - metrics, anchor, status, price and dates - is editable in the table once the row exists."
+          title={
+            filterIsActive(filter)
+              ? 'No links match those filters'
+              : `No links planned for ${scopeName}`
+          }
+          description={
+            filterIsActive(filter)
+              ? 'Clear a filter to see the rest of the plan. Nothing has been deleted.'
+              : 'Add your first domain above. Everything else - metrics, anchor, status, price and dates - is editable in the table once the row exists.'
+          }
         />
       ) : (
         <LinkTable
           links={links}
           statuses={statuses}
+          projects={projects}
+          month={month}
+          sort={sort}
+          onSort={sortBy}
           sources={sources}
           currency={project.currency}
           listings={listings}
@@ -386,13 +494,17 @@ export function PlannerView({
         />
       </div>
 
-      <ImportSheet
-        open={importing}
-        projectId={project.id}
-        month={month}
-        onClose={() => setImporting(false)}
-        onImported={refresh}
-      />
+      {/* A CSV lands in a month, so there has to be one. Across the whole
+          project the sheet is not opened rather than opened and refused. */}
+      {month ? (
+        <ImportSheet
+          open={importing}
+          projectId={project.id}
+          month={month}
+          onClose={() => setImporting(false)}
+          onImported={refresh}
+        />
+      ) : null}
 
       <ProjectDialog
         open={creatingProject || editingProject !== null}

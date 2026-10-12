@@ -2,6 +2,12 @@ import { getAdminScopedClient } from '@/lib/supabase/server';
 import { isSupabaseEnabled } from '@/lib/supabase/config';
 import { plannerMock } from '@/lib/data/planner-mock';
 import { monthStart } from '@/lib/planner/domain-key';
+import {
+  DEFAULT_SORT,
+  NO_FILTER,
+  type PlannerFilter,
+  type PlannerSort,
+} from '@/lib/planner/filter';
 import type {
   MonthSettings,
   PlannerLink,
@@ -33,6 +39,29 @@ import type {
  */
 
 type Row = Record<string, unknown>;
+
+/** The sort keys, as the columns they are. `status` reaches through the embed. */
+const SORT_COLUMNS: Record<PlannerSort['key'], string> = {
+  added: 'created_at',
+  domain: 'domain_key',
+  domainRating: 'domain_rating',
+  organicTraffic: 'organic_traffic',
+  priceMinor: 'price_minor',
+  plannedDate: 'planned_date',
+  liveDate: 'live_date',
+  status: 'planner_statuses(sort_order)',
+};
+
+/**
+ * A search term, as a literal.
+ *
+ * `%` and `_` are wildcards in `like`, and a customer pasting a URL
+ * fragment or a publisher name with an underscore in it is not writing a
+ * pattern. Backslash first, or escaping the others puts wildcards back.
+ */
+function escapeLike(term: string): string {
+  return term.replace(/[\\%_]/g, (match) => `\\${match}`);
+}
 
 /**
  * A row an import may create.
@@ -476,26 +505,117 @@ export const plannerService = {
    * twenty-five, and the index on (project_id, plan_month, created_at) is
    * there for exactly this read.
    */
+  /**
+   * A page of the table, filtered and sorted.
+   *
+   * ## Both happen here, not in the browser
+   *
+   * The table is paged, so a filter applied to the fifty rows on screen is
+   * a filter over a page: it hides rows from the page it is given and
+   * cannot see the ones it should have brought back. `verify:search` exists
+   * because the marketplace had exactly that bug, and a customer could not
+   * tell.
+   *
+   * `src/lib/planner/filter.ts` holds the rules. This translates them; it
+   * does not restate them. Every predicate there is a containment, a range
+   * or a set membership for that reason.
+   *
+   * ## Blank is last whichever way the arrow points
+   *
+   * `nullsFirst: false` is given on every order, in both directions.
+   * Postgres' own default is nulls last ascending and nulls first
+   * descending, which would put every unresearched row above a DR 92 the
+   * moment somebody clicked the arrow twice.
+   *
+   * ## `month` may be null
+   *
+   * Null is the whole project rather than no month. It is what the date
+   * range filter needs to mean anything - a range inside one month is a
+   * range of at most thirty-one days - and it is a read of the same
+   * indexed columns with one `eq` fewer.
+   */
   async links(
     userId: string,
-    projectId: string,
-    month: string,
-    page = 1,
-    pageSize = 25,
+    options: {
+      projectId: string;
+      month: string | null;
+      page?: number;
+      pageSize?: number;
+      filter?: PlannerFilter;
+      sort?: PlannerSort;
+    },
   ): Promise<{ items: PlannerLink[]; total: number }> {
-    if (!isSupabaseEnabled()) return plannerMock.links(userId, projectId, month, page, pageSize);
+    const page = options.page ?? 1;
+    const pageSize = options.pageSize ?? 25;
+    const filter = options.filter ?? NO_FILTER;
+    const sort = options.sort ?? DEFAULT_SORT;
+
+    if (!isSupabaseEnabled()) {
+      return plannerMock.links(userId, { ...options, page, pageSize, filter, sort });
+    }
 
     const from = (page - 1) * pageSize;
-    const { data, count } = await getAdminScopedClient()
+
+    /* The embed exists only so the sort can reach `sort_order`, and only
+       when that is the sort asked for: an inner join on every read to
+       support one of eight arrows is a join nobody chose. */
+    const select: string =
+      sort.key === 'status'
+        ? `${LINK_COLUMNS}, planner_statuses!inner(sort_order)`
+        : LINK_COLUMNS;
+
+    let query = getAdminScopedClient()
       .from('planner_links')
-      .select(LINK_COLUMNS, { count: 'exact' })
+      .select(select, { count: 'exact' })
       .eq('user_id', userId)
-      .eq('project_id', projectId)
-      .eq('plan_month', month)
+      .eq('project_id', options.projectId);
+
+    if (options.month !== null) query = query.eq('plan_month', monthStart(options.month));
+
+    if (filter.statusIds.length) query = query.in('status_id', filter.statusIds);
+    if (filter.sources.length) query = query.in('source', filter.sources);
+    if (filter.linkTypes.length) query = query.in('link_type', filter.linkTypes);
+
+    /* `ilike` with the term escaped, so a pasted `%` searches for a percent
+       sign rather than for everything. A customer pasting a URL fragment
+       into the domain box is the normal case and it is full of them. */
+    if (filter.domain) query = query.ilike('domain', `%${escapeLike(filter.domain)}%`);
+    if (filter.anchor) query = query.ilike('anchor_text', `%${escapeLike(filter.anchor)}%`);
+
+    /* A range excludes the rows with nothing in the column, rather than
+       reading a blank as zero - see `matchesFilter`, which says why. The
+       `not(... is null)` is explicit because `gte` alone would be a
+       three-valued comparison PostgREST simply drops. */
+    if (filter.priceMinMinor !== null) {
+      query = query.not('price_minor', 'is', null).gte('price_minor', filter.priceMinMinor);
+    }
+    if (filter.priceMaxMinor !== null) {
+      query = query.not('price_minor', 'is', null).lte('price_minor', filter.priceMaxMinor);
+    }
+    if (filter.plannedFrom !== null) {
+      query = query.not('planned_date', 'is', null).gte('planned_date', filter.plannedFrom);
+    }
+    if (filter.plannedTo !== null) {
+      query = query.not('planned_date', 'is', null).lte('planned_date', filter.plannedTo);
+    }
+
+    const column = SORT_COLUMNS[sort.key];
+    query = query
+      .order(column, { ascending: sort.ascending, nullsFirst: false })
+      // Stability under paging. Without it two rows with the same domain
+      // rating can swap between page one and page two, which shows one row
+      // twice and hides another.
       .order('created_at', { ascending: true })
+      .order('id', { ascending: true })
       .range(from, from + pageSize - 1);
 
-    return { items: ((data ?? []) as Row[]).map(mapLink), total: count ?? 0 };
+    const { data, count, error } = await query;
+    /* Loud rather than empty. A filtered read that fails silently shows a
+       customer a different set of publishers than their filter claims,
+       which is the failure `verify:search` was written about. */
+    if (error) throw new Error(`Could not read the plan: ${error.message}`);
+
+    return { items: ((data ?? []) as unknown as Row[]).map(mapLink), total: count ?? 0 };
   },
 
   /** Specific rows, for an action working on a selection. */
@@ -528,7 +648,7 @@ export const plannerService = {
   async monthSummaryRows(
     userId: string,
     projectId: string,
-    month: string,
+    month: string | null,
   ): Promise<
     Pick<
       PlannerLink,
@@ -537,12 +657,17 @@ export const plannerService = {
   > {
     if (!isSupabaseEnabled()) return plannerMock.monthSummaryRows(userId, projectId, month);
 
-    const { data } = await getAdminScopedClient()
+    let query = getAdminScopedClient()
       .from('planner_links')
       .select('status_id, link_type, anchor_type, price_minor, currency, payment_status, paid_minor')
       .eq('user_id', userId)
-      .eq('project_id', projectId)
-      .eq('plan_month', month);
+      .eq('project_id', projectId);
+    /* Null is the whole project. The cards then total every month, which
+       is what the project scope is for; they are deliberately not filtered,
+       because they describe the plan rather than the search. */
+    if (month !== null) query = query.eq('plan_month', monthStart(month));
+
+    const { data } = await query;
 
     return ((data ?? []) as Row[]).map((row) => ({
       statusId: String(row.status_id),
@@ -699,6 +824,60 @@ export const plannerService = {
       .not('order_item_id', 'is', null);
 
     return new Set(((data ?? []) as Row[]).map((row) => String(row.order_item_id)));
+  },
+
+  /**
+   * One change, to many rows.
+   *
+   * ## The allowlist is the type, and it is short
+   *
+   * Five fields: status, source, link type, month, project. They are the
+   * five a bulk action can sensibly mean - everything else on a row is
+   * specific to that row, and "set the anchor text of forty links to the
+   * same phrase" is not a thing anybody wants done to them by accident.
+   *
+   * Prices are deliberately not here. A price is what one publisher
+   * charged, and a bulk write of one figure over forty of them destroys
+   * exactly the record this tool exists to keep.
+   *
+   * ## Moving between projects still has to be their project
+   *
+   * `project_id` is checked against the caller's own projects before the
+   * write rather than relying on the trigger to refuse it. The trigger
+   * would refuse it - `planner_links_same_owner` is in 0081 for this - but
+   * a refused batch tells the customer nothing about which row was wrong,
+   * and this path knows.
+   */
+  async updateLinks(
+    userId: string,
+    linkIds: string[],
+    patch: {
+      statusId?: string;
+      source?: string;
+      linkType?: string;
+      planMonth?: string;
+      projectId?: string;
+    },
+  ): Promise<number> {
+    if (linkIds.length === 0) return 0;
+
+    const row: Row = {};
+    if (patch.statusId !== undefined) row.status_id = patch.statusId;
+    if (patch.source !== undefined) row.source = patch.source;
+    if (patch.linkType !== undefined) row.link_type = patch.linkType;
+    if (patch.planMonth !== undefined) row.plan_month = monthStart(patch.planMonth);
+    if (patch.projectId !== undefined) row.project_id = patch.projectId;
+    if (Object.keys(row).length === 0) return 0;
+
+    if (!isSupabaseEnabled()) return plannerMock.updateLinks(userId, linkIds, patch);
+
+    const { error, count } = await getAdminScopedClient()
+      .from('planner_links')
+      .update(row, { count: 'exact' })
+      .eq('user_id', userId)
+      .in('id', linkIds);
+    if (error) throw new Error(`Could not change those links: ${error.message}`);
+    return count ?? 0;
   },
 
   async deleteLinks(userId: string, linkIds: string[]): Promise<number> {
