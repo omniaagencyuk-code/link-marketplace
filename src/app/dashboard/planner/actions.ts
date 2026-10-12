@@ -3,8 +3,10 @@
 import { revalidatePath } from 'next/cache';
 import { requireCustomerSession } from '@/lib/auth/customer-access';
 import { plannerService } from '@/lib/services/planner-service';
+import { plannerMetrics } from '@/lib/services/planner-metrics';
 import { domainKey, looksLikeDomain, monthStart } from '@/lib/planner/domain-key';
 import { STATUS_CATEGORIES, type PlannerLinkPatch, type StatusCategory } from '@/lib/types/planner';
+import type { ImportRow } from '@/lib/planner/csv';
 
 /**
  * Everything the planner writes.
@@ -225,6 +227,204 @@ export async function deleteLinksAction(linkIds: string[]) {
   const removed = await plannerService.deleteLinks(user.id, ids);
   revalidatePath(PATH);
   return { removed };
+}
+
+// ------------------------------------------------- metrics, from our own data
+
+/**
+ * Fill in what Press Parrot already knows about these domains.
+ *
+ * ## It never overwrites what somebody typed
+ *
+ * Only blank fields are filled. The brief says not to overwrite manual
+ * metrics without confirmation, and the honest reading of that is not to
+ * ask a confirmation dialog per row - it is to make the action incapable of
+ * doing it. A customer who wants our figure over theirs clears the cell
+ * first, which is one keystroke and unambiguous.
+ *
+ * The result says how many were filled, how many were left alone and how
+ * many we hold nothing for, so "nothing happened" is never silent.
+ *
+ * No external call of any kind: `plannerMetrics` reads the `websites`
+ * table and returns four columns.
+ */
+export async function findMetricsAction(linkIds: string[]) {
+  const user = await requireCustomerSession(PATH);
+  const ids = (Array.isArray(linkIds) ? linkIds : []).map(String).slice(0, 50);
+  if (ids.length === 0) return { filled: 0, kept: 0, missing: 0 };
+
+  const links = await plannerService.linksByIds(user.id, ids);
+  const { found, refused } = await plannerMetrics.findMany(
+    user.id,
+    links.map((link) => link.domainKey),
+  );
+  if (refused) return { filled: 0, kept: 0, missing: 0, error: refused };
+
+  let filled = 0;
+  let kept = 0;
+  let missing = 0;
+
+  for (const link of links) {
+    const metrics = found.get(link.domainKey);
+    if (!metrics) {
+      missing += 1;
+      continue;
+    }
+
+    const patch: PlannerLinkPatch = {};
+    let wrote = false;
+    let keptOne = false;
+
+    const fill = (
+      field: 'domainRating' | 'organicTraffic' | 'organicKeywords' | 'referringDomains',
+      value: number | null,
+    ) => {
+      if (value === null) return;
+      if (link[field] === null) {
+        patch[field] = value;
+        wrote = true;
+      } else {
+        keptOne = true;
+      }
+    };
+
+    fill('domainRating', metrics.domainRating);
+    fill('organicTraffic', metrics.organicTraffic);
+    fill('organicKeywords', metrics.organicKeywords);
+    fill('referringDomains', metrics.referringDomains);
+
+    if (wrote) {
+      /* Where it came from and when it was measured, so the row can say
+         "Press Parrot, September 2026" rather than implying we checked
+         today. `measuredAt` is the Ahrefs refresh date on the listing, not
+         the time of this lookup. */
+      patch.metricsSource = 'press-parrot';
+      patch.metricsUpdatedAt = metrics.measuredAt;
+      await plannerService.updateLink(user.id, link.id, patch);
+      filled += 1;
+    } else if (keptOne) {
+      kept += 1;
+    } else {
+      missing += 1;
+    }
+  }
+
+  revalidatePath(PATH);
+  return { filled, kept, missing };
+}
+
+// ----------------------------------------------------------------- import
+
+/**
+ * Bring a spreadsheet in.
+ *
+ * ## Nothing is looked up while importing
+ *
+ * The brief allows internal metric enrichment on import. It is not done
+ * here: a thousand-row file would be a thousand rate-limited lookups
+ * inside one request, which is slow enough to time out and leaves half a
+ * file imported with no way to tell which half. The rows arrive with
+ * whatever metrics the file had, and Find metrics fills the blanks
+ * afterwards on a selection, where it can be watched and repeated.
+ *
+ * ## Duplicates are reported, not merged
+ *
+ * A domain already in this month is skipped and counted. Merging would
+ * mean choosing between the file's figures and the customer's, and the
+ * file is not necessarily newer.
+ *
+ * ## An unknown status is not invented
+ *
+ * A file saying "Awaiting Publisher" against a customer who has no such
+ * status lands on their first status rather than creating one - a CSV
+ * should not be able to add rows to the status list, because a misspelling
+ * in a thousand-line file would add a thousand of them.
+ */
+export async function importLinksAction(
+  projectId: string,
+  month: string,
+  rows: ImportRow[],
+  options: { skipDuplicates: boolean },
+) {
+  const user = await requireCustomerSession(PATH);
+  const incoming = (Array.isArray(rows) ? rows : []).slice(0, 5000);
+  if (incoming.length === 0) return { imported: 0, skipped: 0 };
+
+  const statuses = await plannerService.statuses(user.id);
+  const live = statuses.filter((status) => !status.archivedAt);
+  const fallback = live[0] ?? statuses[0];
+  if (!fallback) return { imported: 0, skipped: 0, error: 'No statuses to file these under.' };
+
+  const byName = new Map(live.map((status) => [status.name.toLowerCase(), status.id]));
+
+  const at = monthStart(month);
+  const already = options.skipDuplicates
+    ? await plannerService.existingDomainKeys(user.id, String(projectId), at)
+    : new Set<string>();
+
+  /* Duplicates inside the file itself, as well as against what is stored.
+     A spreadsheet with the same publisher on two lines is common and the
+     second one is not news. */
+  const seen = new Set<string>();
+  let skipped = 0;
+
+  const prepared = incoming.flatMap((row) => {
+    if (options.skipDuplicates && (already.has(row.domainKey) || seen.has(row.domainKey))) {
+      skipped += 1;
+      return [];
+    }
+    seen.add(row.domainKey);
+    return [
+      {
+        projectId: String(projectId),
+        planMonth: at,
+        statusId: byName.get(row.statusName.toLowerCase()) ?? fallback.id,
+        domain: text(row.domain, 253),
+        domainKey: domainKey(row.domain),
+        source: text(row.source, 60),
+        domainRating: intOrNull(row.domainRating, 100),
+        organicTraffic: intOrNull(row.organicTraffic, 2_000_000_000),
+        organicKeywords: intOrNull(row.organicKeywords, 2_000_000_000),
+        referringDomains: intOrNull(row.referringDomains, 2_000_000_000),
+        linkType: text(row.linkType, 40),
+        targetUrl: safeUrl(row.targetUrl),
+        anchorText: text(row.anchorText, 200),
+        anchorType: text(row.anchorType, 40),
+        plannedDate: row.plannedDate,
+        liveDate: row.liveDate,
+        liveUrl: safeUrl(row.liveUrl),
+        priceMinor: intOrNull(row.priceMinor, 2_000_000_000),
+        currency: row.currency ? text(row.currency, 3).toUpperCase() : null,
+        notes: text(row.notes, 2000),
+      },
+    ];
+  });
+
+  try {
+    const imported = await plannerService.addLinks(user.id, prepared);
+    revalidatePath(PATH);
+    return { imported, skipped };
+  } catch (error) {
+    return {
+      imported: 0,
+      skipped,
+      error: error instanceof Error ? error.message : 'The import failed.',
+    };
+  }
+}
+
+/** Every link in the month, for an export. Paging would truncate the file. */
+export async function exportMonthAction(projectId: string, month: string) {
+  const user = await requireCustomerSession(PATH);
+  const { items } = await plannerService.links(
+    user.id,
+    String(projectId),
+    monthStart(month),
+    1,
+    5000,
+  );
+  const statuses = await plannerService.statuses(user.id);
+  return { links: items, statuses };
 }
 
 // ------------------------------------------------------------- statuses

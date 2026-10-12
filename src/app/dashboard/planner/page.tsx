@@ -4,6 +4,7 @@ import { PlannerView } from '@/components/planner/planner-view';
 import { requireCustomerSession } from '@/lib/auth/customer-access';
 import { plannerService } from '@/lib/services/planner-service';
 import { monthStart } from '@/lib/planner/domain-key';
+import { summariseMonth } from '@/lib/planner/summary';
 
 export const metadata: Metadata = { title: 'Link Building Planner' };
 
@@ -46,15 +47,29 @@ export default async function PlannerPage({
   */
   const statuses = await plannerService.statuses(user.id);
 
-  const [sources, monthSettings, page] = await Promise.all([
+  const [sources, monthSettings, page, summaryRows] = await Promise.all([
     plannerService.sources(user.id),
-    project
-      ? plannerService.monthSettings(user.id, project, month)
-      : Promise.resolve(null),
+    project ? plannerService.monthSettings(user.id, project, month) : Promise.resolve(null),
     project
       ? plannerService.links(user.id, project.id, month, 1, 50)
       : Promise.resolve({ items: [], total: 0 }),
+    /* The whole month, but only the seven columns the cards add up. The
+       table is paged at fifty; the summary counts all of them, and reading
+       every column of every row to total four of them is the shape this
+       codebase keeps undoing. */
+    project
+      ? plannerService.monthSummaryRows(user.id, project.id, month)
+      : Promise.resolve([]),
   ]);
+
+  const summary =
+    project && monthSettings
+      ? summariseMonth(summaryRows, statuses, {
+          target: monthSettings.linkTarget,
+          budgetMinor: monthSettings.budgetMinor,
+          currency: project.currency,
+        })
+      : null;
 
   return (
     <>
@@ -71,6 +86,7 @@ export default async function PlannerPage({
         total={page.total}
         statuses={statuses}
         sources={sources}
+        summary={summary}
       />
     </>
   );

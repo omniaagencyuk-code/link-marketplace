@@ -456,6 +456,63 @@ export const plannerService = {
     return { items: ((data ?? []) as Row[]).map(mapLink), total: count ?? 0 };
   },
 
+  /** Specific rows, for an action working on a selection. */
+  async linksByIds(userId: string, linkIds: string[]): Promise<PlannerLink[]> {
+    if (linkIds.length === 0) return [];
+    if (!isSupabaseEnabled()) return plannerMock.linksByIds(userId, linkIds);
+
+    const { data } = await getAdminScopedClient()
+      .from('planner_links')
+      .select(LINK_COLUMNS)
+      .eq('user_id', userId)
+      .in('id', linkIds);
+
+    return ((data ?? []) as Row[]).map(mapLink);
+  },
+
+  /**
+   * Everything in a month, for the summaries.
+   *
+   * Only the columns the four overview cards add up, which is why it is a
+   * second read rather than the paged one with a bigger page: the table
+   * shows fifty rows and the summary counts all of them, and fetching
+   * seventeen columns of every row to total four of them is the shape this
+   * codebase keeps undoing.
+   *
+   * An RPC that counts in the database is the next step if a month ever
+   * gets big enough to notice; at the few hundred links a month an agency
+   * actually plans, one narrow read is cheaper than a round trip saved.
+   */
+  async monthSummaryRows(
+    userId: string,
+    projectId: string,
+    month: string,
+  ): Promise<
+    Pick<
+      PlannerLink,
+      'statusId' | 'linkType' | 'anchorType' | 'priceMinor' | 'currency' | 'paymentStatus' | 'paidMinor'
+    >[]
+  > {
+    if (!isSupabaseEnabled()) return plannerMock.monthSummaryRows(userId, projectId, month);
+
+    const { data } = await getAdminScopedClient()
+      .from('planner_links')
+      .select('status_id, link_type, anchor_type, price_minor, currency, payment_status, paid_minor')
+      .eq('user_id', userId)
+      .eq('project_id', projectId)
+      .eq('plan_month', month);
+
+    return ((data ?? []) as Row[]).map((row) => ({
+      statusId: String(row.status_id),
+      linkType: String(row.link_type ?? ''),
+      anchorType: String(row.anchor_type ?? ''),
+      priceMinor: numberOrNull(row.price_minor),
+      currency: (row.currency as string | null) ?? null,
+      paymentStatus: (row.payment_status as PlannerLink['paymentStatus']) ?? 'unpaid',
+      paidMinor: numberOrNull(row.paid_minor),
+    }));
+  },
+
   async addLink(
     userId: string,
     projectId: string,
@@ -481,6 +538,106 @@ export const plannerService = {
       .maybeSingle();
     if (error) throw new Error(`Could not add the link: ${error.message}`);
     return data ? mapLink(data as Row) : null;
+  },
+
+  /**
+   * Many rows at once, for an import.
+   *
+   * One insert rather than one per row: a thousand-line spreadsheet is a
+   * thousand round trips to London otherwise, which is a minute of waiting
+   * and a request that may not survive it. Chunked, because a single
+   * statement carrying ten thousand rows is its own problem.
+   */
+  async addLinks(
+    userId: string,
+    rows: {
+      projectId: string;
+      planMonth: string;
+      statusId: string;
+      domain: string;
+      domainKey: string;
+      source: string;
+      domainRating: number | null;
+      organicTraffic: number | null;
+      organicKeywords: number | null;
+      referringDomains: number | null;
+      linkType: string;
+      targetUrl: string | null;
+      anchorText: string;
+      anchorType: string;
+      plannedDate: string | null;
+      liveDate: string | null;
+      liveUrl: string | null;
+      priceMinor: number | null;
+      currency: string | null;
+      notes: string;
+    }[],
+  ): Promise<number> {
+    if (rows.length === 0) return 0;
+    if (!isSupabaseEnabled()) return plannerMock.addLinks(userId, rows);
+
+    const supabase = getAdminScopedClient();
+    const CHUNK = 500;
+    let written = 0;
+
+    for (let from = 0; from < rows.length; from += CHUNK) {
+      const batch = rows.slice(from, from + CHUNK).map((row) => ({
+        user_id: userId,
+        project_id: row.projectId,
+        plan_month: monthStart(row.planMonth),
+        status_id: row.statusId,
+        domain: row.domain,
+        domain_key: row.domainKey,
+        source: row.source,
+        domain_rating: row.domainRating,
+        organic_traffic: row.organicTraffic,
+        organic_keywords: row.organicKeywords,
+        referring_domains: row.referringDomains,
+        // Imported, and said so: a figure from somebody's spreadsheet is
+        // not a figure we measured and the row should not imply it is.
+        metrics_source:
+          row.domainRating !== null ||
+          row.organicTraffic !== null ||
+          row.organicKeywords !== null ||
+          row.referringDomains !== null
+            ? 'csv'
+            : null,
+        link_type: row.linkType,
+        target_url: row.targetUrl,
+        anchor_text: row.anchorText,
+        anchor_type: row.anchorType,
+        planned_date: row.plannedDate,
+        live_date: row.liveDate,
+        live_url: row.liveUrl,
+        price_minor: row.priceMinor,
+        currency: row.currency,
+        notes: row.notes,
+      }));
+
+      const { error } = await supabase.from('planner_links').insert(batch);
+      if (error) throw new Error(`Could not import: ${error.message}`);
+      written += batch.length;
+    }
+
+    return written;
+  },
+
+  /** Which of these domains are already in this month's plan. */
+  async existingDomainKeys(
+    userId: string,
+    projectId: string,
+    month: string,
+  ): Promise<Set<string>> {
+    if (!isSupabaseEnabled()) return plannerMock.existingDomainKeys(userId, projectId, month);
+
+    const { data } = await getAdminScopedClient()
+      .from('planner_links')
+      .select('domain_key')
+      .eq('user_id', userId)
+      .eq('project_id', projectId)
+      .eq('plan_month', month);
+
+    return new Set(((data ?? []) as Row[]).map((row) => String(row.domain_key)));
   },
 
   async updateLink(

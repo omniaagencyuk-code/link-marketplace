@@ -35,6 +35,17 @@ export const RATE_LIMITS = {
   passwordReset: { action: 'password-reset', max: 5, windowSeconds: 3600 },
   passwordUpdate: { action: 'password-update', max: 10, windowSeconds: 3600 },
   adminSignIn: { action: 'admin-sign-in', max: 5, windowSeconds: 900 },
+  /*
+    Looking a domain up in our own publisher table from the planner.
+
+    Not an attack surface in the sign-in sense - it reads four numbers a
+    customer could see by searching the marketplace - but it is a way to
+    walk the inventory a domain at a time, and the planner is the only
+    screen that will answer about a domain nobody is buying. Sixty an hour
+    is far more than filling a spreadsheet needs and far less than
+    enumerating anything with.
+  */
+  plannerMetrics: { action: 'planner-metrics', max: 60, windowSeconds: 3600 },
 } as const satisfies Record<string, RateLimitRule>;
 
 export interface RateLimitResult {
@@ -105,8 +116,21 @@ function consumeInMemory(bucket: string, rule: RateLimitRule): RateLimitResult {
  * Call once per attempt, before doing the work - including before the
  * credential check, so a wrong password still counts.
  */
-export async function consumeRateLimit(rule: RateLimitRule): Promise<RateLimitResult> {
-  const bucket = `${rule.action}:${await callerKey()}`;
+export async function consumeRateLimit(
+  rule: RateLimitRule,
+  /**
+   * Who to count against, when the address is the wrong subject.
+   *
+   * The sign-in limits are keyed by IP deliberately - an email-keyed one
+   * lets anybody lock a known customer out of their own account. The
+   * planner's metric lookup is the opposite case: it is behind a session,
+   * so the thing worth limiting is the account, and an IP-keyed limit
+   * would throttle a whole agency office sharing one address while a
+   * single customer on a phone network could reset theirs at will.
+   */
+  subject?: string,
+): Promise<RateLimitResult> {
+  const bucket = `${rule.action}:${subject ?? (await callerKey())}`;
 
   if (!isSupabaseEnabled()) return consumeInMemory(bucket, rule);
 

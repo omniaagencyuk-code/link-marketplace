@@ -258,6 +258,35 @@ export const plannerMock = {
     return { items: all.slice(from, from + pageSize), total: all.length };
   },
 
+  linksByIds(userId: string, linkIds: string[]): PlannerLink[] {
+    const db = store();
+    return linkIds
+      .map((id) => db.links.get(id))
+      .filter((entry): entry is { userId: string; row: PlannerLink } =>
+        Boolean(entry && entry.userId === userId),
+      )
+      .map((entry) => entry.row);
+  },
+
+  monthSummaryRows(userId: string, projectId: string, month: string) {
+    return [...store().links.values()]
+      .filter(
+        (entry) =>
+          entry.userId === userId &&
+          entry.row.projectId === projectId &&
+          entry.row.planMonth === month,
+      )
+      .map((entry) => ({
+        statusId: entry.row.statusId,
+        linkType: entry.row.linkType,
+        anchorType: entry.row.anchorType,
+        priceMinor: entry.row.priceMinor,
+        currency: entry.row.currency,
+        paymentStatus: entry.row.paymentStatus,
+        paidMinor: entry.row.paidMinor,
+      }));
+  },
+
   addLink(
     userId: string,
     projectId: string,
@@ -298,6 +327,67 @@ export const plannerMock = {
     };
     store().links.set(row.id, { userId, row });
     return row;
+  },
+
+  addLinks(
+    userId: string,
+    rows: Parameters<typeof import('@/lib/services/planner-service').plannerService.addLinks>[1],
+  ): number {
+    const db = store();
+    for (const input of rows) {
+      const stamp = now();
+      const row: PlannerLink = {
+        id: randomUUID(),
+        projectId: input.projectId,
+        planMonth: monthStart(input.planMonth),
+        domain: input.domain,
+        domainKey: input.domainKey,
+        source: input.source,
+        domainRating: input.domainRating,
+        organicTraffic: input.organicTraffic,
+        organicKeywords: input.organicKeywords,
+        referringDomains: input.referringDomains,
+        metricsSource:
+          input.domainRating !== null ||
+          input.organicTraffic !== null ||
+          input.organicKeywords !== null ||
+          input.referringDomains !== null
+            ? 'csv'
+            : null,
+        metricsUpdatedAt: null,
+        linkType: input.linkType,
+        targetUrl: input.targetUrl,
+        anchorText: input.anchorText,
+        anchorType: input.anchorType,
+        statusId: input.statusId,
+        plannedDate: input.plannedDate,
+        liveDate: input.liveDate,
+        liveUrl: input.liveUrl,
+        priceMinor: input.priceMinor,
+        currency: input.currency,
+        paymentStatus: 'unpaid',
+        paidMinor: null,
+        notes: input.notes,
+        orderItemId: null,
+        createdAt: stamp,
+        updatedAt: stamp,
+      };
+      db.links.set(row.id, { userId, row });
+    }
+    return rows.length;
+  },
+
+  existingDomainKeys(userId: string, projectId: string, month: string): Set<string> {
+    return new Set(
+      [...store().links.values()]
+        .filter(
+          (entry) =>
+            entry.userId === userId &&
+            entry.row.projectId === projectId &&
+            entry.row.planMonth === month,
+        )
+        .map((entry) => entry.row.domainKey),
+    );
   },
 
   updateLink(userId: string, linkId: string, patch: PlannerLinkPatch): PlannerLink | null {

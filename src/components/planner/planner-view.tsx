@@ -8,6 +8,7 @@ import {
   ChevronLeft,
   ChevronRight,
   FolderPlus,
+  Download,
   Plus,
   Search,
   Upload,
@@ -18,14 +19,19 @@ import { Select } from '@/components/ui/select';
 import { EmptyState } from '@/components/ui/empty-state';
 import { LinkTable } from './link-table';
 import { ProjectDialog } from './project-dialog';
-import { addLinkAction, saveMonthAction } from '@/app/dashboard/planner/actions';
+import { ImportSheet } from './import-sheet';
+import { PlannerOverview } from './overview';
+import { addLinkAction, exportMonthAction, saveMonthAction } from '@/app/dashboard/planner/actions';
 import { monthLabel, shiftMonth } from '@/lib/planner/domain-key';
+import { linksToCsv } from '@/lib/planner/csv';
+import { downloadCsv } from '@/lib/import/csv';
 import type {
   MonthSettings,
   PlannerLink,
   PlannerProject,
   PlannerStatus,
 } from '@/lib/types/planner';
+import type { MonthSummary } from '@/lib/planner/summary';
 
 /**
  * The planner, around its table.
@@ -50,6 +56,7 @@ export function PlannerView({
   total,
   statuses,
   sources,
+  summary,
 }: {
   projects: PlannerProject[];
   project: PlannerProject | null;
@@ -59,6 +66,7 @@ export function PlannerView({
   total: number;
   statuses: PlannerStatus[];
   sources: string[];
+  summary: MonthSummary | null;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -66,6 +74,7 @@ export function PlannerView({
   const [addError, setAddError] = useState<string | null>(null);
   const [editingProject, setEditingProject] = useState<PlannerProject | null>(null);
   const [creatingProject, setCreatingProject] = useState(false);
+  const [importing, setImporting] = useState(false);
 
   const go = (next: { project?: string; month?: string }) => {
     const params = new URLSearchParams();
@@ -212,6 +221,10 @@ export function PlannerView({
         </p>
       ) : null}
 
+      {summary ? (
+        <PlannerOverview summary={summary} currency={project.currency} monthName={monthLabel(month)} />
+      ) : null}
+
       {/* -------------------------------------------------- add, and count */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-2">
@@ -239,6 +252,30 @@ export function PlannerView({
         </div>
 
         <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" onClick={() => setImporting(true)}>
+            <Upload className="h-3.5 w-3.5" aria-hidden="true" />
+            Import CSV
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={total === 0 || pending}
+            onClick={() => {
+              /* Exported from the server rather than from the fifty rows on
+                 screen: a file that quietly stops at the page boundary is
+                 worse than no export at all. */
+              startTransition(async () => {
+                const { links: all, statuses: every } = await exportMonthAction(project.id, month);
+                downloadCsv(
+                  `press-parrot-planner-${project.domain}-${month.slice(0, 7)}.csv`,
+                  linksToCsv(all, every),
+                );
+              });
+            }}
+          >
+            <Download className="h-3.5 w-3.5" aria-hidden="true" />
+            Export
+          </Button>
           <Button variant="outline" size="sm" asChild>
             <Link href="/marketplace">
               <Search className="h-3.5 w-3.5" aria-hidden="true" />
@@ -275,8 +312,12 @@ export function PlannerView({
         <Promo
           icon={Upload}
           title="Import your existing links"
-          body="Move your link-building spreadsheet into Press Parrot. Coming in the next stage."
-          action={null}
+          body="Move your link-building spreadsheet into Press Parrot in minutes."
+          action={
+            <Button variant="outline" size="sm" onClick={() => setImporting(true)}>
+              Import CSV
+            </Button>
+          }
         />
         <Promo
           icon={Search}
@@ -289,6 +330,14 @@ export function PlannerView({
           }
         />
       </div>
+
+      <ImportSheet
+        open={importing}
+        projectId={project.id}
+        month={month}
+        onClose={() => setImporting(false)}
+        onImported={refresh}
+      />
 
       <ProjectDialog
         open={creatingProject || editingProject !== null}
