@@ -409,12 +409,14 @@ on conflict (id) do nothing;
    nothing - a unique index on a column no insert can reach would pass this
    section by refusing everything. */
 insert into public.planner_links
-  (id, user_id, project_id, plan_month, domain, domain_key, status_id, order_item_id, source)
+  (id, user_id, project_id, plan_month, domain, domain_key, status_id, order_item_id, source,
+   price_minor, currency)
 select '29999999-9999-9999-9999-999999999999',
        'a1111111-1111-1111-1111-111111111111',
        'c3333333-3333-3333-3333-333333333333',
        date '2026-09-01', 'planner-order.com', 'planner-order.com',
-       s.id, '18888888-8888-8888-8888-888888888888', 'Press Parrot'
+       s.id, '18888888-8888-8888-8888-888888888888', 'Press Parrot',
+       30000, 'GBP'
 from public.planner_statuses s
 where s.user_id = 'a1111111-1111-1111-1111-111111111111' and s.name = 'Live'
 on conflict (id) do nothing;
@@ -487,3 +489,83 @@ select 'while a second placement off the same order imports fine: ' ||
 select 'and the order item it came from is untouched by the plan: ' ||
   (select status = 'live' and price_minor = 30000 from public.order_items
    where id = '18888888-8888-8888-8888-888888888888');
+
+-- ------------------------------ counting a plan in the database (0083)
+
+/*
+  `planner_report_rows` does the Reports tab's grouping, and the two things
+  worth asserting about it are that it counts each link exactly once per
+  dimension and that nobody can ask it about somebody else's plan.
+
+  The fixture so far gives agency A: one typed link in October 2026 and two
+  imported from orders in September 2026, all under statuses the import
+  and the fixture chose.
+*/
+select 'the status dimension counts every link exactly once: ' ||
+  (select coalesce(sum(n), 0) = (select count(*) from public.planner_links
+                                  where user_id = 'a1111111-1111-1111-1111-111111111111'
+                                    and project_id = 'c3333333-3333-3333-3333-333333333333')
+   from public.planner_report_rows('a1111111-1111-1111-1111-111111111111',
+                                   'c3333333-3333-3333-3333-333333333333')
+   where dimension = 'status');
+
+select 'and so does every other dimension: ' ||
+  (select count(distinct total) = 1
+   from (select dimension, sum(n) as total
+           from public.planner_report_rows('a1111111-1111-1111-1111-111111111111',
+                                           'c3333333-3333-3333-3333-333333333333')
+          group by dimension) d);
+
+/* A month argument narrows it, and null does not. Asserted together so
+   "the filter works" cannot pass by the function returning nothing. */
+select 'asking about one month returns fewer than asking about all of them: ' ||
+  ((select coalesce(sum(n), 0) from public.planner_report_rows(
+      'a1111111-1111-1111-1111-111111111111', 'c3333333-3333-3333-3333-333333333333',
+      date '2026-10-01') where dimension = 'status')
+   <
+   (select coalesce(sum(n), 0) from public.planner_report_rows(
+      'a1111111-1111-1111-1111-111111111111', 'c3333333-3333-3333-3333-333333333333')
+    where dimension = 'status'));
+
+/*
+  The money columns, against the one imported link we know the price of.
+  `paid_sum` is what has actually left; the import files an unpaid order as
+  unpaid, so a priced but unpaid row owes its whole price and has paid
+  none of it. A blank price contributes nothing rather than counting as
+  zero spend somebody then budgets against.
+*/
+select 'an unpaid priced link has paid nothing and owes all of it: ' ||
+  (select paid_sum = 0 and owing_sum = price_sum and price_sum > 0
+   from public.planner_report_rows('a1111111-1111-1111-1111-111111111111',
+                                   'c3333333-3333-3333-3333-333333333333')
+   where dimension = 'source' and bucket = 'Press Parrot' and payment_status = 'unpaid'
+   limit 1);
+
+/*
+  And nobody but the service role may call it. The id is an argument rather
+  than `auth.uid()`, because the application calls this with the
+  service-role client - so the execute grant is what stops a customer
+  simply passing somebody else's id.
+*/
+do $$
+declare v_refused boolean := false;
+begin
+  set local role authenticated;
+  set local request.jwt.claim.sub = 'b2222222-2222-2222-2222-222222222222';
+  begin
+    perform * from public.planner_report_rows('a1111111-1111-1111-1111-111111111111',
+                                              'c3333333-3333-3333-3333-333333333333');
+  exception when others then v_refused := true;
+  end;
+  reset role;
+  set local request.jwt.claim.sub = '';
+  raise notice 'a signed-in customer cannot call the report function at all: %', v_refused;
+end;
+$$;
+
+/* And the positive control: the owner's own id, as the service role,
+   answers. Without this the refusal above could be a function that is
+   broken for everybody. */
+select 'while the service role gets an answer: ' ||
+  (select count(*) > 0 from public.planner_report_rows(
+     'a1111111-1111-1111-1111-111111111111', 'c3333333-3333-3333-3333-333333333333'));

@@ -429,11 +429,13 @@ export async function exportMonthAction(
   filter?: PlannerFilter,
 ) {
   const user = await requireCustomerSession(PATH);
-  const { items } = await plannerService.links(user.id, {
+  /* Paged through rather than asked for in one request: PostgREST caps a
+     response at a thousand rows and puts nothing in it to say so, and a
+     file that silently stops at row 1,000 looks exactly like a complete
+     one. */
+  const items = await plannerService.allLinks(user.id, {
     projectId: String(projectId),
     month: month === null ? null : monthStart(month),
-    page: 1,
-    pageSize: 5000,
     filter,
   });
   const statuses = await plannerService.statuses(user.id);

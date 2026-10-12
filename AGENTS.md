@@ -196,6 +196,54 @@ only tables here with a customer-facing policy - scoped to `user_id` on
 `using` *and* `with check`, because without the second half a customer can hand
 their project to somebody else.
 
+## Link building planner
+
+A customer's own spreadsheet, moved into Press Parrot and free: a row per
+link they plan to buy, anywhere, with every field editable in place. It is
+the one feature here that is deliberately allowed to know nothing.
+
+- **No paid lookup, ever.** No Ahrefs, no Majestic, no Moz, no SEMrush, no
+  model, no crawl, no scheduled job. The only enrichment is
+  `planner-metrics.ts`, which asks `websites` about a domain the customer
+  typed and returns four figures and the date they were measured, behind a
+  per-account hourly limit. A planner that quietly spent money per row
+  would cost more than it earns, and the limit is there because this is the
+  one screen that will answer about a domain nobody is buying.
+- **Nothing is verified and nothing says it is.** There is no link checking,
+  no lost-link detection and no fetch of a publisher's site. "Live" means a
+  person pressed Live. Every screen that shows a live count says so, because
+  a free tool implying it has confirmed a backlink is making a claim we
+  cannot stand behind.
+- **Blank is not zero.** Every metric and every price is `number | null`. A
+  row nobody has researched has no domain rating, so it is last in a sort
+  whichever way the arrow points, outside a price range in both directions,
+  and worth nothing in a total - not zero, which would drag a portfolio
+  average down every time somebody adds a row.
+- **One copy of what "paid" and "committed" mean.** They are in
+  `src/lib/planner/summary.ts`. 0083 groups and sums in Postgres - because
+  reading every row to add it up hits PostgREST's unannounced thousand-row
+  cap, which 0068 records the admin table falling into - but it deliberately
+  does not decide what the sums mean. A second copy in SQL would drift, and
+  the copy that drifted would be the one somebody budgets against.
+- **One copy of what a filter keeps.** `src/lib/planner/filter.ts`. The
+  in-memory store applies it; `planner-service` translates it into
+  PostgREST. Every predicate is the simplest shape that translates
+  one-to-one, because only the first of those two can be run from a clone.
+- **An order is referenced, never owned.** Importing a Press Parrot order
+  copies five fields and stores `order_item_id`. A planner status is
+  somebody tidying their own board and must not cancel a placement we are
+  delivering; a planner price must not change what was charged. 0082 makes
+  "import twice, get one" a unique index rather than a check the caller
+  remembers.
+
+`gap_projects` carries the planner's project settings; `planner_links`,
+`planner_months`, `planner_statuses` and `planner_sources` are the
+customer's own, each with one policy scoped to `user_id` on `using` *and*
+`with check`, and **no admin policy at all**. That is the deliberate
+difference from everything else here: the table holds which suppliers an
+agency uses and what they pay them, and an ambient grant over that is a
+standing invitation to price against them.
+
 ## Where it runs
 
 The functions run in `lhr1` and the database is in London. They have to match,
@@ -232,8 +280,10 @@ dashboard will not take effect while `vercel.json` names one.
   against the measured Ahrefs pricing model; no API key, no database, no
   network.
 - `npm run verify:planner` — the Link Building Planner's arithmetic and rules:
-  what a month totals, which rows a filter keeps, what order they come back in,
-  and what a spreadsheet becomes on the way in and out. No API key, no
+  what a month totals, what the reports say, which rows a filter keeps, what
+  order they come back in, and what a spreadsheet becomes on the way in and
+  out. It also asserts that grouping rows before summing them changes no
+  figure, which is what 0083 rests on. No API key, no
   database, no network - and no lookup of any kind, which is the feature
   rather than an economy. What it cannot prove is the translation in
   `planner-service`: the filter and the comparator are applied directly here

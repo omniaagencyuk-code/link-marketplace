@@ -1,0 +1,21 @@
+-- ---------------------------------------------------------------------------
+-- Undo 0083  The planner counts in the database
+--
+-- Destroys nothing. One function that only reads; no table, column, row or
+-- policy is touched either way.
+--
+-- The cost is the planner's Reports tab and its monthly overview cards,
+-- which fail outright against a missing function rather than quietly
+-- falling back to counting in JavaScript. That is the right failure and
+-- the reason the function exists: the JavaScript version reads every row
+-- of a project through PostgREST, which caps a response at a thousand
+-- rows and says nothing about it, so an agency with two years of plans
+-- would be shown a spend figure short by whatever fell past the cap with
+-- nothing on the screen saying so.
+--
+-- Run it only alongside 0082-era code, which had no Reports tab and read a
+-- single month's rows - survivable while a month is under a thousand
+-- links, and it stops being so without any sign.
+-- ---------------------------------------------------------------------------
+
+drop function if exists public.planner_report_rows(uuid, uuid, date);

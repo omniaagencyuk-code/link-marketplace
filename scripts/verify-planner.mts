@@ -32,9 +32,15 @@ import {
   statusOrdering,
   type PlannerFilter,
 } from '../src/lib/planner/filter';
-import { summariseMonth } from '../src/lib/planner/summary';
+import { summariseMonth, type PlannerGroup } from '../src/lib/planner/summary';
+import { buildReport } from '../src/lib/planner/reports';
 import { CSV_HEADERS, linksToCsv, mapHeaders, readImport } from '../src/lib/planner/csv';
-import type { PlannerLink, PlannerStatus } from '../src/lib/types/planner';
+import type {
+  PaymentStatus,
+  PlannerLink,
+  PlannerStatus,
+  StatusCategory,
+} from '../src/lib/types/planner';
 
 let failed = 0;
 const ok = (label: string) => console.log(`  PASS  ${label}`);
@@ -79,16 +85,77 @@ const statuses: PlannerStatus[] = [
   { id: 's-lost', name: 'Lost', colour: '#dd4a20', category: 'lost', sortOrder: 100, archivedAt: null },
 ];
 
-const row = (over: Partial<Parameters<typeof summariseMonth>[0][number]> = {}) => ({
-  statusId: 's-plan',
-  linkType: 'Guest Post',
-  anchorType: 'Branded',
-  priceMinor: 10000,
-  currency: 'GBP',
-  paymentStatus: 'unpaid' as const,
-  paidMinor: null,
-  ...over,
-});
+const CATEGORY_OF: Record<string, StatusCategory> = {
+  's-plan': 'planned',
+  's-live': 'live',
+  's-lost': 'lost',
+};
+
+interface FixtureLink {
+  statusId: string;
+  month?: string;
+  source?: string;
+  linkType?: string;
+  anchorType?: string;
+  priceMinor?: number | null;
+  currency?: string | null;
+  paymentStatus?: PaymentStatus;
+  paidMinor?: number | null;
+}
+
+/**
+ * Fixture links, as the five dimensions of groups the database returns.
+ *
+ * `merge` is the thing worth having two of. With it false every link is
+ * its own group, which is what `summariseMonth` would see if nothing were
+ * ever grouped; with it true identical links are merged exactly as
+ * Postgres' `group by` merges them. Both are run through the same
+ * assertions below, because the whole refactor rests on the two agreeing -
+ * and `greatest(0, price - paid)` clamped per row rather than after the
+ * sum is the one place they could not.
+ */
+function groupsOf(links: FixtureLink[], merge = true): PlannerGroup[] {
+  const out = new Map<string, PlannerGroup>();
+  links.forEach((link, index) => {
+    const category = CATEGORY_OF[link.statusId] ?? 'planned';
+    const price = link.priceMinor === undefined ? 10000 : (link.priceMinor ?? 0);
+    const payment = link.paymentStatus ?? 'unpaid';
+    const paid =
+      payment === 'paid' ? price : payment === 'partially_paid' ? (link.paidMinor ?? 0) : 0;
+    const currency = link.currency === undefined ? 'GBP' : link.currency;
+
+    const buckets: [PlannerGroup['dimension'], string][] = [
+      ['month', link.month ?? '2026-10-01'],
+      ['source', link.source ?? 'Outreach'],
+      ['linkType', link.linkType ?? 'Guest Post'],
+      ['anchorType', link.anchorType ?? 'Branded'],
+      ['status', link.statusId],
+    ];
+
+    for (const [dimension, bucket] of buckets) {
+      const key = merge
+        ? [dimension, bucket, category, payment, currency ?? ''].join('|')
+        : `${index}|${dimension}`;
+      const group = out.get(key) ?? {
+        dimension,
+        bucket,
+        category,
+        paymentStatus: payment,
+        currency,
+        count: 0,
+        priceSum: 0,
+        paidSum: 0,
+        owingSum: 0,
+      };
+      group.count += 1;
+      group.priceSum += price;
+      group.paidSum += paid;
+      group.owingSum += Math.max(0, price - paid);
+      out.set(key, group);
+    }
+  });
+  return [...out.values()];
+}
 
 /*
   The assertion the whole budget card rests on. A row with no price is not
@@ -96,7 +163,7 @@ const row = (over: Partial<Parameters<typeof summariseMonth>[0][number]> = {}) =
   spend of zero and a budget untouched - it must report that it does not
   know.
 */
-const blanks = summariseMonth([row({ priceMinor: null }), row({ priceMinor: null })], statuses, {
+const blanks = summariseMonth(groupsOf([{ statusId: 's-plan', priceMinor: null }, { statusId: 's-plan', priceMinor: null }]), {
   target: null,
   budgetMinor: 100000,
   currency: 'GBP',
@@ -105,16 +172,17 @@ is('two unpriced rows commit nothing', blanks.committedMinor, 0);
 is('and nothing has been paid', blanks.paidMinor, 0);
 is('no target means no progress figure, rather than 0%', blanks.progress, null);
 
-const month = summariseMonth(
-  [
-    row({ statusId: 's-live', paymentStatus: 'paid' }),
-    row({ statusId: 's-live', paymentStatus: 'partially_paid', paidMinor: 4000 }),
-    row({ statusId: 's-lost', priceMinor: 50000 }),
-    row({ priceMinor: 20000 }),
-  ],
-  statuses,
-  { target: 4, budgetMinor: 100000, currency: 'GBP' },
-);
+const monthLinks: FixtureLink[] = [
+  { statusId: 's-live', paymentStatus: 'paid' },
+  { statusId: 's-live', paymentStatus: 'partially_paid', paidMinor: 4000 },
+  { statusId: 's-lost', priceMinor: 50000 },
+  { statusId: 's-plan', priceMinor: 20000 },
+];
+const month = summariseMonth(groupsOf(monthLinks), {
+  target: 4,
+  budgetMinor: 100000,
+  currency: 'GBP',
+});
 is('paid counts the full price of a paid row plus the part of a partial', month.paidMinor, 14000);
 /*
   Committed is what is still going to be paid: the two live rows' unpaid
@@ -125,6 +193,39 @@ is('committed excludes the lost row', month.committedMinor, 26000);
 is('and the budget left is the budget less both', month.remainingMinor, 100000 - 14000 - 26000);
 is('progress counts live against the target', month.progress, 50);
 is('the live count is two', month.byCategory.live, 2);
+is('and the total is every link once, not once per dimension', month.total, 4);
+
+/*
+  Grouping must not change any of that. The database merges identical rows
+  before this ever sees them, and if the arithmetic were sensitive to that
+  merge the figures would depend on how varied somebody's plan happened to
+  be.
+*/
+const ungrouped = summariseMonth(groupsOf(monthLinks, false), {
+  target: 4,
+  budgetMinor: 100000,
+  currency: 'GBP',
+});
+is('merging identical rows changes no figure (paid)', ungrouped.paidMinor, month.paidMinor);
+is('nor committed', ungrouped.committedMinor, month.committedMinor);
+is('nor the total', ungrouped.total, month.total);
+
+/*
+  And the per-row clamp is the reason that holds. One row overpaid by
+  5,000 and one underpaid by 5,000 owe 5,000 between them, not nothing:
+  clamping after the sum would net them off and report the second as
+  settled.
+*/
+const lopsided: FixtureLink[] = [
+  { statusId: 's-plan', priceMinor: 10000, paymentStatus: 'partially_paid', paidMinor: 15000 },
+  { statusId: 's-plan', priceMinor: 10000, paymentStatus: 'partially_paid', paidMinor: 5000 },
+];
+is(
+  'an overpaid row does not pay off another row',
+  summariseMonth(groupsOf(lopsided), { target: null, budgetMinor: null, currency: 'GBP' })
+    .committedMinor,
+  5000,
+);
 
 /*
   A euro row is counted apart and named, never converted. There is no
@@ -132,14 +233,67 @@ is('the live count is two', month.byCategory.live, 2);
   applied to an invoice paid in March is a figure that looks precise and
   is not.
 */
-const mixed = summariseMonth([row(), row({ currency: 'EUR', priceMinor: 90000 })], statuses, {
-  target: null,
-  budgetMinor: 100000,
-  currency: 'GBP',
-});
+const mixed = summariseMonth(
+  groupsOf([{ statusId: 's-plan' }, { statusId: 's-plan', currency: 'EUR', priceMinor: 90000 }]),
+  { target: null, budgetMinor: 100000, currency: 'GBP' },
+);
 is('a row in another currency is not added to the total', mixed.committedMinor, 10000);
 is('it is counted apart', mixed.otherCurrencies[0]?.count, 1);
 is('and named', mixed.otherCurrencies[0]?.currency, 'EUR');
+
+// ---------------------------------------------------------------------------
+console.log('\n--- the reports ---');
+
+const reportLinks: FixtureLink[] = [
+  { statusId: 's-live', month: '2026-08-01', source: 'Press Parrot', paymentStatus: 'paid', priceMinor: 30000 },
+  { statusId: 's-plan', month: '2026-10-01', source: 'Outreach', priceMinor: 20000 },
+  { statusId: 's-live', month: '2026-10-01', source: 'Outreach', paymentStatus: 'paid', priceMinor: 15000, linkType: 'Link Insertion', anchorType: 'Exact Match' },
+  { statusId: 's-lost', month: '2026-10-01', source: 'Direct Publisher', priceMinor: 90000 },
+];
+const report = buildReport(groupsOf(reportLinks), statuses, 'GBP');
+
+is('the report counts every link once', report.total, 4);
+/*
+  September has nothing in it and sits between two months that do. It is a
+  real zero and the report says so - a table that skips it draws a
+  straight line over a gap somebody would read as "we kept going".
+*/
+is('a month with nothing in it is still a month', report.months.length, 3);
+is('and it is the empty one in the middle', report.months[1]?.planned, 0);
+is('August planned one', report.months[0]?.planned, 1);
+is('and it is live', report.months[0]?.live, 1);
+is('October planned three', report.months[2]?.planned, 1 + 1 + 1);
+is('of which one is live', report.months[2]?.live, 1);
+is('October paid is the paid row only', report.months[2]?.paidMinor, 15000);
+/*
+  The lost row's 90,000 is not committed. A placement that fell through is
+  not money we owe, and a report that says it is turns a lost link into a
+  bill.
+*/
+is('and committed excludes the lost row', report.months[2]?.committedMinor, 20000);
+
+const bySource = new Map(report.sources.map((row) => [row.source, row]));
+is('spend by source keeps the sources apart', report.sources.length, 3);
+is('Press Parrot paid 30,000', bySource.get('Press Parrot')?.paidMinor, 30000);
+is('Direct Publisher paid nothing', bySource.get('Direct Publisher')?.paidMinor, 0);
+is('and the lost link commits nothing against them', bySource.get('Direct Publisher')?.committedMinor, 0);
+
+is('the status breakdown is in the customer’s own order', report.statuses.map((row) => row.name).join(','), 'Planned,Live,Lost');
+is('and shares are of the whole plan', report.statuses.find((row) => row.name === 'Live')?.share, 50);
+is('link types are counted', report.linkTypes.find((slice) => slice.label === 'Guest Post')?.count, 3);
+is('and so are anchor types', report.anchorTypes.find((slice) => slice.label === 'Branded')?.count, 3);
+
+isTrue('an empty project reports itself as empty', buildReport([], statuses, 'GBP').empty);
+is('and has no months to draw', buildReport([], statuses, 'GBP').months.length, 0);
+
+/*
+  A status somebody retired after filing links under it still names them.
+  Dropping it would leave rows counted under nothing, and the breakdown
+  would stop adding up to the total printed above it.
+*/
+const orphaned = buildReport(groupsOf([{ statusId: 's-gone' }]), statuses, 'GBP');
+is('a link under a status that no longer exists is still counted', orphaned.total, 1);
+is('and it is named rather than dropped', orphaned.statuses[0]?.name, 'Removed status');
 
 // ---------------------------------------------------------------------------
 console.log('\n--- which rows a filter keeps ---');

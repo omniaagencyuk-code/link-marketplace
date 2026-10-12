@@ -6,7 +6,9 @@ import { plannerService } from '@/lib/services/planner-service';
 import { plannerMetrics } from '@/lib/services/planner-metrics';
 import { monthStart } from '@/lib/planner/domain-key';
 import { summariseMonth } from '@/lib/planner/summary';
+import { buildReport } from '@/lib/planner/reports';
 import { readFilter, readSort } from '@/lib/planner/filter';
+import { PLANNER_TABS, readTab, PAGE_SIZE } from '@/lib/planner/tabs';
 
 export const metadata: Metadata = { title: 'Link Building Planner' };
 
@@ -51,6 +53,15 @@ export default async function PlannerPage({
 
   const filter = readFilter(one);
   const sort = readSort(one);
+  const tab = readTab(one('tab'));
+
+  /*
+    The page number is in the URL like everything else, so the fourth page
+    of a filtered month is a link. Clamped to 1 rather than trusted: a
+    negative page would be a negative `range` offset, which PostgREST
+    answers with an error nobody can act on.
+  */
+  const pageNumber = Math.max(1, Math.min(Math.round(Number(one('p') ?? 1)) || 1, 10_000));
 
   /*
     Statuses are fetched even with no project, because the empty state is
@@ -59,7 +70,7 @@ export default async function PlannerPage({
   */
   const statuses = await plannerService.statuses(user.id);
 
-  const [sources, monthSettings, page, summaryRows] = await Promise.all([
+  const [sources, monthSettings, page, scopeGroups, projectGroups] = await Promise.all([
     plannerService.sources(user.id),
     project && month
       ? plannerService.monthSettings(user.id, project, month)
@@ -68,18 +79,21 @@ export default async function PlannerPage({
       ? plannerService.links(user.id, {
           projectId: project.id,
           month,
-          page: 1,
-          pageSize: 50,
+          page: pageNumber,
+          pageSize: PAGE_SIZE,
           filter,
           sort,
         })
       : Promise.resolve({ items: [], total: 0 }),
-    /* The whole month, but only the seven columns the cards add up. The
-       table is paged at fifty; the summary counts all of them, and reading
-       every column of every row to total four of them is the shape this
-       codebase keeps undoing. */
-    project
-      ? plannerService.monthSummaryRows(user.id, project.id, month)
+    /* The scope, counted by the database rather than read and added up
+       here. One row per combination that exists, so a thousand-link month
+       is a few dozen rows and there is no PostgREST cap to fall past. */
+    project ? plannerService.groups(user.id, project.id, month) : Promise.resolve([]),
+    /* And the whole project, for the Reports tab. Fetched only when that
+       tab is open: it is the same shape but across every month, and a
+       round trip nobody is looking at is a round trip. */
+    project && tab === 'reports'
+      ? plannerService.groups(user.id, project.id, null)
       : Promise.resolve([]),
   ]);
 
@@ -105,12 +119,17 @@ export default async function PlannerPage({
     rather than progress against nothing.
   */
   const summary = project
-    ? summariseMonth(summaryRows, statuses, {
+    ? summariseMonth(scopeGroups, {
         target: monthSettings?.linkTarget ?? null,
         budgetMinor: monthSettings?.budgetMinor ?? null,
         currency: project.currency,
       })
     : null;
+
+  const report =
+    project && tab === 'reports'
+      ? buildReport(projectGroups, statuses, project.currency)
+      : null;
 
   return (
     <>
@@ -131,6 +150,11 @@ export default async function PlannerPage({
         sources={sources}
         summary={summary}
         listings={listings}
+        tab={tab}
+        tabs={PLANNER_TABS}
+        report={report}
+        page={pageNumber}
+        pageSize={PAGE_SIZE}
       />
     </>
   );

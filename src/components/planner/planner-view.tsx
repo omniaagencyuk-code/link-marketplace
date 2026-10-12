@@ -15,6 +15,7 @@ import {
   Upload,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils/cn';
 import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import { EmptyState } from '@/components/ui/empty-state';
@@ -37,6 +38,9 @@ import {
   type PlannerSortKey,
 } from '@/lib/planner/filter';
 import { LinkFilters } from './link-filters';
+import { PlannerReports } from './reports';
+import type { PlannerReport } from '@/lib/planner/reports';
+import type { PlannerTab } from '@/lib/planner/tabs';
 import { linksToCsv } from '@/lib/planner/csv';
 import { downloadCsv } from '@/lib/import/csv';
 import type {
@@ -74,6 +78,11 @@ export function PlannerView({
   sources,
   summary,
   listings,
+  tab,
+  tabs,
+  report,
+  page,
+  pageSize,
 }: {
   projects: PlannerProject[];
   project: PlannerProject | null;
@@ -88,6 +97,12 @@ export function PlannerView({
   summary: MonthSummary | null;
   /** Domain key to marketplace slug, for the rows we happen to sell. */
   listings: Record<string, string>;
+  tab: PlannerTab;
+  tabs: readonly { id: PlannerTab; label: string }[];
+  /** Built only when the Reports tab is the one open. */
+  report: PlannerReport | null;
+  page: number;
+  pageSize: number;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -111,16 +126,26 @@ export function PlannerView({
     month?: string | null;
     filter?: PlannerFilter;
     sort?: PlannerSort;
+    tab?: PlannerTab;
+    page?: number;
   }) => {
     const params = new URLSearchParams();
     params.set('project', next.project ?? project?.id ?? '');
     const wanted = next.month === undefined ? month : next.month;
     params.set('month', wanted === null ? 'all' : wanted);
+    if ((next.tab ?? tab) !== 'overview') params.set('tab', next.tab ?? tab);
     for (const [key, value] of Object.entries(
       filterParams(next.filter ?? filter, next.sort ?? sort),
     )) {
       params.set(key, value);
     }
+    /*
+      Page one is the absence of a page, and anything that changes which
+      rows exist goes back to it. Staying on page four of a filter that now
+      matches twelve rows is an empty table that looks like a bug.
+    */
+    const wantedPage = next.page ?? (next.filter || next.sort || next.month !== undefined ? 1 : page);
+    if (wantedPage > 1) params.set('p', String(wantedPage));
     router.push(`/dashboard/planner?${params.toString()}`);
   };
 
@@ -302,6 +327,46 @@ export function PlannerView({
         </div>
       </div>
 
+      {/*
+        Two tabs. The overview cards and the link plan stay on one screen
+        because that is where the brief's layout puts them; Reports is its
+        own tab because it answers a different question and costs a second
+        read of the whole project, which is not worth doing for somebody
+        who came here to add a row.
+      */}
+      <div role="tablist" aria-label="Planner sections" className="flex gap-1 border-b border-line">
+        {tabs.map((option) => (
+          <button
+            key={option.id}
+            type="button"
+            role="tab"
+            aria-selected={tab === option.id}
+            onClick={() => go({ tab: option.id })}
+            className={cn(
+              '-mb-px border-b-2 px-3 py-2 text-[13px] font-medium transition-colors',
+              tab === option.id
+                ? 'border-accent-600 text-ink'
+                : 'border-transparent text-muted hover:text-ink',
+            )}
+          >
+            {option.label}
+          </button>
+        ))}
+      </div>
+
+      {tab === 'reports' ? (
+        <>
+          {report ? (
+            <PlannerReports
+              report={report}
+              currency={project.currency}
+              projectName={project.name}
+            />
+          ) : null}
+        </>
+      ) : (
+        <>
+
       {monthSettings?.fromProjectDefaults && (target !== null || budget !== null) ? (
         <p className="text-[12px] text-muted">
           Showing this project&rsquo;s defaults. Changing either figure sets it for{' '}
@@ -466,6 +531,53 @@ export function PlannerView({
           listings={listings}
           onChanged={refresh}
         />
+      )}
+
+      {/*
+        Paging, server side. The browser never holds a plan it is not
+        showing - the brief's rule, and the only version that can be right,
+        since the filter and the sort run in the database and a page
+        filtered in the browser is a filter over a page.
+      */}
+      {total > pageSize ? (
+        <nav
+          aria-label="Pages of this plan"
+          className="flex flex-wrap items-center justify-between gap-3 rounded-[var(--radius-card)] border border-line bg-white px-4 py-2.5 shadow-[var(--shadow-card)]"
+        >
+          <p className="tabular text-[13px] text-muted">
+            Showing{' '}
+            <span className="font-semibold text-ink">
+              {(page - 1) * pageSize + 1}&ndash;{Math.min(page * pageSize, total)}
+            </span>{' '}
+            of {total}
+          </p>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={page <= 1 || pending}
+              onClick={() => go({ page: page - 1 })}
+            >
+              <ChevronLeft className="h-3.5 w-3.5" aria-hidden="true" />
+              Previous
+            </Button>
+            <span className="tabular text-[13px] text-muted">
+              Page {page} of {Math.max(1, Math.ceil(total / pageSize))}
+            </span>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={page >= Math.ceil(total / pageSize) || pending}
+              onClick={() => go({ page: page + 1 })}
+            >
+              Next
+              <ChevronRight className="h-3.5 w-3.5" aria-hidden="true" />
+            </Button>
+          </div>
+        </nav>
+      ) : null}
+
+        </>
       )}
 
       {/* The mockup's second promotional card was link monitoring. There is

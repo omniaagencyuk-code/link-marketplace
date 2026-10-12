@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { monthStart } from '@/lib/planner/domain-key';
 import { STATUS_CATEGORIES } from '@/lib/types/planner';
+import type { PlannerGroup } from '@/lib/planner/summary';
 import {
   compareLinks,
   matchesFilter,
@@ -293,23 +294,70 @@ export const plannerMock = {
       .map((entry) => entry.row);
   },
 
-  monthSummaryRows(userId: string, projectId: string, month: string | null) {
-    return [...store().links.values()]
-      .filter(
-        (entry) =>
-          entry.userId === userId &&
-          entry.row.projectId === projectId &&
-          (month === null || entry.row.planMonth === month),
-      )
-      .map((entry) => ({
-        statusId: entry.row.statusId,
-        linkType: entry.row.linkType,
-        anchorType: entry.row.anchorType,
-        priceMinor: entry.row.priceMinor,
-        currency: entry.row.currency,
-        paymentStatus: entry.row.paymentStatus,
-        paidMinor: entry.row.paidMinor,
-      }));
+  /**
+   * The same grouping the database does, in memory.
+   *
+   * Written against the same definitions rather than beside them: the
+   * three sums are what `planner_report_rows` emits and what `moneyOf`
+   * expects, including the per-row clamp on what is still owed. Summing
+   * first and clamping after would let one overpaid row pay off another's
+   * shortfall, which is the one place these two could disagree.
+   */
+  groups(userId: string, projectId: string, month: string | null): PlannerGroup[] {
+    const db = store();
+    const categoryOf = new Map(
+      [...db.statuses.values()]
+        .filter((entry) => entry.userId === userId)
+        .map((entry) => [entry.row.id, entry.row.category] as const),
+    );
+
+    const out = new Map<string, PlannerGroup>();
+
+    for (const entry of db.links.values()) {
+      if (entry.userId !== userId) continue;
+      if (entry.row.projectId !== projectId) continue;
+      if (month !== null && entry.row.planMonth !== month) continue;
+
+      const row = entry.row;
+      const category = categoryOf.get(row.statusId) ?? 'planned';
+      const price = row.priceMinor ?? 0;
+      const paid =
+        row.paymentStatus === 'paid'
+          ? price
+          : row.paymentStatus === 'partially_paid'
+            ? (row.paidMinor ?? 0)
+            : 0;
+
+      const buckets: [PlannerGroup['dimension'], string][] = [
+        ['month', row.planMonth],
+        ['source', row.source],
+        ['linkType', row.linkType],
+        ['anchorType', row.anchorType],
+        ['status', row.statusId],
+      ];
+
+      for (const [dimension, bucket] of buckets) {
+        const key = [dimension, bucket, category, row.paymentStatus, row.currency ?? ''].join('\u0000');
+        const group = out.get(key) ?? {
+          dimension,
+          bucket,
+          category,
+          paymentStatus: row.paymentStatus,
+          currency: row.currency,
+          count: 0,
+          priceSum: 0,
+          paidSum: 0,
+          owingSum: 0,
+        };
+        group.count += 1;
+        group.priceSum += price;
+        group.paidSum += paid;
+        group.owingSum += Math.max(0, price - paid);
+        out.set(key, group);
+      }
+    }
+
+    return [...out.values()];
   },
 
   addLink(

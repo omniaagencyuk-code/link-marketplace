@@ -1,18 +1,77 @@
-import type { PlannerLink, PlannerStatus, StatusCategory } from '@/lib/types/planner';
+import type { PaymentStatus, StatusCategory } from '@/lib/types/planner';
 
 /**
- * What a month adds up to.
+ * What a plan adds up to.
  *
  * Pure, and in its own file, so the arithmetic can be checked without a
- * database or a browser. Every number on the overview comes from here, and
- * each one has a definition that has to survive somebody asking "where did
- * that come from" six months from now.
+ * database or a browser. Every number on the overview and in the reports
+ * comes from here, and each one has a definition that has to survive
+ * somebody asking "where did that come from" six months from now.
+ *
+ * ## It counts groups, not links
+ *
+ * The database does the grouping (`planner_report_rows`, 0083) and this
+ * does the arithmetic. Reading every row of a project to add it up in
+ * JavaScript works until it silently stops: PostgREST caps a response at a
+ * thousand rows and says nothing in the response about it, so the figure
+ * an agency takes to a client meeting would just be short.
+ *
+ * What stayed here is what "paid" and "committed" mean. There is exactly
+ * one copy of those rules, and it is this file - a second one in SQL would
+ * drift, and the copy that drifted would be the one somebody budgets
+ * against.
  */
 
-type SummaryRow = Pick<
-  PlannerLink,
-  'statusId' | 'linkType' | 'anchorType' | 'priceMinor' | 'currency' | 'paymentStatus' | 'paidMinor'
->;
+/** The dimensions the database groups by. */
+export type PlannerDimension = 'month' | 'source' | 'linkType' | 'anchorType' | 'status';
+
+/**
+ * One combination that exists in a plan, counted.
+ *
+ * The key is the dimension's bucket plus the three things the money rules
+ * need to look at - the status's category, the payment status and the
+ * currency - so the rules below can be applied to a group exactly as they
+ * would be applied to each row in it.
+ */
+export interface PlannerGroup {
+  dimension: PlannerDimension;
+  /** The month, source, type, anchor type or status id this counts. */
+  bucket: string;
+  category: StatusCategory;
+  paymentStatus: PaymentStatus;
+  /** Null means the project's own currency, as it does on the row. */
+  currency: string | null;
+  count: number;
+  /** Sum of the prices, a blank price counting as nothing. */
+  priceSum: number;
+  /** Sum of what has actually been paid against them. */
+  paidSum: number;
+  /** Sum of `max(0, price - paid)`, clamped per row before summing. */
+  owingSum: number;
+}
+
+/**
+ * What a group is worth, by the two definitions everything else uses.
+ *
+ * `paid` is money that has left: the full price of anything marked paid,
+ * plus the part-payment recorded against anything partly paid. Deliberately
+ * not "anything Live" - a link can go live before the invoice does, and
+ * counting it as spent tells somebody they have less left than they do.
+ *
+ * `committed` is priced work still to be paid for. Work that is no longer
+ * happening costs nothing more, so a cancelled or lost row commits nothing.
+ */
+export function moneyOf(group: PlannerGroup): { paid: number; committed: number } {
+  const paid = group.paidSum;
+  const committed =
+    group.category === 'cancelled' || group.category === 'lost' ? 0 : group.owingSum;
+  return { paid, committed };
+}
+
+/** Is this group priced in something the project cannot total? */
+export function isForeign(group: PlannerGroup, currency: string): boolean {
+  return (group.currency ?? currency) !== currency;
+}
 
 export interface Slice {
   label: string;
@@ -74,13 +133,15 @@ const EMPTY_CATEGORIES: Record<StatusCategory, number> = {
 };
 
 /** Grouped, biggest first, with anything unlabelled gathered as "Not set". */
-function slices(values: string[]): Slice[] {
+export function slices(groups: PlannerGroup[], dimension: PlannerDimension): Slice[] {
   const counts = new Map<string, number>();
-  for (const raw of values) {
-    const label = raw.trim() || 'Not set';
-    counts.set(label, (counts.get(label) ?? 0) + 1);
+  let total = 0;
+  for (const group of groups) {
+    if (group.dimension !== dimension) continue;
+    const label = group.bucket.trim() || 'Not set';
+    counts.set(label, (counts.get(label) ?? 0) + group.count);
+    total += group.count;
   }
-  const total = values.length;
   return [...counts.entries()]
     .map(([label, count]) => ({
       label,
@@ -91,20 +152,25 @@ function slices(values: string[]): Slice[] {
 }
 
 export function summariseMonth(
-  rows: SummaryRow[],
-  statuses: PlannerStatus[],
+  groups: PlannerGroup[],
   options: { target: number | null; budgetMinor: number | null; currency: string },
 ): MonthSummary {
-  const categoryOf = new Map(statuses.map((status) => [status.id, status.category]));
-
   const byCategory = { ...EMPTY_CATEGORIES };
+  let total = 0;
   let paidMinor = 0;
   let committedMinor = 0;
   const otherCurrencies = new Map<string, number>();
 
-  for (const row of rows) {
-    const category = categoryOf.get(row.statusId) ?? 'planned';
-    byCategory[category] += 1;
+  /*
+    The status dimension is the one counted, because every link appears in
+    it exactly once. Totalling across dimensions would count each link five
+    times, which is the one way to get this wrong and the reason the
+    dimension is named here rather than assumed.
+  */
+  for (const group of groups) {
+    if (group.dimension !== 'status') continue;
+    total += group.count;
+    byCategory[group.category] += group.count;
 
     /*
       Only the project's own currency is totalled.
@@ -114,33 +180,22 @@ export function summariseMonth(
       so the budget is honest about what it is not covering rather than
       quietly leaving it out.
     */
-    const currency = row.currency ?? options.currency;
-    if (currency !== options.currency) {
-      otherCurrencies.set(currency, (otherCurrencies.get(currency) ?? 0) + 1);
+    if (isForeign(group, options.currency)) {
+      const currency = group.currency ?? options.currency;
+      otherCurrencies.set(currency, (otherCurrencies.get(currency) ?? 0) + group.count);
       continue;
     }
 
-    const price = row.priceMinor ?? 0;
-    const paid =
-      row.paymentStatus === 'paid'
-        ? price
-        : row.paymentStatus === 'partially_paid'
-          ? (row.paidMinor ?? 0)
-          : 0;
-
-    paidMinor += paid;
-
-    // Work that is no longer happening costs nothing more.
-    if (category !== 'cancelled' && category !== 'lost') {
-      committedMinor += Math.max(0, price - paid);
-    }
+    const money = moneyOf(group);
+    paidMinor += money.paid;
+    committedMinor += money.committed;
   }
 
   const target = options.target;
   const live = byCategory.live;
 
   return {
-    total: rows.length,
+    total,
     byCategory,
     target,
     /*
@@ -157,8 +212,8 @@ export function summariseMonth(
       options.budgetMinor === null ? null : options.budgetMinor - paidMinor - committedMinor,
     remainingAfterPaidMinor:
       options.budgetMinor === null ? null : options.budgetMinor - paidMinor,
-    linkTypes: slices(rows.map((row) => row.linkType)),
-    anchorTypes: slices(rows.map((row) => row.anchorType)),
+    linkTypes: slices(groups, 'linkType'),
+    anchorTypes: slices(groups, 'anchorType'),
     otherCurrencies: [...otherCurrencies.entries()]
       .map(([currency, count]) => ({ currency, count }))
       .sort((a, b) => b.count - a.count),

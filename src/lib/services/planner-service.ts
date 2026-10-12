@@ -8,6 +8,7 @@ import {
   type PlannerFilter,
   type PlannerSort,
 } from '@/lib/planner/filter';
+import type { PlannerGroup } from '@/lib/planner/summary';
 import type {
   MonthSettings,
   PlannerLink,
@@ -39,6 +40,15 @@ import type {
  */
 
 type Row = Record<string, unknown>;
+
+/**
+ * How many rows one PostgREST response may carry.
+ *
+ * Supabase's default `db-max-rows` is a thousand and the response says
+ * nothing when it truncates, so every read here that could want more pages
+ * up to it rather than asking once and believing the answer.
+ */
+const PAGE_CAP = 1000;
 
 /** The sort keys, as the columns they are. `status` reaches through the embed. */
 const SORT_COLUMNS: Record<PlannerSort['key'], string> = {
@@ -618,65 +628,107 @@ export const plannerService = {
     return { items: ((data ?? []) as unknown as Row[]).map(mapLink), total: count ?? 0 };
   },
 
-  /** Specific rows, for an action working on a selection. */
+  /**
+   * Specific rows, for an action working on a selection.
+   *
+   * Chunked at `PAGE_CAP`, because PostgREST caps a response at a thousand
+   * rows and puts nothing in it to say so. Asking about 1,500 selected
+   * links in one call would quietly answer about 1,000 of them, and the
+   * caller - an export - would write a file that stops in the middle with
+   * no sign that it has.
+   */
   async linksByIds(userId: string, linkIds: string[]): Promise<PlannerLink[]> {
     if (linkIds.length === 0) return [];
     if (!isSupabaseEnabled()) return plannerMock.linksByIds(userId, linkIds);
 
-    const { data } = await getAdminScopedClient()
-      .from('planner_links')
-      .select(LINK_COLUMNS)
-      .eq('user_id', userId)
-      .in('id', linkIds);
+    const supabase = getAdminScopedClient();
+    const out: PlannerLink[] = [];
 
-    return ((data ?? []) as Row[]).map(mapLink);
+    for (let from = 0; from < linkIds.length; from += PAGE_CAP) {
+      const { data, error } = await supabase
+        .from('planner_links')
+        .select(LINK_COLUMNS)
+        .eq('user_id', userId)
+        .in('id', linkIds.slice(from, from + PAGE_CAP));
+      if (error) throw new Error(`Could not read those links: ${error.message}`);
+      out.push(...((data ?? []) as Row[]).map(mapLink));
+    }
+
+    return out;
   },
 
   /**
-   * Everything in a month, for the summaries.
+   * Every row a filter matches, for an export.
    *
-   * Only the columns the four overview cards add up, which is why it is a
-   * second read rather than the paged one with a bigger page: the table
-   * shows fifty rows and the summary counts all of them, and fetching
-   * seventeen columns of every row to total four of them is the shape this
-   * codebase keeps undoing.
-   *
-   * An RPC that counts in the database is the next step if a month ever
-   * gets big enough to notice; at the few hundred links a month an agency
-   * actually plans, one narrow read is cheaper than a round trip saved.
+   * Paged through rather than asked for in one go, for the reason above:
+   * a file that silently stops at a thousand rows is worse than no export
+   * at all, because nothing about it looks wrong.
    */
-  async monthSummaryRows(
+  async allLinks(
+    userId: string,
+    options: { projectId: string; month: string | null; filter?: PlannerFilter; sort?: PlannerSort },
+    limit = 20_000,
+  ): Promise<PlannerLink[]> {
+    const out: PlannerLink[] = [];
+    for (let page = 1; out.length < limit; page += 1) {
+      const { items } = await plannerService.links(userId, {
+        ...options,
+        page,
+        pageSize: PAGE_CAP,
+      });
+      out.push(...items);
+      if (items.length < PAGE_CAP) break;
+    }
+    return out.slice(0, limit);
+  },
+
+  /**
+   * A plan, counted by the database.
+   *
+   * ## One round trip, and no cap to fall past
+   *
+   * `planner_report_rows` (0083) groups in Postgres and returns one row per
+   * combination that exists - a few dozen for a project with a thousand
+   * links. The read it replaces fetched every row and added them up here,
+   * which PostgREST caps at a thousand without saying so in the response:
+   * an agency with two years of plans would have been shown a spend figure
+   * short by whatever fell past the cap, with nothing on the screen saying
+   * so. 0068 records the same trap on the admin table.
+   *
+   * ## The counting is there, the meaning is here
+   *
+   * What "paid" and "committed" mean stays in `summary.ts`, which is the
+   * only copy. This returns counts and sums; `moneyOf` applies the rules.
+   *
+   * `month` null is the whole project, which is what the Reports tab asks
+   * for.
+   */
+  async groups(
     userId: string,
     projectId: string,
     month: string | null,
-  ): Promise<
-    Pick<
-      PlannerLink,
-      'statusId' | 'linkType' | 'anchorType' | 'priceMinor' | 'currency' | 'paymentStatus' | 'paidMinor'
-    >[]
-  > {
-    if (!isSupabaseEnabled()) return plannerMock.monthSummaryRows(userId, projectId, month);
+  ): Promise<PlannerGroup[]> {
+    if (!isSupabaseEnabled()) return plannerMock.groups(userId, projectId, month);
 
-    let query = getAdminScopedClient()
-      .from('planner_links')
-      .select('status_id, link_type, anchor_type, price_minor, currency, payment_status, paid_minor')
-      .eq('user_id', userId)
-      .eq('project_id', projectId);
-    /* Null is the whole project. The cards then total every month, which
-       is what the project scope is for; they are deliberately not filtered,
-       because they describe the plan rather than the search. */
-    if (month !== null) query = query.eq('plan_month', monthStart(month));
-
-    const { data } = await query;
+    const { data, error } = await getAdminScopedClient().rpc('planner_report_rows', {
+      p_user_id: userId,
+      p_project_id: projectId,
+      p_month: month === null ? null : monthStart(month),
+    });
+    /* Loud rather than empty. A summary that fails silently is a budget
+       card reading zero against a month somebody has spent in. */
+    if (error) throw new Error(`Could not total the plan: ${error.message}`);
 
     return ((data ?? []) as Row[]).map((row) => ({
-      statusId: String(row.status_id),
-      linkType: String(row.link_type ?? ''),
-      anchorType: String(row.anchor_type ?? ''),
-      priceMinor: numberOrNull(row.price_minor),
+      dimension: String(row.dimension) as PlannerGroup['dimension'],
+      bucket: String(row.bucket ?? ''),
+      category: String(row.category) as PlannerGroup['category'],
+      paymentStatus: String(row.payment_status) as PlannerGroup['paymentStatus'],
       currency: (row.currency as string | null) ?? null,
-      paymentStatus: (row.payment_status as PlannerLink['paymentStatus']) ?? 'unpaid',
-      paidMinor: numberOrNull(row.paid_minor),
+      count: Number(row.n ?? 0),
+      priceSum: Number(row.price_sum ?? 0),
+      paidSum: Number(row.paid_sum ?? 0),
+      owingSum: Number(row.owing_sum ?? 0),
     }));
   },
 
