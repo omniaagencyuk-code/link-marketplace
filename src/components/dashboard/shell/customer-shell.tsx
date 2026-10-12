@@ -39,9 +39,23 @@ import { dashboardNav, type NavItem } from '@/lib/config/navigation';
 export function CustomerShell({
   children,
   topbar,
+  width = 'default',
 }: {
   children: React.ReactNode;
   topbar: React.ReactNode;
+  /**
+   * How much of a wide screen the page may use.
+   *
+   * `default` is 84rem, which is a comfortable reading measure and what
+   * every page of forms, cards and short tables wants. `wide` is 96rem,
+   * for the one page that is a thirteen-column table: the marketplace
+   * needs 1,228px before anything scrolls, and 84rem on a 1920 screen left
+   * 274px of the window unused while the table scrolled. Measured, not
+   * assumed - and it is an opt-in rather than a new default, because
+   * widening the account screens would only make their forms harder to
+   * read.
+   */
+  width?: 'default' | 'wide';
 }) {
   const pathname = usePathname();
 
@@ -107,7 +121,14 @@ export function CustomerShell({
         </header>
 
         <main id="main" className="min-w-0 flex-1 px-4 py-6 sm:px-6 lg:px-8">
-          <div className="mx-auto w-full max-w-[84rem]">{children}</div>
+          <div
+            className={cn(
+              'mx-auto w-full',
+              width === 'wide' ? 'max-w-[96rem]' : 'max-w-[84rem]',
+            )}
+          >
+            {children}
+          </div>
         </main>
       </div>
     </div>
