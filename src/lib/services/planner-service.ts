@@ -34,6 +34,48 @@ import type {
 
 type Row = Record<string, unknown>;
 
+/**
+ * A row an import may create.
+ *
+ * The five required fields are the ones a planner row is meaningless
+ * without; everything else is optional because the two importers carry
+ * different halves of the spreadsheet. A CSV brings metrics and no payment
+ * state, an order brings a price that has already been paid and no metrics
+ * at all, and widening one importer's shape to cover the other's would mean
+ * passing explicit nulls for columns the caller knows nothing about - which
+ * is how a blank becomes a zero.
+ *
+ * `userId` is not on it. It comes from the session, as a separate argument,
+ * so that no caller can put one in a row.
+ */
+export interface NewPlannerLinkRow {
+  projectId: string;
+  planMonth: string;
+  statusId: string;
+  domain: string;
+  domainKey: string;
+  source?: string;
+  domainRating?: number | null;
+  organicTraffic?: number | null;
+  organicKeywords?: number | null;
+  referringDomains?: number | null;
+  metricsSource?: PlannerLink['metricsSource'];
+  linkType?: string;
+  targetUrl?: string | null;
+  anchorText?: string;
+  anchorType?: string;
+  plannedDate?: string | null;
+  liveDate?: string | null;
+  liveUrl?: string | null;
+  priceMinor?: number | null;
+  currency?: string | null;
+  paymentStatus?: PlannerLink['paymentStatus'];
+  paidMinor?: number | null;
+  notes?: string;
+  /** Set only by the Press Parrot order import. Never by a CSV. */
+  orderItemId?: string | null;
+}
+
 const PROJECT_COLUMNS =
   'id, name, domain, country, currency, monthly_budget_minor, monthly_link_target, notes, archived_at';
 
@@ -548,31 +590,7 @@ export const plannerService = {
    * and a request that may not survive it. Chunked, because a single
    * statement carrying ten thousand rows is its own problem.
    */
-  async addLinks(
-    userId: string,
-    rows: {
-      projectId: string;
-      planMonth: string;
-      statusId: string;
-      domain: string;
-      domainKey: string;
-      source: string;
-      domainRating: number | null;
-      organicTraffic: number | null;
-      organicKeywords: number | null;
-      referringDomains: number | null;
-      linkType: string;
-      targetUrl: string | null;
-      anchorText: string;
-      anchorType: string;
-      plannedDate: string | null;
-      liveDate: string | null;
-      liveUrl: string | null;
-      priceMinor: number | null;
-      currency: string | null;
-      notes: string;
-    }[],
-  ): Promise<number> {
+  async addLinks(userId: string, rows: NewPlannerLinkRow[]): Promise<number> {
     if (rows.length === 0) return 0;
     if (!isSupabaseEnabled()) return plannerMock.addLinks(userId, rows);
 
@@ -581,38 +599,47 @@ export const plannerService = {
     let written = 0;
 
     for (let from = 0; from < rows.length; from += CHUNK) {
-      const batch = rows.slice(from, from + CHUNK).map((row) => ({
-        user_id: userId,
-        project_id: row.projectId,
-        plan_month: monthStart(row.planMonth),
-        status_id: row.statusId,
-        domain: row.domain,
-        domain_key: row.domainKey,
-        source: row.source,
-        domain_rating: row.domainRating,
-        organic_traffic: row.organicTraffic,
-        organic_keywords: row.organicKeywords,
-        referring_domains: row.referringDomains,
-        // Imported, and said so: a figure from somebody's spreadsheet is
-        // not a figure we measured and the row should not imply it is.
-        metrics_source:
-          row.domainRating !== null ||
-          row.organicTraffic !== null ||
-          row.organicKeywords !== null ||
-          row.referringDomains !== null
-            ? 'csv'
-            : null,
-        link_type: row.linkType,
-        target_url: row.targetUrl,
-        anchor_text: row.anchorText,
-        anchor_type: row.anchorType,
-        planned_date: row.plannedDate,
-        live_date: row.liveDate,
-        live_url: row.liveUrl,
-        price_minor: row.priceMinor,
-        currency: row.currency,
-        notes: row.notes,
-      }));
+      const batch = rows.slice(from, from + CHUNK).map((row) => {
+        const metrics = [
+          row.domainRating ?? null,
+          row.organicTraffic ?? null,
+          row.organicKeywords ?? null,
+          row.referringDomains ?? null,
+        ];
+        return {
+          user_id: userId,
+          project_id: row.projectId,
+          plan_month: monthStart(row.planMonth),
+          status_id: row.statusId,
+          domain: row.domain,
+          domain_key: row.domainKey,
+          source: row.source ?? '',
+          domain_rating: row.domainRating ?? null,
+          organic_traffic: row.organicTraffic ?? null,
+          organic_keywords: row.organicKeywords ?? null,
+          referring_domains: row.referringDomains ?? null,
+          /* Where the figures came from, and never a claim we measured
+             them. `metricsSource` is given explicitly by a caller that
+             knows (the order import leaves it unset, because an order
+             carries no metrics); a row with figures and no source is a
+             spreadsheet's, which is what `csv` means. */
+          metrics_source:
+            row.metricsSource ?? (metrics.some((value) => value !== null) ? 'csv' : null),
+          link_type: row.linkType ?? '',
+          target_url: row.targetUrl ?? null,
+          anchor_text: row.anchorText ?? '',
+          anchor_type: row.anchorType ?? '',
+          planned_date: row.plannedDate ?? null,
+          live_date: row.liveDate ?? null,
+          live_url: row.liveUrl ?? null,
+          price_minor: row.priceMinor ?? null,
+          currency: row.currency ?? null,
+          payment_status: row.paymentStatus ?? 'unpaid',
+          paid_minor: row.paidMinor ?? null,
+          notes: row.notes ?? '',
+          order_item_id: row.orderItemId ?? null,
+        };
+      });
 
       const { error } = await supabase.from('planner_links').insert(batch);
       if (error) throw new Error(`Could not import: ${error.message}`);
@@ -659,6 +686,19 @@ export const plannerService = {
       .maybeSingle();
     if (error) throw new Error(`Could not save: ${error.message}`);
     return data ? mapLink(data as Row) : null;
+  },
+
+  /** Which order items this customer has already pulled into a plan. */
+  async importedOrderItemIds(userId: string): Promise<Set<string>> {
+    if (!isSupabaseEnabled()) return plannerMock.importedOrderItemIds(userId);
+
+    const { data } = await getAdminScopedClient()
+      .from('planner_links')
+      .select('order_item_id')
+      .eq('user_id', userId)
+      .not('order_item_id', 'is', null);
+
+    return new Set(((data ?? []) as Row[]).map((row) => String(row.order_item_id)));
   },
 
   async deleteLinks(userId: string, linkIds: string[]): Promise<number> {

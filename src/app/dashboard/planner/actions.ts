@@ -2,7 +2,8 @@
 
 import { revalidatePath } from 'next/cache';
 import { requireCustomerSession } from '@/lib/auth/customer-access';
-import { plannerService } from '@/lib/services/planner-service';
+import { plannerService, type NewPlannerLinkRow } from '@/lib/services/planner-service';
+import { orderService } from '@/lib/services/order-service';
 import { plannerMetrics } from '@/lib/services/planner-metrics';
 import { domainKey, looksLikeDomain, monthStart } from '@/lib/planner/domain-key';
 import { STATUS_CATEGORIES, type PlannerLinkPatch, type StatusCategory } from '@/lib/types/planner';
@@ -479,4 +480,160 @@ export async function addSourceAction(name: string) {
   await plannerService.addSource(user.id, clean);
   revalidatePath(PATH);
   return { added: clean };
+}
+
+// ------------------------------------------------- Press Parrot orders
+
+/**
+ * What a Press Parrot order item becomes in a plan.
+ *
+ * The three placement types we sell, named the way the planner names them,
+ * so an imported row sits in the same dropdown as a typed one rather than
+ * introducing a fourth spelling of "guest post".
+ */
+const SERVICE_LINK_TYPES: Record<string, string> = {
+  'guest-post': 'Guest Post',
+  'niche-edit': 'Link Insertion',
+  'digital-pr': 'Digital PR',
+};
+
+/**
+ * Where an order's own status puts the imported row, by category rather
+ * than by name.
+ *
+ * By category because the customer owns their status list: they may have
+ * renamed Live to Published and deleted four others, and matching on a
+ * name would file a live placement under Planned the first time somebody
+ * did. `awaiting-content` is `in_progress` rather than `waiting`, because
+ * `waiting` in the planner means waiting for a publisher and this is
+ * waiting for the customer.
+ */
+const ORDER_STATUS_CATEGORIES: Record<string, StatusCategory> = {
+  draft: 'planned',
+  'awaiting-content': 'in_progress',
+  'in-progress': 'in_progress',
+  submitted: 'waiting',
+  live: 'live',
+  cancelled: 'cancelled',
+};
+
+/**
+ * Pull this customer's Press Parrot orders into a plan.
+ *
+ * ## Their own orders, and nothing else
+ *
+ * `orderService.getByUser(user.id)` with the id from the session. There is
+ * no order id in the arguments, so there is nothing to tamper with: the
+ * action cannot be asked about an order, only told which project to file
+ * the answers under.
+ *
+ * ## The order is read, never written
+ *
+ * Nothing here updates an order or an order item. The planner row
+ * references the item and copies five of its fields; after that the two
+ * drift apart on purpose. Moving a planner row to Cancelled is somebody
+ * tidying their own board and must not cancel a placement we are
+ * contractually delivering, and editing a planner price must not change
+ * what was charged - which is why 0082 keys its index on the item rather
+ * than making the planner row the order's second home.
+ *
+ * ## Months are the order's, not the one on screen
+ *
+ * Each placement lands in the month its order was placed. Filing August's
+ * orders into whatever month happens to be open would make every month's
+ * spend wrong, which is the one number this tool exists to get right. The
+ * result says which months received rows so the customer knows where to
+ * look.
+ *
+ * ## Twice is not twice
+ *
+ * Already-imported items are filtered out here, and the database refuses
+ * them anyway (0082). The read-then-insert in between is exactly the gap a
+ * second click fits through, so the check that matters is the index; this
+ * one exists so the normal case reports "nothing new" instead of an error.
+ */
+export async function importOrdersAction(projectId: string) {
+  const user = await requireCustomerSession(PATH);
+
+  const [orders, statuses, alreadyImported] = await Promise.all([
+    orderService.getByUser(user.id),
+    plannerService.statuses(user.id),
+    plannerService.importedOrderItemIds(user.id),
+  ]);
+
+  const live = statuses.filter((status) => !status.archivedAt);
+  const fallback = live[0] ?? statuses[0];
+  if (!fallback) return { imported: 0, skipped: 0, months: [] as string[] };
+
+  /* The first status in each category, by the customer's own ordering. A
+     customer with two "live" statuses gets the one they put first, which
+     is a defensible choice; picking the last would not be. */
+  const byCategory = new Map<StatusCategory, string>();
+  for (const status of [...live].sort((a, b) => a.sortOrder - b.sortOrder)) {
+    if (!byCategory.has(status.category)) byCategory.set(status.category, status.id);
+  }
+
+  const rows: NewPlannerLinkRow[] = [];
+  const months = new Set<string>();
+  let skipped = 0;
+
+  for (const order of orders) {
+    for (const item of order.items) {
+      if (alreadyImported.has(item.id)) {
+        skipped += 1;
+        continue;
+      }
+      if (rows.length >= 2000) break;
+
+      const category = ORDER_STATUS_CATEGORIES[item.status] ?? 'planned';
+      const month = monthStart(order.placedAt);
+      months.add(month);
+
+      rows.push({
+        projectId: String(projectId),
+        planMonth: month,
+        statusId: byCategory.get(category) ?? fallback.id,
+        domain: item.websiteDomain,
+        domainKey: domainKey(item.websiteDomain),
+        source: 'Press Parrot',
+        linkType: SERVICE_LINK_TYPES[item.serviceType] ?? 'Other',
+        targetUrl: safeUrl(item.targetUrl),
+        anchorText: text(item.anchorText, 200),
+        liveUrl: safeUrl(item.liveUrl),
+        /* Deliberately blank. An order records when we handed the
+           placement over, not the day it published, and the planner's
+           Live date column means the day it published. Copying one into
+           the other would invent a date the customer would then report. */
+        liveDate: null,
+        priceMinor: item.priceMinor,
+        currency: order.currency,
+        /* What the order says was paid, not what we hope. A paid order is
+           paid in full - Press Parrot takes the whole amount up front -
+           so there is no partial case to represent here. */
+        paymentStatus: order.paymentStatus === 'paid' ? 'paid' : 'unpaid',
+        /* No metrics. An order does not carry any, and `metricsSource`
+           stays unset so the row says nothing was measured rather than
+           claiming a source for four blanks. */
+        notes: `Press Parrot order ${order.reference}.`,
+        orderItemId: item.id,
+      });
+    }
+  }
+
+  if (rows.length === 0) return { imported: 0, skipped, months: [] as string[] };
+
+  try {
+    const imported = await plannerService.addLinks(user.id, rows);
+    revalidatePath(PATH);
+    return { imported, skipped, months: [...months].sort() };
+  } catch (error) {
+    /* The unique index firing means somebody imported in another tab
+       between our read and our insert. Nothing was written, nothing is
+       lost, and "already imported" is the truthful reading of it. */
+    const message = error instanceof Error ? error.message : '';
+    if (message.includes('planner_links_one_per_order_item')) {
+      return { imported: 0, skipped: skipped + rows.length, months: [] as string[] };
+    }
+    return { imported: 0, skipped, months: [] as string[], error: 'The import failed.' };
+  }
 }

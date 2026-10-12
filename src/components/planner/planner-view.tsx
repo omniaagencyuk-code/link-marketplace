@@ -11,6 +11,7 @@ import {
   Download,
   Plus,
   Search,
+  ShoppingBag,
   Upload,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -21,7 +22,12 @@ import { LinkTable } from './link-table';
 import { ProjectDialog } from './project-dialog';
 import { ImportSheet } from './import-sheet';
 import { PlannerOverview } from './overview';
-import { addLinkAction, exportMonthAction, saveMonthAction } from '@/app/dashboard/planner/actions';
+import {
+  addLinkAction,
+  exportMonthAction,
+  importOrdersAction,
+  saveMonthAction,
+} from '@/app/dashboard/planner/actions';
 import { monthLabel, shiftMonth } from '@/lib/planner/domain-key';
 import { linksToCsv } from '@/lib/planner/csv';
 import { downloadCsv } from '@/lib/import/csv';
@@ -57,6 +63,7 @@ export function PlannerView({
   statuses,
   sources,
   summary,
+  listings,
 }: {
   projects: PlannerProject[];
   project: PlannerProject | null;
@@ -67,6 +74,8 @@ export function PlannerView({
   statuses: PlannerStatus[];
   sources: string[];
   summary: MonthSummary | null;
+  /** Domain key to marketplace slug, for the rows we happen to sell. */
+  listings: Record<string, string>;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -75,6 +84,7 @@ export function PlannerView({
   const [editingProject, setEditingProject] = useState<PlannerProject | null>(null);
   const [creatingProject, setCreatingProject] = useState(false);
   const [importing, setImporting] = useState(false);
+  const [orderNote, setOrderNote] = useState<string | null>(null);
 
   const go = (next: { project?: string; month?: string }) => {
     const params = new URLSearchParams();
@@ -259,6 +269,41 @@ export function PlannerView({
           <Button
             variant="outline"
             size="sm"
+            disabled={pending}
+            onClick={() => {
+              /* The customer's own Press Parrot orders, filed into the
+                 month each was placed rather than the month on screen -
+                 so the note says which months got rows. Nothing about the
+                 orders themselves changes. */
+              startTransition(async () => {
+                const outcome = await importOrdersAction(project.id);
+                if ('error' in outcome && outcome.error) {
+                  setOrderNote(outcome.error);
+                  return;
+                }
+                if (outcome.imported === 0) {
+                  setOrderNote(
+                    outcome.skipped > 0
+                      ? `Nothing new - all ${outcome.skipped} of your Press Parrot placements are already in a plan.`
+                      : 'No Press Parrot orders to import yet.',
+                  );
+                  return;
+                }
+                const where = outcome.months.map((value) => monthLabel(value)).join(', ');
+                setOrderNote(
+                  `${outcome.imported} ${outcome.imported === 1 ? 'placement' : 'placements'} imported into ${where}, in the month each order was placed.` +
+                    (outcome.skipped > 0 ? ` ${outcome.skipped} were already in a plan.` : ''),
+                );
+                refresh();
+              });
+            }}
+          >
+            <ShoppingBag className="h-3.5 w-3.5" aria-hidden="true" />
+            Import orders
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
             disabled={total === 0 || pending}
             onClick={() => {
               /* Exported from the server rather than from the fifty rows on
@@ -289,6 +334,15 @@ export function PlannerView({
         </div>
       </div>
 
+      {orderNote ? (
+        <p
+          role="status"
+          className="rounded-[var(--radius-card)] border border-line bg-surface px-4 py-2 text-[12px] text-ink-soft"
+        >
+          {orderNote}
+        </p>
+      ) : null}
+
       {links.length === 0 ? (
         <EmptyState
           icon={CalendarRange}
@@ -301,6 +355,7 @@ export function PlannerView({
           statuses={statuses}
           sources={sources}
           currency={project.currency}
+          listings={listings}
           onChanged={refresh}
         />
       )}

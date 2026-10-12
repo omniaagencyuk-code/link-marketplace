@@ -3,6 +3,7 @@ import { PageTitle } from '@/components/dashboard/page-title';
 import { PlannerView } from '@/components/planner/planner-view';
 import { requireCustomerSession } from '@/lib/auth/customer-access';
 import { plannerService } from '@/lib/services/planner-service';
+import { plannerMetrics } from '@/lib/services/planner-metrics';
 import { monthStart } from '@/lib/planner/domain-key';
 import { summariseMonth } from '@/lib/planner/summary';
 
@@ -62,6 +63,17 @@ export default async function PlannerPage({
       : Promise.resolve([]),
   ]);
 
+  /*
+    Which of the domains on this page the marketplace sells, so the table
+    can say so and link to the listing. Two columns for the fifty rows
+    already on screen, and only for domains the customer typed themselves:
+    it tells them nothing the marketplace's own search box would not, which
+    is why it is not behind the lookup limit. See `listingSlugs`.
+  */
+  const listings = Object.fromEntries(
+    await plannerMetrics.listingSlugs(page.items.map((link) => link.domainKey)),
+  );
+
   const summary =
     project && monthSettings
       ? summariseMonth(summaryRows, statuses, {
@@ -87,6 +99,7 @@ export default async function PlannerPage({
         statuses={statuses}
         sources={sources}
         summary={summary}
+        listings={listings}
       />
     </>
   );

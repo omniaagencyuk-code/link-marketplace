@@ -1,7 +1,8 @@
 'use client';
 
 import { useState, useTransition } from 'react';
-import { ExternalLink, Search, Settings2, StickyNote, Trash2 } from 'lucide-react';
+import Link from 'next/link';
+import { ExternalLink, Search, Settings2, ShoppingBag, StickyNote, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Table, TableWrap, Td, Th, Tr } from '@/components/ui/table';
@@ -70,12 +71,15 @@ export function LinkTable({
   statuses,
   sources,
   currency,
+  listings,
   onChanged,
 }: {
   links: PlannerLink[];
   statuses: PlannerStatus[];
   sources: string[];
   currency: string;
+  /** Domain key to marketplace slug, for the rows we happen to sell. */
+  listings: Record<string, string>;
   onChanged: () => void;
 }) {
   const [selected, setSelected] = useState<string[]>([]);
@@ -247,13 +251,37 @@ export function LinkTable({
                   </Td>
 
                   <Td>
-                    <TextCell
-                      value={link.domain}
-                      ariaLabel="Domain"
-                      placeholder="forbes.com"
-                      className="font-semibold"
-                      onSave={(domain) => save(link.id)({ domain })}
-                    />
+                    <div className="flex items-center gap-1.5">
+                      <TextCell
+                        value={link.domain}
+                        ariaLabel="Domain"
+                        placeholder="forbes.com"
+                        className="font-semibold"
+                        onSave={(domain) => save(link.id)({ domain })}
+                      />
+                      {/*
+                        We sell this one. A link to the listing and nothing
+                        else: the customer's supplier, their price and their
+                        status are left exactly as they are, because an
+                        agency with a direct arrangement on a publisher is
+                        very often paying less than our rate card, and a
+                        planner that overwrites that is a planner they stop
+                        trusting. Nothing is fetched to work this out - it
+                        is a read of our own listings table.
+                      */}
+                      {listings[link.domainKey] ? (
+                        <Link
+                          href={`/websites/${listings[link.domainKey]}`}
+                          target="_blank"
+                          className="inline-flex shrink-0 items-center gap-1 rounded-full bg-accent-50 px-1.5 py-0.5 text-[10px] font-semibold text-accent-700 ring-1 ring-accent-200 ring-inset hover:bg-accent-100"
+                          title={`${link.domain} is available on the Press Parrot marketplace`}
+                        >
+                          <ShoppingBag className="h-2.5 w-2.5" aria-hidden="true" />
+                          <span className="sr-only">Available on Press Parrot: </span>
+                          PP
+                        </Link>
+                      ) : null}
+                    </div>
                   </Td>
 
                   <Td>

@@ -375,3 +375,115 @@ select 'and no admin policy was added beside it: ' ||
    where schemaname = 'public'
      and tablename in ('planner_links', 'planner_months', 'planner_sources', 'planner_statuses')
      and policyname not like 'Customers manage their own%');
+
+-- ------------------------------------ one planner row per order item (0082)
+
+/*
+  The Press Parrot order import's duplicate rule, asserted against the
+  database rather than against the code that calls it.
+
+  The application reads which order items are already in a plan and then
+  inserts the rest, and between those two statements a second click is a
+  second import. 0082 makes that impossible rather than unlikely, which is
+  the arrangement `outbound_emails` has for its approver and
+  `sales_suppressions` has for an unsubscribe.
+*/
+insert into public.websites (id, slug, domain, title, country_code, country_source, status)
+values ('f6666666-6666-6666-6666-666666666666', 'planner-order-com', 'planner-order.com',
+        'Planner Order', 'GB', 'stated', 'active')
+on conflict (id) do nothing;
+
+insert into public.orders (id, reference, user_id, status, total_minor)
+values ('07777777-7777-7777-7777-777777777777', 'LM-PLANNER-1',
+        'a1111111-1111-1111-1111-111111111111', 'live', 30000)
+on conflict (id) do nothing;
+
+insert into public.order_items (id, order_id, website_id, website_domain, website_slug,
+                                service_type, price_minor, target_url, anchor_text, status)
+values ('18888888-8888-8888-8888-888888888888', '07777777-7777-7777-7777-777777777777',
+        'f6666666-6666-6666-6666-666666666666', 'planner-order.com', 'planner-order-com',
+        'guest-post', 30000, 'https://planner-a.test/page', 'best guides', 'live')
+on conflict (id) do nothing;
+
+/* The positive control. Importing once works, or the refusal below proves
+   nothing - a unique index on a column no insert can reach would pass this
+   section by refusing everything. */
+insert into public.planner_links
+  (id, user_id, project_id, plan_month, domain, domain_key, status_id, order_item_id, source)
+select '29999999-9999-9999-9999-999999999999',
+       'a1111111-1111-1111-1111-111111111111',
+       'c3333333-3333-3333-3333-333333333333',
+       date '2026-09-01', 'planner-order.com', 'planner-order.com',
+       s.id, '18888888-8888-8888-8888-888888888888', 'Press Parrot'
+from public.planner_statuses s
+where s.user_id = 'a1111111-1111-1111-1111-111111111111' and s.name = 'Live'
+on conflict (id) do nothing;
+
+select 'an order imports into a plan once: ' ||
+  (select count(*) = 1 from public.planner_links
+   where order_item_id = '18888888-8888-8888-8888-888888888888');
+
+do $$
+declare v_refused boolean := false;
+begin
+  insert into public.planner_links
+    (user_id, project_id, plan_month, domain, domain_key, status_id, order_item_id, source)
+  select 'a1111111-1111-1111-1111-111111111111',
+         'c3333333-3333-3333-3333-333333333333',
+         date '2026-10-01', 'planner-order.com', 'planner-order.com',
+         s.id, '18888888-8888-8888-8888-888888888888', 'Press Parrot'
+  from public.planner_statuses s
+  where s.user_id = 'a1111111-1111-1111-1111-111111111111' and s.name = 'Live';
+exception when unique_violation then v_refused := true;
+end;
+$$;
+
+select 'and importing it a second time is refused by the database: ' ||
+  (select count(*) = 1 from public.planner_links
+   where order_item_id = '18888888-8888-8888-8888-888888888888');
+
+/*
+  And it keys on the item, not on "imported at all": a second placement off
+  the same order goes in.
+
+  Worth asserting because the cheap version of this rule - one planner row
+  per order - would have refused it, and an order of five placements is five
+  links somebody is planning separately.
+
+  Not asserted: that the index is partial. It is, but nothing here could
+  tell, because Postgres treats nulls as distinct in a unique index and a
+  non-partial one would admit every typed link just the same. The `where`
+  clause is there for the index's size, not for its behaviour, so there is
+  nothing to test - the lesson this file already learned about `with check`.
+*/
+insert into public.order_items (id, order_id, website_id, website_domain, website_slug,
+                                service_type, price_minor, target_url, anchor_text, status)
+values ('3aaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', '07777777-7777-7777-7777-777777777777',
+        'f6666666-6666-6666-6666-666666666666', 'planner-order.com', 'planner-order-com',
+        'niche-edit', 12000, 'https://planner-a.test/other', 'read more', 'live')
+on conflict (id) do nothing;
+
+insert into public.planner_links
+  (user_id, project_id, plan_month, domain, domain_key, status_id, order_item_id, source)
+select 'a1111111-1111-1111-1111-111111111111',
+       'c3333333-3333-3333-3333-333333333333',
+       date '2026-09-01', 'planner-order.com', 'planner-order.com',
+       s.id, '3aaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'Press Parrot'
+from public.planner_statuses s
+where s.user_id = 'a1111111-1111-1111-1111-111111111111' and s.name = 'Live';
+
+select 'while a second placement off the same order imports fine: ' ||
+  (select count(*) = 2 from public.planner_links
+   where order_item_id in ('18888888-8888-8888-8888-888888888888',
+                           '3aaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'));
+
+/*
+  The other half of the brief's rule: the planner row references the order
+  item and changes nothing about it. Asserted because `on delete set null`
+  and a reference are easy to confuse with ownership - a planner status is
+  the customer's working note, and the order's own status is what we are
+  contractually doing.
+*/
+select 'and the order item it came from is untouched by the plan: ' ||
+  (select status = 'live' and price_minor = 30000 from public.order_items
+   where id = '18888888-8888-8888-8888-888888888888');

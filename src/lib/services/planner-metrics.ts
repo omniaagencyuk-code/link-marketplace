@@ -81,6 +81,60 @@ async function fromMockStore(domain: string): Promise<FoundMetrics | null> {
 
 export const plannerMetrics = {
   /**
+   * Which of these domains the marketplace actually sells.
+   *
+   * A badge, not a price. The planner shows that a domain can be bought
+   * here and links to its listing; it never replaces what the customer
+   * entered, because an agency may well have a better arrangement with
+   * that publisher than our rate card offers, and a tool that quietly
+   * rewrites their supplier and their price is not one they keep using.
+   *
+   * ## Two columns, and no rate limit
+   *
+   * `domain` and `slug` - the slug only so the badge can be a link to a
+   * page that is already public. No price, no cost, no contact: the
+   * allowlist is in the `select` for the same reason it is in `find`.
+   *
+   * Unlike `find` this is not charged against the lookup limit, and the
+   * reason is what it can answer rather than politeness about page loads.
+   * It says only whether a domain the customer has already typed into
+   * their own plan is listed, which the marketplace's own search box
+   * answers for any signed-in customer with no limit at all. A limit here
+   * would throttle a page render while removing no capability. The cap is
+   * still here, because a question about a thousand domains in one query
+   * is a different thing from a badge.
+   */
+  async listingSlugs(domainKeys: string[], limit = 200): Promise<Map<string, string>> {
+    const domains = [...new Set(domainKeys.map(domainKey).filter(Boolean))].slice(0, limit);
+    const out = new Map<string, string>();
+    if (domains.length === 0) return out;
+
+    if (!isSupabaseEnabled()) {
+      /* The same question against the mock marketplace, so the badge is
+         demonstrable from a clone - `fromMockStore` exists for exactly
+         this reason one function up. */
+      for (const domain of domains) {
+        const preview = await websiteService.search({ search: domain, page: 1, pageSize: 5 }, undefined);
+        const match = preview.items.find((item) => item.domain.toLowerCase() === domain);
+        if (match) out.set(domain, match.slug);
+      }
+      return out;
+    }
+
+    const { data } = await getAdminScopedClient()
+      .from('websites')
+      // The allowlist. The domain we asked about, and the public slug.
+      .select('domain, slug')
+      .in('domain', domains)
+      .eq('status', 'active');
+
+    for (const row of (data ?? []) as Record<string, unknown>[]) {
+      out.set(String(row.domain), String(row.slug));
+    }
+    return out;
+  },
+
+  /**
    * One domain.
    *
    * The rate limit is counted before the read and against the account, not

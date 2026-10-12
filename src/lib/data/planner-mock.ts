@@ -342,33 +342,36 @@ export const plannerMock = {
         planMonth: monthStart(input.planMonth),
         domain: input.domain,
         domainKey: input.domainKey,
-        source: input.source,
-        domainRating: input.domainRating,
-        organicTraffic: input.organicTraffic,
-        organicKeywords: input.organicKeywords,
-        referringDomains: input.referringDomains,
+        source: input.source ?? '',
+        domainRating: input.domainRating ?? null,
+        organicTraffic: input.organicTraffic ?? null,
+        organicKeywords: input.organicKeywords ?? null,
+        referringDomains: input.referringDomains ?? null,
         metricsSource:
-          input.domainRating !== null ||
-          input.organicTraffic !== null ||
-          input.organicKeywords !== null ||
-          input.referringDomains !== null
+          input.metricsSource ??
+          ([
+            input.domainRating ?? null,
+            input.organicTraffic ?? null,
+            input.organicKeywords ?? null,
+            input.referringDomains ?? null,
+          ].some((value) => value !== null)
             ? 'csv'
-            : null,
+            : null),
         metricsUpdatedAt: null,
-        linkType: input.linkType,
-        targetUrl: input.targetUrl,
-        anchorText: input.anchorText,
-        anchorType: input.anchorType,
+        linkType: input.linkType ?? '',
+        targetUrl: input.targetUrl ?? null,
+        anchorText: input.anchorText ?? '',
+        anchorType: input.anchorType ?? '',
         statusId: input.statusId,
-        plannedDate: input.plannedDate,
-        liveDate: input.liveDate,
-        liveUrl: input.liveUrl,
-        priceMinor: input.priceMinor,
-        currency: input.currency,
-        paymentStatus: 'unpaid',
-        paidMinor: null,
-        notes: input.notes,
-        orderItemId: null,
+        plannedDate: input.plannedDate ?? null,
+        liveDate: input.liveDate ?? null,
+        liveUrl: input.liveUrl ?? null,
+        priceMinor: input.priceMinor ?? null,
+        currency: input.currency ?? null,
+        paymentStatus: input.paymentStatus ?? 'unpaid',
+        paidMinor: input.paidMinor ?? null,
+        notes: input.notes ?? '',
+        orderItemId: input.orderItemId ?? null,
         createdAt: stamp,
         updatedAt: stamp,
       };
@@ -395,6 +398,14 @@ export const plannerMock = {
     if (!entry || entry.userId !== userId) return null;
     Object.assign(entry.row, patch, { updatedAt: now() });
     return entry.row;
+  },
+
+  importedOrderItemIds(userId: string): Set<string> {
+    return new Set(
+      [...store().links.values()]
+        .filter((entry) => entry.userId === userId && entry.row.orderItemId)
+        .map((entry) => String(entry.row.orderItemId)),
+    );
   },
 
   deleteLinks(userId: string, linkIds: string[]): number {
