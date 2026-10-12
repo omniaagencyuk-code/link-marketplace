@@ -1,0 +1,707 @@
+'use client';
+
+import { useRouter } from 'next/navigation';
+import { useState, useTransition } from 'react';
+import Link from 'next/link';
+import {
+  CalendarRange,
+  ChevronLeft,
+  ChevronRight,
+  FolderPlus,
+  Download,
+  Plus,
+  Search,
+  ShoppingBag,
+  Upload,
+} from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils/cn';
+import { Input } from '@/components/ui/input';
+import { Select } from '@/components/ui/select';
+import { EmptyState } from '@/components/ui/empty-state';
+import { LinkTable } from './link-table';
+import { ProjectDialog } from './project-dialog';
+import { ImportSheet } from './import-sheet';
+import { PlannerOverview } from './overview';
+import {
+  addLinkAction,
+  exportMonthAction,
+  importOrdersAction,
+  saveMonthAction,
+} from '@/app/dashboard/planner/actions';
+import { monthLabel, shiftMonth } from '@/lib/planner/domain-key';
+import {
+  filterIsActive,
+  filterParams,
+  type PlannerFilter,
+  type PlannerSort,
+  type PlannerSortKey,
+} from '@/lib/planner/filter';
+import { LinkFilters } from './link-filters';
+import { PlannerReports } from './reports';
+import type { PlannerReport } from '@/lib/planner/reports';
+import type { PlannerTab } from '@/lib/planner/tabs';
+import { linksToCsv } from '@/lib/planner/csv';
+import { downloadCsv } from '@/lib/import/csv';
+import type {
+  MonthSettings,
+  PlannerLink,
+  PlannerProject,
+  PlannerStatus,
+} from '@/lib/types/planner';
+import type { MonthSummary } from '@/lib/planner/summary';
+
+/**
+ * The planner, around its table.
+ *
+ * The month is the organising idea. A link belongs to a project and a
+ * planning month, and switching months is the main thing somebody does
+ * here - so it is two arrows and a label rather than a dropdown of
+ * twenty-four options, and it never changes what a link's status is.
+ *
+ * ## What is not here yet
+ *
+ * The Overview and Reports tabs, the charts, CSV, filters and the Press
+ * Parrot metric lookup. Those are later stages and drawing an empty tab for
+ * them now would be worse than leaving them out.
+ */
+export function PlannerView({
+  projects,
+  project,
+  month,
+  monthSettings,
+  filter,
+  sort,
+  links,
+  total,
+  statuses,
+  sources,
+  summary,
+  listings,
+  tab,
+  tabs,
+  report,
+  page,
+  pageSize,
+}: {
+  projects: PlannerProject[];
+  project: PlannerProject | null;
+  month: string | null;
+  monthSettings: MonthSettings | null;
+  filter: PlannerFilter;
+  sort: PlannerSort;
+  links: PlannerLink[];
+  total: number;
+  statuses: PlannerStatus[];
+  sources: string[];
+  summary: MonthSummary | null;
+  /** Domain key to marketplace slug, for the rows we happen to sell. */
+  listings: Record<string, string>;
+  tab: PlannerTab;
+  tabs: readonly { id: PlannerTab; label: string }[];
+  /** Built only when the Reports tab is the one open. */
+  report: PlannerReport | null;
+  page: number;
+  pageSize: number;
+}) {
+  const router = useRouter();
+  const [pending, startTransition] = useTransition();
+  const [newDomain, setNewDomain] = useState('');
+  const [addError, setAddError] = useState<string | null>(null);
+  const [editingProject, setEditingProject] = useState<PlannerProject | null>(null);
+  const [creatingProject, setCreatingProject] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [orderNote, setOrderNote] = useState<string | null>(null);
+
+  /**
+   * Every navigation on this screen, through the URL.
+   *
+   * The project, the month, the filter and the sort all live there, which
+   * is what makes a view of a plan a link somebody can send - and what
+   * makes the back button work between months, between filters and
+   * between sort orders rather than only the first of those.
+   */
+  const go = (next: {
+    project?: string;
+    month?: string | null;
+    filter?: PlannerFilter;
+    sort?: PlannerSort;
+    tab?: PlannerTab;
+    page?: number;
+  }) => {
+    const params = new URLSearchParams();
+    params.set('project', next.project ?? project?.id ?? '');
+    const wanted = next.month === undefined ? month : next.month;
+    params.set('month', wanted === null ? 'all' : wanted);
+    if ((next.tab ?? tab) !== 'overview') params.set('tab', next.tab ?? tab);
+    for (const [key, value] of Object.entries(
+      filterParams(next.filter ?? filter, next.sort ?? sort),
+    )) {
+      params.set(key, value);
+    }
+    /*
+      Page one is the absence of a page, and anything that changes which
+      rows exist goes back to it. Staying on page four of a filter that now
+      matches twelve rows is an empty table that looks like a bug.
+    */
+    const wantedPage = next.page ?? (next.filter || next.sort || next.month !== undefined ? 1 : page);
+    if (wantedPage > 1) params.set('p', String(wantedPage));
+    router.push(`/dashboard/planner?${params.toString()}`);
+  };
+
+  /* Clicking the column already sorting reverses it; clicking another
+     starts that column at its own sensible direction, which is what
+     `DEFAULT_SORT`'s neighbours in `readSort` decide - descending for a
+     number, ascending for a name. */
+  const sortBy = (key: PlannerSortKey) => {
+    const textual = key === 'domain' || key === 'added' || key === 'status';
+    go({
+      sort: key === sort.key ? { key, ascending: !sort.ascending } : { key, ascending: textual },
+    });
+  };
+
+  const refresh = () => router.refresh();
+
+  const addLink = () => {
+    // Nothing to add to across the whole project: a link belongs to a
+    // month, and inventing one here would file it somewhere nobody chose.
+    if (!project || !month || !newDomain.trim()) return;
+    const firstStatus = statuses.find((status) => !status.archivedAt);
+    if (!firstStatus) return;
+
+    startTransition(async () => {
+      const result = await addLinkAction(project.id, month, firstStatus.id, newDomain);
+      if ('error' in result && result.error) {
+        setAddError(result.error);
+        return;
+      }
+      setAddError(null);
+      setNewDomain('');
+      refresh();
+    });
+  };
+
+  if (!project) {
+    return (
+      <>
+        <EmptyState
+          icon={FolderPlus}
+          title="Start with a project"
+          description="A project is one website you are building links for - your own or a client's. Add one and you can start planning links against it."
+          action={
+            <Button variant="accent" onClick={() => setCreatingProject(true)}>
+              <FolderPlus className="h-4 w-4" aria-hidden="true" />
+              New project
+            </Button>
+          }
+        />
+        <ProjectDialog
+          open={creatingProject}
+          project={null}
+          onClose={() => setCreatingProject(false)}
+          onSaved={(saved) => {
+            setCreatingProject(false);
+            go({ project: saved.id });
+          }}
+        />
+      </>
+    );
+  }
+
+  const target = monthSettings?.linkTarget ?? null;
+  const budget = monthSettings?.budgetMinor ?? null;
+  /* What to call the scope in a sentence. One name, so "No links planned
+     for all" can never be written by accident. */
+  const scopeName = month ? monthLabel(month) : 'this project';
+
+  return (
+    <div className="space-y-4">
+      {/* ------------------------------------------------- the project bar */}
+      <div className="flex flex-wrap items-stretch gap-3 rounded-[var(--radius-card)] border border-line bg-white p-3 shadow-[var(--shadow-card)]">
+        <label className="min-w-56 flex-1">
+          <span className="sr-only">Project</span>
+          <Select
+            value={project.id}
+            onChange={(event) => go({ project: event.target.value })}
+            aria-label="Project"
+          >
+            {projects.map((option) => (
+              <option key={option.id} value={option.id}>
+                {option.name} · {option.domain}
+              </option>
+            ))}
+          </Select>
+        </label>
+
+        {/*
+          The month, and the way out of months. Whole project is not a
+          thirteenth month: it is the scope a planned-date range needs to
+          mean anything, since a range inside one month is a range of at
+          most thirty-one days. The arrows disappear with it, because there
+          is nothing to step through.
+        */}
+        <div className="flex items-center gap-1 rounded-md border border-line-strong px-1">
+          {month ? (
+            <>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                aria-label="Previous month"
+                onClick={() => go({ month: shiftMonth(month, -1) })}
+              >
+                <ChevronLeft className="h-4 w-4" aria-hidden="true" />
+              </Button>
+              <span className="flex min-w-36 items-center justify-center gap-1.5 text-[13px] font-medium text-ink">
+                <CalendarRange className="h-3.5 w-3.5 text-accent-600" aria-hidden="true" />
+                {monthLabel(month)}
+              </span>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                aria-label="Next month"
+                onClick={() => go({ month: shiftMonth(month, 1) })}
+              >
+                <ChevronRight className="h-4 w-4" aria-hidden="true" />
+              </Button>
+            </>
+          ) : (
+            <span className="flex min-w-36 items-center justify-center gap-1.5 px-2 text-[13px] font-medium text-ink">
+              <CalendarRange className="h-3.5 w-3.5 text-accent-600" aria-hidden="true" />
+              Whole project
+            </span>
+          )}
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => go({ month: month ? null : new Date().toISOString().slice(0, 10) })}
+          >
+            {month ? 'All months' : 'This month'}
+          </Button>
+        </div>
+
+        {/*
+          Target and budget for this month, editable where they are shown.
+          Writing one creates an override for this month only - the project's
+          default stays what it was, which is what lets December be a bigger
+          month than the rest without rewriting the project.
+
+          Absent across the whole project, because there is no one month to
+          write them to. A field that silently wrote to whichever month was
+          last open would be worse than no field.
+        */}
+        {month ? (
+          <>
+            <MonthField
+              label="Target links"
+              value={target === null ? '' : String(target)}
+              placeholder="—"
+              onSave={(value) =>
+                saveMonthAction(project.id, month, {
+                  linkTarget: value === '' ? null : Number(value),
+                  budgetMinor: budget,
+                })
+              }
+            />
+            <MonthField
+              label={`Budget (${project.currency})`}
+              value={budget === null ? '' : String(budget / 100)}
+              placeholder="—"
+              onSave={(value) =>
+                saveMonthAction(project.id, month, {
+                  linkTarget: target,
+                  budgetMinor: value === '' ? null : Math.round(Number(value) * 100),
+                })
+              }
+            />
+          </>
+        ) : null}
+
+        <div className="flex flex-wrap items-center gap-2">
+          <Button variant="outline" size="sm" onClick={() => setEditingProject(project)}>
+            Project settings
+          </Button>
+          <Button variant="accent" size="sm" onClick={() => setCreatingProject(true)}>
+            <FolderPlus className="h-3.5 w-3.5" aria-hidden="true" />
+            New project
+          </Button>
+        </div>
+      </div>
+
+      {/*
+        Two tabs. The overview cards and the link plan stay on one screen
+        because that is where the brief's layout puts them; Reports is its
+        own tab because it answers a different question and costs a second
+        read of the whole project, which is not worth doing for somebody
+        who came here to add a row.
+      */}
+      <div role="tablist" aria-label="Planner sections" className="flex gap-1 border-b border-line">
+        {tabs.map((option) => (
+          <button
+            key={option.id}
+            type="button"
+            role="tab"
+            aria-selected={tab === option.id}
+            onClick={() => go({ tab: option.id })}
+            className={cn(
+              '-mb-px border-b-2 px-3 py-2 text-[13px] font-medium transition-colors',
+              tab === option.id
+                ? 'border-accent-600 text-ink'
+                : 'border-transparent text-muted hover:text-ink',
+            )}
+          >
+            {option.label}
+          </button>
+        ))}
+      </div>
+
+      {tab === 'reports' ? (
+        <>
+          {report ? (
+            <PlannerReports
+              report={report}
+              currency={project.currency}
+              projectName={project.name}
+            />
+          ) : null}
+        </>
+      ) : (
+        <>
+
+      {monthSettings?.fromProjectDefaults && (target !== null || budget !== null) ? (
+        <p className="text-[12px] text-muted">
+          Showing this project&rsquo;s defaults. Changing either figure sets it for{' '}
+          {scopeName} only.
+        </p>
+      ) : null}
+
+      {summary ? (
+        <PlannerOverview summary={summary} currency={project.currency} monthName={scopeName} />
+      ) : null}
+
+      <LinkFilters
+        filter={filter}
+        statuses={statuses}
+        sources={sources}
+        currency={project.currency}
+        matched={total}
+        total={summary?.total ?? total}
+        onChange={(next) => go({ filter: next })}
+      />
+
+      {/* -------------------------------------------------- add, and count */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="relative">
+            <Input
+              value={newDomain}
+              onChange={(event) => setNewDomain(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') addLink();
+              }}
+              placeholder="Add a domain..."
+              aria-label="Domain to add to this month"
+              className="h-9 w-56"
+            />
+          </div>
+          <Button variant="accent" size="sm" onClick={addLink} disabled={pending || !newDomain.trim()}>
+            <Plus className="h-3.5 w-3.5" aria-hidden="true" />
+            Add link
+          </Button>
+          {addError ? (
+            <span role="alert" className="text-[12px] text-negative">
+              {addError}
+            </span>
+          ) : null}
+        </div>
+
+        {/* Wraps. Five controls and a count do not fit a phone on one
+            line, and a row that does not wrap is a page that scrolls
+            sideways - the one responsive failure that makes a tool feel
+            broken. */}
+        <div className="flex flex-wrap items-center gap-2">
+          <Button variant="outline" size="sm" onClick={() => setImporting(true)}>
+            <Upload className="h-3.5 w-3.5" aria-hidden="true" />
+            Import CSV
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={pending}
+            onClick={() => {
+              /* The customer's own Press Parrot orders, filed into the
+                 month each was placed rather than the month on screen -
+                 so the note says which months got rows. Nothing about the
+                 orders themselves changes. */
+              startTransition(async () => {
+                const outcome = await importOrdersAction(project.id);
+                if ('error' in outcome && outcome.error) {
+                  setOrderNote(outcome.error);
+                  return;
+                }
+                if (outcome.imported === 0) {
+                  setOrderNote(
+                    outcome.skipped > 0
+                      ? `Nothing new - all ${outcome.skipped} of your Press Parrot placements are already in a plan.`
+                      : 'No Press Parrot orders to import yet.',
+                  );
+                  return;
+                }
+                const where = outcome.months.map((value) => monthLabel(value)).join(', ');
+                setOrderNote(
+                  `${outcome.imported} ${outcome.imported === 1 ? 'placement' : 'placements'} imported into ${where}, in the month each order was placed.` +
+                    (outcome.skipped > 0 ? ` ${outcome.skipped} were already in a plan.` : ''),
+                );
+                refresh();
+              });
+            }}
+          >
+            <ShoppingBag className="h-3.5 w-3.5" aria-hidden="true" />
+            Import orders
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={total === 0 || pending}
+            onClick={() => {
+              /* Exported from the server rather than from the fifty rows on
+                 screen: a file that quietly stops at the page boundary is
+                 worse than no export at all. */
+              startTransition(async () => {
+                const { links: all, statuses: every } = await exportMonthAction(
+                  project.id,
+                  month,
+                  filter,
+                );
+                downloadCsv(
+                  `press-parrot-planner-${project.domain}-${month ? month.slice(0, 7) : 'all'}.csv`,
+                  linksToCsv(all, every),
+                );
+              });
+            }}
+          >
+            <Download className="h-3.5 w-3.5" aria-hidden="true" />
+            Export
+          </Button>
+          <Button variant="outline" size="sm" asChild>
+            <Link href="/marketplace">
+              <Search className="h-3.5 w-3.5" aria-hidden="true" />
+              Find publishers
+            </Link>
+          </Button>
+          <p className="tabular text-[13px] text-muted">
+            <span className="font-semibold text-ink">{total}</span>{' '}
+            {total === 1 ? 'link' : 'links'} in {scopeName}
+          </p>
+        </div>
+      </div>
+
+      {orderNote ? (
+        <p
+          role="status"
+          className="rounded-[var(--radius-card)] border border-line bg-surface px-4 py-2 text-[12px] text-ink-soft"
+        >
+          {orderNote}
+        </p>
+      ) : null}
+
+      {links.length === 0 ? (
+        <EmptyState
+          icon={CalendarRange}
+          title={
+            filterIsActive(filter)
+              ? 'No links match those filters'
+              : `No links planned for ${scopeName}`
+          }
+          description={
+            filterIsActive(filter)
+              ? 'Clear a filter to see the rest of the plan. Nothing has been deleted.'
+              : 'Add your first domain above. Everything else - metrics, anchor, status, price and dates - is editable in the table once the row exists.'
+          }
+        />
+      ) : (
+        <LinkTable
+          links={links}
+          statuses={statuses}
+          projects={projects}
+          month={month}
+          sort={sort}
+          onSort={sortBy}
+          sources={sources}
+          currency={project.currency}
+          listings={listings}
+          onChanged={refresh}
+        />
+      )}
+
+      {/*
+        Paging, server side. The browser never holds a plan it is not
+        showing - the brief's rule, and the only version that can be right,
+        since the filter and the sort run in the database and a page
+        filtered in the browser is a filter over a page.
+      */}
+      {total > pageSize ? (
+        <nav
+          aria-label="Pages of this plan"
+          className="flex flex-wrap items-center justify-between gap-3 rounded-[var(--radius-card)] border border-line bg-white px-4 py-2.5 shadow-[var(--shadow-card)]"
+        >
+          <p className="tabular text-[13px] text-muted">
+            Showing{' '}
+            <span className="font-semibold text-ink">
+              {(page - 1) * pageSize + 1}&ndash;{Math.min(page * pageSize, total)}
+            </span>{' '}
+            of {total}
+          </p>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={page <= 1 || pending}
+              onClick={() => go({ page: page - 1 })}
+            >
+              <ChevronLeft className="h-3.5 w-3.5" aria-hidden="true" />
+              Previous
+            </Button>
+            <span className="tabular text-[13px] text-muted">
+              Page {page} of {Math.max(1, Math.ceil(total / pageSize))}
+            </span>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={page >= Math.ceil(total / pageSize) || pending}
+              onClick={() => go({ page: page + 1 })}
+            >
+              Next
+              <ChevronRight className="h-3.5 w-3.5" aria-hidden="true" />
+            </Button>
+          </div>
+        </nav>
+      ) : null}
+
+        </>
+      )}
+
+      {/* The mockup's second promotional card was link monitoring. There is
+          no monitoring here and there is not going to be, so the space goes
+          to the two things that are free and real. */}
+      <div className="grid gap-3 sm:grid-cols-2">
+        <Promo
+          icon={Upload}
+          title="Import your existing links"
+          body="Move your link-building spreadsheet into Press Parrot in minutes."
+          action={
+            <Button variant="outline" size="sm" onClick={() => setImporting(true)}>
+              Import CSV
+            </Button>
+          }
+        />
+        <Promo
+          icon={Search}
+          title="Find publisher opportunities"
+          body="Search the marketplace for your next placement and plan it here."
+          action={
+            <Button variant="outline" size="sm" asChild>
+              <Link href="/marketplace">Browse marketplace</Link>
+            </Button>
+          }
+        />
+      </div>
+
+      {/* A CSV lands in a month, so there has to be one. Across the whole
+          project the sheet is not opened rather than opened and refused. */}
+      {month ? (
+        <ImportSheet
+          open={importing}
+          projectId={project.id}
+          month={month}
+          onClose={() => setImporting(false)}
+          onImported={refresh}
+        />
+      ) : null}
+
+      <ProjectDialog
+        open={creatingProject || editingProject !== null}
+        project={editingProject}
+        onClose={() => {
+          setCreatingProject(false);
+          setEditingProject(null);
+        }}
+        onSaved={(saved) => {
+          setCreatingProject(false);
+          setEditingProject(null);
+          go({ project: saved.id });
+        }}
+      />
+    </div>
+  );
+}
+
+/** A month figure, saved when the field is left. */
+function MonthField({
+  label,
+  value,
+  placeholder,
+  onSave,
+}: {
+  label: string;
+  value: string;
+  placeholder: string;
+  onSave: (value: string) => Promise<unknown>;
+}) {
+  const [draft, setDraft] = useState(value);
+  const [, startTransition] = useTransition();
+  const router = useRouter();
+
+  // The server's figure wins when it changes under us - switching month or
+  // project re-renders this with a new `value`, and the draft has to follow.
+  const [seen, setSeen] = useState(value);
+  if (seen !== value) {
+    setSeen(value);
+    setDraft(value);
+  }
+
+  return (
+    <label className="min-w-28">
+      <span className="mb-0.5 block text-[11px] text-muted">{label}</span>
+      <Input
+        value={draft}
+        type="number"
+        min={0}
+        placeholder={placeholder}
+        onChange={(event) => setDraft(event.target.value)}
+        onBlur={() => {
+          if (draft === value) return;
+          startTransition(async () => {
+            await onSave(draft);
+            router.refresh();
+          });
+        }}
+        className="tabular h-9"
+      />
+    </label>
+  );
+}
+
+function Promo({
+  icon: Icon,
+  title,
+  body,
+  action,
+}: {
+  icon: typeof Search;
+  title: string;
+  body: string;
+  action: React.ReactNode;
+}) {
+  return (
+    <div className="flex items-start gap-3 rounded-[var(--radius-card)] border border-line bg-white p-4 shadow-[var(--shadow-card)]">
+      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-accent-50 text-accent-700">
+        <Icon className="h-4 w-4" aria-hidden="true" />
+      </span>
+      <div className="min-w-0">
+        <p className="text-[14px] font-semibold text-ink">{title}</p>
+        <p className="mt-0.5 text-[13px] leading-relaxed text-muted">{body}</p>
+        {action ? <div className="mt-2.5">{action}</div> : null}
+      </div>
+    </div>
+  );
+}

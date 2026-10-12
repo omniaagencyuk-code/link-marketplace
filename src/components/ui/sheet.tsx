@@ -65,7 +65,13 @@ export function Sheet({
         : 'inset-y-0 left-0 w-[min(24rem,92vw)]';
 
   return (
-    <div className={cn('fixed inset-0 z-50', mobileOnly && 'lg:hidden')} role="presentation">
+    /*
+      Above the support bubble, which is also `z-50` and comes later in the
+      document - so on a tie it won, and it sits exactly where a sheet puts
+      its primary button. The marketplace's mobile filter sheet had the
+      same problem: "Show 12,190 results" was under the chat launcher.
+    */
+    <div className={cn('fixed inset-0 z-[60]', mobileOnly && 'lg:hidden')} role="presentation">
       <div
         className="absolute inset-0 bg-navy-950/40 backdrop-blur-[1px]"
         onClick={onClose}
