@@ -1,4 +1,5 @@
 import { Flag } from '@/components/shared/flag';
+import { cn } from '@/lib/utils/cn';
 import { countryName } from '@/lib/data/countries';
 import { formatNumber } from '@/lib/utils/format';
 import type { AudienceCountry } from '@/lib/types';
@@ -59,6 +60,23 @@ export function AudienceBars({
 }) {
   const top = split.filter((entry) => entry.country && entry.share > 0).slice(0, 2);
 
+  /*
+    The stacked version is tighter than the inline one, and the difference
+    is measured rather than aesthetic.
+
+    In the table this row is flag + code + bar + share with three gaps, and
+    every one of them is `shrink-0` - so the row cannot compress, it
+    overflows. At the roomier sizes that came to 126px of content in a cell
+    the column gave 98, and the share labels were printing over the
+    Keywords column beside them. A table cell does not clip by default, so
+    nothing about the markup said it was wrong.
+
+    126 goes to 108 here, and the column it sits in is sized to hold it
+    (see the colgroup in `website-table`). The card keeps the roomier sizes
+    because a card has the width.
+  */
+  const tight = direction === 'stack';
+
   if (top.length === 0) {
     return (
       <span className="text-[12px] text-muted" title="Country traffic has not been measured for this publisher">
@@ -70,9 +88,19 @@ export function AudienceBars({
   return (
     <ul className={direction === 'inline' ? 'flex flex-wrap gap-x-4 gap-y-1' : 'space-y-1'}>
       {top.map((entry) => (
-        <li key={entry.country} className="flex items-center gap-1.5">
+        <li
+          key={entry.country}
+          className={cn('flex items-center', tight ? 'gap-1' : 'gap-1.5')}
+        >
           <Flag country={entry.country} className="h-3 w-4 shrink-0 rounded-[2px]" />
-          <span className="w-5 shrink-0 text-[11px] font-medium text-ink-soft">{entry.country}</span>
+          <span
+            className={cn(
+              'shrink-0 text-[11px] font-medium text-ink-soft',
+              tight ? 'w-[18px]' : 'w-5',
+            )}
+          >
+            {entry.country}
+          </span>
 
           {/*
             The bar is scaled to the whole audience, not to the biggest
@@ -82,7 +110,10 @@ export function AudienceBars({
           */}
           <span
             aria-hidden="true"
-            className="h-1.5 w-10 shrink-0 overflow-hidden rounded-full bg-surface-sunken"
+            className={cn(
+              'h-1.5 shrink-0 overflow-hidden rounded-full bg-surface-sunken',
+              tight ? 'w-8' : 'w-10',
+            )}
           >
             <span
               className="block h-full rounded-full bg-accent-500"
@@ -91,7 +122,12 @@ export function AudienceBars({
           </span>
 
           <span
-            className="tabular w-8 shrink-0 text-right text-[11px] text-muted"
+            className={cn(
+              'tabular shrink-0 text-right text-[11px] text-muted',
+              /* Wide enough for "100%", which is what a single-country
+                 publisher shows and the only value that fills it. */
+              tight ? 'w-[30px]' : 'w-8',
+            )}
             title={
               `${countryName(entry.country)}: ${entry.share}% of organic traffic` +
               (entry.traffic ? ` (about ${formatNumber(entry.traffic)} visits a month)` : '')

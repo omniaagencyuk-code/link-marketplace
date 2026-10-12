@@ -58,7 +58,17 @@ export default async function MarketplaceLayout({ children }: { children: ReactN
   const user = await getCurrentUser();
 
   if (user) {
-    return <CustomerShell topbar={<CustomerTopbar />}>{children}</CustomerShell>;
+    /*
+      Wider than the rest of the dashboard, because this page is a
+      thirteen-column table and the others are not. Its columns add up to
+      1,228px; the shell's usual 84rem cap meant a 1920 screen scrolled the
+      table sideways with 274px of the window sitting empty beside it.
+    */
+    return (
+      <CustomerShell topbar={<CustomerTopbar />} width="wide">
+        {children}
+      </CustomerShell>
+    );
   }
 
   return (

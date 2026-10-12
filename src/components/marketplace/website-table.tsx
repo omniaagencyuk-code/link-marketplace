@@ -88,13 +88,35 @@ export function WebsiteTable({
   const someSelected = !allSelected && websites.some((site) => selected.includes(site.id));
 
   return (
-    <TableWrap className="hidden lg:block">
+    /*
+      `TableWrap` already scrolls; what it did not do is say so. The columns
+      below add up to 1,228px, so a laptop narrower than about 1,530 has to
+      scroll to reach Price and the buttons - and an overlay scrollbar that
+      only appears once you are already scrolling is not an affordance.
+      `scrollbar-thin` keeps one drawn.
+    */
+    <TableWrap className="scrollbar-thin hidden lg:block">
       <Table className="table-fixed">
         <caption className="sr-only">
           Marketplace websites with metrics, link types, turnaround and price
         </caption>
-        {/* Fixed widths keep every column, including the row actions, inside a
-            1440px viewport without the table scrolling sideways. */}
+        {/*
+          Three of these were measured wrong, and the way to find that is to
+          ask the browser rather than to look: with the declared widths
+          removed and the table free to be as wide as it likes, the natural
+          width of each column is what its content actually wants. Country
+          split wanted 128 against 98 declared, link type 124 against 78,
+          country 76 against 72.
+
+          The first two overflowed at every width, 1920 included. A `td` has
+          no `overflow-hidden`, so the excess did not clip - it printed over
+          the column to its right, which is why the share labels were
+          sitting on the keyword figures.
+
+          They now add up to 1,228px, which a 1536 screen fits and a 1440
+          one scrolls. That is the trade: a column narrower than its content
+          does not save space, it just puts the content somewhere else.
+        */}
         {/*
           Thirteen columns, as ratios rather than as pixels.
 
@@ -124,8 +146,9 @@ export function WebsiteTable({
           <col className="w-[158px]" />
           {/* Niche */}
           <col className="w-[74px]" />
-          {/* Country. Sized by the word "Country", not by a flag. */}
-          <col className="w-[72px]" />
+          {/* Country. Sized by the word "Country", not by a flag - plus the
+              4px the flag and its label were over by. */}
+          <col className="w-[76px]" />
           {/* DR - the ring is 36px and the cell padding is 20. */}
           <col className="w-[56px]" />
           {/* Organic traffic */}
@@ -135,16 +158,29 @@ export function WebsiteTable({
             two rows of flag, code, bar and figure - and because it is the
             one a buyer is actually scanning for: domain rating says how
             strong a site is, this says whether its readers are theirs.
+
+            128, because that is what the row measures: 16 flag + 18 code +
+            32 bar + 30 share + three 4px gaps, inside 10px of cell padding
+            each side. It was 98, and the difference was not absorbed - the
+            parts are all `shrink-0`, so the share labels printed over the
+            Keywords column beside them. A `td` does not clip, so nothing
+            said so; `AudienceBars` carries the other half of this fix.
           */}
-          <col className="w-[98px]" />
+          <col className="w-[128px]" />
           {/* Keywords. "KEYWORDS" plus its glyph is the widest thing in
               this column; the figures under it are narrower. */}
           <col className="w-[84px]" />
           {/* Referring domains. "REF. DOMAINS" wraps to two lines, so the
               width is set by "DOMAINS" and the glyph beside it. */}
           <col className="w-[78px]" />
-          {/* Link type */}
-          <col className="w-[78px]" />
+          {/*
+            Link type. 124: a "Guest Post" badge and the "+2" chip beside
+            it, which is what a publisher offering all three shows. At 78
+            the chip was 41px outside the cell and sitting on the
+            turnaround beside it - the same overflow as the column above,
+            and invisible for the same reason.
+          */}
+          <col className="w-[124px]" />
           {/* Turnaround. The longest heading in the table, and it cannot
               wrap: "TURNAROUND" is one word. */}
           <col className="w-[104px]" />
