@@ -541,5 +541,82 @@ console.log('\n--- nothing reads the database at build time ---');
   is('no generateStaticParams reads the data layer', offenders.join(', '), '');
 }
 
+// ---------------------------------------------------------------------------
+console.log('\n--- the live site cannot serve demo data quietly ---');
+
+/*
+  The worst failure in the application, and the only silent one: with
+  `NEXT_PUBLIC_DATA_SOURCE` unset or the Supabase keys missing, every service
+  answers from the mock store and `signInAction` falls through to the branch
+  where any address signs in and creates an account. On a clone and on a
+  preview deploy that is the feature. On pressparrot.com it is demo prices
+  shown as real prices and a stranger signing in as somebody else.
+
+  Asserted in both directions, because a guard that says yes to everything
+  protects the live site and breaks every preview deploy, and one that says no
+  to everything protects nothing.
+*/
+{
+  const deployment = await import('../src/lib/config/deployment');
+  const was = {
+    vercel: process.env.VERCEL_ENV,
+    site: process.env.NEXT_PUBLIC_SITE_URL,
+    source: process.env.NEXT_PUBLIC_DATA_SOURCE,
+  };
+
+  const live = (env: { VERCEL_ENV?: string; NEXT_PUBLIC_SITE_URL?: string }) => {
+    if (env.VERCEL_ENV === undefined) delete process.env.VERCEL_ENV;
+    else process.env.VERCEL_ENV = env.VERCEL_ENV;
+    if (env.NEXT_PUBLIC_SITE_URL === undefined) delete process.env.NEXT_PUBLIC_SITE_URL;
+    else process.env.NEXT_PUBLIC_SITE_URL = env.NEXT_PUBLIC_SITE_URL;
+    return deployment.isLiveDeployment();
+  };
+
+  yes('a Vercel production deployment is the live site', live({ VERCEL_ENV: 'production' }));
+  is('a preview deployment is not', live({ VERCEL_ENV: 'preview' }), false);
+  /*
+    The one that caught a real mistake: `siteUrl` falls back to the production
+    domain whenever the variable is unset, so reading the derived value made
+    `next start` on a laptop announce itself as pressparrot.com. Somebody has
+    to have declared it.
+  */
+  is('a build that declares no site URL is not', live({}), false);
+  yes(
+    'a self-hosted deployment that declares the real domain is',
+    live({ NEXT_PUBLIC_SITE_URL: 'https://pressparrot.com' }),
+  );
+  yes('and www. of it is the same site', live({ NEXT_PUBLIC_SITE_URL: 'https://www.pressparrot.com' }));
+  is('a staging domain is not', live({ NEXT_PUBLIC_SITE_URL: 'https://staging.pressparrot.dev' }), false);
+
+  // And the question that actually gates sign-in.
+  process.env.VERCEL_ENV = 'production';
+  delete process.env.NEXT_PUBLIC_DATA_SOURCE;
+  yes('the live site on the mock store reports itself', deployment.isServingDemoDataLive());
+  yes('and names the two things to set', /NEXT_PUBLIC_DATA_SOURCE=supabase/.test(deployment.DEMO_DATA_MESSAGE)
+    && /Supabase keys/.test(deployment.DEMO_DATA_MESSAGE));
+  process.env.VERCEL_ENV = 'preview';
+  is('a preview on the mock store does not', deployment.isServingDemoDataLive(), false);
+
+  /*
+    `signInAction` is the one that matters, and it cannot be imported here -
+    it is a server action behind 'use server'. So the assertion is that the
+    refusal is wired to the same question, in both branches that can issue a
+    mock session.
+  */
+  const actions = read('src/app/(auth)/actions.ts');
+  is(
+    'both mock-session branches refuse on the live site',
+    (actions.match(/isServingDemoDataLive\(\)\) return \{ error: demoAuthRefused \}/g) ?? []).length,
+    2,
+  );
+
+  if (was.vercel === undefined) delete process.env.VERCEL_ENV;
+  else process.env.VERCEL_ENV = was.vercel;
+  if (was.site === undefined) delete process.env.NEXT_PUBLIC_SITE_URL;
+  else process.env.NEXT_PUBLIC_SITE_URL = was.site;
+  if (was.source === undefined) delete process.env.NEXT_PUBLIC_DATA_SOURCE;
+  else process.env.NEXT_PUBLIC_DATA_SOURCE = was.source;
+}
+
 console.log(failed ? `\n  ${failed} FAILED\n` : '\n  all passed\n');
 process.exit(failed ? 1 : 0);
