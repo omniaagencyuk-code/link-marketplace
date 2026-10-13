@@ -15,6 +15,7 @@ import {
 } from '@/lib/auth/customer-session';
 import { RATE_LIMITS, consumeRateLimit, rateLimitMessage } from '@/lib/auth/rate-limit';
 import { isGoogleAuthEnabled } from '@/lib/auth/google';
+import { DEMO_DATA_MESSAGE, isServingDemoDataLive } from '@/lib/config/deployment';
 
 /**
  * Customer sign-in, sign-up, sign-out and password reset.
@@ -71,6 +72,21 @@ function readableAuthError(message: string): string {
 const notConfigured =
   'Sign-in is not available: this deployment is missing AUTH_SESSION_SECRET. Add it and redeploy.';
 
+/**
+ * The mock branch refused on the live domain.
+ *
+ * Mock mode signs in any address typed into the form and creates an account
+ * for it. On a clone and on a preview deploy that is the feature - it is what
+ * let the marketplace be reviewed before a database existed. On
+ * pressparrot.com it is a stranger signing in as somebody else's work
+ * address, which is not a degraded experience, it is an open door.
+ *
+ * So the live domain fails closed here rather than falling through. The band
+ * in the root layout says the same thing to anybody looking at the site; this
+ * says it to the one person who tried to act on it, and names what to set.
+ */
+const demoAuthRefused = `Sign-in is unavailable: ${DEMO_DATA_MESSAGE}`;
+
 async function issueMockSession(userId: string, email: string): Promise<boolean> {
   const token = await createCustomerSessionToken(userId, email);
   if (!token) return false;
@@ -106,6 +122,7 @@ export async function signInAction(
     const { error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) return { error: readableAuthError(error.message) };
   } else {
+    if (isServingDemoDataLive()) return { error: demoAuthRefused };
     if (!isCustomerAuthConfigured()) return { error: notConfigured };
     const user = await userService.findOrCreateByEmail(email);
     if (!(await issueMockSession(user.id, user.email))) return { error: notConfigured };
@@ -154,6 +171,9 @@ export async function signUpAction(
       };
     }
   } else {
+    // Sign-up too: an account created here is a mock account, and one made on
+    // the live domain is a customer who believes they have registered.
+    if (isServingDemoDataLive()) return { error: demoAuthRefused };
     if (!isCustomerAuthConfigured()) return { error: notConfigured };
     const user = await userService.findOrCreateByEmail(email, {
       fullName: fullName || undefined,

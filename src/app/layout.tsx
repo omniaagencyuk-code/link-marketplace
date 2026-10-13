@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from 'next';
 import { Caveat, Inter } from 'next/font/google';
 import { AppProviders } from '@/lib/providers/app-providers';
 import { SupportChat } from '@/components/support/support-chat';
+import { DemoDataBanner } from '@/components/layout/demo-data-banner';
 import { brand, siteUrl } from '@/lib/config/brand';
 import './globals.css';
 
@@ -81,6 +82,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         >
           Skip to content
         </a>
+        {/* Above everything, and only on the live domain running on the mock
+            store. It reads the environment rather than the request, so the
+            note above this component about prerendering still holds. */}
+        <DemoDataBanner />
         <AppProviders>
           {children}
           <SupportChat />

@@ -48,7 +48,14 @@ function psqlFile(file, db = DB) {
 // Fresh database carrying every migration.
 execFileSync('psql', ['-h', PGH, '-p', '55432', '-U', 'postgres', '-c', `drop database if exists ${DB}`], { encoding: 'utf8' });
 execFileSync('psql', ['-h', PGH, '-p', '55432', '-U', 'postgres', '-c', `create database ${DB}`], { encoding: 'utf8' });
-psqlFile(`${PGH}/prelude.sql`);
+/*
+  The same Supabase stand-in `verify:rls` uses - roles, the `auth` schema and
+  `auth.uid()` - rather than a `prelude.sql` sitting in the socket directory.
+  That file was never in the repository, so this script only ran on a machine
+  that happened to have one: everywhere else it died on a missing file, which
+  reads as a broken environment rather than as a verifier nobody can run.
+*/
+psqlFile('supabase/tests/00_supabase_shim.sql');
 
 /*
   Every migration, in order - not a list.
