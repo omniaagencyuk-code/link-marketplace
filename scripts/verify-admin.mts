@@ -8,6 +8,7 @@
 import { chunk } from '../src/lib/utils/chunk';
 import { csvCell, csvFilename, toCsv } from '../src/lib/admin/export-csv';
 import { pageWindow, paginate } from '../src/lib/admin/paging';
+import { BADGE_CAP, badgeLabel } from '../src/lib/admin/badge';
 import {
   MIN_TABLE_HEIGHT,
   TABLE_BOTTOM_GAP,
@@ -344,6 +345,35 @@ console.log('\n--- the admin shell and the customer shell are separate ---');
   is('every navigation link points at a page that exists', missing.join(', '), '');
   yes('and the navigation still carries every one of them', adminNav.length >= 17);
 }
+
+console.log('\n== the sidebar badge ==');
+
+/*
+  "Anything over ten is 10+" has an edge the eye slides past: over ten means
+  eleven, so ten shows as ten. Written inline as `count >= CAP` it reads the
+  same and is wrong by one, and the difference only shows on the one day
+  somebody has exactly ten things waiting.
+*/
+is('one is one', badgeLabel(1), '1');
+is('nine is nine', badgeLabel(9), '9');
+is(`${BADGE_CAP} is still a number, because the cap is "over"`, badgeLabel(BADGE_CAP), '10');
+is('eleven is the cap', badgeLabel(BADGE_CAP + 1), '10+');
+is('and so is two hundred', badgeLabel(200), '10+');
+
+/*
+  Nothing waiting draws no circle. A badge saying "0" is a badge pulling the
+  eye over to report that there is nothing to see.
+*/
+is('zero shows nothing at all', badgeLabel(0), null);
+
+// A negative is a bug upstream. Showing nothing would hide it; the point of
+// returning null here is that it cannot be mistaken for a real count.
+is('a negative shows nothing rather than "-3"', badgeLabel(-3), null);
+is('and neither does a number that is not one', badgeLabel(Number.NaN), null);
+
+// Counts arrive from a database as integers, but a fractional one should not
+// render as "1.5" in a 20px circle.
+is('a fraction is floored', badgeLabel(1.9), '1');
 
 console.log(failed ? `\n  ${failed} FAILED\n` : '\n  all passed\n');
 process.exit(failed ? 1 : 0);
