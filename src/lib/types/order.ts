@@ -83,8 +83,20 @@ export type PaymentStatus = 'unpaid' | 'processing' | 'paid' | 'refunded' | 'fai
 
 export interface Order {
   id: string;
-  /** Human readable reference, e.g. "LM-10428". */
+  /** Human readable reference, e.g. "LM-10428". Ours, and unique. */
   reference: string;
+  /**
+   * The customer's own label for this order.
+   *
+   * An agency has one login and gives it to its team, so five people order
+   * through one account and the orders list says the same company name on
+   * every row. This is how the person who placed it finds it again - a name,
+   * a client, a campaign, a purchase order number.
+   *
+   * Never parsed and never acted on. Not unique: five people may all type
+   * "Sarah". Undefined means nobody labelled it, which most orders will not.
+   */
+  customerReference?: string;
   userId: string;
   customerName: string;
   customerEmail: string;

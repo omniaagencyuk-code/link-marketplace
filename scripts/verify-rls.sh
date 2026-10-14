@@ -184,3 +184,8 @@ run -f "$ROOT/supabase/tests/30_niche_counts.sql" 2>&1 | grep -v '^$'
 run -f "$ROOT/supabase/tests/31_homepage_category_reads.sql" 2>&1 | grep -v '^$'
 run -f "$ROOT/supabase/tests/32_category_read_spend.sql" 2>&1 | grep -v '^$'
 run -f "$ROOT/supabase/tests/33_link_building_planner.sql" 2>&1 | grep -v '^$'
+
+echo
+echo "--- the customer's own reference on an order ---"
+run -f "$ROOT/supabase/tests/34_customer_reference.sql" 2>&1 | grep -v '^$'
+

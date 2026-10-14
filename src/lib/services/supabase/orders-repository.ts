@@ -163,6 +163,34 @@ export const supabaseOrderRepository = {
     return data ? mapOrder(data as unknown as OrderRow) : null;
   },
 
+  /**
+   * Set or clear the customer's own label on one of their orders.
+   *
+   * Filtered on the user as well as the order. The policy on `orders` is
+   * what protects a customer querying PostgREST directly; this filter is
+   * what protects them from a bug in our own code. Our `reference` is not
+   * touched and is not touchable from here - that one is what support quotes
+   * and what Stripe carries, and an identity the customer can rewrite is not
+   * an identity.
+   */
+  async setCustomerReference(
+    id: string,
+    userId: string,
+    reference: string | undefined,
+  ): Promise<Order | null> {
+    const supabase = getAdminScopedClient();
+    const { data, error } = await supabase
+      .from('orders')
+      .update({ customer_reference: reference ?? null })
+      .eq('id', id)
+      .eq('user_id', userId)
+      .select(ORDER_SELECT)
+      .maybeSingle();
+
+    if (error) throw new Error(`Could not save that reference: ${error.message}`);
+    return data ? mapOrder(data as OrderRow) : null;
+  },
+
   async getByReference(reference: string): Promise<Order | null> {
     const supabase = await getServerClient();
     const { data } = await supabase

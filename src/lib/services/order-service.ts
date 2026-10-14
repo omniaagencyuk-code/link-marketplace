@@ -61,6 +61,10 @@ export const orderService = {
         order.reference,
         order.customerName,
         order.customerEmail,
+        // The customer's own label, because 0085 made `admin_order_page`
+        // match it and the comment above this function is a promise that
+        // the screen does not behave differently without Supabase.
+        order.customerReference ?? '',
         ...order.items.map((item) => item.websiteDomain),
       ]
         .join(' ')
@@ -102,6 +106,32 @@ export const orderService = {
         .filter((order) => order.status !== 'cancelled' && order.status !== 'draft')
         .reduce((sum, order) => sum + order.totalMinor, 0),
     };
+  },
+
+  /**
+   * Set or clear the customer's own label on one of their orders.
+   *
+   * Takes the user id as well as the order id, and both halves filter on it:
+   * nothing here lets one account relabel another's order.
+   */
+  async setCustomerReference(
+    id: string,
+    userId: string,
+    reference: string | undefined,
+  ): Promise<Order | null> {
+    if (isSupabaseEnabled()) {
+      return supabaseOrderRepository.setCustomerReference(id, userId, reference);
+    }
+
+    const current = orderStore.get(id);
+    if (!current || current.userId !== userId) return null;
+    const updated: Order = {
+      ...current,
+      customerReference: reference,
+      updatedAt: new Date().toISOString(),
+    };
+    orderStore.set(id, updated);
+    return updated;
   },
 
   async updateStatus(id: string, status: OrderStatus): Promise<Order | null> {

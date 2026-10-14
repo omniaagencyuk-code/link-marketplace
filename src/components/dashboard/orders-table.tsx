@@ -38,6 +38,22 @@ export function OrdersTable({ orders, limit }: { orders: Order[]; limit?: number
                 >
                   {order.reference}
                 </Link>
+                {/*
+                  Theirs under ours. An agency with one login and five people
+                  ordering through it reads this column looking for their own
+                  work, and every row's company name is the same - so the
+                  label somebody typed is the only thing that tells them
+                  apart. Ours stays the link, because ours is what support
+                  quotes.
+                */}
+                {order.customerReference ? (
+                  <span
+                    className="mt-0.5 block max-w-[14rem] truncate text-[11px] font-normal text-muted"
+                    title={order.customerReference}
+                  >
+                    {order.customerReference}
+                  </span>
+                ) : null}
                 {/* Where the customer has something to do, say so here: the
                     table is the page they land on, not the detail view. */}
                 {item.deliveredAt && item.approval !== 'approved' ? (

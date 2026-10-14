@@ -41,7 +41,8 @@
     "verify:dashboard": "tsx scripts/verify-dashboard.mts",
     "verify:errors": "tsx scripts/verify-errors.mts",
     "verify:niche": "tsx scripts/verify-niche.mts",
-    "verify:planner": "tsx scripts/verify-planner.mts"
+    "verify:planner": "tsx scripts/verify-planner.mts",
+    "verify:orders": "tsx scripts/verify-orders.mts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.128.0",

@@ -1,6 +1,7 @@
 'use server';
 
 import { redirect } from 'next/navigation';
+import { revalidatePath } from 'next/cache';
 import { headers } from 'next/headers';
 import { requireCustomerSession } from '@/lib/auth/customer-access';
 import { settingsService } from '@/lib/services';
@@ -10,7 +11,9 @@ import {
   createPendingOrder,
   priceBasket,
 } from '@/lib/services/checkout-service';
+import { cleanCustomerReference } from '@/lib/orders/customer-reference';
 import { promoService } from '@/lib/services/promo-service';
+import { orderService } from '@/lib/services/order-service';
 import { promoSummary } from '@/lib/promos/rules';
 import { getStripe } from '@/lib/stripe/client';
 import { isStripeEnabled } from '@/lib/stripe/config';
@@ -105,6 +108,14 @@ async function currentOrigin(): Promise<string> {
 export async function startCheckoutAction(
   items: DraftOrderItem[],
   rawPromoCode?: string,
+  /**
+   * The customer's own label for this order.
+   *
+   * Cleaned in `cleanCustomerReference` rather than here, so the two places
+   * an order can be labelled - checkout and the order page afterwards -
+   * cannot come to disagree about what a label may contain.
+   */
+  rawCustomerReference?: string,
 ): Promise<CheckoutResult> {
   const user = await requireCustomerSession('/dashboard/orders');
 
@@ -167,11 +178,13 @@ export async function startCheckoutAction(
     come back to anyway.
   */
   if (promo && promo.payableMinor === 0) {
-    const order = await createPendingOrder(user, pricing, settings.currency, {
-      codeId: promo.codeId,
-      code: promo.code,
-      discountMinor: promo.discountMinor,
-    });
+    const order = await createPendingOrder(
+      user,
+      pricing,
+      settings.currency,
+      { codeId: promo.codeId, code: promo.code, discountMinor: promo.discountMinor },
+      rawCustomerReference,
+    );
 
     const settled = await completeFreeOrder({
       orderId: order.id,
@@ -203,6 +216,7 @@ export async function startCheckoutAction(
       promo
         ? { codeId: promo.codeId, code: promo.code, discountMinor: promo.discountMinor }
         : undefined,
+      rawCustomerReference,
     );
 
     const session = await stripe.checkout.sessions.create({
@@ -283,4 +297,46 @@ export async function startCheckoutAction(
   }
 
   redirect(checkoutUrl);
+}
+
+/**
+ * Change the label on an order after it was placed.
+ *
+ * Somebody will forget to set it, and an order they cannot find is the whole
+ * problem this solves - so it has to be fixable. Nothing else about a placed
+ * order is editable by the customer, which is why this is its own narrow
+ * action rather than a general update: it writes one column and it writes it
+ * only on an order the signed-in account owns.
+ *
+ * Our own `reference` is untouched and untouchable. That one is what support
+ * quotes and what Stripe carries; an identity the customer could rewrite is
+ * not an identity.
+ */
+export async function setCustomerReferenceAction(
+  orderId: string,
+  rawReference: string,
+): Promise<{ reference?: string; error?: string }> {
+  const user = await requireCustomerSession('/dashboard/orders');
+
+  const order = await orderService.getById(String(orderId));
+  /*
+    The same answer for "no such order" and "not yours", because telling a
+    stranger which order ids exist is telling them how many orders we have
+    taken.
+  */
+  if (!order || order.userId !== user.id) {
+    return { error: 'That order could not be found.' };
+  }
+
+  const reference = cleanCustomerReference(rawReference);
+
+  try {
+    const saved = await orderService.setCustomerReference(order.id, user.id, reference);
+    if (!saved) return { error: 'That did not save. Try again.' };
+    revalidatePath('/dashboard/orders');
+    revalidatePath(`/dashboard/orders/${order.id}`);
+    return { reference: reference ?? '' };
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : 'That did not save.' };
+  }
 }

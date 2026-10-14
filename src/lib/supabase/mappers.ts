@@ -591,6 +591,7 @@ export interface OrderItemIssueRow {
 export interface OrderRow {
   id: string;
   reference: string;
+  customer_reference: string | null;
   user_id: string;
   customer_name: string | null;
   customer_email: string | null;
@@ -614,6 +615,7 @@ export function mapOrder(row: OrderRow): Order {
   return {
     id: row.id,
     reference: row.reference,
+    customerReference: row.customer_reference ?? undefined,
     userId: row.user_id,
     customerName: row.customer_name ?? '',
     customerEmail: row.customer_email ?? '',
