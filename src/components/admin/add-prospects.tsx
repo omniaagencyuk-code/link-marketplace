@@ -30,7 +30,9 @@ export function AddProspects() {
                 id="domains"
                 name="domains"
                 rows={6}
-                placeholder={'northfieldseo.com\nAcme Affiliates, acmeaffiliates.co.uk\nhttps://www.example.com/about'}
+                placeholder={
+                  'northfieldseo.com\nAcme Affiliates, acmeaffiliates.co.uk\nAcme Affiliates, acmeaffiliates.co.uk, 7\nhttps://www.example.com/about'
+                }
                 className="mt-1.5 w-full rounded-lg border border-line bg-white px-3 py-2 font-mono text-[13px] text-ink placeholder:text-muted focus:border-navy-900 focus:outline-none"
               />
               <p className="mt-1.5 text-[12px] leading-relaxed text-muted">
@@ -39,6 +41,24 @@ export function AddProspects() {
                 full URL is fine - the protocol, www and path are stripped, the same way the
                 publisher importer strips them, so the same company pasted twice in two spellings
                 is one prospect.
+              </p>
+              {/*
+                The count is the whole reason this box takes a third field.
+                Stacking the outgoing links of several publishers and counting
+                the domains that appear in more than one is the only evidence
+                about a prospect that costs nothing - no model tokens, no
+                Hunter credit - and it is the strongest kind, because it is
+                something they did rather than something their website says.
+              */}
+              <p className="mt-1.5 text-[12px] leading-relaxed text-muted">
+                A trailing number is how many of our own publishers link to them:{' '}
+                <code className="rounded bg-surface-sunken px-1">Acme, acme.co.uk, 7</code>. It
+                counts towards their score, and leaving it off means nobody counted rather than
+                none found.
+              </p>
+              <p className="mt-1.5 text-[12px] leading-relaxed text-muted">
+                Platforms and publishers we already sell are dropped rather than added, so an
+                Ahrefs outgoing-links export can go straight in.
               </p>
             </div>
 

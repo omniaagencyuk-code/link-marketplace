@@ -92,6 +92,12 @@ export default async function ProspectsPage({
                     <Th>Company</Th>
                     <Th>Segment</Th>
                     <Th>Stage</Th>
+                    {/* Shown beside the score rather than folded into it,
+                        because it is the one column here that is an
+                        observation: a company with an in-content dofollow
+                        link on a site we sell has bought a link on a site we
+                        sell, whatever their website says. */}
+                    <Th className="text-right">Our pubs</Th>
                     <Th className="text-right">Score</Th>
                     <Th>Why</Th>
                     <Th>Reachable</Th>
@@ -114,6 +120,19 @@ export default async function ProspectsPage({
                         <Badge tone={STAGE_TONE[prospect.stage] ?? 'neutral'}>
                           {prospect.stage.replace(/_/g, ' ')}
                         </Badge>
+                      </Td>
+                      <Td
+                        className="tabular text-right text-[13px] text-ink-soft"
+                        title={
+                          prospect.placementsSeen === undefined
+                            ? 'Nobody has counted how many of our publishers link to them. That is not the same as none.'
+                            : `${prospect.placementsSeen} of our publishers link to them`
+                        }
+                      >
+                        {/* An em dash for uncounted, 0 for counted-and-none.
+                            Collapsing the two would make the second one
+                            unsayable. */}
+                        {prospect.placementsSeen ?? '—'}
                       </Td>
                       <Td className="tabular text-right font-semibold text-ink">
                         {prospect.score ?? '-'}

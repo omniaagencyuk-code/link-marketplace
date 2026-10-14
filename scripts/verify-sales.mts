@@ -14,7 +14,9 @@ import {
   readPage,
   signalsFrom,
 } from '../src/lib/sales/page-reading';
-import { scoreProspect } from '../src/lib/sales/scoring';
+import { placementPoints, scoreProspect } from '../src/lib/sales/scoring';
+import { parsePastedProspects } from '../src/lib/sales/paste-list';
+import { isPlatform } from '../src/lib/gap/competitors';
 import { inventorySummary, matchInventory } from '../src/lib/sales/inventory-match';
 import {
   QUALIFICATION_PROMPT_VERSION,
@@ -231,9 +233,41 @@ const strong = scoreProspect(
   { segment: 'link_building', signals, contactsStatus: 'found', hasSelectedContact: true },
   qualified(),
 );
-isTrue('a quoted, contactable agency scores high', strong.score >= 80);
+/*
+  78, and the number moved when `placements` was added.
+
+  This read `>= 80` against the same fixture and passed at 86. Ten points came
+  out of the model's verdict and confidence to make room for a count of how
+  many of our own publishers link to a company, because that is an observation
+  and the verdict is a reading - so a prospect with one quoted reason and no
+  count scores lower than it used to, by design.
+
+  Asserted as the decomposition rather than a threshold, so the next change to
+  the weights has to look at what it is doing instead of finding that a loose
+  inequality still holds.
+*/
+is('a quoted, contactable agency in the best segment scores 76', strong.score, 76);
+is('the verdict is the largest part of it', strong.breakdown.verdict, 28);
+is('and nobody has counted its placements', strong.breakdown.placements, 0);
 isTrue('the breakdown adds up to the score',
   Object.values(strong.breakdown).reduce((sum, part) => sum + part, 0) === strong.score);
+
+/* The ceiling is still reachable, which is the other half of a rebalance:
+   points taken from one component have to be gettable somewhere else. */
+const ceiling = scoreProspect(
+  {
+    segment: 'link_building',
+    signals,
+    contactsStatus: 'found',
+    hasSelectedContact: true,
+    placementsSeen: 10,
+  },
+  qualified({
+    confidence: 100,
+    reasons: Array.from({ length: 5 }, () => ({ claim: 'c', quote: 'q' })),
+  }),
+);
+is('and a fully evidenced, observed prospect still reaches 100', ceiling.score, 100);
 
 /*
   A competitor is zero, not low.
@@ -1046,6 +1080,148 @@ isTrue(
   'a real reply is not automatic',
   !looksAutomatic('Re: a few sites', 'Interested - send the list over.'),
 );
+
+// ---------------------------------------------------------------------------
+console.log('\n--- how many of our publishers link to them ---');
+
+/*
+  The one signal about a prospect that costs nothing.
+
+  A company with an in-content dofollow link on a site we sell has bought a
+  link on a site we sell. One is weak - a citation, a partner, a fluke. The
+  same company across seven publishers is a pattern, and unlike everything
+  else the score reads, it is something they did rather than something their
+  website says about them.
+*/
+is('no count is no points', placementPoints(undefined), 0);
+is('and nor is a count of none', placementPoints(0), 0);
+is('one publisher is worth something, but little', placementPoints(1), 3);
+is('three is a pattern rather than a fluke', placementPoints(3), 6);
+is('five is most of what is available', placementPoints(5), 8);
+is('and it flattens out rather than running away', placementPoints(40), 10);
+isTrue('ten is already the ceiling', placementPoints(10) === placementPoints(400));
+
+const counted = scoreProspect(
+  {
+    segment: 'seo_agency',
+    signals,
+    contactsStatus: 'found',
+    hasSelectedContact: true,
+    placementsSeen: 7,
+  },
+  qualified({ verdict: 'unclear', confidence: 30, reasons: [] }),
+);
+isTrue('an unclear prospect we have watched buying outscores one we have not', counted.score > unclear.score);
+has('and the reason is in words', counted.explanation, '7 of our publishers link to them');
+isTrue('the breakdown still adds up', Object.values(counted.breakdown).reduce((sum, part) => sum + part, 0) === counted.score);
+
+/*
+  Blank is not zero, said out loud.
+
+  A prospect nobody counted must not read as one we checked and found
+  nothing for. Neither earns points - what differs is what the sentence
+  claims, and the sentence is what somebody works the list from.
+*/
+const uncounted = scoreProspect(
+  { segment: 'seo_agency', signals, contactsStatus: 'found', hasSelectedContact: true },
+  qualified({ verdict: 'unclear', confidence: 30, reasons: [] }),
+);
+const none = scoreProspect(
+  {
+    segment: 'seo_agency',
+    signals,
+    contactsStatus: 'found',
+    hasSelectedContact: true,
+    placementsSeen: 0,
+  },
+  qualified({ verdict: 'unclear', confidence: 30, reasons: [] }),
+);
+is('counting none and not counting score the same', uncounted.score, none.score);
+has('but one says nobody counted', uncounted.explanation, 'nobody has counted');
+has('and the other says none were found', none.explanation, 'none of our publishers');
+
+/*
+  And neither hard zero is for sale. A competitor with links on forty of our
+  publishers is still a competitor, and a company the model read and rejected
+  is still rejected - the count is evidence towards a score, not a way round
+  the two rules that override it.
+*/
+is(
+  'a competitor we have watched buying still scores zero',
+  scoreProspect(
+    { segment: 'publisher_network', signals, contactsStatus: 'found', placementsSeen: 40 },
+    qualified(),
+  ).score,
+  0,
+);
+is(
+  'and so does a rejected one',
+  scoreProspect(
+    { segment: 'link_building', signals, contactsStatus: 'found', placementsSeen: 40 },
+    qualified({ verdict: 'unlikely' }),
+  ).score,
+  0,
+);
+
+// ---------------------------------------------------------------------------
+console.log('\n--- reading a pasted list ---');
+
+/*
+  The lists this takes are columns out of a spreadsheet, in whatever order the
+  spreadsheet had them. A line is read by finding its domain, not by counting
+  its commas - the old parser took the last non-empty field, which was right
+  for `Name, domain` by luck and wrong for everything else.
+*/
+const parsed = parsePastedProspects(
+  [
+    'northfieldseo.com',
+    'Acme Affiliates, acmeaffiliates.co.uk',
+    'Acme Affiliates, acmeaffiliates.co.uk, 7',
+    'https://www.example.com/about',
+    'example.org\t4',
+    'Domain, Domain Rating, Traffic',
+  ].join('\n'),
+);
+
+is('every line is read', parsed.length, 6);
+is('a bare domain is a domain', parsed[0]?.domain, 'northfieldseo.com');
+is('a name in front of it is a name', parsed[1]?.companyName, 'Acme Affiliates');
+is('and carries no count', parsed[1]?.placementsSeen, undefined);
+is('a trailing number is the count', parsed[2]?.placementsSeen, 7);
+is('and is not mistaken for the name', parsed[2]?.companyName, 'Acme Affiliates');
+is('a full URL survives', parsed[3]?.domain, 'https://www.example.com/about');
+is('a tab separates as well as a comma', parsed[4]?.placementsSeen, 4);
+
+/*
+  A header row from a CSV export has no domain in it. It comes back with its
+  last field so the rejection names what was pasted - "Traffic" is a more
+  useful thing to be told than an empty string.
+*/
+is('a header row keeps something to report', parsed[5]?.domain, 'Traffic');
+is('and claims no count from it', parsed[5]?.placementsSeen, undefined);
+
+/* A number inside the company name is not the count. */
+const numbered = parsePastedProspects('Studio 24, studio24.co.uk, 3');
+is('the last number wins over one in the name', numbered[0]?.placementsSeen, 3);
+is('and the name keeps its own', numbered[0]?.companyName, 'Studio 24');
+
+/*
+  The order the fields arrive in does not matter, which the old parser could
+  not say: `domain, Name` read the name as the domain and rejected the row.
+*/
+const reversed = parsePastedProspects('example.co.uk, Acme Ltd');
+is('the domain is found wherever it is', reversed[0]?.domain, 'example.co.uk');
+is('and the rest is the name', reversed[0]?.companyName, 'Acme Ltd');
+
+/*
+  What the import drops before it writes anything. The service does the
+  dropping against the database, but `isPlatform` is the half that is pure,
+  and a list of outgoing links from any publisher is full of these.
+*/
+isTrue('youtube is a platform', isPlatform('youtube.com'));
+isTrue('so is a market-specific amazon', isPlatform('amazon.co.uk'));
+isTrue('and a subdomain of one', isPlatform('m.facebook.com'));
+isTrue('an ordinary company is not', !isPlatform('northfieldseo.com'));
 
 console.log(failed === 0 ? '\nAll sales checks passed.\n' : `\n${failed} sales check(s) failed.\n`);
 process.exit(failed === 0 ? 0 : 1);

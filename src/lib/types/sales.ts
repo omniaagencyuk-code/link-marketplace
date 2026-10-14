@@ -91,6 +91,20 @@ export interface Prospect {
   source: ProspectSource;
   sourceDetail?: string;
 
+  /**
+   * How many of our own publishers were seen linking to this company.
+   *
+   * Counted by hand from Ahrefs exports: a company with an in-content
+   * dofollow link on a site we sell has bought a link on a site we sell.
+   * One is weak evidence; the same company across seven is a pattern, and
+   * it is the only signal we have about a prospect that costs nothing.
+   *
+   * Undefined means nobody counted. That is not zero - zero would be
+   * "we looked across our publishers and found none", which is a far more
+   * negative statement and earns the same no points either way.
+   */
+  placementsSeen?: number;
+
   researchStatus: SweepStatus;
   researchedAt?: string;
   researchError?: string;

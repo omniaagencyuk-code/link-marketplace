@@ -30,6 +30,7 @@ export interface ScoreBreakdown extends Record<string, number> {
   confidence: number;
   segment: number;
   evidence: number;
+  placements: number;
   reachability: number;
 }
 
@@ -62,18 +63,59 @@ const SEGMENT_WEIGHT: Record<SalesSegment, number> = {
   publisher_network: 0,
 };
 
+/**
+ * The components, and why the model's share came down to make room.
+ *
+ * `placements` is how many of our own publishers were seen linking to this
+ * company. It is the only component here that is an observation rather than a
+ * reading: a company with an in-content dofollow link on a site we sell has
+ * bought a link on a site we sell, whatever their homepage says about it.
+ *
+ * That is stronger evidence than a model's reading of a website, so the ten
+ * points come out of `verdict` and `confidence` rather than being added on
+ * top of a hundred that already summed. It is deliberately not larger than
+ * the segment weight: observed buying says they buy links, not that they
+ * would buy from us.
+ *
+ * The weights changed while the table held no prospects, which is the only
+ * time changing them is free - every stored score was computed under the
+ * weights in force at the time, and `score_breakdown` keeps the arithmetic.
+ */
 const MAX = {
-  verdict: 35,
-  confidence: 20,
+  verdict: 28,
+  confidence: 17,
   segment: 20,
   evidence: 15,
+  placements: 10,
   reachability: 10,
 } as const;
+
+/**
+ * What a placement count is worth.
+ *
+ * Flattening, because the difference between one and three is the difference
+ * between a fluke and a pattern, and the difference between eight and ten is
+ * nothing anybody would act on. One link is worth something but not much;
+ * five is most of the available points.
+ *
+ *   1 -> 3   2 -> 5   3 -> 6   5 -> 8   10+ -> 10
+ */
+export function placementPoints(seen: number | null | undefined): number {
+  if (seen === null || seen === undefined || seen <= 0) return 0;
+  return Math.min(MAX.placements, Math.round(3 * Math.log2(seen + 1)));
+}
 
 export function scoreProspect(
   prospect: Pick<Prospect, 'segment' | 'signals' | 'contactsStatus'> & {
     /** Whether a usable address has actually been found and chosen. */
     hasSelectedContact?: boolean;
+    /**
+     * How many of our publishers were seen linking to them.
+     *
+     * Undefined means nobody counted, which is not the same as none and
+     * earns no points either way - see `placementPoints` and `explain`.
+     */
+    placementsSeen?: number | null;
   },
   qualification?: Pick<ProspectQualification, 'verdict' | 'confidence' | 'reasons' | 'buyingSignals'>,
 ): ScoreResult {
@@ -82,6 +124,7 @@ export function scoreProspect(
     confidence: 0,
     segment: 0,
     evidence: 0,
+    placements: 0,
     reachability: 0,
   };
 
@@ -139,6 +182,14 @@ export function scoreProspect(
   breakdown.evidence = Math.min(MAX.evidence, quoted * 3);
 
   /*
+    Counted, not read. This is the one number here that nothing on their
+    website can change, and the reason it exists: most companies that buy
+    links say nothing about it, so the pipeline needs a source of evidence
+    that does not depend on them admitting it.
+  */
+  breakdown.placements = placementPoints(prospect.placementsSeen);
+
+  /*
     Reachability, because an unreachable prospect is not a prospect.
 
     A perfect fit with no address is work nobody can do, and it should sort
@@ -158,6 +209,7 @@ export function scoreProspect(
         breakdown.confidence +
         breakdown.segment +
         breakdown.evidence +
+        breakdown.placements +
         breakdown.reachability,
     ),
   );
@@ -171,7 +223,10 @@ function explain(
   prospect: Parameters<typeof scoreProspect>[0],
 ): string {
   if (!qualification) {
-    return 'Not read yet. The score is the segment and whether we can reach them.';
+    const seen = prospect.placementsSeen;
+    const observed =
+      seen && seen > 0 ? ` ${seen} of our publishers already link to them.` : '';
+    return `Not read yet. The score is the segment and whether we can reach them.${observed}`;
   }
 
   const parts: string[] = [];
@@ -187,6 +242,21 @@ function explain(
     parts.push(`${quoted} quoted ${quoted === 1 ? 'reason' : 'reasons'}`);
   } else {
     parts.push('nothing quotable found');
+  }
+
+  /*
+    Said in words, including when it is absent, because a reader seeing no
+    placement line would otherwise take it for none found rather than for
+    nobody having counted. Blank is not zero, and the sentence has to carry
+    that as plainly as the column does.
+  */
+  const seen = prospect.placementsSeen;
+  if (seen === null || seen === undefined) {
+    parts.push('nobody has counted our publishers linking to them');
+  } else if (seen > 0) {
+    parts.push(`${seen} of our publishers link to them`);
+  } else {
+    parts.push('none of our publishers link to them');
   }
 
   if (!prospect.hasSelectedContact) {

@@ -215,3 +215,48 @@ exception
 end;
 $$;
 reset role; reset request.jwt.claim.sub;
+
+-- ------------------------- how many of our publishers link to them (0084)
+
+/*
+  The count a prospect arrives with, and the distinction the whole column
+  exists for.
+
+  Null is nobody counted. Zero is we looked across our publishers and found
+  none. They earn the same no points in `scoring.ts`, but they are different
+  statements and a column that collapsed them would make the second one
+  unsayable - the same rule `websites.country`, the niche extraction and the
+  planner's metrics all follow.
+*/
+insert into public.prospects (company_name, domain, segment, source, placements_seen)
+values ('Counted Ltd', 'counted-prospect.test', 'seo_agency', 'csv', 7)
+on conflict (domain) do nothing;
+
+insert into public.prospects (company_name, domain, segment, source, placements_seen)
+values ('Looked And Found None', 'none-found.test', 'seo_agency', 'csv', 0)
+on conflict (domain) do nothing;
+
+insert into public.prospects (company_name, domain, segment, source)
+values ('Nobody Counted', 'uncounted.test', 'seo_agency', 'csv')
+on conflict (domain) do nothing;
+
+select 'a prospect can carry how many of our publishers link to it: ' ||
+  (select placements_seen = 7 from public.prospects where domain = 'counted-prospect.test');
+
+select 'nobody counted is null, not zero: ' ||
+  (select placements_seen is null from public.prospects where domain = 'uncounted.test');
+
+select 'and counting none is zero, which is a different thing: ' ||
+  (select placements_seen = 0 from public.prospects where domain = 'none-found.test');
+
+-- A count is a count. Nothing else gets in.
+do $$
+declare v_refused boolean := false;
+begin
+  update public.prospects set placements_seen = -1 where domain = 'counted-prospect.test';
+exception when check_violation then v_refused := true;
+end;
+$$;
+
+select 'a negative count is refused: ' ||
+  (select placements_seen = 7 from public.prospects where domain = 'counted-prospect.test');

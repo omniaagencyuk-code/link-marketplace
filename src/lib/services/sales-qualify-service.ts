@@ -228,6 +228,7 @@ export async function qualifyProspect(
       signals: prospect.signals,
       contactsStatus: prospect.contactsStatus,
       hasSelectedContact: contacts.some((contact) => contact.selected),
+      placementsSeen: prospect.placementsSeen,
     },
     { verdict: parsed.verdict, confidence: parsed.confidence, reasons: parsed.reasons, buyingSignals: parsed.buyingSignals },
   );
