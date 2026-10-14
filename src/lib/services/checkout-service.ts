@@ -5,6 +5,7 @@ import { needsTopic, placementPrice, tierFor, type BuyerTier } from '@/lib/utils
 import { mockStore } from './mock-store';
 import { mapOrder, type OrderRow } from '@/lib/supabase/mappers';
 import { promoService } from './promo-service';
+import { cleanCustomerReference } from '@/lib/orders/customer-reference';
 import type { DraftOrderItem, Order, UserProfile } from '@/lib/types';
 
 /**
@@ -151,6 +152,7 @@ export async function createPendingOrder(
   pricing: PricingResult,
   currency: Order['currency'],
   promo?: AppliedPromo,
+  customerReference?: string,
 ): Promise<Order> {
   const now = new Date().toISOString();
   const reference = newReference();
@@ -159,6 +161,7 @@ export async function createPendingOrder(
     const order: Order = {
       id: `ord_${Date.now().toString(36)}`,
       reference,
+      customerReference: cleanCustomerReference(customerReference),
       userId: user.id,
       customerName: user.fullName,
       customerEmail: user.email,
@@ -198,6 +201,7 @@ export async function createPendingOrder(
     .from('orders')
     .insert({
       reference,
+      customer_reference: cleanCustomerReference(customerReference) ?? null,
       user_id: user.id,
       status: 'draft',
       payment_status: 'unpaid',

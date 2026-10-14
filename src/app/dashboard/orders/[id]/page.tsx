@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { ArrowLeft } from 'lucide-react';
 import { PageTitle } from '@/components/dashboard/page-title';
+import { CustomerReferenceField } from '@/components/dashboard/customer-reference-field';
 import { OrderDelivery } from '@/components/dashboard/order-delivery';
 import { LinkGuarantee } from '@/components/dashboard/link-guarantee';
 import { OrderStatusBadge } from '@/components/shared/status-badge';
@@ -74,6 +75,10 @@ export default async function OrderPage({ params }: { params: Promise<{ id: stri
         <CardContent className="grid gap-4 py-4 sm:grid-cols-4">
           <Figure label="Placed" value={formatDate(order.placedAt)} />
           <Figure label="Placements" value={String(order.items.length)} />
+          {/* Theirs, editable, because somebody will have forgotten to set
+              it at checkout and an order they cannot find is the whole
+              problem this solves. */}
+          <CustomerReferenceField orderId={order.id} reference={order.customerReference} />
           <Figure
             label="Paid"
             value={formatPrice(order.chargedMinor ?? order.totalMinor, {

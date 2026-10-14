@@ -36,6 +36,11 @@ const SEARCH_PAUSE_MS = 300;
  * So this is paging ahead of needing it, deliberately, on the one screen
  * whose row count is whatever the business does next. The status filter is
  * unchanged in meaning and answered by the database. The search is new.
+ *
+ * What it matches is deliberately what the row shows: our reference, the
+ * customer's name and email, the customer's own reference, and any
+ * placement's domain. Searching something the table does not print means
+ * typing what is on screen and being told there is no such order.
  */
 export function AdminOrdersTable() {
   const [typed, setTyped] = useState('');
@@ -127,7 +132,7 @@ export function AdminOrdersTable() {
             id="order-search"
             type="search"
             className="h-9 text-[13px]"
-            placeholder="Reference, customer or domain"
+            placeholder="Reference, customer, domain"
             value={typed}
             onChange={(event) => {
               setTyped(event.target.value);
@@ -210,6 +215,22 @@ export function AdminOrdersTable() {
                   >
                     {order.reference}
                   </Link>
+                  {/*
+                    Theirs under ours, and searchable alongside it.
+
+                    A customer rings up quoting the label they typed rather
+                    than LM-10428, because theirs is the one they can find.
+                    0085 added it to what `admin_order_page` matches; this
+                    is so the row that comes back shows why it matched.
+                  */}
+                  {order.customerReference ? (
+                    <span
+                      className="mt-0.5 block max-w-[12rem] truncate text-[11px] font-normal text-muted"
+                      title={order.customerReference}
+                    >
+                      {order.customerReference}
+                    </span>
+                  ) : null}
                 </Td>
                 <Td>
                   <p className="text-[13px] text-ink">{order.customerName}</p>

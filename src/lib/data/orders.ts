@@ -28,6 +28,14 @@ interface RawOrderItem {
 interface RawOrder {
   reference: string;
   userId: string;
+  /*
+    What the person who placed it called it.
+
+    On some orders and not others on purpose: most accounts are one person
+    who has no use for a second reference, and a demo where every row
+    carries one would hide what the empty case looks like.
+  */
+  customerReference?: string;
   status: OrderStatus;
   placedAt: string;
   expectedLiveAt?: string;
@@ -37,6 +45,7 @@ interface RawOrder {
 const rawOrders: RawOrder[] = [
   {
     reference: 'LM-10482',
+    customerReference: 'Sarah - Northbound Q4',
     userId: 'usr_001',
     status: 'live',
     placedAt: '2026-07-14T09:20:00.000Z',
@@ -68,6 +77,7 @@ const rawOrders: RawOrder[] = [
   },
   {
     reference: 'LM-10517',
+    customerReference: 'Dev - PO 88213',
     userId: 'usr_001',
     status: 'in-progress',
     placedAt: '2026-08-21T14:05:00.000Z',
@@ -85,6 +95,7 @@ const rawOrders: RawOrder[] = [
   },
   {
     reference: 'LM-10533',
+    customerReference: 'Sarah - Northbound Q4',
     userId: 'usr_001',
     status: 'awaiting-content',
     placedAt: '2026-08-29T10:40:00.000Z',
@@ -333,6 +344,7 @@ function buildOrders(): Order[] {
     return {
       id,
       reference: raw.reference,
+      customerReference: raw.customerReference,
       userId: raw.userId,
       customerName: user.fullName,
       customerEmail: user.email,

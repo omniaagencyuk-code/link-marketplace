@@ -237,6 +237,19 @@ export default async function AdminOrderPage({ params }: { params: Promise<{ id:
               <dl className="space-y-2 border-t border-line pt-4 text-[13px]">
                 <Row label="Customer" value={order.customerName} />
                 <Row label="Email" value={order.customerEmail} mailto />
+                {/*
+                  Their own label, when they put one on.
+
+                  Shown rather than hidden because it is what a caller from
+                  a shared agency account quotes - "the Northbound Q4 one" -
+                  and because 0085 lets the orders list be searched by it, so
+                  this is where somebody confirms they have the right order.
+                  Not shown when absent: an empty row invites the reading
+                  that we lost it.
+                */}
+                {order.customerReference ? (
+                  <Row label="Their reference" value={order.customerReference} />
+                ) : null}
                 <Row label="Placed" value={formatDateTime(order.placedAt)} />
                 {order.expectedLiveAt ? (
                   <Row label="Expected live" value={formatDateTime(order.expectedLiveAt)} />

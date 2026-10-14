@@ -52,6 +52,15 @@ export function DraftOrder({
   const [error, setError] = useState<string | null>(null);
   const [rejected, setRejected] = useState<{ websiteDomain: string; reason: string }[]>([]);
   const [promo, setPromo] = useState<PromoPreview | null>(null);
+  /*
+    Not kept in the basket provider with the placements.
+
+    The provider is local storage, and a label somebody typed for *this*
+    order has no business surviving into the next one - the basket does,
+    because a half-filled order is worth coming back to, and "Sarah - Q4" is
+    not. It travels with the submit and is forgotten.
+  */
+  const [customerReference, setCustomerReference] = useState('');
 
   /*
     Lines that still owe an answer about their topic.
@@ -74,7 +83,7 @@ export function DraftOrder({
       // The code goes with the basket rather than being remembered on the
       // server: checkout re-validates it against prices it reads itself, so
       // this is the only place it needs to travel from.
-      const result = await startCheckoutAction(items, promo?.code);
+      const result = await startCheckoutAction(items, promo?.code, customerReference);
       if (result?.error) setError(result.error);
       if (result?.rejected?.length) setRejected(result.rejected);
     });
@@ -211,6 +220,31 @@ export function DraftOrder({
             ))}
           </ul>
         ) : null}
+
+        {/*
+          The customer's own label, above the promo code because it is the
+          one more people need: an agency with one login and five people
+          ordering through it cannot otherwise tell whose order is whose.
+          Optional, and said to be, so a single-person account is not asked
+          to invent an answer.
+        */}
+        <div className="mt-4 border-t border-line pt-4">
+          <label htmlFor="customer-reference" className="block text-[13px] font-medium text-ink">
+            Your reference <span className="font-normal text-muted">(optional)</span>
+          </label>
+          <input
+            id="customer-reference"
+            value={customerReference}
+            maxLength={120}
+            onChange={(event) => setCustomerReference(event.target.value)}
+            placeholder="Sarah - Northbound Q4"
+            className="mt-1.5 w-full rounded-lg border border-line bg-white px-3 py-2 text-[13px] text-ink placeholder:text-muted focus:border-navy-900 focus:outline-none sm:max-w-sm"
+          />
+          <p className="mt-1.5 text-[12px] leading-relaxed text-muted">
+            Shown on this order so you can find it again - your name, a client, a campaign or a
+            purchase order number. We never read it. You can change it afterwards.
+          </p>
+        </div>
 
         <PromoField
           items={items}

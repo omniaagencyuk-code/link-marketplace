@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { PageTitle } from '@/components/dashboard/page-title';
-import { OrdersTable } from '@/components/dashboard/orders-table';
+import { OrdersSearch } from '@/components/dashboard/orders-search';
 import { DraftOrder } from '@/components/dashboard/draft-order';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -46,7 +46,7 @@ export default async function OrdersPage() {
           </h2>
           <span className="text-[13px] text-muted">({orders.length})</span>
         </div>
-        <OrdersTable orders={orders} />
+        <OrdersSearch orders={orders} />
       </section>
 
       <section className="mt-8" aria-labelledby="status-key">
