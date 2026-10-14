@@ -1,0 +1,158 @@
+# Press Parrot's own checks, on every pull request.
+#
+# Everything here already ran on somebody's machine before it was pushed -
+# that is the point. This is not a different set of checks; it is the same
+# ones, run by something that does not forget, on a change nobody has
+# looked at yet.
+#
+# Three jobs rather than one, because three red or green lights say more
+# than one does: a build that broke, a rule that broke, and a policy that
+# broke are different problems with different owners. They run at the same
+# time.
+#
+# What is NOT here, deliberately:
+#
+#   * No deploy. Vercel builds this repository itself from its own GitHub
+#     integration, and a second thing that deploys is a second thing that
+#     can deploy the wrong commit.
+#   * No secrets, no API keys, no database URL. Every suite below is
+#     written to need none - no Ahrefs call, no model call, no Supabase
+#     project - which is what makes it safe to run this on a fork's pull
+#     request. A check that needs a key is a check that does not run for
+#     a contributor.
+#   * No migration against the real database. `verify:rls` replays every
+#     migration into a throwaway Postgres and throws it away.
+
+name: Verify
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# A second push to the same branch makes the first run's answer worthless,
+# so stop paying for it. Never cancels a run on main, where every commit's
+# answer is worth keeping.
+concurrency:
+  group: verify-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+permissions:
+  contents: read
+
+env:
+  # Pinned rather than 'lts/*': a Node that changes under us turns an
+  # unrelated morning into an investigation. 22 is what this was developed
+  # and measured against, and it is what the runner image ships.
+  NODE_VERSION: '22'
+
+jobs:
+  checks:
+    name: Lint, types and build
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      # Each of these on its own line, so the annotation names which one
+      # failed rather than "Run checks".
+      - name: Lint
+        run: npm run lint
+
+      - name: Types
+        run: npx tsc --noEmit
+
+      # The one that costs the most to find out about late: a build that
+      # fails here would have failed on Vercel, after merge, on the branch
+      # everything else deploys from.
+      - name: Build
+        run: npm run build
+
+  verify:
+    name: Suites (no database)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      # 26 suites, every one of them needing no key, no network and no
+      # database. The list is read from package.json rather than written
+      # here, so a suite somebody adds is a suite that runs.
+      - name: Verify
+        run: npm run verify:pure
+
+  database:
+    name: Suites (PostgreSQL)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      # Two throwaway clusters, started the same way a developer starts
+      # them, rather than a service container: these suites connect over a
+      # unix socket at a path they name, and a container gives them TCP on
+      # localhost instead. Doing it this way keeps the scripts identical
+      # between a laptop and here, which is the only reason a developer
+      # can reproduce a failure this job reports.
+      #
+      # `--auth=trust` is safe because both clusters live inside this
+      # runner for the length of this job and hold nothing but fixtures.
+      - name: Start PostgreSQL
+        run: |
+          set -euo pipefail
+          BIN="$(ls -d /usr/lib/postgresql/*/bin | sort -V | tail -1)"
+          echo "Using $BIN"
+          "$BIN/postgres" --version
+
+          # verify:rls and verify:search: socket in /tmp, port 5433.
+          "$BIN/initdb" -D "$RUNNER_TEMP/pgverify" -U postgres --auth=trust
+          "$BIN/pg_ctl" -D "$RUNNER_TEMP/pgverify" \
+            -o "-k /tmp -p 5433" -l "$RUNNER_TEMP/pgverify.log" -w start
+
+          # verify:schema: its own cluster, socket and data in the path the
+          # script names.
+          "$BIN/initdb" -D /var/tmp/pgvalidate -U postgres --auth=trust
+          "$BIN/pg_ctl" -D /var/tmp/pgvalidate \
+            -o "-k /var/tmp/pgvalidate -p 55432" -l "$RUNNER_TEMP/pgvalidate.log" -w start
+
+          # Prove both are actually up before the suites assume it. A suite
+          # that cannot connect should fail as "no database", not as a
+          # hundred assertions that all look broken.
+          psql -h /tmp -p 5433 -U postgres -tAc 'select 1'
+          psql -h /var/tmp/pgvalidate -p 55432 -U postgres -tAc 'select 1'
+
+      # Replays every migration, asserts the policies as each role, checks
+      # the row mappers against the real columns, and proves the
+      # marketplace's database-side search returns what the browser-side
+      # filter it replaced returned.
+      - name: Verify
+        run: npm run verify:database
+
+      - name: PostgreSQL logs
+        if: failure()
+        run: |
+          echo '--- pgverify ---'
+          tail -50 "$RUNNER_TEMP/pgverify.log" || true
+          echo '--- pgvalidate ---'
+          tail -50 "$RUNNER_TEMP/pgvalidate.log" || true

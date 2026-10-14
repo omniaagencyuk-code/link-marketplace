@@ -265,8 +265,26 @@ dashboard will not take effect while `vercel.json` names one.
 
 ## Verification
 
+`npm run verify:all` runs every suite below and reports which failed rather
+than stopping at the first, and `.github/workflows/verify.yml` runs the same
+thing on every pull request, split into three: lint, types and build; the 26
+suites that need nothing; and the three that need a local Postgres. The list
+is read out of `package.json` by `scripts/run-verify.mjs`, so a suite added
+there is a suite CI runs - there is no second list to keep up to date.
+
+Nothing in CI holds a secret, and nothing in it deploys. Every suite is
+written to need no key, no network and no database, which is what lets the
+checks run on a fork's pull request; Vercel builds the repository through its
+own integration and nothing here should take that over.
+
 - `npm run verify:rls` — replays every migration into a local Postgres and
-  asserts the policies, as each role.
+  asserts the policies, as each role. Fails the run on any assertion that
+  prints false, on a migration that is not safe to run twice, and on a
+  flattened `.paste.sql` copy that has drifted from its migration. Every
+  assertion is phrased so that passing prints true, including the half dozen
+  that read as statements of fact - "the nightly import is off by default" -
+  because a checker cannot tell a wrong answer from a right one worded
+  backwards. Keep it that way when adding one.
 - `npm run verify:import` — the CSV importer.
 - `npm run verify:sourcing` — mbox reading and the review rules. Needs no API
   key and no database.

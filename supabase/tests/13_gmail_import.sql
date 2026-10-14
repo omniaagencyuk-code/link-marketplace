@@ -114,7 +114,8 @@ select 'customer reads publisher mail: ' || count(*) from public.inbound_emails;
 reset role;
 
 -- Purging is off until somebody turns it on.
-select 'body purging is off by default: ' || purge_bodies_enabled from public.sourcing_settings where id = 1;
+select 'body purging is off by default: ' || (not purge_bodies_enabled)
+  from public.sourcing_settings where id = 1;
 select 'and defaults to 90 days: ' || purge_bodies_after_days from public.sourcing_settings where id = 1;
 
 -- ------------------------------------------------ the rate card worklist
@@ -157,9 +158,9 @@ reset role;
 -- Off, and not reading, until somebody says otherwise. Importing is free;
 -- reading is not, and a schedule that spends money unattended is a decision
 -- rather than something inherited from a default.
-select 'the nightly import is off by default: ' || nightly_import_enabled
+select 'the nightly import is off by default: ' || (not nightly_import_enabled)
   from public.sourcing_settings where id = 1;
-select 'and does not read by default: ' || nightly_import_reads
+select 'and does not read by default: ' || (not nightly_import_reads)
   from public.sourcing_settings where id = 1;
 select 'it has never run: ' || coalesce(nightly_import_last_run_at::text, 'null')
   from public.sourcing_settings where id = 1;

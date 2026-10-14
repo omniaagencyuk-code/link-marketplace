@@ -20,7 +20,8 @@ reset request.jwt.claim.sub;
 set role authenticated;
 set request.jwt.claim.sub = '11111111-1111-1111-1111-111111111111';
 select 'admin grants newadmin: ' || public.grant_admin('newadmin@test');
-select 'granting an unregistered address: ' || public.grant_admin('nobody@test');
+select 'granting an address nobody has registered does nothing: '
+       || (not public.grant_admin('nobody@test'));
 select 'admins now: ' || count(*) from public.profiles where role = 'admin';
 
 -- The new admin genuinely has admin powers in the database.

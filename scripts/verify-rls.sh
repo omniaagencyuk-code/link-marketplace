@@ -90,6 +90,23 @@ if [ "$drift" -eq 0 ]; then
 fi
 echo
 
+# ---------------------------------------------------------------- the tests
+#
+# Everything below is captured as well as printed, because psql exits 0
+# whatever a query returns: a `select 'x: ' || (...)` that answers false is a
+# failed assertion and a successful command. Until this was added the script
+# exited 0 with failures on screen, which is the worst way for a check to be
+# wrong - it looks like it ran.
+#
+# The grading at the end is one rule: an assertion that passes prints true.
+# Six assertions used to print false on purpose, phrased as statements of
+# fact ("the nightly import is off by default: false"); they now read "... is
+# off by default: true" so that nothing in a passing run prints false and the
+# rule needs no list of exceptions. Keep it that way when adding one.
+ASSERTIONS="$(mktemp)"
+trap 'rm -f "$ASSERTIONS"' EXIT
+
+{
 echo "--- reads by role ---"
 run -f "$ROOT/supabase/tests/01_reads.sql" 2>&1 | grep -v '^$'
 echo
@@ -188,4 +205,42 @@ run -f "$ROOT/supabase/tests/33_link_building_planner.sql" 2>&1 | grep -v '^$'
 echo
 echo "--- the customer's own reference on an order ---"
 run -f "$ROOT/supabase/tests/34_customer_reference.sql" 2>&1 | grep -v '^$'
+} | tee "$ASSERTIONS"
+
+# ------------------------------------------------------------- the verdict
+#
+# `: f` as well as `: false`: a `raise notice '... : %', (expr)` prints a
+# boolean as t or f, and a dozen of these tests report that way.
+assertion_failures=$(grep -cE ': (false|f)( \(|$)' "$ASSERTIONS" || true)
+passed=$(grep -cE ': (true|t)( \(|$)' "$ASSERTIONS" || true)
+
+echo
+echo "--- verdict ---"
+echo "$passed assertions passed, $assertion_failures failed"
+
+# A run that asserted nothing is not a pass. The suites below are chained
+# together by hand, so a missing file or a psql that cannot connect would
+# otherwise read as silence and be reported as success.
+if [ "$passed" -lt 400 ]; then
+  echo "FAILED: only $passed assertions ran - something did not execute"
+  exit 1
+fi
+
+if [ "$assertion_failures" -gt 0 ]; then
+  echo "FAILED: $assertion_failures assertions below"
+  grep -nE ': (false|f)( \(|$)' "$ASSERTIONS"
+  exit 1
+fi
+
+if [ "$rerun_failures" -gt 0 ]; then
+  echo "FAILED: $rerun_failures migrations are not safe to run twice"
+  exit 1
+fi
+
+if [ "$drift" -gt 0 ]; then
+  echo "FAILED: $drift flattened copies have drifted from their migrations"
+  exit 1
+fi
+
+echo "all good"
 
