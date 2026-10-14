@@ -18,7 +18,7 @@ export function SeoEditorial({ content }: { content: ContentAccessors }) {
   if (!articles.length) return null;
 
   return (
-    <section className="border-b border-line bg-white" aria-labelledby="editorial-heading">
+    <section className="border-b border-line bg-surface" aria-labelledby="editorial-heading">
       <Container size="wide" className="py-14 lg:py-20">
         <div className="max-w-2xl">
           <p className="text-[11px] font-semibold tracking-[0.14em] text-accent-700 uppercase">

@@ -38,7 +38,7 @@ export function PlatformFeatures({ content }: { content: ContentAccessors }) {
   );
 
   return (
-    <section className="border-b border-line bg-white" aria-labelledby="platform-heading">
+    <section className="border-b border-line bg-surface" aria-labelledby="platform-heading">
       <Container size="wide" className="py-14 lg:py-20">
         <div className="max-w-2xl">
           <h2
@@ -52,13 +52,19 @@ export function PlatformFeatures({ content }: { content: ContentAccessors }) {
           </p>
         </div>
 
-        <ul className="mt-11 grid gap-x-8 gap-y-9 sm:grid-cols-2 lg:grid-cols-4">
+        <ul data-reveal-items="" className="mt-11 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {features.map((feature, index) => {
             const Icon = icons[index % icons.length] as LucideIcon;
             const comingSoon = (feature.comingSoon ?? '').trim().toLowerCase() === 'yes';
             return (
-              <li key={feature.title || index}>
-                <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-surface-sunken text-ink-soft">
+              <li
+                key={feature.title || index}
+                /* Cards rather than loose columns, now that the band behind
+                   them is grey: eight items floating on a tint read as a list
+                   somebody forgot to finish. */
+                className="rounded-[var(--radius-card)] border border-line bg-white p-5 transition-colors duration-200 hover:border-line-strong"
+              >
+                <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-accent-50 text-accent-700">
                   <Icon className="h-4.5 w-4.5" aria-hidden="true" />
                 </span>
                 <h3 className="mt-4 flex flex-wrap items-center gap-2 text-[15px] font-semibold text-ink">

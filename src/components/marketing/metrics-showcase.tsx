@@ -4,10 +4,15 @@ import { useEffect, useRef, useState } from 'react';
 import { motion, useInView, useReducedMotion } from 'motion/react';
 import { Flag } from '@/components/shared/flag';
 import { formatCompactNumber } from '@/lib/utils/format';
-import { demoFeatured } from '@/lib/guest-posts/demo-data';
+import { demoFeatured } from '@/lib/marketing/demo-data';
 
 /**
  * The four figures a buyer actually checks, drawn rather than listed.
+ *
+ * Shared by /guest-posts and the homepage, which is why it lives in
+ * `marketing/` rather than under either of them. One copy of the drawing: the
+ * traffic line, the counters and the country bars are the fiddly part, and two
+ * of them would drift the first time one was tuned.
  *
  * Every number here belongs to the same invented publisher the hero panel
  * opens - `northfieldfinance.example`, a domain RFC 2606 reserves so that it
@@ -22,23 +27,37 @@ import { demoFeatured } from '@/lib/guest-posts/demo-data';
  * final value.
  */
 
-export function MetricsShowcase() {
+export function MetricsShowcase({ layout = 'wide' }: { layout?: 'wide' | 'stacked' }) {
   const section = useRef<HTMLDivElement>(null);
   const seen = useInView(section, { once: true, amount: 0.3 });
   const still = useReducedMotion();
   const live = Boolean(still) || seen;
   const listing = demoFeatured();
+  /*
+    `stacked` is the same four panels in one column, for a section that puts
+    this beside its own copy rather than across the page. A prop rather than a
+    second component: the arrangement is all that differs, and the half worth
+    getting right - the draw, the counters, the bars - is the half that would
+    have been copied.
+  */
+  const narrow = layout === 'stacked';
 
   return (
-    <div ref={section} className="grid gap-5 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
+    <div
+      ref={section}
+      className={narrow ? 'grid gap-4' : 'grid gap-5 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]'}
+    >
       <TrafficPanel trend={listing.trend} live={live} still={Boolean(still)} />
 
-      <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-1">
+      <div className={narrow ? 'grid gap-4 sm:grid-cols-2' : 'grid gap-5 sm:grid-cols-2 lg:grid-cols-1'}>
         <RatingPanel rating={listing.domainRating} live={live} still={Boolean(still)} />
         <KeywordsPanel keywords={listing.keywords} live={live} still={Boolean(still)} />
       </div>
 
-      <div className="lg:col-span-2">
+      {/* Full width in the wide arrangement; in one column there is nothing to
+          span, and `lg:col-span-2` would ask the grid for a column it does not
+          have. */}
+      <div className={narrow ? undefined : 'lg:col-span-2'}>
         <CountriesPanel audience={listing.audience} live={live} still={Boolean(still)} />
       </div>
     </div>

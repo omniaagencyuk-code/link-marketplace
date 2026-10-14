@@ -13,7 +13,7 @@ import {
   DEMO_SEARCH_TERM,
   demoFeatured,
   type DemoListing,
-} from '@/lib/guest-posts/demo-data';
+} from '@/lib/marketing/demo-data';
 
 /**
  * The marketplace, demonstrating itself.

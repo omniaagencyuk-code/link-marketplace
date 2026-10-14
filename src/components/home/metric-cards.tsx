@@ -22,7 +22,7 @@ export function MetricCards({ content }: { content: ContentAccessors }) {
   const cta = content.link('metricCards', 'cta');
 
   return (
-    <section className="border-b border-line bg-white" aria-labelledby="metrics-heading">
+    <section className="border-b border-line bg-accent-50" aria-labelledby="metrics-heading">
       <Container size="wide" className="py-14 lg:py-16">
         <div className="max-w-2xl">
           <h2
@@ -41,15 +41,18 @@ export function MetricCards({ content }: { content: ContentAccessors }) {
             <li key={item.title}>
               <Link
                 href={item.href}
-                className="flex h-full flex-col rounded-[var(--radius-card)] border border-line bg-white p-5 shadow-[var(--shadow-card)] transition-colors hover:border-accent-500"
+                className="group flex h-full flex-col rounded-[var(--radius-card)] border border-line bg-white p-5 shadow-[var(--shadow-card)] transition-all duration-200 hover:-translate-y-0.5 hover:border-accent-300 hover:shadow-[var(--shadow-raised)]"
               >
                 <span className="text-[15px] font-semibold text-ink">{item.title}</span>
                 <span className="mt-2 flex-1 text-[14px] leading-relaxed text-muted">
                   {item.body}
                 </span>
-                <span className="mt-4 inline-flex items-center gap-1.5 text-[13px] font-medium text-accent-700">
+                <span className="mt-4 inline-flex items-center gap-1.5 text-[13px] font-semibold text-accent-700">
                   What it measures
-                  <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
+                  <ArrowRight
+                    className="h-3.5 w-3.5 transition-transform duration-200 group-hover:translate-x-0.5"
+                    aria-hidden="true"
+                  />
                 </span>
               </Link>
             </li>

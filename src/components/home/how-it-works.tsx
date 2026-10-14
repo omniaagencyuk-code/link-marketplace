@@ -59,11 +59,11 @@ export function HowItWorks({ content }: { content: ContentAccessors }) {
         </svg>
 
         <div className="relative mt-8 lg:mt-4">
-          <ol className="relative grid gap-6 sm:grid-cols-2 lg:grid-cols-4 lg:gap-5">
+          <ol data-reveal-items="" className="relative grid gap-6 sm:grid-cols-2 lg:grid-cols-4 lg:gap-5">
             {steps.map((step, index) => (
               <li
                 key={step.number || index}
-                className="rounded-[var(--radius-card)] border border-line bg-white p-5 shadow-[var(--shadow-card)]"
+                className="rounded-[var(--radius-card)] border border-line bg-white p-5 shadow-[var(--shadow-card)] transition-colors duration-200 hover:border-line-strong"
               >
                 <span className="tabular inline-flex h-9 items-center rounded-lg bg-navy-900 px-3 text-[13px] font-semibold text-accent-400">
                   {step.number}

@@ -78,6 +78,50 @@ export const definition: PageDef = {
     ),
 
     section(
+      'showcase',
+      'Marketplace showcase',
+      [
+        text('eyebrow', 'Eyebrow', { maxLength: 60 }),
+        text('heading', 'Heading', { maxLength: 120 }),
+        textarea('body', 'Supporting copy', { rows: 4, maxLength: 500 }),
+        list(
+          'steps',
+          'Captions beside the animation',
+          [
+            text('label', 'Label', { maxLength: 60 }),
+            textarea('body', 'One line', { rows: 2, maxLength: 200 }),
+          ],
+          {
+            itemLabelKey: 'label',
+            maxItems: 6,
+            help:
+              'Six, in the order the animation runs: choosing a niche, the metric filters, the publishers that match, opening one, its metrics, saving it. The animation highlights whichever one it is on, so re-ordering these without re-ordering the animation would highlight the wrong line.',
+          },
+        ),
+        link('cta', 'Link under the animation'),
+        text('caption', 'Line under the animation', { maxLength: 160 }),
+      ],
+      'The animated panel near the top. The publishers in it are invented, on reserved .example domains, and the panel says so on its face - nothing here shows real inventory.',
+    ),
+
+    section(
+      'seoMetrics',
+      'The metrics, drawn',
+      [
+        text('eyebrow', 'Eyebrow', { maxLength: 60 }),
+        text('heading', 'Heading', { maxLength: 120 }),
+        textarea('body', 'Supporting copy', { rows: 4, maxLength: 500 }),
+        list('items', 'Points', [text('label', 'Point', { maxLength: 100 })], {
+          itemLabelKey: 'label',
+          maxItems: 4,
+        }),
+        link('cta', 'Link'),
+        text('caption', 'Line under the panels', { maxLength: 160 }),
+      ],
+      'The four figures a buyer checks, drawn as they come into view. Same invented publisher as the showcase above, so the page reads as one example rather than two.',
+    ),
+
+    section(
       'marketplace',
       'Marketplace preview',
       [
@@ -367,6 +411,56 @@ export const defaults: PageValues = {
     // counted, which is why the claim of "5,000+ vetted websites" that used to
     // sit here against a real number nearer nine hundred is gone.
     items: [{ value: '24-72 hours', label: 'average turnaround' }],
+  },
+
+  showcase: {
+    eyebrow: 'How you find them',
+    heading: 'Find the Right Websites. Without the Guesswork.',
+    body: 'Every listing arrives with the figures you would otherwise go and look up one site at a time: domain rating, twelve months of organic traffic, referring domains, the countries its readers are in and what it already ranks for. Filter on them, compare what is left, and shortlist the publishers worth buying from.',
+    steps: [
+      {
+        label: 'Choose a niche',
+        body: 'Start with the subject you want to be linked from. A category here was set by a person, never guessed from the domain name.',
+      },
+      {
+        label: 'Filter on the metrics',
+        body: 'Domain rating, organic traffic, referring domains, country, price, turnaround and link type. Set the floor you are prepared to buy at.',
+      },
+      {
+        label: 'Compare what matches',
+        body: 'Only the publishers that clear every filter, side by side on the figures that decide between them.',
+      },
+      {
+        label: 'Open a listing',
+        body: 'Everything we hold on that site, without emailing anybody for a quote first.',
+      },
+      {
+        label: 'Read the real numbers',
+        body: 'Twelve months of organic traffic, where the readers actually are, and the terms the site already ranks for.',
+      },
+      {
+        label: 'Shortlist it',
+        body: 'Save the ones worth having and order when you are ready. No outreach, no negotiation, nothing to chase.',
+      },
+    ],
+    cta: { label: 'Browse the Marketplace', href: '/marketplace' },
+    caption:
+      'A demonstration of the marketplace using example publishers. Create a free account to browse the real inventory.',
+  },
+
+  seoMetrics: {
+    eyebrow: 'What you are buying',
+    heading: 'Judge a Website on Measurements, Not on a Sales Email',
+    body: 'A publisher telling you their site is authoritative is not evidence. These four are: what the site ranks for, how much search traffic it genuinely gets, how many other sites link to it, and which countries its readers are in. Every listing in the marketplace carries all four, with the date they were measured.',
+    items: [
+      { label: 'Organic traffic over twelve months, not a single flattering month' },
+      { label: 'Domain rating, and the referring domains behind it' },
+      { label: 'Traffic by country, so a link reaches the market you sell to' },
+      { label: 'The keywords the site already ranks for' },
+    ],
+    cta: { label: 'What each metric measures', href: '/link-building-metrics' },
+    caption:
+      'Figures from an example publisher, drawn for illustration. Every real listing shows its own, with the date it was measured.',
   },
 
 
