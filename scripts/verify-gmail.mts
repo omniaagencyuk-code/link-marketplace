@@ -16,6 +16,7 @@ import {
   decodeBase64Url,
   decodeEncodedWords,
   htmlToText,
+  decodeText,
   looksLikeRateCard,
   parseMessage,
   type GmailMessage,
@@ -79,6 +80,54 @@ console.log('\n--- a body that is not utf-8 ---');
   is('an encoded-word subject is readable', parsed.headers.subject, 'Tarifs pour votre société');
   has('an encoded-word sender is too', parsed.headers.from ?? '', 'Benoît');
   is('the address still parses out of it', addressOf(parsed.headers.from), 'jb@moingt.example');
+}
+
+/*
+  The rest of the windows-1252 range, decoded straight rather than through a
+  fixture, because the bytes are the whole point.
+
+  Node reports `new TextDecoder('windows-1252').encoding` as windows-1252 and
+  then decodes 0x80-0x9f as C1 control characters - ISO-8859-1's meaning, not
+  windows-1252's. Those are exactly the bytes Outlook writes: the euro sign,
+  the curly quotes and apostrophes, the dashes. Each one used to arrive as an
+  invisible control in the text the model reads, so "550€" became "550" and
+  "don't" became "don" plus nothing.
+*/
+console.log('\n--- the bytes Outlook writes ---');
+{
+  const cp1252 = (...bytes: number[]) => decodeText(Buffer.from(bytes), 'windows-1252');
+  is('0x80 is a euro sign, not a control character', cp1252(0x80), '€');
+  is('0x92 is the apostrophe in "don\'t"', cp1252(0x64, 0x6f, 0x6e, 0x92, 0x74), 'don\u2019t');
+  is('0x93 and 0x94 are curly quotes', cp1252(0x93, 0x94), '\u201c\u201d');
+  is('0x96 and 0x97 are the en and em dash', cp1252(0x96, 0x97), '\u2013\u2014');
+  is('0x85 is an ellipsis', cp1252(0x85), '\u2026');
+  is('0xa3 is still a pound sign', cp1252(0xa3), '£');
+  is('and plain ASCII is untouched', cp1252(0x50, 0x72, 0x69, 0x63, 0x65), 'Price');
+
+  /*
+    A part declaring iso-8859-1 is decoded the same way, which is what the
+    encoding standard says and what every browser does. It matters more in
+    mail than on the web: a C1 control in the body of an email is never
+    something somebody meant, so byte 0x92 under that label is an Outlook
+    apostrophe rather than a control character nobody can see.
+  */
+  is(
+    'a part labelled iso-8859-1 is read as windows-1252 too',
+    decodeText(Buffer.from([0x35, 0x35, 0x30, 0x80]), 'iso-8859-1'),
+    '550€',
+  );
+
+  // And the encodings that are genuinely something else still are.
+  is(
+    'utf-8 is unaffected',
+    decodeText(Buffer.from('550€', 'utf8'), 'utf-8'),
+    '550€',
+  );
+  is(
+    'an unknown label falls back rather than throwing',
+    decodeText(Buffer.from('plain', 'utf8'), 'x-made-up-charset'),
+    'plain',
+  );
 }
 
 console.log('\n--- a forwarded message ---');

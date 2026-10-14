@@ -13,6 +13,8 @@
  * dependency tree.
  */
 
+import { decodeBytes } from '@/lib/email/charset';
+
 export interface MessageHeaders {
   from?: string;
   to?: string;
@@ -68,21 +70,14 @@ export function decodeBase64Url(data: string): Buffer {
 /**
  * Bytes to a string, in whatever character set the part declares.
  *
- * Node's TextDecoder covers the legacy single-byte and CJK encodings through
- * the WHATWG index, which is most of what turns up: windows-1252 for anything
- * written in Outlook, iso-8859-1 and -2 across Europe, the occasional
- * shift_jis. An unknown label falls back to UTF-8 rather than failing, and
- * invalid bytes become replacement characters rather than an exception - a
- * mangled word in a reply is recoverable, a thrown error loses the reply.
+ * The decoding itself lives in `email/charset.ts`, shared with the mbox
+ * reader: windows-1252 is decoded from a table there because Node's own
+ * decoder reads that range as ISO-8859-1 and loses the euro sign and the
+ * curly quotes. A Gmail part with no charset is UTF-8, which is what the
+ * API sends.
  */
 export function decodeText(bytes: Buffer, charset?: string): string {
-  const label = (charset ?? 'utf-8').trim().toLowerCase().replace(/^["']|["']$/g, '');
-
-  try {
-    return new TextDecoder(label || 'utf-8', { fatal: false }).decode(bytes);
-  } catch {
-    return new TextDecoder('utf-8', { fatal: false }).decode(bytes);
-  }
+  return decodeBytes(bytes, charset, 'utf-8');
 }
 
 /** The value of one header, case-insensitively. */

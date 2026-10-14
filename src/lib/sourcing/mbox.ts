@@ -33,6 +33,7 @@ const OUTREACH_SUBJECT = /^\s*(?:re|fwd?|aw|sv|rv|antw)\s*:\s*|^\s*/i;
 const SUBJECT_DOMAIN = /\b(?:about|on|for|re)\s+(\S+)\s*$/i;
 
 import { isOurs } from './outreach';
+import { charsetLabel, decodeBytes as decode } from '@/lib/email/charset';
 
 export interface ParsedMessage {
   messageId: string;
@@ -136,13 +137,19 @@ function decodeEncodedWords(input: string): string {
   );
 }
 
+/**
+ * An mbox part's bytes.
+ *
+ * `us-ascii` is read as UTF-8 rather than as ASCII, unchanged from before:
+ * an exported mailbox mislabels far more often than it is truly
+ * seven-bit, and a part that says ASCII and carries UTF-8 is the common
+ * case here. Everything else goes to the shared decoder, which is where
+ * windows-1252 stopped losing its euro signs and curly quotes.
+ */
 function decodeBytes(bytes: Buffer, charset?: string): string {
-  const label = (charset ?? 'utf-8').toLowerCase().replace(/['"]/g, '');
-  try {
-    return new TextDecoder(label === 'us-ascii' ? 'utf-8' : label).decode(bytes);
-  } catch {
-    return bytes.toString('utf8');
-  }
+  const label = charsetLabel(charset);
+  if (label === 'us-ascii' || label === '') return decode(bytes, 'utf-8');
+  return decode(bytes, label, 'utf-8');
 }
 
 /** "Jane <jane@site.com>" or "jane@site.com" */

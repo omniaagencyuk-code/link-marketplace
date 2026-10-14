@@ -106,7 +106,7 @@ select 'the general cost is the cheapest niche rate: ' || cost_price_minor
   join public.websites site on site.id = service.website_id
   where site.slug = 'niche-only-example';
 
-select 'a placement priced at zero is switched off: ' || available
+select 'a placement priced at zero is switched off: ' || (not available)
   from public.services service
   join public.websites site on site.id = service.website_id
   where site.slug = 'niche-only-example';

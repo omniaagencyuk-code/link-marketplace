@@ -42,7 +42,10 @@
     "verify:errors": "tsx scripts/verify-errors.mts",
     "verify:niche": "tsx scripts/verify-niche.mts",
     "verify:planner": "tsx scripts/verify-planner.mts",
-    "verify:orders": "tsx scripts/verify-orders.mts"
+    "verify:orders": "tsx scripts/verify-orders.mts",
+    "verify:all": "node scripts/run-verify.mjs",
+    "verify:pure": "node scripts/run-verify.mjs pure",
+    "verify:database": "node scripts/run-verify.mjs database"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.128.0",

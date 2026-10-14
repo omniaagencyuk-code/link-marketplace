@@ -212,30 +212,59 @@ function wellFormedConfidence(result: ReturnType<typeof extractionResultSchema.s
   return entries.length === 1 && entries[0]!.level === 'low';
 }
 
+/*
+  Walking the generated JSON Schema.
+
+  It is whatever the library emitted, so there is no type to read it
+  through. `unknown` and these two helpers rather than `any`: the point of
+  the checks below is that a path through the schema is *missing*, and `any`
+  answers every question about a missing path with undefined rather than
+  with a type error - which is the same silence the checks exist to break.
+*/
+const asRecord = (value: unknown): Record<string, unknown> | undefined =>
+  value && typeof value === 'object' ? (value as Record<string, unknown>) : undefined;
+
+/** One step at a time down a path, stopping at the first thing that is not an object. */
+const prop = (value: unknown, ...path: string[]): unknown =>
+  path.reduce<unknown>((node, key) => asRecord(node)?.[key], value);
+
+/** `schema`, or `json_schema.schema`, depending on the library's shape. */
+const schemaOf = (format: unknown): unknown =>
+  prop(format, 'schema') ?? prop(format, 'json_schema', 'schema');
+
 /**
  * The schema actually sent to the API must have somewhere to put an entry.
  * A closed, empty object type-checks and passes every local test while
  * making the field impossible to populate - which is exactly what happened.
  */
 function generatedSchemaAcceptsEntries(): boolean {
-  const format = zodOutputFormat(extractionResultSchema) as unknown as Record<string, any>;
-  const listing = (format.schema ?? format.json_schema?.schema)?.properties?.listings?.items;
-  const node = listing?.properties?.confidence;
-  if (node?.type !== 'array') return false;
-  const entry = node.items;
-  return entry?.type === 'object' && Boolean(entry.properties?.field) && Boolean(entry.properties?.level);
+  const node = prop(
+    schemaOf(zodOutputFormat(extractionResultSchema)),
+    'properties',
+    'listings',
+    'items',
+    'properties',
+    'confidence',
+  );
+  if (prop(node, 'type') !== 'array') return false;
+  const entry = prop(node, 'items');
+  return (
+    prop(entry, 'type') === 'object' &&
+    Boolean(prop(entry, 'properties', 'field')) &&
+    Boolean(prop(entry, 'properties', 'level'))
+  );
 }
 
 /** Union-typed nodes in the schema actually sent to the API. */
 function countUnions(): number {
-  const format = zodOutputFormat(wireResultSchema) as unknown as Record<string, any>;
   let count = 0;
-  const walk = (node: any) => {
-    if (!node || typeof node !== 'object') return;
-    if (Array.isArray(node.type) || node.anyOf || node.oneOf) count += 1;
-    for (const value of Object.values(node)) if (value && typeof value === 'object') walk(value);
+  const walk = (node: unknown) => {
+    const record = asRecord(node);
+    if (!record) return;
+    if (Array.isArray(record.type) || record.anyOf || record.oneOf) count += 1;
+    for (const value of Object.values(record)) if (value && typeof value === 'object') walk(value);
   };
-  walk(format.schema ?? format.json_schema?.schema);
+  walk(schemaOf(zodOutputFormat(wireResultSchema)));
   return count;
 }
 
