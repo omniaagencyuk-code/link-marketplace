@@ -3,6 +3,7 @@ import { AdminShell } from '@/components/admin/shell/admin-shell';
 import { AdminTopbar } from '@/components/admin/shell/admin-topbar';
 import { AdminAccount } from '@/components/admin/shell/admin-account';
 import { requireAdminSession } from '@/lib/auth/admin-access';
+import { enquiryService } from '@/lib/services/enquiry-service';
 import { brand } from '@/lib/config/brand';
 
 export const metadata: Metadata = {
@@ -24,10 +25,24 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   // check, and it gives the shell the signed-in admin's address.
   const session = await requireAdminSession();
 
+  /*
+    The sidebar's enquiry count, read here rather than on the page it links
+    to - the point of a badge is to be seen from the other twenty screens.
+    That costs one count query per admin page view, which is the honest price
+    of the feature: it is an indexed `count(*) where status = 'new'` over
+    `pricing_enquiries_status_created_idx`, head-only, and it fails to zero
+    rather than taking the page down with it.
+
+    AGENTS.md is firm that a round trip to Supabase is the unit to count in,
+    so: one more, on the admin side only, and never on a customer page.
+  */
+  const newEnquiries = await enquiryService.newCount();
+
   return (
     <AdminShell
       account={<AdminAccount email={session.email} />}
       topbar={<AdminTopbar email={session.email} />}
+      newEnquiries={newEnquiries}
     >
       {children}
     </AdminShell>

@@ -7,6 +7,7 @@ import { LifeBuoy, Menu, X } from 'lucide-react';
 import { Logo } from '@/components/layout/logo';
 import { cn } from '@/lib/utils/cn';
 import { adminNav, type NavItem } from '@/lib/config/navigation';
+import { badgeLabel } from '@/lib/admin/badge';
 
 /**
  * The admin area's own shell.
@@ -36,12 +37,22 @@ export function AdminShell({
   children,
   account,
   topbar,
+  newEnquiries = 0,
 }: {
   children: React.ReactNode;
   /** The signed-in admin, rendered server-side so it is never a client guess. */
   account: React.ReactNode;
   /** Search, queues and the profile menu. */
   topbar: React.ReactNode;
+  /**
+   * Enquiries nobody has picked up yet.
+   *
+   * Read in the layout and passed down rather than fetched here, for the
+   * reason the account is: this is a client component, and a figure it
+   * fetched itself would be a second source of truth that arrives after
+   * the page and flickers into place.
+   */
+  newEnquiries?: number;
 }) {
   const pathname = usePathname();
 
@@ -75,7 +86,7 @@ export function AdminShell({
       */}
       <aside className="hidden w-60 shrink-0 flex-col bg-navy-900 lg:sticky lg:top-0 lg:flex lg:h-dvh">
         <AdminBrand />
-        <AdminNav pathname={pathname} />
+        <AdminNav pathname={pathname} newEnquiries={newEnquiries} />
         <AdminSidebarFooter>{account}</AdminSidebarFooter>
       </aside>
 
@@ -99,7 +110,7 @@ export function AdminShell({
                 <X className="h-5 w-5" aria-hidden="true" />
               </button>
             </div>
-            <AdminNav pathname={pathname} />
+            <AdminNav pathname={pathname} newEnquiries={newEnquiries} />
             <AdminSidebarFooter>{account}</AdminSidebarFooter>
           </div>
         </div>
@@ -145,9 +156,20 @@ function AdminBrand() {
   );
 }
 
-function AdminNav({ pathname }: { pathname: string }) {
+function AdminNav({ pathname, newEnquiries }: { pathname: string; newEnquiries: number }) {
   const isActive = (item: NavItem) =>
     item.exact ? pathname === item.href : pathname.startsWith(item.href);
+
+  /*
+    One place a badge's number comes from, keyed by the name on the nav item.
+    A second count would mean a sidebar that disagrees with the page it links
+    to, which is the sort of thing nobody reports and everybody stops
+    trusting.
+  */
+  const counts: Record<NonNullable<NavItem['badge']>, number> = {
+    'order-draft': 0,
+    'pricing-enquiries': newEnquiries,
+  };
 
   return (
     <nav
@@ -170,10 +192,33 @@ function AdminNav({ pathname }: { pathname: string }) {
           >
             {item.icon ? <item.icon className="h-4 w-4 shrink-0" aria-hidden="true" /> : null}
             <span className="truncate">{item.label}</span>
+            <NavBadge label={item.badge ? badgeLabel(counts[item.badge]) : null} />
           </Link>
         );
       })}
     </nav>
+  );
+}
+
+/**
+ * The count beside a nav label.
+ *
+ * Red, because unlike the customer sidebar's green draft count this is work
+ * waiting on somebody rather than a note about their own basket. White on
+ * `--color-negative` is 4.8:1, which clears AA for this size.
+ *
+ * The number is also spoken. A circle with "3" in it tells a sighted admin
+ * three things are waiting and tells a screen reader "Pricing enquiries 3",
+ * which is a sentence about nothing - so the label carries the meaning and
+ * the digits are hidden from the accessibility tree.
+ */
+function NavBadge({ label }: { label: string | null }) {
+  if (!label) return null;
+  return (
+    <span className="tabular ml-auto flex h-5 min-w-5 items-center justify-center rounded-full bg-negative px-1.5 text-[11px] font-semibold text-white">
+      <span aria-hidden="true">{label}</span>
+      <span className="sr-only">{`${label} waiting`}</span>
+    </span>
   );
 }
 

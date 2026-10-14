@@ -41,7 +41,7 @@ export interface NavItem {
    * by server components and the figure lives in a client-side provider. The
    * sidebar resolves the name against its own hooks; nothing here reads state.
    */
-  badge?: 'order-draft';
+  badge?: 'order-draft' | 'pricing-enquiries';
 }
 
 export interface NavGroup extends NavItem {
@@ -144,7 +144,12 @@ export const adminNav: NavItem[] = [
     it: a prospect is a company we decided to approach, and collapsing the
     two would mean never being able to tell them apart.
   */
-  { label: 'Pricing enquiries', href: '/admin/enquiries', icon: MessageSquareText },
+  {
+    label: 'Pricing enquiries',
+    href: '/admin/enquiries',
+    icon: MessageSquareText,
+    badge: 'pricing-enquiries',
+  },
   { label: 'Pricing', href: '/admin/pricing', icon: Calculator },
   { label: 'Promo codes', href: '/admin/promo-codes', icon: TicketPercent },
   { label: 'Ahrefs refresh', href: '/admin/refresh', icon: RefreshCw },

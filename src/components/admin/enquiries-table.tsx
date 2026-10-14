@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState, useTransition } from 'react';
+import { useRouter } from 'next/navigation';
 import { Mail } from 'lucide-react';
 import { Select } from '@/components/ui/select';
 import { Table, TableWrap, Td, Th, Tr } from '@/components/ui/table';
@@ -26,6 +27,7 @@ import { formatDateTime } from '@/lib/utils/format';
  * the layout puts the message under the person rather than next to them.
  */
 export function EnquiriesTable() {
+  const router = useRouter();
   const [status, setStatus] = useState<EnquiryStatus | 'all'>('all');
   const [page, setPage] = useState(1);
   const [pending, startTransition] = useTransition();
@@ -214,6 +216,14 @@ export function EnquiriesTable() {
                           matches.
                         */
                         setReloadKey((key) => key + 1);
+                        /*
+                          And the server tree with it, because the sidebar's
+                          badge is counted in the layout. Without this,
+                          picking up the last new enquiry leaves a red 1 in
+                          the sidebar pointing at a page showing none - and
+                          the next person goes looking for it.
+                        */
+                        router.refresh();
                       })
                     }
                   >
