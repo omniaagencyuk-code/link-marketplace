@@ -8,6 +8,13 @@
  */
 import { execFileSync } from 'node:child_process';
 import { writeFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+
+// The checkout, from this file's own location rather than one machine's
+// absolute path - see the note in `verify-mappers.mjs` for what the hard
+// coded version cost.
+const ROOT = fileURLToPath(new URL('..', import.meta.url));
+const SRC = (relative) => new URL(`../src/${relative}`, import.meta.url).href;
 
 const PGH = '/var/tmp/pgvalidate';
 const DB = 'pp_seed';
@@ -16,7 +23,7 @@ function psql(sql, db = DB) {
   return execFileSync(
     'psql',
     ['-h', PGH, '-p', '55432', '-U', 'postgres', '-d', db, '-t', '-A', '-v', 'ON_ERROR_STOP=1', '-c', sql],
-    { encoding: 'utf8', cwd: '/home/user/link-marketplace', maxBuffer: 64 * 1024 * 1024 },
+    { encoding: 'utf8', cwd: ROOT, maxBuffer: 64 * 1024 * 1024 },
   ).trim();
 }
 
@@ -28,9 +35,9 @@ for (const file of ['0001_init', '0002_rls', '0003_seed_reference_data', '0004_c
 }
 console.log('schema applied');
 
-const { websites: seedWebsites } = await import('/home/user/link-marketplace/src/lib/data/websites.ts');
-const { seedPosts } = await import('/home/user/link-marketplace/src/lib/data/blog-posts.ts');
-const { websiteToRow, postToRow } = await import('/home/user/link-marketplace/src/lib/supabase/mappers.ts');
+const { websites: seedWebsites } = await import(SRC('lib/data/websites.ts'));
+const { seedPosts } = await import(SRC('lib/data/blog-posts.ts'));
+const { websiteToRow, postToRow } = await import(SRC('lib/supabase/mappers.ts'));
 
 const categoryIds = Object.fromEntries(
   psql("select slug || '|' || id from public.categories;")

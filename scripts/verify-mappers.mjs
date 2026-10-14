@@ -15,6 +15,21 @@
  */
 import { execFileSync } from 'node:child_process';
 import { readdirSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+
+/*
+  The checkout, worked out from this file rather than written down.
+
+  It used to be the absolute path of one container, in `cwd` and in three
+  dynamic imports. `spawnSync` reports a working directory that does not
+  exist as ENOENT on the *binary*, so on any other machine this failed as
+  "spawnSync psql ENOENT" with psql plainly installed and working - which is
+  about as misleading as a failure gets, and is what it did the first time
+  CI ran.
+*/
+const ROOT = fileURLToPath(new URL('..', import.meta.url));
+const SRC = (relative) => new URL(`../src/${relative}`, import.meta.url).href;
+
 const PGH = '/var/tmp/pgvalidate';
 const DB = 'pp_map';
 
@@ -28,7 +43,7 @@ function psql(sql, db = DB) {
   return execFileSync(
     'psql',
     ['-h', PGH, '-p', '55432', '-U', 'postgres', '-d', db, '-t', '-A', '-v', 'ON_ERROR_STOP=1', '-c', sql],
-    { encoding: 'utf8', cwd: '/home/user/link-marketplace' },
+    { encoding: 'utf8', cwd: ROOT },
   )
     .trim()
     .split('\n')
@@ -41,7 +56,7 @@ function psqlFile(file, db = DB) {
   execFileSync(
     'psql',
     ['-h', PGH, '-p', '55432', '-U', 'postgres', '-d', db, '-q', '-v', 'ON_ERROR_STOP=1', '-f', file],
-    { encoding: 'utf8', cwd: '/home/user/link-marketplace' },
+    { encoding: 'utf8', cwd: ROOT },
   );
 }
 
@@ -74,11 +89,9 @@ for (const file of migrations) {
 }
 check(`every migration applied (${migrations.length})`, migrations.length > 6);
 
-const { websites: seedWebsites } = await import('/home/user/link-marketplace/src/lib/data/websites.ts');
-const { seedPosts } = await import('/home/user/link-marketplace/src/lib/data/blog-posts.ts');
-const { websiteToRow, mapWebsite, postToRow, mapPost } = await import(
-  '/home/user/link-marketplace/src/lib/supabase/mappers.ts'
-);
+const { websites: seedWebsites } = await import(SRC('lib/data/websites.ts'));
+const { seedPosts } = await import(SRC('lib/data/blog-posts.ts'));
+const { websiteToRow, mapWebsite, postToRow, mapPost } = await import(SRC('lib/supabase/mappers.ts'));
 
 console.log(`\n== websiteToRow -> INSERT (${seedWebsites.length} websites) ==`);
 
