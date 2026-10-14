@@ -32,6 +32,11 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Avatar } from '@/components/ui/avatar';
 import { RedactedPreview } from '@/components/marketplace/redacted-preview';
+import {
+  MarketplaceShowcase,
+  type ShowcaseStepCopy,
+} from '@/components/home/marketplace-showcase';
+import { MetricsShowcase } from '@/components/marketing/metrics-showcase';
 import { HandwrittenNote } from '@/components/shared/handwritten';
 import { Feather } from '@/components/shared/foliage';
 import { RichText, type RichTextValue } from '@/lib/cms/rich-text-render';
@@ -670,25 +675,34 @@ export function ServiceCardsSection({ values }: SectionProps) {
             return (
               <li
                 key={service.title || index}
-                className="flex flex-col rounded-[var(--radius-card)] border border-line bg-white p-6 shadow-[var(--shadow-card)] transition-shadow hover:shadow-[var(--shadow-pop)]"
+                /* One hover state for the whole card, so the arrow moves when
+                   the card is pointed at rather than only when the link is.
+                   The lift is half a pixel of translate and a shadow - both
+                   compositor properties, neither of them layout. */
+                className="group relative flex flex-col rounded-[var(--radius-card)] border border-line bg-white p-6 shadow-[var(--shadow-card)] transition-all duration-200 hover:-translate-y-0.5 hover:border-accent-300 hover:shadow-[var(--shadow-raised)]"
               >
                 <span
                   className={cn(
-                    'flex h-10 w-10 items-center justify-center rounded-xl',
+                    'flex h-11 w-11 items-center justify-center rounded-xl transition-transform duration-200 group-hover:scale-105',
                     SERVICE_ACCENTS[index % SERVICE_ACCENTS.length],
                   )}
                 >
                   <Icon className="h-5 w-5" aria-hidden="true" />
                 </span>
-                <h3 className="mt-4 text-[17px] font-semibold text-ink">{service.title}</h3>
+                <h3 className="mt-5 text-[17px] font-semibold text-ink">{service.title}</h3>
                 <p className="mt-2 flex-1 text-[14px] leading-relaxed text-muted">{service.body}</p>
-                <Link
-                  href={cta.href || '/'}
-                  className="mt-5 inline-flex items-center gap-1.5 self-start rounded-lg border border-line-strong bg-white px-3.5 py-2 text-[13px] font-medium text-ink transition-colors hover:border-accent-500 hover:text-accent-700"
-                >
-                  {cta.label || 'Learn more'}
-                  <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
-                </Link>
+                {/* The link covers the card. Still one link with the same
+                    anchor text and the same destination - the overlay is what
+                    a pointer hits, not a second thing to crawl. */}
+                <span className="mt-5 inline-flex items-center gap-1.5 self-start text-[13px] font-semibold text-accent-700">
+                  <Link href={cta.href || '/'} className="after:absolute after:inset-0">
+                    {cta.label || 'Learn more'}
+                  </Link>
+                  <ArrowRight
+                    className="h-3.5 w-3.5 transition-transform duration-200 group-hover:translate-x-0.5"
+                    aria-hidden="true"
+                  />
+                </span>
               </li>
             );
           })}
@@ -732,13 +746,19 @@ export function FeatureListSection({ values }: SectionProps) {
           <p className="mt-3 text-[15px] leading-relaxed text-muted">{str(values, 'intro')}</p>
         </div>
 
-        <ul data-reveal-items="" className="mt-11 grid gap-x-8 gap-y-9 sm:grid-cols-2 lg:grid-cols-4">
+        <ul data-reveal-items="" className="mt-11 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {features.map((feature, index) => {
             const Icon = FEATURE_ICONS[index % FEATURE_ICONS.length] as LucideIcon;
             const comingSoon = (feature.comingSoon ?? '').trim().toLowerCase() === 'yes';
             return (
-              <li key={feature.title || index}>
-                <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-surface-sunken text-ink-soft">
+              <li
+                key={feature.title || index}
+                /* Cards rather than loose columns, so the band underneath can
+                   carry a tint: eight items floating on a colour read as a
+                   list somebody forgot to finish. */
+                className="rounded-[var(--radius-card)] border border-line bg-white p-5 transition-colors duration-200 hover:border-line-strong"
+              >
+                <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-accent-50 text-accent-700">
                   <Icon className="h-4.5 w-4.5" aria-hidden="true" />
                 </span>
                 <h3 className="mt-4 flex flex-wrap items-center gap-2 text-[15px] font-semibold text-ink">
@@ -916,15 +936,18 @@ export function MetricCardsSection({ values }: SectionProps) {
             <li key={item.title || index}>
               <Link
                 href={item.href || '/link-building-metrics'}
-                className="flex h-full flex-col rounded-[var(--radius-card)] border border-line bg-white p-5 shadow-[var(--shadow-card)] transition-colors hover:border-accent-500"
+                className="group flex h-full flex-col rounded-[var(--radius-card)] border border-line bg-white p-5 shadow-[var(--shadow-card)] transition-all duration-200 hover:-translate-y-0.5 hover:border-accent-300 hover:shadow-[var(--shadow-raised)]"
               >
                 <span className="text-[15px] font-semibold text-ink">{item.title}</span>
                 <span className="mt-2 flex-1 text-[14px] leading-relaxed text-muted">
                   {item.body}
                 </span>
-                <span className="mt-4 inline-flex items-center gap-1.5 text-[13px] font-medium text-accent-700">
+                <span className="mt-4 inline-flex items-center gap-1.5 text-[13px] font-semibold text-accent-700">
                   What it measures
-                  <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
+                  <ArrowRight
+                    className="h-3.5 w-3.5 transition-transform duration-200 group-hover:translate-x-0.5"
+                    aria-hidden="true"
+                  />
                 </span>
               </Link>
             </li>
@@ -940,6 +963,132 @@ export function MetricCardsSection({ values }: SectionProps) {
             <ArrowRight className="h-4 w-4" aria-hidden="true" />
           </Link>
         ) : null}
+      </Container>
+    </section>
+  );
+}
+
+// -------------------------------------------------------- marketplace showcase
+
+/**
+ * The marketplace narrowing itself to one publisher, with the captions beside it.
+ *
+ * A server component holding the words and one client component holding the
+ * movement, which is the arrangement every animated band on this site uses.
+ * Calling it as a function - which is what `page-sections` does to every
+ * renderer - is still safe: this is a server component, and `MarketplaceShowcase`
+ * is an element it returns rather than a function it calls.
+ *
+ * The publishers in the panel are invented, on `.example` domains that RFC 2606
+ * reserves, and the panel says so on its face. The caption under it says so in
+ * prose, and it is an editable field rather than a constant for the same reason
+ * every other word here is.
+ */
+export function MarketplaceShowcaseSection({ values }: SectionProps) {
+  const heading = str(values, 'heading');
+  const steps = rows<ShowcaseStepCopy>(values, 'steps').filter((step) => step.label);
+  const cta = linkOf(values, 'cta');
+  const caption = str(values, 'caption');
+
+  if (!heading && steps.length === 0) return null;
+
+  return (
+    <section className="border-b border-line bg-accent-50">
+      <Container size="wide" className="py-14 lg:py-20">
+        <div className="max-w-2xl">
+          <p className="text-[11px] font-semibold tracking-[0.14em] text-accent-700 uppercase">
+            {str(values, 'eyebrow')}
+          </p>
+          {heading ? (
+            <h2 className="mt-4 text-2xl font-semibold tracking-tight text-ink sm:text-[2rem] sm:leading-tight">
+              {heading}
+            </h2>
+          ) : null}
+          <p className="mt-4 text-[15px] leading-relaxed text-muted">{str(values, 'body')}</p>
+        </div>
+
+        <div className="mt-10">
+          <MarketplaceShowcase steps={steps} />
+        </div>
+
+        <div className="mt-6 flex flex-wrap items-center gap-x-6 gap-y-3">
+          {cta.label && cta.href ? (
+            <Button asChild variant="accent" size="lg">
+              <Link href={cta.href}>
+                {cta.label}
+                <ArrowRight className="h-4 w-4" aria-hidden="true" />
+              </Link>
+            </Button>
+          ) : null}
+          {caption ? <p className="max-w-xl text-[13px] text-muted">{caption}</p> : null}
+        </div>
+      </Container>
+    </section>
+  );
+}
+
+// ------------------------------------------------------------- SEO metrics
+
+/**
+ * The four figures a buyer checks, drawn as the section comes into view.
+ *
+ * Two columns: the argument on the left, the panels on the right, second in
+ * the DOM so a crawler and a screen reader both reach the argument before the
+ * illustration of it. `MetricsShowcase` is the component /guest-posts uses, in
+ * its `stacked` arrangement, because it has half the page here rather than all
+ * of it.
+ */
+export function SeoMetricsSection({ values }: SectionProps) {
+  const heading = str(values, 'heading');
+  const points = rows<{ label?: string }>(values, 'items');
+  const cta = linkOf(values, 'cta');
+  const caption = str(values, 'caption');
+
+  if (!heading) return null;
+
+  return (
+    <section className="border-b border-line bg-white">
+      <Container size="wide" className="py-14 lg:py-20">
+        <div className="grid gap-10 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.05fr)] lg:items-center lg:gap-16">
+          <div className="min-w-0">
+            <p className="text-[11px] font-semibold tracking-[0.14em] text-accent-700 uppercase">
+              {str(values, 'eyebrow')}
+            </p>
+            <h2 className="mt-4 text-2xl font-semibold tracking-tight text-ink sm:text-[2rem] sm:leading-tight">
+              {heading}
+            </h2>
+            <p className="mt-4 text-[15px] leading-relaxed text-muted">{str(values, 'body')}</p>
+
+            {points.length ? (
+              <ul className="mt-6 space-y-2.5">
+                {points.map((point, index) => (
+                  <li
+                    key={point.label || index}
+                    className="flex gap-2.5 text-[14px] leading-relaxed text-ink-soft"
+                  >
+                    <Check className="mt-0.5 h-4 w-4 shrink-0 text-accent-600" aria-hidden="true" />
+                    {point.label}
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+
+            {cta.label && cta.href ? (
+              <Link
+                href={cta.href}
+                className="mt-7 inline-flex items-center gap-1.5 text-[14px] font-medium text-accent-700 hover:underline"
+              >
+                {cta.label}
+                <ArrowRight className="h-4 w-4" aria-hidden="true" />
+              </Link>
+            ) : null}
+          </div>
+
+          <div className="min-w-0">
+            <MetricsShowcase layout="stacked" />
+            {caption ? <p className="mt-4 text-[12px] text-muted">{caption}</p> : null}
+          </div>
+        </div>
       </Container>
     </section>
   );
