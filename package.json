@@ -45,7 +45,8 @@
     "verify:orders": "tsx scripts/verify-orders.mts",
     "verify:all": "node scripts/run-verify.mjs",
     "verify:pure": "node scripts/run-verify.mjs pure",
-    "verify:database": "node scripts/run-verify.mjs database"
+    "verify:database": "node scripts/run-verify.mjs database",
+    "verify:enquiries": "tsx scripts/verify-enquiries.mts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.128.0",

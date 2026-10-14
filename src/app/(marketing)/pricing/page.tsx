@@ -1,42 +1,62 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { Check, Minus } from 'lucide-react';
+import { Check } from 'lucide-react';
 import { Container } from '@/components/layout/container';
-import { PageHero } from '@/components/layout/page-hero';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
 import { Faq } from '@/components/shared/faq';
 import { FinalCta } from '@/components/home/final-cta';
-import { Table, TableWrap, Td, Th, Tr } from '@/components/ui/table';
+import { BuyingOptions, type BuyingOption } from '@/components/pricing/buying-options';
+import { EnquiryForm } from '@/components/pricing/enquiry-form';
 import { metadataForPage } from '@/lib/cms/metadata';
 import { pageContentService } from '@/lib/services/page-content-service';
-import { cn } from '@/lib/utils/cn';
 
 const SLUG = 'pricing';
 
-interface PlanEntry extends Record<string, unknown> {
-  name: string;
-  price: string;
-  cadence: string;
-  description: string;
-  features: string;
-  excluded: string;
-  ctaLabel: string;
-  ctaHref: string;
-  featured: string;
+/**
+ * /pricing
+ *
+ * The page stopped selling plans. Press Parrot is a marketplace: every
+ * listing shows its own price, anybody can buy one placement, and there is no
+ * tier to be on. What this page does now is say that plainly and then make
+ * the other half easy - that agencies, bulk buyers and anybody ordering
+ * regularly are welcome to ask about rates.
+ *
+ * One message, said twice: buy at the listed price without talking to
+ * anybody, or talk to us if you are buying a lot. Everything on the page is
+ * one of those two things.
+ *
+ * ## What is not on it, and why
+ *
+ * No percentages, no minimum spends, no named rates. `profiles.plan` still
+ * decides what a buyer is charged at checkout, through `tierFor` and
+ * `placementPrice`, and this page cannot promise a figure that pricing code
+ * does not apply - a price we never set is one we have to honour or retract.
+ * Every card here says a conversation is possible, which is true, and none
+ * of them says what it will conclude.
+ *
+ * The authority-band price table went with the plans. It quoted indicative
+ * ranges that nothing kept in step with the marketplace, so a visitor who
+ * found a real listing far off the range had been told a number we never
+ * charged.
+ *
+ * ## The anchor
+ *
+ * Three buttons scroll to `#enquiry` and they are all plain anchors. The
+ * stylesheet already sets `scroll-behavior: smooth` and already turns it off
+ * under `prefers-reduced-motion`, so a script here would be worse at the job
+ * and would also have to be told about that preference.
+ */
+
+export async function generateMetadata(): Promise<Metadata> {
+  return metadataForPage(SLUG);
 }
-interface BandEntry extends Record<string, unknown> {
-  band: string;
-  guestPost: string;
-  nicheEdit: string;
-  note: string;
-}
+
 interface FaqEntry extends Record<string, unknown> {
   question: string;
   answer: string;
 }
 
-/** Multi-line fields are edited as one box per plan, one item per line. */
+/** Multi-line fields are edited as one box, one item per line. */
 function lines(value: string): string[] {
   return value
     .split('\n')
@@ -44,132 +64,180 @@ function lines(value: string): string[] {
     .filter(Boolean);
 }
 
-export async function generateMetadata(): Promise<Metadata> {
-  return metadataForPage(SLUG);
+/** The hero's three points: a row on a wide screen, a column on a phone. */
+function Ticks({ items }: { items: string[] }) {
+  if (items.length === 0) return null;
+  return (
+    <ul className="flex flex-col gap-2.5 sm:flex-row sm:flex-wrap sm:gap-x-6">
+      {items.map((item) => (
+        <li key={item} className="flex items-start gap-2 text-[14px] text-ink-soft">
+          <Check className="mt-0.5 h-4 w-4 shrink-0 text-accent-700" aria-hidden="true" />
+          {item}
+        </li>
+      ))}
+    </ul>
+  );
 }
 
 export default async function PricingPage() {
   const content = await pageContentService.content(SLUG);
 
-  const plans = content.list<PlanEntry>('plans', 'items');
-  const bands = content.list<BandEntry>('bands', 'items');
+  const options = content.list<BuyingOption>('options', 'items');
   const faqs = content
     .list<FaqEntry>('faqs', 'items')
     .filter((entry) => entry.question && entry.answer);
 
+  const heroBenefits = lines(content.text('hero', 'benefits'));
+  const agencyBenefits = lines(content.text('agency', 'benefits'));
+  const agencyBody = content.text('agency', 'body').split('\n\n').filter(Boolean);
+
   return (
     <>
-      <PageHero
-        eyebrow={content.text('hero', 'eyebrow')}
-        title={content.text('hero', 'title')}
-        description={content.text('hero', 'intro')}
-      />
+      {/* ------------------------------------------------------------ hero */}
+      <section className="relative overflow-hidden border-b border-line bg-white">
+        {/*
+          One wash of brand colour, behind the text, and nothing else.
 
-      {plans.length ? (
-        <section className="border-b border-line bg-white py-14 lg:py-18">
-          <Container size="wide">
-            <div className="grid gap-5 lg:grid-cols-3">
-              {plans.map((plan, index) => {
-                const featured = plan.featured.trim().toLowerCase() === 'yes';
-                return (
-                  <div
-                    key={plan.name || index}
-                    className={cn(
-                      'flex flex-col rounded-xl border bg-white p-6 shadow-[var(--shadow-card)]',
-                      featured ? 'border-navy-900 ring-1 ring-navy-900/10' : 'border-line',
-                    )}
-                  >
-                    <div className="flex items-center justify-between gap-2">
-                      <h2 className="text-[15px] font-semibold text-ink">{plan.name}</h2>
-                      {featured ? <Badge tone="coral">Most popular</Badge> : null}
-                    </div>
-                    <p className="tabular mt-4 text-3xl font-semibold text-ink">{plan.price}</p>
-                    <p className="mt-1 text-[13px] text-muted">{plan.cadence}</p>
-                    <p className="mt-4 text-[14px] leading-relaxed text-muted">{plan.description}</p>
+          The brief asked for a subtle background rather than the floating
+          shapes and stacked gradients that make a page look generated. This
+          is a single soft radial in the accent colour, at low opacity, with
+          the page's own white underneath it.
+        */}
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-0"
+          style={{
+            backgroundImage:
+              'radial-gradient(52rem 28rem at 12% -10%, rgba(16,185,129,0.10) 0%, transparent 60%)',
+          }}
+        />
 
-                    <ul className="mt-6 flex-1 space-y-2.5">
-                      {lines(plan.features).map((feature) => (
-                        <li key={feature} className="flex gap-2.5 text-[13px] text-ink-soft">
-                          <Check
-                            className="mt-0.5 h-4 w-4 shrink-0 text-accent-600"
-                            aria-hidden="true"
-                          />
-                          {feature}
-                        </li>
-                      ))}
-                      {lines(plan.excluded).map((feature) => (
-                        <li key={feature} className="flex gap-2.5 text-[13px] text-muted-soft">
-                          <Minus className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
-                          {feature}
-                        </li>
-                      ))}
-                    </ul>
+        <Container size="wide" className="relative py-16 lg:py-24">
+          <div className="max-w-3xl">
+            <p className="text-[11px] font-semibold tracking-[0.12em] text-accent-700 uppercase">
+              {content.text('hero', 'eyebrow')}
+            </p>
+            <h1 className="mt-3 text-3xl font-semibold tracking-tight text-ink sm:text-4xl lg:text-[2.9rem] lg:leading-[1.08]">
+              {content.text('hero', 'title')}
+            </h1>
+            <p className="mt-5 max-w-2xl text-[16px] leading-relaxed text-muted lg:text-[17px]">
+              {content.text('hero', 'intro')}
+            </p>
 
-                    {plan.ctaLabel ? (
-                      <Button
-                        asChild
-                        className="mt-6 w-full"
-                        variant={featured ? 'primary' : 'outline'}
-                        size="lg"
-                      >
-                        <Link href={plan.ctaHref || '/signup'}>{plan.ctaLabel}</Link>
-                      </Button>
-                    ) : null}
-                  </div>
-                );
-              })}
+            <div className="mt-8 flex flex-wrap items-center gap-3">
+              <Button asChild variant="accent" size="lg">
+                <a href="#enquiry">{content.text('hero', 'primaryCta')}</a>
+              </Button>
+              <Button asChild variant="outline" size="lg">
+                <Link href="/marketplace">{content.text('hero', 'secondaryCta')}</Link>
+              </Button>
             </div>
-          </Container>
-        </section>
-      ) : null}
 
-      {bands.length ? (
-        <section className="border-b border-line bg-surface py-14 lg:py-18">
-          <Container size="wide">
+            <div className="mt-8 border-t border-line pt-6">
+              <Ticks items={heroBenefits} />
+            </div>
+          </div>
+        </Container>
+      </section>
+
+      {/* --------------------------------------------------- ways to buy */}
+      <section className="border-b border-line bg-white py-16 lg:py-20">
+        <Container size="wide">
+          <div className="max-w-2xl">
             <h2 className="text-2xl font-semibold tracking-tight text-ink sm:text-3xl">
-              {content.text('bands', 'heading')}
+              {content.text('options', 'heading')}
             </h2>
-            <p className="mt-2 max-w-2xl text-[15px] text-muted">{content.text('bands', 'intro')}</p>
+            <p className="mt-3 text-[15px] leading-relaxed text-muted">
+              {content.text('options', 'intro')}
+            </p>
+          </div>
 
-            <TableWrap className="mt-6">
-              <Table>
-                <caption className="sr-only">
-                  {content.text('bands', 'heading')}
-                </caption>
-                <thead>
-                  <tr>
-                    <Th>Authority band</Th>
-                    <Th className="text-right">Guest post</Th>
-                    <Th className="text-right">Niche edit</Th>
-                    <Th className="hidden sm:table-cell">Typical publishers</Th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {bands.map((band, index) => (
-                    <Tr key={band.band || index}>
-                      <Td className="font-medium text-ink">{band.band}</Td>
-                      <Td className="tabular text-right text-ink-soft">{band.guestPost}</Td>
-                      <Td className="tabular text-right text-ink-soft">{band.nicheEdit}</Td>
-                      <Td className="hidden text-muted sm:table-cell">{band.note}</Td>
-                    </Tr>
-                  ))}
-                </tbody>
-              </Table>
-            </TableWrap>
+          <BuyingOptions items={options} />
+        </Container>
+      </section>
 
-            <p className="mt-4 text-[12px] text-muted">{content.text('bands', 'footnote')}</p>
-          </Container>
-        </section>
-      ) : null}
+      {/* ------------------------------------------------------- agencies */}
+      <section className="border-b border-line bg-surface py-16 lg:py-20">
+        <Container size="wide">
+          <div className="grid gap-10 lg:grid-cols-[minmax(0,1fr)_minmax(0,22rem)] lg:items-start lg:gap-16">
+            <div>
+              <p className="text-[11px] font-semibold tracking-[0.12em] text-accent-700 uppercase">
+                {content.text('agency', 'label')}
+              </p>
+              <h2 className="mt-3 text-2xl font-semibold tracking-tight text-ink sm:text-3xl">
+                {content.text('agency', 'heading')}
+              </h2>
+              {agencyBody.map((paragraph) => (
+                <p key={paragraph} className="mt-4 text-[15px] leading-relaxed text-muted">
+                  {paragraph}
+                </p>
+              ))}
 
+              <div className="mt-7">
+                <Button asChild variant="primary" size="lg">
+                  <a href="#enquiry">{content.text('agency', 'ctaLabel')}</a>
+                </Button>
+              </div>
+            </div>
+
+            {agencyBenefits.length ? (
+              <ul className="space-y-3 rounded-[var(--radius-card)] border border-line bg-white p-6 shadow-[var(--shadow-card)]">
+                {agencyBenefits.map((benefit) => (
+                  <li key={benefit} className="flex items-start gap-2.5 text-[14px] text-ink-soft">
+                    <Check
+                      className="mt-0.5 h-4 w-4 shrink-0 text-accent-700"
+                      aria-hidden="true"
+                    />
+                    {benefit}
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+          </div>
+        </Container>
+      </section>
+
+      {/* ---------------------------------------------------- the enquiry */}
+      {/*
+        `scroll-mt` because the header is sticky: without it the heading
+        lands underneath the header and the section looks like it begins at
+        the form.
+      */}
+      <section id="enquiry" className="scroll-mt-24 border-b border-line bg-white py-16 lg:py-20">
+        <Container size="narrow">
+          <div className="max-w-2xl">
+            <h2 className="text-2xl font-semibold tracking-tight text-ink sm:text-3xl">
+              {content.text('enquiry', 'heading')}
+            </h2>
+            <p className="mt-3 text-[15px] leading-relaxed text-muted">
+              {content.text('enquiry', 'intro')}
+            </p>
+          </div>
+
+          <div className="mt-8">
+            <EnquiryForm reassurance={content.text('enquiry', 'reassurance')} />
+          </div>
+        </Container>
+      </section>
+
+      {/* -------------------------------------------------------- the FAQ */}
       {faqs.length ? (
-        <section className="bg-white py-14 lg:py-18">
+        <section className="bg-surface py-16 lg:py-20">
           <Container size="narrow">
             <Faq items={faqs.map((entry) => ({ question: entry.question, answer: entry.answer }))} />
           </Container>
         </section>
       ) : null}
 
+      {/*
+        The site's closing band, unchanged.
+
+        Kept rather than dropped: it is on /how-it-works and the service pages
+        too, and a /pricing that ended differently from every other marketing
+        page would read as a page from somewhere else. Its buttons are the
+        "just buy one" half of this page's message, which is the half the
+        form does not serve.
+      */}
       <FinalCta />
     </>
   );

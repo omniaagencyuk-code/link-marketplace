@@ -101,10 +101,19 @@ both have.
 cannot hide a single column. Anything internal therefore lives in its own
 table with an admin-only policy and no customer-facing policy at all:
 `service_costs`, `website_contacts`, `website_niche_costs`,
-`website_commercials`, `inbound_emails`, `listing_drafts`.
+`website_commercials`, `inbound_emails`, `listing_drafts`,
+`pricing_enquiries`.
 
 Before adding a column that holds a cost, a contact or a commercial term, ask
 which of those tables it belongs in. It does not belong on `websites`.
+
+`pricing_enquiries` is the odd one: it is the only table a stranger can cause
+a row in, through the form on /pricing. It therefore has an admin policy and
+**no insert policy at all** - the form writes through a server action running
+as the service role, which throttles first. An insert policy for `anon` would
+be a second door into it, unthrottled, from any browser holding the anon key.
+What it holds is a named person's work address, their employer and what they
+said they could spend, which is `prospect_contacts`-grade data.
 
 The Sales Centre's fourteen tables are internal on the same terms and for a
 sharper reason: a prospect is a company somebody decided to approach, a
@@ -286,6 +295,13 @@ own integration and nothing here should take that over.
   because a checker cannot tell a wrong answer from a right one worded
   backwards. Keep it that way when adding one.
 - `npm run verify:import` — the CSV importer.
+- `npm run verify:enquiries` — what the pricing page's enquiry form accepts
+  and refuses, and what survives the cleaning on the way to the column. No
+  key, no database, no network. Worth being exhaustive about because it is
+  the only form on the site a stranger can submit, and both directions cost:
+  a rule too strict loses an agency that wanted to spend money and says
+  nothing, while a rule too loose is a row the database refuses, which the
+  person experiences as the form being broken.
 - `npm run verify:sourcing` — mbox reading and the review rules. Needs no API
   key and no database.
 - `npm run verify:sales` — the Sales Centre's decisions: what gets crawled,

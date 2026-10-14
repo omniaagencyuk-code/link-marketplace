@@ -13,6 +13,7 @@ import {
 import { Container } from '@/components/layout/container';
 import { Button } from '@/components/ui/button';
 import { MarketplaceView } from '@/components/marketplace/marketplace-view';
+import { BulkPricingNote } from '@/components/marketplace/bulk-pricing-note';
 import { ProjectsPanel } from '@/components/marketplace/projects-panel';
 import { RedactedPreview } from '@/components/marketplace/redacted-preview';
 import { HandwrittenNote } from '@/components/shared/handwritten';
@@ -243,6 +244,14 @@ export default async function MarketplacePage({
 
           <ProjectsPanel projects={projects} />
         </div>
+
+        {/*
+          Outside the filters and the listings, between the header row and
+          the results. Anywhere inside `MarketplaceView` would put a
+          promotional line among the controls somebody is using to find a
+          publisher; here it is a sibling and the view is untouched.
+        */}
+        <BulkPricingNote />
 
         <Suspense fallback={<MarketplaceSkeleton />}>
           <MarketplaceView

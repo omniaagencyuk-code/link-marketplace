@@ -1,22 +1,35 @@
 import { list, section, text, textarea } from '../fields';
-import { brand } from '@/lib/config/brand';
 import type { PageDef, PageValues } from '../types';
 
 /**
  * /pricing
  *
- * Every number on this page is editable copy rather than a computed value.
- * That is deliberate: these are indicative ranges and plan prices, not live
- * marketplace prices, and the person who knows what they should say is the
- * person running the business - not a formatter. Individual listings still
- * show their own real price, which comes from the database.
+ * The page no longer sells plans. Press Parrot is a marketplace: every
+ * listing carries its own price and anybody can buy one placement without an
+ * account tier, a subscription or a minimum. What the page is for now is the
+ * other half of that - telling agencies, in-house teams and anybody ordering
+ * regularly that a conversation about rates is welcome, and giving them a
+ * form to start it.
+ *
+ * The plan cards, the monthly prices and the authority-band price table have
+ * gone with that change. The band table in particular was a liability as
+ * well as off-message: it quoted indicative ranges that nothing kept in step
+ * with the marketplace, so a visitor who found a real listing far off the
+ * range had been told a number we never charged.
+ *
+ * Every word below is editable, which is why it is here. What is deliberately
+ * NOT editable is any claim about a discount: there are no percentages, no
+ * minimum spends and no named rates anywhere in these defaults, because
+ * `profiles.plan` still decides what a buyer is actually charged at checkout
+ * and a page promising a figure the pricing code does not apply is a figure
+ * we would have to honour or retract.
  */
 
 export const definition: PageDef = {
   slug: 'pricing',
   label: 'Pricing',
   path: '/pricing',
-  description: 'Plans, indicative placement prices and the pricing FAQ.',
+  description: 'How buying works, who to talk to about rates, and the enquiry form.',
   sections: [
     section(
       'hero',
@@ -25,71 +38,79 @@ export const definition: PageDef = {
         text('eyebrow', 'Eyebrow', { maxLength: 60 }),
         text('title', 'Headline', { maxLength: 120 }),
         textarea('intro', 'Intro paragraph', { rows: 3, maxLength: 400 }),
+        text('primaryCta', 'Primary button', {
+          maxLength: 40,
+          help: 'Scrolls down to the enquiry form. The link is fixed.',
+        }),
+        text('secondaryCta', 'Secondary button', {
+          maxLength: 40,
+          help: 'Goes to the marketplace. The link is fixed.',
+        }),
+        textarea('benefits', 'Three points under the buttons', {
+          rows: 3,
+          maxLength: 300,
+          help: 'One per line. Each line gets a tick. Three fits the row.',
+        }),
       ],
       'The band at the top of the page.',
     ),
 
     section(
-      'plans',
-      'Plans',
-      [
-        list(
-          'items',
-          'Plans',
-          [
-            text('name', 'Plan name', { maxLength: 40 }),
-            text('price', 'Price', {
-              maxLength: 40,
-              help: 'Written as you want it shown, e.g. "Free", "£99" or "Custom".',
-            }),
-            text('cadence', 'Under the price', { maxLength: 60, help: 'e.g. "per month".' }),
-            textarea('description', 'Description', { rows: 2, maxLength: 300 }),
-            textarea('features', 'Included', {
-              rows: 6,
-              maxLength: 800,
-              help: 'One per line. Each line gets a tick.',
-            }),
-            textarea('excluded', 'Not included', {
-              rows: 3,
-              maxLength: 500,
-              help: 'One per line. Each line gets a dash. Leave empty for none.',
-            }),
-            text('ctaLabel', 'Button label', { maxLength: 40 }),
-            text('ctaHref', 'Button link', {
-              maxLength: 200,
-              help: 'An internal path like /signup, or a mailto: address.',
-            }),
-            text('featured', 'Highlight this plan?', {
-              maxLength: 10,
-              help: 'Type "yes" to give it the border and the "Most popular" badge. One plan only.',
-            }),
-          ],
-          { itemLabelKey: 'name', minItems: 1, maxItems: 4 },
-        ),
-      ],
-      'The three plan cards. Designed for three - a fourth will wrap.',
-    ),
-
-    section(
-      'bands',
-      'Typical prices table',
+      'options',
+      'Ways to buy',
       [
         text('heading', 'Heading', { maxLength: 120 }),
         textarea('intro', 'Intro paragraph', { rows: 3, maxLength: 400 }),
         list(
           'items',
-          'Rows',
+          'Cards',
           [
-            text('band', 'Authority band', { maxLength: 40 }),
-            text('guestPost', 'Guest post price', { maxLength: 40 }),
-            text('nicheEdit', 'Niche edit price', { maxLength: 40 }),
-            text('note', 'Typical publishers', { maxLength: 120 }),
+            text('icon', 'Icon', {
+              maxLength: 20,
+              help: 'One of: cart, layers, repeat, handshake. Anything else shows a dot.',
+            }),
+            text('heading', 'Heading', { maxLength: 60 }),
+            textarea('description', 'Description', { rows: 3, maxLength: 400 }),
           ],
-          { itemLabelKey: 'band', maxItems: 12 },
+          { itemLabelKey: 'heading', minItems: 1, maxItems: 6 },
         ),
-        textarea('footnote', 'Small print under the table', { rows: 2, maxLength: 300 }),
       ],
-      'Indicative ranges. Keep these honest - a visitor who finds real prices far off will not come back.',
+      'Four cards in two columns. Not plans - do not give these prices.',
+    ),
+
+    section(
+      'agency',
+      'For agencies',
+      [
+        text('label', 'Small label', { maxLength: 60 }),
+        text('heading', 'Heading', { maxLength: 120 }),
+        textarea('body', 'Paragraphs', {
+          rows: 5,
+          maxLength: 800,
+          help: 'Blank line between paragraphs.',
+        }),
+        textarea('benefits', 'Points', {
+          rows: 4,
+          maxLength: 400,
+          help: 'One per line. Each line gets a tick.',
+        }),
+        text('ctaLabel', 'Button label', {
+          maxLength: 40,
+          help: 'Scrolls down to the enquiry form. The link is fixed.',
+        }),
+      ],
+      'The band for repeat buyers. Keep it an invitation - no figures, no minimum spend.',
+    ),
+
+    section(
+      'enquiry',
+      'Enquiry form',
+      [
+        text('heading', 'Heading', { maxLength: 120 }),
+        textarea('intro', 'Intro paragraph', { rows: 3, maxLength: 400 }),
+        textarea('reassurance', 'Small print under the button', { rows: 2, maxLength: 300 }),
+      ],
+      'The fields themselves are fixed, because what they collect is stored in a table.',
     ),
 
     section(
@@ -123,121 +144,103 @@ export const definition: PageDef = {
 
 export const defaults: PageValues = {
   hero: {
-    eyebrow: 'Pricing',
-    title: 'Pay for placements, not for access',
+    eyebrow: 'Flexible pricing',
+    title: 'Better rates for bigger ambitions.',
     intro:
-      'Every website in the marketplace has a fixed price shown up front. Plans are optional and exist to give high volume teams discounts and tooling.',
+      'Buy individual link placements at transparent marketplace prices, or speak to our team about exclusive rates for bulk orders, regular purchases and tailored link building campaigns.',
+    primaryCta: 'Request custom pricing',
+    secondaryCta: 'Browse marketplace',
+    benefits: 'No subscriptions required\nTransparent marketplace prices\nNegotiated rates available',
   },
 
-  plans: {
+  options: {
+    heading: 'Link building that works around you',
+    intro:
+      "Whether you're purchasing one placement or managing campaigns for multiple clients, Press Parrot offers flexible ways to buy.",
     items: [
       {
-        name: 'Starter',
-        price: 'Free',
-        cadence: 'Pay per placement',
-        description: 'For individual SEOs and small sites placing a handful of links each month.',
-        features:
-          'Full marketplace access\nSaved website shortlists\nStandard marketplace pricing\nEmail support',
-        excluded: 'Volume discounts\nDedicated account manager\nAPI access',
-        ctaLabel: 'Create an account',
-        ctaHref: '/signup',
-        featured: '',
+        icon: 'cart',
+        heading: 'Pay as you go',
+        description:
+          'Browse our marketplace and purchase individual placements at their listed prices. No subscription fees or long-term commitments.',
       },
       {
-        name: 'Growth',
-        price: '£99',
-        cadence: 'per month',
-        description: 'For agencies running multiple client campaigns with monthly link budgets.',
-        features:
-          'Everything in Starter\n7% discount on every placement\nBulk ordering and CSV export\nClient workspaces and reporting\nPriority support within 4 hours',
-        excluded: 'Dedicated account manager',
-        ctaLabel: 'Start with Growth',
-        ctaHref: '/signup?plan=growth',
-        featured: 'yes',
+        icon: 'layers',
+        heading: 'Bulk order discounts',
+        description:
+          'Planning a larger campaign? Get in touch to discuss preferential rates when purchasing multiple placements.',
       },
       {
-        name: 'Agency',
-        price: 'Custom',
-        cadence: 'Annual contract',
-        description: 'For teams spending five figures a month across many domains and markets.',
-        features:
-          'Everything in Growth\nNegotiated publisher rates\nDedicated account manager\nAPI access and white labelling\nInvoiced billing with 30 day terms',
-        excluded: '',
-        ctaLabel: 'Talk to sales',
-        ctaHref: `mailto:${brand.salesEmail}`,
-        featured: '',
+        icon: 'repeat',
+        heading: 'Regular buyer rates',
+        description:
+          'Ordering links every month? We can discuss tailored pricing arrangements for agencies and customers with ongoing requirements.',
+      },
+      {
+        icon: 'handshake',
+        heading: 'Custom deals',
+        description:
+          "Have a particular budget, niche or list of websites in mind? Speak to our team and we'll see what we can arrange.",
       },
     ],
   },
 
-  bands: {
-    heading: 'Typical placement prices',
+  agency: {
+    label: 'For agencies & frequent buyers',
+    heading: "Buying links regularly? Let's talk.",
+    body:
+      'We work with SEO agencies, in-house marketing teams and independent professionals who need reliable link building at competitive rates.\n\nIf you are placing regular orders or managing multiple client campaigns, we would love to discuss how we can work together.',
+    benefits:
+      'Preferential pricing for eligible repeat buyers\nCustom quotes for larger campaigns\nFlexible arrangements based on your requirements',
+    ctaLabel: 'Discuss agency rates',
+  },
+
+  enquiry: {
+    heading: "Let's find a deal that works for you.",
     intro:
-      'Indicative ranges across the marketplace. Individual listings always show their own fixed price, and digital PR is quoted per campaign.',
-    items: [
-      {
-        band: 'DR 20-39',
-        guestPost: 'from £120',
-        nicheEdit: 'from £90',
-        note: 'Niche blogs and regional titles',
-      },
-      {
-        band: 'DR 40-54',
-        guestPost: 'from £180',
-        nicheEdit: 'from £135',
-        note: 'Established category sites',
-      },
-      {
-        band: 'DR 55-64',
-        guestPost: 'from £260',
-        nicheEdit: 'from £195',
-        note: 'Well known publications',
-      },
-      {
-        band: 'DR 65-74',
-        guestPost: 'from £420',
-        nicheEdit: 'from £310',
-        note: 'National and high authority media',
-      },
-      {
-        band: 'DR 75+',
-        guestPost: 'from £890',
-        nicheEdit: 'from £650',
-        note: 'Tier one press, digital PR only on some',
-      },
-    ],
-    footnote:
-      'Prices are shown in GBP and exclude VAT. Growth and Agency plans apply their discount automatically at checkout.',
+      'Tell us a little about your link building requirements and our team will get back to you to discuss available pricing options.',
+    reassurance:
+      'We will only use these details to reply to your enquiry. No account needed, and nothing is charged.',
   },
 
   faqs: {
     items: [
       {
-        question: 'Do I need a subscription to buy links?',
+        question: 'Do I need a subscription to use Press Parrot?',
         answer:
-          'No. The marketplace is open on the free Starter plan and you only pay for the placements you order. Paid plans exist for teams that want discounts, bulk tools and reporting.',
+          'No. You can browse our marketplace and purchase individual placements without paying a monthly subscription.',
       },
       {
-        question: 'Why do prices vary so much between sites?',
+        question: 'Can I get a discount for ordering multiple links?',
         answer:
-          'Price follows demand, authority and editorial effort. A DR 70 national title with a real newsroom costs more than a DR 35 niche blog because the audience, scrutiny and link value are different.',
+          "We may be able to offer preferential rates for larger orders. Contact our team with your requirements and we'll discuss what's possible.",
       },
       {
-        question: 'Are there any hidden fees?',
+        question: 'Do you offer special rates for SEO agencies?',
         answer:
-          'No. The price on the listing is the price you pay, including writing where the publisher supplies content. VAT is added at checkout for UK customers.',
+          'Yes, we welcome enquiries from agencies and frequent buyers looking to establish ongoing purchasing arrangements.',
       },
       {
-        question: 'What happens if a placement is not delivered?',
+        question: 'Is there a minimum order quantity?',
         answer:
-          'If a publisher cannot deliver within the stated turnaround you get a full refund or a free replacement on a comparable site. Cancelled orders are refunded within five working days.',
+          'There is no minimum order quantity for standard marketplace purchases. You can order individual placements.',
+      },
+      {
+        question: 'Can I negotiate pricing on specific websites?',
+        answer:
+          'You can contact us to discuss specific websites or campaigns. Any negotiated pricing will depend on availability and the individual placement.',
+      },
+      {
+        question: 'Can I purchase links without contacting your team?',
+        answer:
+          'Yes. Standard marketplace orders can be completed directly using the publicly listed prices.',
       },
     ],
   },
 
   seo: {
-    metaTitle: 'Pricing',
+    metaTitle: 'Link Building Pricing & Bulk Order Discounts',
     metaDescription:
-      'Transparent per-placement pricing with no subscription required. See typical guest post and niche edit prices by domain rating, plus optional agency plans.',
+      'Explore flexible link building pricing at Press Parrot. Buy individual placements or enquire about bulk order discounts, agency rates and custom deals.',
   },
 };

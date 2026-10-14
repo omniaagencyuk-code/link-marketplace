@@ -213,6 +213,10 @@ run -f "$ROOT/supabase/tests/33_link_building_planner.sql" 2>&1 | grep -v '^$'
 echo
 echo "--- the customer's own reference on an order ---"
 run -f "$ROOT/supabase/tests/34_customer_reference.sql" 2>&1 | grep -v '^$'
+
+echo
+echo "--- requests for bulk and agency pricing ---"
+run -f "$ROOT/supabase/tests/35_pricing_enquiries.sql" 2>&1 | grep -v '^$'
 } | tee "$ASSERTIONS"
 
 # ------------------------------------------------------------- the verdict
@@ -231,6 +235,21 @@ echo "$passed assertions passed, $assertion_failures failed"
 # otherwise read as silence and be reported as success.
 if [ "$passed" -lt 400 ]; then
   echo "FAILED: only $passed assertions ran - something did not execute"
+  exit 1
+fi
+
+# A syntax error is never an expected outcome.
+#
+# Several of these suites deliberately provoke an ERROR - a refused insert
+# under row level security, a check violation, a privilege denial - so the
+# output cannot simply be failed on the word. A *syntax* error is different:
+# it means a statement never ran, and the assertion it was carrying silently
+# vanished from the count rather than failing. That is how a broken check
+# passes.
+syntax_errors=$(grep -cE 'ERROR:  syntax error' "$ASSERTIONS" || true)
+if [ "$syntax_errors" -gt 0 ]; then
+  echo "FAILED: $syntax_errors statements did not parse, so their assertions never ran"
+  grep -nE 'ERROR:  syntax error' "$ASSERTIONS"
   exit 1
 fi
 
