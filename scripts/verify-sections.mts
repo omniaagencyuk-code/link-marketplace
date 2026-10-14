@@ -2279,10 +2279,19 @@ console.log('\n--- a service page is its sections, hero first ---');
   for (const route of routes) {
     const source = readFileSync(new URL(`../${route}`, import.meta.url), 'utf8');
     if (/extra=\{<PageSections/.test(source)) appended += 1;
-    if (/<PageSections[\s\S]*?fallback=\{[\s\S]*?<ServicePage/.test(source)) renderFromSections += 1;
+    /*
+      Any fallback, not specifically `<ServicePage`.
+
+      What this check is for is that sections ARE the page: `PageSections`
+      wraps whatever renders until the page has some. Which component that
+      is does not matter to the property - /guest-posts has its own
+      composition now, and pinning the template's name here would have made
+      a redesign look like a regression.
+    */
+    if (/<PageSections[\s\S]*?fallback=\{/.test(source)) renderFromSections += 1;
   }
   is('no service route appends its sections to the bottom any more', appended, 0);
-  is('every one renders them as the page, with the template as the fallback', renderFromSections, routes.length);
+  is('every one renders them as the page, with something as the fallback', renderFromSections, routes.length);
 
   // The slot they were appended through is gone, so it cannot be used again.
   const template = readFileSync(

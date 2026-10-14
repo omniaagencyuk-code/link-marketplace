@@ -1,12 +1,58 @@
+import { list, section, text, textarea } from '../fields';
 import { serviceSections } from './service-page-schema';
 import type { PageDef, PageValues } from '../types';
 
+/**
+ * /guest-posts
+ *
+ * The shared service schema plus two sections only this page has. They are
+ * appended rather than added to `serviceSections()` because that function is
+ * the editor for five pages, and a "how it works" box appearing on the other
+ * four - empty, with nothing rendering it - would be an editor asking for
+ * copy that goes nowhere.
+ *
+ * Everything the redesign animates is still typed here. The sequence, the
+ * figures and the icons are fixed in code; the words are not. An editor who
+ * rewrites the three steps gets three different steps, animated the same way.
+ */
 export const definition: PageDef = {
   slug: 'guest-posts',
   label: 'Guest posts',
   path: '/guest-posts',
   description: 'Service page targeting "buy guest posts" and related terms.',
-  sections: serviceSections(),
+  sections: [
+    ...serviceSections(),
+
+    section(
+      'howItWorks',
+      'How it works',
+      [
+        text('heading', 'Heading', { maxLength: 120 }),
+        textarea('intro', 'Intro paragraph', { rows: 3, maxLength: 400 }),
+        list(
+          'items',
+          'Steps',
+          [
+            text('title', 'Step title', { maxLength: 60 }),
+            textarea('body', 'Step description', { rows: 3, maxLength: 300 }),
+          ],
+          { itemLabelKey: 'title', minItems: 1, maxItems: 3 },
+        ),
+      ],
+      'Three cards, numbered and animated in order. Designed for three - a fourth will not get a number of its own.',
+    ),
+
+    section(
+      'metrics',
+      'Metrics showcase',
+      [
+        text('heading', 'Heading', { maxLength: 120 }),
+        textarea('intro', 'Intro paragraph', { rows: 3, maxLength: 400 }),
+        text('caption', 'Caption under the panels', { maxLength: 200 }),
+      ],
+      'The animated traffic, rating, keyword and country panels. The figures in them are demonstration data fixed in code - only this copy is editable.',
+    ),
+  ],
 };
 
 export const defaults: PageValues = {
@@ -44,6 +90,34 @@ export const defaults: PageValues = {
   preview: {
     heading: 'Pick the publisher, not a package',
     body: 'Filter by niche, country, domain rating, traffic and price until the shortlist fits the campaign. Publisher names appear once you have a free account.',
+  },
+
+  howItWorks: {
+    heading: 'Three steps from search to published link',
+    intro:
+      'No calls, no proposals and no waiting for a quote. The marketplace is open once you have a free account, and every publisher in it shows its own price.',
+    items: [
+      {
+        title: 'Find the right websites',
+        body: 'Filter by niche, country, domain rating, traffic and price until the shortlist is sites you would be happy to be published on.',
+      },
+      {
+        title: 'Check the metrics yourself',
+        body: 'Open any listing for its traffic trend, referring domains, keyword count and where its readers actually are, before you spend anything.',
+      },
+      {
+        title: 'Order the guest post',
+        body: 'Add the placement to an order, supply your article or add writing to it, and track the piece through to the live URL.',
+      },
+    ],
+  },
+
+  metrics: {
+    heading: 'The numbers that decide whether a link is worth buying',
+    intro:
+      'A domain rating on its own is easy to manufacture. These are the figures shown on every listing, so you can tell a site with an audience from a site with a score.',
+    caption:
+      'Figures shown for an example publisher. Real listings carry their own measured metrics, refreshed from Ahrefs.',
   },
 
   body: {
