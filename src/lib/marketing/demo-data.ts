@@ -1,7 +1,11 @@
 import type { CountryCode } from '@/lib/types';
 
 /**
- * The publishers the /guest-posts animation walks through.
+ * The publishers the marketing animations walk through.
+ *
+ * One set for both of them - the /guest-posts panel and the homepage's
+ * marketplace showcase - so a visitor who reads both pages meets the same
+ * invented publishers rather than two unrelated inventories.
  *
  * **Every one of these is invented.** The domains are deliberately not real
  * sites: `.example` is reserved by RFC 2606 and can never be registered, so
@@ -165,6 +169,21 @@ export const DEMO_NICHES = [
 
 /** What the demonstration types into the search box, a character at a time. */
 export const DEMO_SEARCH_TERM = 'finance';
+
+/**
+ * The metric filters the homepage showcase applies, after the niche.
+ *
+ * They have to agree with the listings above rather than merely sound
+ * plausible: `finance` leaves two publishers, and a floor of DR 50 leaves
+ * both of them, so the narrowing a visitor watches is the one the figures
+ * actually produce. A filter that kept a row the numbers exclude would be an
+ * animation of the marketplace lying.
+ */
+export const DEMO_FILTERS = [
+  { label: 'DR 50+', test: (listing: DemoListing) => listing.domainRating >= 50 },
+  { label: 'Traffic 20k+', test: (listing: DemoListing) => listing.traffic >= 20000 },
+  { label: 'Dofollow', test: (listing: DemoListing) => listing.linkType === 'dofollow' },
+] as const;
 
 /** The listing the sequence opens, selects and prices. */
 export const DEMO_FEATURED_ID = 'demo-1';

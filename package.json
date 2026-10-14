@@ -26,6 +26,7 @@
     "verify:majestic": "tsx scripts/verify-majestic.mts",
     "verify:blog": "tsx scripts/verify-blog.mts",
     "verify:sections": "tsx scripts/verify-sections.mts",
+    "verify:home": "tsx scripts/verify-home.mts",
     "verify:paging": "tsx scripts/verify-paging.mts",
     "report:duplicates": "tsx --env-file=.env.local scripts/report-duplicate-listings.mts",
     "import:placed-links": "tsx --env-file=.env.local scripts/import-placed-links.mts",

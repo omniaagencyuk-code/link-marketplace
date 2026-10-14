@@ -8,7 +8,7 @@ import { RichText, type RichTextValue } from '@/lib/cms/rich-text-render';
 import { RedactedPreview } from '@/components/marketplace/redacted-preview';
 import { MarketplaceDemo } from '@/components/guest-posts/marketplace-demo';
 import { HowItWorks, type HowItWorksStep } from '@/components/guest-posts/how-it-works';
-import { MetricsShowcase } from '@/components/guest-posts/metrics-showcase';
+import { MetricsShowcase } from '@/components/marketing/metrics-showcase';
 import { siteUrl } from '@/lib/config/brand';
 import type { ContentAccessors } from '@/lib/cms/resolve';
 import type { PreviewRow } from '@/lib/services/marketplace-preview';

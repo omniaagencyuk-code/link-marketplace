@@ -19,7 +19,7 @@ export function WhyPressParrot({ content }: { content: ContentAccessors }) {
   const annotation = content.text('why', 'annotation');
 
   return (
-    <section className="border-b border-line bg-surface" aria-labelledby="why-heading">
+    <section className="border-b border-line bg-accent-50" aria-labelledby="why-heading">
       <Container size="wide" className="py-14 lg:py-20">
         <div className="grid gap-10 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)] lg:gap-16">
           <div className="min-w-0">
