@@ -13,6 +13,8 @@
  * key. The same reason `promos/rules.ts` is its own file.
  */
 
+import { tidyText } from '@/lib/text/tidy';
+
 /**
  * What the column will accept: 120 characters at most, trimmed, with nothing
  * in it that cannot be sent to Postgres. `undefined` for "no label", because
@@ -21,62 +23,20 @@
  */
 export const MAX_CUSTOMER_REFERENCE = 120;
 
-/*
-  Control characters, and the ones that are not obviously control characters.
-
-  C0 and DEL are the usual suspects. C1 (\u0080-\u009f) and the line and
-  paragraph separators arrive by paste: a reference copied out of a
-  spreadsheet cell or a Word document carries them, and they render as
-  nothing while making two labels that look identical compare unequal.
-  Replaced with a space rather than removed, so "Q4\nSarah" becomes
-  "Q4 Sarah" rather than "Q4Sarah".
-*/
-const INVISIBLE = /[\u0000-\u001f\u007f-\u009f\u2028\u2029]/g;
-
-/*
-  And the two that are nothing at all rather than a break.
-
-  A byte order mark at the front of a pasted label, and a zero-width space
-  in the middle of one, are both invisible: they make "Sarah Q4" and
-  "Sarah Q4" different labels and a search for either find one of them.
-  Removed rather than turned into a space, because unlike a newline they
-  occupy no width on screen and inserting one would change what the person
-  sees.
-
-  Deliberately only those two. The zero-width joiner holds a family emoji
-  together and the zero-width non-joiner is orthography in Persian and
-  Hindi - removing either would break a label that is correct.
-*/
-const ZERO_WIDTH = /[\ufeff\u200b]/g;
-
 /**
  * Clean a typed reference into what the database will take, or `undefined`.
  *
- * Nothing here rejects: a label is the customer's own, and refusing somebody's
- * purchase order number at checkout over a stray character would be refusing
- * the order. It is cut to fit instead, and the only input that yields nothing
- * is input that was nothing to begin with.
+ * The cleaning itself is `tidyText`, shared with the pricing enquiry form:
+ * both are free text from a human, stored in a column with a length and a
+ * trim constraint on it, and two copies of the rule would drift. What is
+ * specific to a reference is the ceiling and that it is one line - a run of
+ * whitespace in a label is a typo, not a paragraph.
+ *
+ * Nothing here rejects: a label is the customer's own, and refusing
+ * somebody's purchase order number at checkout over a stray character would
+ * be refusing the order. It is cut to fit instead, and the only input that
+ * yields nothing is input that was nothing to begin with.
  */
 export function cleanCustomerReference(value: string | undefined | null): string | undefined {
-  const flattened = String(value ?? '')
-    .replace(INVISIBLE, ' ')
-    .replace(ZERO_WIDTH, '')
-    // Runs of space collapse, because "Sarah     Q4" and "Sarah Q4" are the
-    // same label to the person who typed them and a different one to a
-    // search.
-    .replace(/\s+/g, ' ')
-    .trim();
-
-  /*
-    Cut by code point, not by UTF-16 unit.
-
-    `slice(0, 120)` counts units, so a label whose 120th unit is half of an
-    emoji is cut through the middle of it and leaves a lone surrogate - which
-    cannot be encoded as UTF-8 and is refused on the way to Postgres, turning
-    a long label into a failed checkout. Spreading to an array cuts whole
-    characters, and it is also what `length()` counts in the database, so
-    120 here is 120 there.
-  */
-  const cut = [...flattened].slice(0, MAX_CUSTOMER_REFERENCE).join('').trim();
-  return cut || undefined;
+  return tidyText(value, { maxChars: MAX_CUSTOMER_REFERENCE });
 }

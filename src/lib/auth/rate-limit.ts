@@ -46,6 +46,21 @@ export const RATE_LIMITS = {
     enumerating anything with.
   */
   plannerMetrics: { action: 'planner-metrics', max: 60, windowSeconds: 3600 },
+  /*
+    The pricing page's enquiry form.
+
+    The only form on the site a stranger can submit, and the only way to
+    write to `pricing_enquiries` - 0086 gives that table no public insert
+    policy, so this throttle is in front of the one door rather than beside
+    several. Five an hour from one address is more than anybody describing a
+    campaign needs twice over, and few enough that a flooded inbox is not
+    how we find out the honeypot was defeated.
+
+    Keyed by address rather than by email, for the reason the sign-in limits
+    are: an email-keyed counter lets somebody fill a competitor's quota by
+    submitting on their behalf.
+  */
+  pricingEnquiry: { action: 'pricing-enquiry', max: 5, windowSeconds: 3600 },
 } as const satisfies Record<string, RateLimitRule>;
 
 export interface RateLimitResult {

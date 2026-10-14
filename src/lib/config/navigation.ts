@@ -25,6 +25,7 @@ import {
   Users,
   Tags,
   ClipboardList,
+  MessageSquareText,
 } from 'lucide-react';
 
 export interface NavItem {
@@ -137,6 +138,13 @@ export const adminNav: NavItem[] = [
   { label: 'Categories', href: '/admin/categories', icon: FolderTree },
   { label: 'Publisher inbox', href: '/admin/sourcing', icon: Inbox },
   { label: 'Sales Centre', href: '/admin/sales', icon: Target },
+  /*
+    Beside the Sales Centre, which is the outbound half of the same job.
+    These are people who wrote to us first, which is why they are not in
+    it: a prospect is a company we decided to approach, and collapsing the
+    two would mean never being able to tell them apart.
+  */
+  { label: 'Pricing enquiries', href: '/admin/enquiries', icon: MessageSquareText },
   { label: 'Pricing', href: '/admin/pricing', icon: Calculator },
   { label: 'Promo codes', href: '/admin/promo-codes', icon: TicketPercent },
   { label: 'Ahrefs refresh', href: '/admin/refresh', icon: RefreshCw },
