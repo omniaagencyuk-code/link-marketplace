@@ -9,12 +9,18 @@ import { isSupabaseEnabled } from '@/lib/supabase/config';
  * *project* does not is worse than no button at all: it is a dead end on the
  * one screen a customer cannot route around.
  *
- * So it is declared rather than guessed. Set `NEXT_PUBLIC_GOOGLE_AUTH=on`
- * only once Google is switched on under Authentication -> Providers with this
- * deployment's callback URL - `<site>/auth/confirm` - in Google's authorised
- * redirect list. Unset, which is every deployment today, and the button does
- * not render and the action refuses: there is no path that sends somebody to
- * a provider nobody has configured.
+ * So it is declared rather than guessed. Unset, and the button does not
+ * render and the action refuses: there is no path that sends somebody to a
+ * provider nobody has configured.
+ *
+ * Set `NEXT_PUBLIC_GOOGLE_AUTH=on` once the provider is actually configured.
+ * `.env.example` lists the steps; the one worth repeating is that there are
+ * two callback URLs and they are not interchangeable. Google's OAuth client
+ * wants the callback Supabase displays on its own provider page, because
+ * Google hands the user to Supabase. `<site>/auth/confirm` - what
+ * `signInWithGoogleAction` passes as `redirectTo` - belongs in Supabase's
+ * Redirect URLs allow-list instead. Putting ours in Google's box is the way
+ * this usually goes wrong.
  *
  * Both halves matter. Google sign-in runs through Supabase, so without
  * Supabase there is no auth server to hand the callback back to.
