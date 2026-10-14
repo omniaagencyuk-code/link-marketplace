@@ -1,5 +1,7 @@
 import { getAdminScopedClient } from '@/lib/supabase/server';
 import { isSupabaseEnabled } from '@/lib/supabase/config';
+import { isPlatform } from '@/lib/gap/competitors';
+import { brand } from '@/lib/config/brand';
 import { readAllPages } from '@/lib/services/supabase/paged';
 import { normaliseDomain, isValidDomain } from '@/lib/import/normalise';
 import { isContactable } from '@/lib/config/sales-segments';
@@ -61,6 +63,12 @@ function mapProspect(row: Row): Prospect {
     countryCode: text(row.country_code),
     source: (row.source as Prospect['source']) ?? 'manual',
     sourceDetail: text(row.source_detail),
+    // Null stays undefined rather than becoming 0: nobody counted is not none
+    // found, and the score says so in words.
+    placementsSeen:
+      row.placements_seen === null || row.placements_seen === undefined
+        ? undefined
+        : Number(row.placements_seen),
     researchStatus: (row.research_status as SweepStatus) ?? 'pending',
     researchedAt: text(row.researched_at),
     researchError: text(row.research_error),
@@ -111,6 +119,17 @@ export interface ImportOutcome {
   added: number;
   /** Already present, by domain. Not an error - an import is run twice. */
   duplicates: number;
+  /**
+   * Dropped because they are one of the platforms everything links to.
+   *
+   * Counted apart from `rejected` because they are not a bad row - a list of
+   * outgoing links from any publisher has google, youtube and wikipedia near
+   * the top of it, and reporting a thousand of them as "not usable" buries
+   * the handful that really are malformed.
+   */
+  skippedPlatforms: number;
+  /** Dropped because we already sell them. A publisher is a supplier. */
+  skippedPublishers: number;
   /** Rejected, with the reason, so a bad CSV says which rows and why. */
   rejected: { row: number; value: string; reason: string }[];
 }
@@ -269,15 +288,44 @@ export const prospectService = {
    * as well as against what is stored, because the same company appearing
    * twice in one paste is the ordinary case rather than the odd one.
    */
+  /**
+   * Add a pasted list of domains as prospects.
+   *
+   * ## Three things are dropped before anything is written
+   *
+   * The lists this takes come from the outgoing links of publishers we sell,
+   * so they arrive with a predictable shape of rubbish in them.
+   *
+   * **Platforms.** Every publisher links to google, youtube, wikipedia and
+   * amazon. `isPlatform` already knows them - the gap finder drops them for
+   * the same reason, that a gap against YouTube is a list of sites we cannot
+   * sell.
+   *
+   * **Our own publishers.** Publishers interlink heavily, so a list of what
+   * one links to is full of others. A publisher is a supplier, and importing
+   * one as a prospect ends with us emailing a site we buy from to ask
+   * whether they would like to buy links.
+   *
+   * **Ourselves.** For the obvious reason.
+   *
+   * All three were the caller's problem until now, which meant they were
+   * nobody's: the paste box is the only way in and it did none of it.
+   */
   async importDomains(
-    entries: { companyName?: string; domain: string }[],
+    entries: { companyName?: string; domain: string; placementsSeen?: number | null }[],
     options: { segment?: SalesSegment; source?: Prospect['source']; sourceDetail?: string; actor?: string } = {},
   ): Promise<ImportOutcome> {
-    const outcome: ImportOutcome = { added: 0, duplicates: 0, rejected: [] };
+    const outcome: ImportOutcome = {
+      added: 0,
+      duplicates: 0,
+      skippedPlatforms: 0,
+      skippedPublishers: 0,
+      rejected: [],
+    };
     if (!isSupabaseEnabled()) return outcome;
 
     const seen = new Set<string>();
-    const clean: { companyName: string; domain: string }[] = [];
+    const clean: { companyName: string; domain: string; placementsSeen: number | null }[] = [];
 
     entries.forEach((entry, index) => {
       const domain = normaliseDomain(entry.domain ?? '');
@@ -289,12 +337,27 @@ export const prospectService = {
         });
         return;
       }
+      if (domain === brand.domain || domain.endsWith(`.${brand.domain}`)) {
+        outcome.skippedPlatforms += 1;
+        return;
+      }
+      if (isPlatform(domain)) {
+        outcome.skippedPlatforms += 1;
+        return;
+      }
       if (seen.has(domain)) {
         outcome.duplicates += 1;
         return;
       }
       seen.add(domain);
-      clean.push({ companyName: (entry.companyName ?? '').trim() || domain, domain });
+      clean.push({
+        companyName: (entry.companyName ?? '').trim() || domain,
+        domain,
+        placementsSeen:
+          typeof entry.placementsSeen === 'number' && Number.isFinite(entry.placementsSeen)
+            ? Math.max(0, Math.min(10_000, Math.round(entry.placementsSeen)))
+            : null,
+      });
     });
 
     if (clean.length === 0) return outcome;
@@ -309,8 +372,8 @@ export const prospectService = {
       than a smaller result - so the question is asked in pieces whose size is
       chosen to keep the query string well inside any limit.
     */
-    const known = new Set<string>();
     const ASK_AT_ONCE = 200;
+    const known = new Set<string>();
     for (let index = 0; index < clean.length; index += ASK_AT_ONCE) {
       const slice = clean.slice(index, index + ASK_AT_ONCE).map((entry) => entry.domain);
       const { data, error } = await supabase.from('prospects').select('domain').in('domain', slice);
@@ -318,8 +381,22 @@ export const prospectService = {
       for (const row of data ?? []) known.add(String((row as Row).domain));
     }
 
-    const fresh = clean.filter((entry) => !known.has(entry.domain));
-    outcome.duplicates += clean.length - fresh.length;
+    /* Which of these we sell. Asked in the same chunks and for the same
+       reason as the question above it: a single `in` filter carrying four
+       thousand domains is a URL PostgREST answers with a 414. */
+    const ours = new Set<string>();
+    for (let index = 0; index < clean.length; index += ASK_AT_ONCE) {
+      const slice = clean.slice(index, index + ASK_AT_ONCE).map((entry) => entry.domain);
+      const { data, error } = await supabase.from('websites').select('domain').in('domain', slice);
+      if (error) throw new Error(`Could not check against our publishers: ${error.message}`);
+      for (const row of data ?? []) ours.add(String((row as Row).domain));
+    }
+
+    const notOurs = clean.filter((entry) => !ours.has(entry.domain));
+    outcome.skippedPublishers = clean.length - notOurs.length;
+
+    const fresh = notOurs.filter((entry) => !known.has(entry.domain));
+    outcome.duplicates += notOurs.length - fresh.length;
 
     const WRITE_AT_ONCE = 100;
     for (let index = 0; index < fresh.length; index += WRITE_AT_ONCE) {
@@ -334,6 +411,7 @@ export const prospectService = {
             segment: options.segment ?? 'other',
             source: options.source ?? 'csv',
             source_detail: options.sourceDetail ?? null,
+            placements_seen: entry.placementsSeen,
             created_by: options.actor ?? null,
             owner: options.actor ?? null,
           })),

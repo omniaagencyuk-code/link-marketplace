@@ -300,6 +300,7 @@ export const salesContactService = {
         signals: prospect.signals,
         contactsStatus: prospect.contactsStatus,
         hasSelectedContact: contacts.some((contact) => contact.selected),
+        placementsSeen: prospect.placementsSeen,
       },
       latest
         ? {

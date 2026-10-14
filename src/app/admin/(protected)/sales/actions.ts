@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache';
 import { requireAdminSession } from '@/lib/auth/admin-access';
 import { prospectService } from '@/lib/services/prospect-service';
+import { parsePastedProspects } from '@/lib/sales/paste-list';
 import { salesSettingsService } from '@/lib/services/sales-settings-service';
 import { salesContactService } from '@/lib/services/sales-contact-service';
 import { salesEmailService } from '@/lib/services/sales-email-service';
@@ -20,7 +21,6 @@ import {
   qualifyProspect,
   startQualifySweep,
 } from '@/lib/services/sales-qualify-service';
-import { normaliseDomain } from '@/lib/import/normalise';
 import type { ProspectStage, ReplyClassification, SalesSegment } from '@/lib/types/sales';
 
 /**
@@ -124,10 +124,14 @@ export async function setSalesDryRunAction(dryRun: boolean): Promise<SalesAction
 /**
  * Add prospects from a pasted list.
  *
- * One per line, `domain` or `Company Name, domain`. Deliberately not a file
- * upload: the thing people actually have is a column copied out of a
- * spreadsheet, and asking them to save it as a CSV first is asking them to do
- * a conversion so this form does not have to.
+ * One per line: `domain`, `Company Name, domain`, or either of those with a
+ * trailing count of how many of our own publishers were seen linking to them.
+ * Deliberately not a file upload - the thing people actually have is a column
+ * copied out of a spreadsheet, and asking them to save it as a CSV first is
+ * asking them to do a conversion so this form does not have to.
+ *
+ * The reading is in `parsePastedProspects`, which is pure and tested. What is
+ * left here is the session, the segment and saying what happened.
  */
 export async function addProspectsAction(formData: FormData): Promise<SalesActionResult> {
   const session = await requireAdminSession();
@@ -137,20 +141,7 @@ export async function addProspectsAction(formData: FormData): Promise<SalesActio
 
   if (!raw) return bad('Paste at least one domain.');
 
-  const entries = raw
-    .split(/[\r\n]+/)
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .map((line) => {
-      // "Company Name, domain.com" or "domain.com". The last comma-separated
-      // field that looks like a domain is the domain; the rest is the name.
-      const parts = line.split(/[,\t]/).map((part) => part.trim()).filter(Boolean);
-      if (parts.length === 1) return { domain: parts[0]!, companyName: undefined };
-
-      const domainPart = [...parts].reverse().find((part) => normaliseDomain(part));
-      const name = parts.filter((part) => part !== domainPart).join(' ');
-      return { domain: domainPart ?? parts[parts.length - 1]!, companyName: name || undefined };
-    });
+  const entries = parsePastedProspects(raw);
 
   try {
     const outcome = await prospectService.importDomains(entries, {
@@ -162,8 +153,18 @@ export async function addProspectsAction(formData: FormData): Promise<SalesActio
 
     revalidatePath('/admin/sales/prospects');
 
+    /*
+      Every category, named. A paste of outgoing links is mostly things we do
+      not want, and a result reading "40 added" out of 900 lines is alarming
+      until you know the other 860 were YouTube, Wikipedia and publishers we
+      already buy from.
+    */
     const parts = [`${outcome.added} added`];
     if (outcome.duplicates > 0) parts.push(`${outcome.duplicates} already there`);
+    if (outcome.skippedPublishers > 0) {
+      parts.push(`${outcome.skippedPublishers} we already sell`);
+    }
+    if (outcome.skippedPlatforms > 0) parts.push(`${outcome.skippedPlatforms} platforms`);
     if (outcome.rejected.length > 0) {
       parts.push(
         `${outcome.rejected.length} not usable (${outcome.rejected
