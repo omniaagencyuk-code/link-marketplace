@@ -15,6 +15,7 @@
  * Needs a local Postgres, the same one `verify:rls` wants:
  *   pg_ctl -D /var/tmp/pgverify -o '-k /tmp -p 5433' start
  */
+import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
 import { readdirSync } from 'node:fs';
 import { runQuery } from '../src/lib/services/query-engine';
@@ -23,7 +24,17 @@ import type { SortKey, WebsiteQuery } from '../src/lib/types/query';
 import type { WebsiteListItem } from '../src/lib/types';
 
 const DB = 'pp_search';
-const ROOT = '/home/user/link-marketplace';
+
+/*
+  The checkout, worked out from this file rather than written down.
+
+  It used to be the absolute path of one container - which meant psql ran
+  with a `cwd` that exists on exactly one machine, and `spawnSync` reports a
+  missing working directory as ENOENT on the *binary*. So this failed as
+  "spawnSync psql ENOENT" on a CI runner with psql plainly installed and
+  working, which is about as misleading as a failure gets.
+*/
+const ROOT = fileURLToPath(new URL('..', import.meta.url));
 
 let pass = 0;
 let fail = 0;

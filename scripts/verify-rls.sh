@@ -75,13 +75,21 @@ fi
 
 # The flattened copies are generated. If one has drifted from its migration,
 # the stale copy is the one somebody pastes into the SQL editor.
+#
+# Compared against what the file held a moment ago rather than against git.
+# `git diff` answered "changed" for every file in a checkout with no .git -
+# a tarball, a vendored copy, a Docker build context - so a clone with no
+# history reported all 85 copies as drifted, which is both wrong and the
+# kind of wrong that gets a real one ignored. What is on disk before and
+# after regenerating is the question being asked anyway.
 drift=0
 for paste in "$ROOT"/supabase/migrations/*.paste.sql; do
   [ -e "$paste" ] || continue
   source_file="${paste%.paste.sql}.sql"
+  before="$(cat "$paste")"
   node "$ROOT/scripts/flatten-migration.mjs" "$source_file" >/dev/null
-  if ! git -C "$ROOT" diff --quiet -- "$paste" 2>/dev/null; then
-    echo "STALE PASTE COPY: $(basename "$paste") - regenerate it"
+  if [ "$before" != "$(cat "$paste")" ]; then
+    echo "STALE PASTE COPY: $(basename "$paste") - it has been regenerated, commit it"
     drift=$((drift + 1))
   fi
 done
