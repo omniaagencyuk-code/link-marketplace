@@ -20,6 +20,7 @@ import {
   cleanCustomerReference,
   MAX_CUSTOMER_REFERENCE,
 } from '../src/lib/orders/customer-reference';
+import { paymentWording } from '../src/components/shared/status-badge';
 
 let failed = 0;
 const ok = (l: string) => console.log(`  PASS  ${l}`);
@@ -261,6 +262,55 @@ yes(`and ${kept} of them are a real label rather than nothing`, kept >= 15);
   label mangled on the way in is mangled for good, and the customer typed it.
 */
 is('a formula is stored as the label somebody typed', cleanCustomerReference('=SUM(A1:A9)'), '=SUM(A1:A9)');
+
+/* -------------------------------------------------------------------------
+   What the customer is told about their money.
+
+   This is here because of a live incident rather than a hypothetical one.
+   `attachCheckoutSession` sets `payment_status = 'processing'` the moment
+   the Stripe page opens - the enum says so in its own comment, "Checkout
+   opened; the customer may still abandon it" - and the orders table read
+   that as **"Payment received"**. Three abandoned checkouts sat in a
+   customer's order list claiming their money had arrived.
+
+   Nothing about the payment was wrong. The sentence was. Which is why the
+   assertions below are about wording: the words are the product here, and
+   the one that cost something was a word.
+   ------------------------------------------------------------------------- */
+
+console.log('\n--- what an order says about its payment ---');
+
+yes(
+  'an opened-but-abandoned checkout does not claim the money arrived',
+  paymentWording('processing')?.paid === false,
+);
+yes(
+  'and says so in words, not in a status nobody reads',
+  paymentWording('processing')?.label === 'Not paid yet',
+);
+yes('a paid order says paid', paymentWording('paid')?.paid === true);
+yes('a failed payment says so', paymentWording('failed')?.label === 'Payment failed');
+yes('a refund says so', paymentWording('refunded')?.label === 'Refunded');
+
+/*
+  Nothing at all for an order that has not reached checkout. That is a
+  basket, and a basket does not need telling it is unpaid.
+*/
+yes('an untouched order is told nothing', paymentWording('unpaid') === null);
+yes('and neither is one from before the column existed', paymentWording(undefined) === null);
+
+/*
+  The property, rather than six examples of it: only `paid` may ever come
+  back as paid. A seventh state added to the enum one day gets the safe
+  answer by default, because the cost of the two mistakes is not equal -
+  telling somebody their money arrived when it has not is the one that ends
+  in a support ticket and a lost sale.
+*/
+const everyState = ['unpaid', 'processing', 'paid', 'refunded', 'failed'] as const;
+yes(
+  'only a paid order is ever described as paid',
+  everyState.every((state) => (paymentWording(state)?.paid ?? false) === (state === 'paid')),
+);
 
 console.log(failed === 0 ? '\n  all passed' : `\n  ${failed} failed`);
 process.exit(failed === 0 ? 0 : 1);

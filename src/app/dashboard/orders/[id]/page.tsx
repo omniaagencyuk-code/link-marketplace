@@ -6,7 +6,7 @@ import { PageTitle } from '@/components/dashboard/page-title';
 import { CustomerReferenceField } from '@/components/dashboard/customer-reference-field';
 import { OrderDelivery } from '@/components/dashboard/order-delivery';
 import { LinkGuarantee } from '@/components/dashboard/link-guarantee';
-import { OrderStatusBadge } from '@/components/shared/status-badge';
+import { OrderStatusBadge, PaymentBadge } from '@/components/shared/status-badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { orderService, settingsService } from '@/lib/services';
@@ -52,6 +52,14 @@ export default async function OrderPage({ params }: { params: Promise<{ id: stri
   const delivered = deliveredItems(order.items);
   const outstanding = order.items.filter((item) => !delivered.includes(item));
 
+  /*
+    One question asked once. Everything on this page that depends on whether
+    the money arrived reads this, rather than each figure deciding for
+    itself - which is how "Paid" came to sit above an order nobody had paid
+    for.
+  */
+  const paid = order.paymentStatus === 'paid';
+
   return (
     <>
       <PageTitle
@@ -79,32 +87,48 @@ export default async function OrderPage({ params }: { params: Promise<{ id: stri
               it at checkout and an order they cannot find is the whole
               problem this solves. */}
           <CustomerReferenceField orderId={order.id} reference={order.customerReference} />
+          {/*
+            "Paid" only where it was paid.
+
+            This said Paid on every order, including one whose checkout was
+            opened and abandoned - the same sentence the status badge was
+            getting wrong, in a second place. An unpaid order is told what it
+            would cost, in the words of something still owed.
+          */}
           <Figure
-            label="Paid"
-            value={formatPrice(order.chargedMinor ?? order.totalMinor, {
+            label={paid ? 'Paid' : 'To pay'}
+            value={formatPrice(paid ? (order.chargedMinor ?? order.totalMinor) : order.totalMinor, {
               currency: order.currency,
             })}
             /*
               VAT and the promo code both belong on this line, because both
               explain why the figure is not simply the sum of the placements.
               The code is named rather than described: an order showing
-              "£150 off" with no code on it is a number nobody can account for
+              "$150 off" with no code on it is a number nobody can account for
               six months later.
+
+              Before payment there is no VAT figure to quote - Stripe works it
+              out from the billing address at checkout - so the line says that
+              rather than implying the total is final.
             */
             hint={
-              [
-                order.taxMinor ? `includes ${formatPrice(order.taxMinor)} VAT` : null,
-                order.promoCode && order.discountMinor
-                  ? `${order.promoCode} took off ${formatPrice(order.discountMinor, { currency: order.currency })}`
-                  : null,
-              ]
-                .filter(Boolean)
-                .join(' · ') || undefined
+              paid
+                ? [
+                    order.taxMinor
+                      ? `includes ${formatPrice(order.taxMinor, { currency: order.currency })} VAT`
+                      : null,
+                    order.promoCode && order.discountMinor
+                      ? `${order.promoCode} took off ${formatPrice(order.discountMinor, { currency: order.currency })}`
+                      : null,
+                  ]
+                    .filter(Boolean)
+                    .join(' · ') || undefined
+                : 'VAT is worked out at checkout'
             }
           />
           <div>
             <p className="text-[12px] text-muted">Status</p>
-            <p className="mt-1">
+            <div className="mt-1 flex flex-wrap items-center gap-1.5">
               {order.completedAt ? (
                 <span className="rounded-full bg-accent-50 px-2 py-0.5 text-[11px] font-medium text-accent-700">
                   Complete
@@ -112,7 +136,10 @@ export default async function OrderPage({ params }: { params: Promise<{ id: stri
               ) : (
                 <OrderStatusBadge status={order.status} paymentStatus={order.paymentStatus} />
               )}
-            </p>
+              {/* Where the work got to, and where the money got to. Two
+                  questions, and one badge cannot answer both. */}
+              <PaymentBadge paymentStatus={order.paymentStatus} />
+            </div>
           </div>
         </CardContent>
       </Card>
