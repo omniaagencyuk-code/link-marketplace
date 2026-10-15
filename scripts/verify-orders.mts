@@ -21,6 +21,8 @@ import {
   MAX_CUSTOMER_REFERENCE,
 } from '../src/lib/orders/customer-reference';
 import { paymentWording } from '../src/components/shared/status-badge';
+import { chargedNote, isPlaced, splitOrders } from '../src/lib/orders/placed.ts';
+import type { Order } from '../src/lib/types';
 
 let failed = 0;
 const ok = (l: string) => console.log(`  PASS  ${l}`);
@@ -310,6 +312,109 @@ const everyState = ['unpaid', 'processing', 'paid', 'refunded', 'failed'] as con
 yes(
   'only a paid order is ever described as paid',
   everyState.every((state) => (paymentWording(state)?.paid ?? false) === (state === 'paid')),
+);
+
+/* -------------------------------------------------------------------------
+   Which of these did the customer actually buy?
+
+   An order row is written before the customer is sent to Stripe, so the
+   table holds both the ones somebody paid for and the remains of a checkout
+   somebody opened and left. Four rows, one purchase, one heading reading
+   "Submitted orders (4)".
+   ------------------------------------------------------------------------- */
+
+console.log('\n--- placed, or merely started ---');
+
+const order = (fields: Partial<Order>): Order =>
+  ({
+    id: 'ord_1',
+    reference: 'PP-00001',
+    userId: 'usr_1',
+    customerName: 'A',
+    customerEmail: 'a@test',
+    status: 'draft',
+    totalMinor: 7900,
+    currency: 'USD',
+    items: [{ priceMinor: 7900 }],
+    placedAt: '2026-10-15T00:00:00Z',
+    updatedAt: '2026-10-15T00:00:00Z',
+    ...fields,
+  }) as unknown as Order;
+
+yes(
+  'an abandoned checkout is not an order the customer placed',
+  isPlaced(order({ status: 'draft', paymentStatus: 'processing' })) === false,
+);
+yes(
+  'and neither is one that never reached checkout',
+  isPlaced(order({ status: 'draft', paymentStatus: 'unpaid' })) === false,
+);
+yes('a paid one is', isPlaced(order({ status: 'draft', paymentStatus: 'paid' })));
+
+/*
+  The window that makes this worth stating twice: `markOrderPaid` sets
+  'paid' and moves the status in one go, so for a second or two after the
+  customer gets back from Stripe the order is paid and still in draft.
+  Either half on its own has to count, or a customer refreshing in that
+  window finds their purchase filed under the ones they abandoned.
+*/
+yes(
+  'a status that moved on counts even before the payment column catches up',
+  isPlaced(order({ status: 'awaiting-content', paymentStatus: 'processing' })),
+);
+
+/*
+  Cancelled is bought and then withdrawn. It belongs in somebody's order
+  history; it is not the same event as never having paid.
+*/
+yes('a cancelled order is still an order', isPlaced(order({ status: 'cancelled' })));
+
+{
+  const { placed, abandoned } = splitOrders([
+    order({ id: 'a', status: 'awaiting-content', paymentStatus: 'paid' }),
+    order({ id: 'b', status: 'draft', paymentStatus: 'processing' }),
+    order({ id: 'c', status: 'draft', paymentStatus: 'processing' }),
+    order({ id: 'd', status: 'draft', paymentStatus: 'processing' }),
+  ]);
+  yes('the live case: four rows, one purchase', placed.length === 1 && abandoned.length === 3);
+  yes('and nothing is dropped on the way', placed.length + abandoned.length === 4);
+}
+
+console.log('\n--- what the card was charged, where the row does not say it ---');
+
+/*
+  The confusion this removes: the row read US$79 while the payment was
+  US$94.80, and the column a customer checks against their statement was
+  the one that disagreed with it.
+*/
+is(
+  'VAT makes the charge differ from the price, so the charge is named',
+  chargedNote(order({ paymentStatus: 'paid', chargedMinor: 9480 }), 7900),
+  'US$94.80 charged',
+);
+yes(
+  'no line where the charge is the price',
+  chargedNote(order({ paymentStatus: 'paid', chargedMinor: 7900 }), 7900) === null,
+);
+yes(
+  'and none at all until something was paid',
+  chargedNote(order({ paymentStatus: 'processing', chargedMinor: 9480 }), 7900) === null,
+);
+/*
+  Several placements on one payment: no single row equals the charge, so it
+  is named as the whole rather than implied to be this line's.
+*/
+is(
+  'a multi-placement order says the figure is the whole payment',
+  chargedNote(
+    order({
+      paymentStatus: 'paid',
+      chargedMinor: 29760,
+      items: [{ priceMinor: 7900 }, { priceMinor: 16900 }] as Order['items'],
+    }),
+    7900,
+  ),
+  'part of US$297.60 charged',
 );
 
 console.log(failed === 0 ? '\n  all passed' : `\n  ${failed} failed`);

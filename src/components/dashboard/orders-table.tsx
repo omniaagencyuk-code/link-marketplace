@@ -5,6 +5,7 @@ import { OrderStatusBadge, PaymentBadge } from '@/components/shared/status-badge
 import { formatDate, formatPrice } from '@/lib/utils/format';
 import { linkTypeLabels } from '@/lib/utils/labels';
 import { acceptedNicheLabel } from '@/lib/config/accepted-niches';
+import { chargedNote } from '@/lib/orders/placed';
 import type { Order } from '@/lib/types';
 
 /** Flattened order-item view used on the dashboard and orders page. */
@@ -114,8 +115,24 @@ export function OrdersTable({ orders, limit }: { orders: Order[]; limit?: number
                   />
                 </div>
               </Td>
+              {/*
+                The placement's price, and underneath it what the card was
+                actually charged where those differ.
+
+                They differ whenever VAT applied: the row said US$79 while
+                the payment was US$94.80, and the customer reconciling
+                against their statement reads this column first. The order's
+                own currency rather than the brand default, because an order
+                is charged in the currency it was placed in whatever the
+                site is set to today.
+              */}
               <Td className="tabular text-right text-[13px] font-semibold text-ink">
-                {formatPrice(item.priceMinor)}
+                {formatPrice(item.priceMinor, { currency: order.currency })}
+                {chargedNote(order, item.priceMinor) ? (
+                  <span className="mt-0.5 block text-[11px] font-normal text-muted">
+                    {chargedNote(order, item.priceMinor)}
+                  </span>
+                ) : null}
               </Td>
             </Tr>
           ))}
