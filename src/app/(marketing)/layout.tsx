@@ -1,6 +1,7 @@
 import { PreviewBanner } from '@/components/cms/preview-banner';
 import { SiteHeader } from '@/components/layout/site-header';
 import { SiteFooter } from '@/components/layout/site-footer';
+import { siteMenus } from '@/lib/services/menu-service';
 
 /**
  * Ten minutes.
@@ -26,7 +27,20 @@ import { SiteFooter } from '@/components/layout/site-footer';
  */
 export const revalidate = 600;
 
-export default function MarketingLayout({ children }: { children: React.ReactNode }) {
+export default async function MarketingLayout({ children }: { children: React.ReactNode }) {
+  /*
+    One read for the whole chrome, and the same read a page under here would
+    get: `siteMenus` is request-cached, so the header and the footer below
+    share it rather than asking twice. An empty table resolves to the arrays
+    in `config/navigation.ts`, which is what makes this safe to add before
+    anybody has edited a menu.
+
+    Both header menus are fetched, not one. Which of them is drawn depends on
+    whether there is an account, and that is decided in the browser - so the
+    choice belongs to the header and the data has to reach it either way.
+  */
+  const menus = await siteMenus();
+
   return (
     <div className="flex min-h-dvh flex-col">
       {/*
@@ -35,11 +49,14 @@ export default function MarketingLayout({ children }: { children: React.ReactNod
         inside it would scroll away from the person who needs it.
       */}
       <PreviewBanner />
-      <SiteHeader />
+      <SiteHeader
+        signedOut={menus['header-signed-out']}
+        signedIn={menus['header-signed-in']}
+      />
       <main id="main" className="flex-1">
         {children}
       </main>
-      <SiteFooter />
+      <SiteFooter menu={menus.footer} />
     </div>
   );
 }

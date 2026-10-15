@@ -6,6 +6,7 @@ import { SiteFooter } from '@/components/layout/site-footer';
 import { CustomerShell } from '@/components/dashboard/shell/customer-shell';
 import { CustomerTopbar } from '@/components/dashboard/shell/customer-topbar';
 import { getCurrentUser } from '@/lib/auth/customer-access';
+import { siteMenus } from '@/lib/services/menu-service';
 
 /**
  * The marketplace segment: never indexed, never cached, and wearing whichever
@@ -71,17 +72,27 @@ export default async function MarketplaceLayout({ children }: { children: ReactN
     );
   }
 
+  /*
+    Read after the signed-in branch has returned, because the shell above
+    draws neither a header nor a footer: a customer in the marketplace would
+    otherwise pay a round trip for a menu nothing on their screen renders.
+  */
+  const menus = await siteMenus();
+
   return (
     <div className="flex min-h-dvh flex-col">
       {/* Above the header, because it is a statement about the whole page
           rather than part of it - and because the header is sticky, so a bar
           inside it would scroll away from the person who needs it. */}
       <PreviewBanner />
-      <SiteHeader />
+      <SiteHeader
+        signedOut={menus['header-signed-out']}
+        signedIn={menus['header-signed-in']}
+      />
       <main id="main" className="flex-1">
         {children}
       </main>
-      <SiteFooter />
+      <SiteFooter menu={menus.footer} />
     </div>
   );
 }

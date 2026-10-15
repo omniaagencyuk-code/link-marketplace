@@ -7,22 +7,36 @@ import { Bookmark, ChevronDown, LayoutDashboard, Menu, Search, ShoppingBag, X } 
 import { Logo } from './logo';
 import { Container } from './container';
 import { Button } from '@/components/ui/button';
-import { mainNav, type NavGroup } from '@/lib/config/navigation';
+import { defaultMenu } from '@/lib/navigation/defaults';
+import type { MenuNode } from '@/lib/navigation/menus';
 import { useAuth } from '@/lib/providers/auth-provider';
 import { useFavourites } from '@/lib/providers/favourites-provider';
 import { useOrderDraft } from '@/lib/providers/order-draft-provider';
 import { useContentDraft } from '@/lib/providers/content-draft-provider';
 import { cn } from '@/lib/utils/cn';
 
-/** Signed-in shortcuts, replacing the marketing nav once there is an account. */
-const memberNav = [
-  { label: 'Marketplace', href: '/marketplace' },
-  { label: 'Content', href: '/dashboard/content' },
-  { label: 'Orders', href: '/dashboard/orders' },
-  { label: 'Projects', href: '/dashboard/saved' },
-];
-
-export function SiteHeader() {
+/**
+ * The site header, drawn from a menu it is given.
+ *
+ * The two menus arrive as props rather than being imported, because they are
+ * editable: `siteMenus()` reads the stored ones in the layout above and falls
+ * back to the arrays in `config/navigation.ts`. The defaults here are the
+ * same fallback again, for the handful of callers - and the tests - that have
+ * no menu to hand. A header that imported the config directly would be a
+ * header no edit could reach.
+ *
+ * Which of the two is drawn is decided here rather than in the layout,
+ * because only this component knows whether there is an account: the session
+ * is fetched in the browser, so a server layout rendering one menu or the
+ * other would have to be dynamic to do it.
+ */
+export function SiteHeader({
+  signedOut = defaultMenu('header-signed-out'),
+  signedIn = defaultMenu('header-signed-in'),
+}: {
+  signedOut?: MenuNode[];
+  signedIn?: MenuNode[];
+} = {}) {
   const pathname = usePathname();
   const router = useRouter();
   const { user, status } = useAuth();
@@ -30,7 +44,7 @@ export function SiteHeader() {
   const { count: draftCount } = useOrderDraft();
   const { count: contentCount } = useContentDraft();
   const [menuOpen, setMenuOpen] = useState(false);
-  const [openGroup, setOpenGroup] = useState<string | null>(null);
+  const [openGroup, setOpenGroup] = useState<number | null>(null);
   const [searchOpen, setSearchOpen] = useState(false);
   const [term, setTerm] = useState('');
   const navRef = useRef<HTMLElement>(null);
@@ -48,7 +62,9 @@ export function SiteHeader() {
 
   // A dropdown should close when focus or a click leaves it entirely.
   useEffect(() => {
-    if (!openGroup) return;
+    // `=== null`, not `!openGroup`: the first item's index is 0, and a
+    // falsy check would leave the first dropdown unable to be dismissed.
+    if (openGroup === null) return;
     function handlePointerDown(event: MouseEvent) {
       if (!navRef.current?.contains(event.target as Node)) setOpenGroup(null);
     }
@@ -67,7 +83,18 @@ export function SiteHeader() {
     if (searchOpen) searchRef.current?.focus();
   }, [searchOpen]);
 
-  const isActive = (href: string) => pathname === href || pathname.startsWith(`${href}/`);
+  /*
+    An item with no destination is never the current page, and `/` is only
+    ever itself. Both matter now that the menu is editable: `''` and `'/'`
+    are both prefixes of every path on the site, so without these two lines a
+    footer-style heading or a link to the homepage would light up every item
+    in the header at once.
+  */
+  const isActive = (href: string) => {
+    if (!href) return false;
+    if (href === '/') return pathname === '/';
+    return pathname === href || pathname.startsWith(`${href}/`);
+  };
 
   /*
     Saved sites live in localStorage, so until the store has been read the
@@ -96,30 +123,26 @@ export function SiteHeader() {
               aria-label="Main"
               className="hidden items-center gap-0.5 lg:flex"
             >
-              {user
-                ? memberNav.map((item) => (
-                    <Link
-                      key={item.href}
-                      href={item.href}
-                      className={cn(
-                        'rounded-md px-3 py-2 text-sm font-medium transition-colors',
-                        isActive(item.href) ? 'text-ink' : 'text-ink-soft hover:text-ink',
-                      )}
-                    >
-                      {item.label}
-                    </Link>
-                  ))
-                : mainNav.map((item) => (
-                    <NavEntry
-                      key={item.href}
-                      item={item}
-                      active={isActive(item.href)}
-                      open={openGroup === item.label}
-                      onToggle={() =>
-                        setOpenGroup((current) => (current === item.label ? null : item.label))
-                      }
-                    />
-                  ))}
+              {/*
+                Both menus go through `NavEntry`, which was the signed-out
+                one's component. There is nothing special about a member
+                link except that nobody has given it children yet - and if
+                somebody does, it gets a dropdown rather than being silently
+                flattened.
+
+                Keyed and tracked by position, not by label: two items may
+                share a label once an editor owns the list, and a dropdown
+                keyed on one of them would open both.
+              */}
+              {(user ? signedIn : signedOut).map((item, index) => (
+                <NavEntry
+                  key={`${index}-${item.label}`}
+                  item={item}
+                  active={isActive(item.href)}
+                  open={openGroup === index}
+                  onToggle={() => setOpenGroup((current) => (current === index ? null : index))}
+                />
+              ))}
             </nav>
           </div>
 
@@ -268,39 +291,49 @@ export function SiteHeader() {
         <div className="max-h-[calc(100dvh-4rem)] overflow-y-auto border-t border-line bg-white lg:hidden">
           <Container size="wide">
             <nav aria-label="Mobile" className="flex flex-col py-3">
-              {user
-                ? memberNav.map((item) => (
+              {(user ? signedIn : signedOut).map((item, index) => (
+                <div key={`${index}-${item.label}`}>
+                  {/*
+                    Nothing to point at is drawn as a heading rather than as
+                    a link to nowhere. That is what a footer-style parent is,
+                    and the editor allows one here too - an `<a>` with an
+                    empty href reloads the current page, which reads as a
+                    menu that does not work.
+                  */}
+                  {item.href ? (
                     <Link
-                      key={item.href}
                       href={item.href}
-                      className="rounded-md px-2 py-2.5 text-sm font-medium text-ink-soft hover:bg-surface-sunken hover:text-ink"
+                      className="block rounded-md px-2 py-2.5 text-sm font-medium text-ink-soft hover:bg-surface-sunken hover:text-ink"
                     >
                       {item.label}
                     </Link>
-                  ))
-                : mainNav.map((item) => (
-                    <div key={item.href}>
-                      <Link
-                        href={item.href}
-                        className="block rounded-md px-2 py-2.5 text-sm font-medium text-ink-soft hover:bg-surface-sunken hover:text-ink"
-                      >
-                        {item.label}
-                      </Link>
-                      {item.children ? (
-                        <div className="mb-1 ml-2 flex flex-col border-l border-line pl-3">
-                          {item.children.map((child) => (
-                            <Link
-                              key={child.href}
-                              href={child.href}
-                              className="rounded-md px-2 py-2 text-[13px] text-muted hover:bg-surface-sunken hover:text-ink"
-                            >
-                              {child.label}
-                            </Link>
-                          ))}
-                        </div>
-                      ) : null}
+                  ) : (
+                    <p className="px-2 py-2.5 text-sm font-medium text-ink">{item.label}</p>
+                  )}
+                  {item.children.length > 0 ? (
+                    <div className="mb-1 ml-2 flex flex-col border-l border-line pl-3">
+                      {item.children.map((child, childIndex) =>
+                        child.href ? (
+                          <Link
+                            key={`${childIndex}-${child.label}`}
+                            href={child.href}
+                            className="rounded-md px-2 py-2 text-[13px] text-muted hover:bg-surface-sunken hover:text-ink"
+                          >
+                            {child.label}
+                          </Link>
+                        ) : (
+                          <span
+                            key={`${childIndex}-${child.label}`}
+                            className="px-2 py-2 text-[13px] text-muted-soft"
+                          >
+                            {child.label}
+                          </span>
+                        ),
+                      )}
                     </div>
-                  ))}
+                  ) : null}
+                </div>
+              ))}
 
               <div className="mt-3 flex gap-2 border-t border-line pt-3">
                 {user ? (
@@ -339,7 +372,7 @@ function NavEntry({
   open,
   onToggle,
 }: {
-  item: NavGroup;
+  item: MenuNode;
   active: boolean;
   open: boolean;
   onToggle: () => void;
@@ -349,7 +382,18 @@ function NavEntry({
     active ? 'text-ink' : 'text-ink-soft hover:text-ink',
   );
 
-  if (!item.children) {
+  /*
+    `.length > 0`, not `item.children`. Every node carries an array now, so
+    the old truthiness check would be true for all of them and every item in
+    the header would render as a dropdown button with nothing in it.
+  */
+  if (item.children.length === 0) {
+    // An item with neither a link nor children is a label. It is a dead end
+    // in a header and the editor warns about it, but it is drawn as what it
+    // is rather than as a link that reloads the page.
+    if (!item.href) {
+      return <span className={className}>{item.label}</span>;
+    }
     return (
       <Link href={item.href} className={className}>
         {item.label}
@@ -369,20 +413,35 @@ function NavEntry({
 
       {open ? (
         <div className="absolute top-full left-0 z-50 mt-1 w-72 rounded-xl border border-line bg-white p-2 shadow-[var(--shadow-pop)]">
-          {item.children.map((child) => (
-            <Link
-              key={child.href}
-              href={child.href}
-              className="block rounded-lg px-3 py-2.5 transition-colors hover:bg-surface"
-            >
-              <span className="block text-[13px] font-semibold text-ink">{child.label}</span>
-              {child.description ? (
-                <span className="mt-0.5 block text-[12px] leading-snug text-muted">
-                  {child.description}
-                </span>
-              ) : null}
-            </Link>
-          ))}
+          {item.children.map((child, index) => {
+            const body = (
+              <>
+                <span className="block text-[13px] font-semibold text-ink">{child.label}</span>
+                {child.description ? (
+                  <span className="mt-0.5 block text-[12px] leading-snug text-muted">
+                    {child.description}
+                  </span>
+                ) : null}
+              </>
+            );
+            const key = `${index}-${child.label}`;
+
+            // A child with no link is shown and not clickable, rather than
+            // being an anchor that reloads whatever page you were on.
+            return child.href ? (
+              <Link
+                key={key}
+                href={child.href}
+                className="block rounded-lg px-3 py-2.5 transition-colors hover:bg-surface"
+              >
+                {body}
+              </Link>
+            ) : (
+              <div key={key} className="block px-3 py-2.5">
+                {body}
+              </div>
+            );
+          })}
         </div>
       ) : null}
     </div>

@@ -1738,7 +1738,9 @@ console.log('\n--- an unpublished change cannot reach a visitor ---');
     is missing is one nobody can trust the next time it is the only one left.
   */
   const bannerAt = marketingLayout.indexOf('<PreviewBanner />');
-  const headerAt = marketingLayout.indexOf('<SiteHeader />');
+  // `'<SiteHeader'` without the closing bracket: the header takes the
+  // editable menus as props now, so the tag spans several lines.
+  const headerAt = marketingLayout.indexOf('<SiteHeader');
   yes('and sits above the header rather than inside it', bannerAt >= 0 && bannerAt < headerAt);
 
   /*

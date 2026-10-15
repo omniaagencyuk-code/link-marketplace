@@ -10,6 +10,7 @@ import {
   Globe,
   Inbox,
   LayoutDashboard,
+  Menu,
   Network,
   Newspaper,
   Package,
@@ -107,6 +108,20 @@ export const mainNav: NavGroup[] = [
 ];
 
 /** Signed-in customer area. */
+/**
+ * Signed-in shortcuts, replacing the marketing nav once there is an account.
+ *
+ * Here rather than inside the header, which is where it used to live: it is
+ * navigation configuration like the three arrays around it, and the menu
+ * editor needs to read it to show an editor what ships.
+ */
+export const memberNav: NavItem[] = [
+  { label: 'Marketplace', href: '/marketplace' },
+  { label: 'Content', href: '/dashboard/content' },
+  { label: 'Orders', href: '/dashboard/orders' },
+  { label: 'Projects', href: '/dashboard/saved' },
+];
+
 export const dashboardNav: NavItem[] = [
   { label: 'Dashboard', href: '/dashboard', icon: LayoutDashboard, exact: true },
   { label: 'Marketplace', href: '/marketplace', icon: Globe },
@@ -134,6 +149,12 @@ export const adminNav: NavItem[] = [
   { label: 'Content Orders', href: '/admin/content-orders', icon: FileText },
   { label: 'Pages', href: '/admin/pages', icon: FileCode2 },
   { label: 'Blog', href: '/admin/blog', icon: Newspaper },
+  /*
+    Beside Pages and Blog, which is the group of things an editor changes
+    without a deploy. The header and footer were the last part of the public
+    site that still needed one.
+  */
+  { label: 'Menus', href: '/admin/menus', icon: Menu },
   { label: 'Users', href: '/admin/users', icon: Users },
   { label: 'Categories', href: '/admin/categories', icon: FolderTree },
   { label: 'Publisher inbox', href: '/admin/sourcing', icon: Inbox },
