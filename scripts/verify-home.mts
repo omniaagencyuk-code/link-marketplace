@@ -530,12 +530,38 @@ for (const [component, fallbackFile] of SHOWPIECES) {
   saying different things, so the headings are checked against each other
   rather than assumed.
 */
-for (const heading of [
+for (const sentence of [
   'Find the Right Websites. Without the Guesswork.',
   'Judge a Website on Measurements, Not on a Sales Email',
+  // The body and the bullets too, not only the headings. These are the lines
+  // that had to be corrected in two files by hand when the twelve-month claim
+  // turned out to be wrong, which is the moment a second copy drifts.
+  'Every listing in the marketplace carries all four, measured by Ahrefs rather than quoted to us.',
+  'Organic search traffic, measured rather than quoted by the publisher',
 ]) {
-  ok(defaults.includes(heading), `the field editor ships "${heading.slice(0, 32)}..."`);
-  ok(schema.includes(heading), 'and the section ships the same heading');
+  ok(defaults.includes(sentence), `the field editor ships "${sentence.slice(0, 32)}..."`);
+  ok(schema.includes(sentence), 'and the section ships the same words');
+}
+
+/*
+  And neither of them promises twelve months of traffic history.
+
+  A listing has none: `traffic_trend` ships empty from the CSV importer and
+  the refresh's select is point-in-time, so the listing page's own panel reads
+  "Not recorded". Buying it is measured rather than assumed - 11 units a row
+  for `date,org_traffic` against the free ahrefs.com target, so 143 units for
+  one domain's thirteen monthly rows and 1.74 million for 12,190 listings,
+  against a two million unit monthly allowance.
+
+  Phrased as an absence because that is what it is: the claim has to stay out,
+  and a check that something is missing is the only kind that says so.
+*/
+for (const [label, text] of [
+  ['the field editor', defaults],
+  ['the section', schema],
+] as const) {
+  const claim = /(twelve months|12 months) of organic traffic|organic traffic over (twelve|12) months/i;
+  ok(!claim.test(text), `${label} does not promise traffic history a listing has not got`);
 }
 
 console.log(`\n${checks - failures}/${checks} checks passed`);
