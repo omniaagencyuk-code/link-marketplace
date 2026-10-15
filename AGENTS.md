@@ -253,6 +253,36 @@ difference from everything else here: the table holds which suppliers an
 agency uses and what they pay them, and an ambient grant over that is a
 standing invitation to price against them.
 
+## The header and footer menus
+
+Three lists an administrator edits in /admin/menus: the header signed out,
+the header signed in, and the footer. They were arrays in
+`src/lib/config/navigation.ts`, and those arrays are still what the site
+renders when nothing is stored.
+
+- **No row means the code.** `navigation_menus` holds a row only for a menu
+  somebody has saved, so the table is empty on the day it ships and an empty
+  table is the navigation that was already there. Reset is a `delete`, never
+  a write of today's defaults - a menu frozen at this release's footer is the
+  one that never gets the page added in the next one. Same arrangement as
+  `PageSections` and its fallback.
+- **One shape for all three.** A header dropdown and a footer column are both
+  a labelled node with children, so there is one type, one validator and one
+  editor. What differs is only the drawing, and that lives in the components.
+  One level of nesting: neither a dropdown nor a column has anywhere to put a
+  grandchild.
+- **It is the one internal-looking table that anybody may read.** A menu is
+  the navigation printed into every public page, and a header a signed-out
+  visitor could not read would be a header they could not see. Writing is
+  admin-only, which is the half that matters: these links go into everybody's
+  markup, so `safeHref` in `src/lib/navigation/menus.ts` keeps a path, an
+  http(s) URL, a `mailto:` or a `tel:` and drops the rest - on the way out as
+  well as in, because a row can predate a rule.
+- **The components take the menu as a prop.** A header that imported
+  `mainNav` would render perfectly and ignore every edit, and nothing in a
+  type system catches that, which is why `verify:menus` asserts the import is
+  absent.
+
 ## Where it runs
 
 The functions run in `lhr1` and the database is in London. They have to match,
@@ -276,7 +306,7 @@ dashboard will not take effect while `vercel.json` names one.
 
 `npm run verify:all` runs every suite below and reports which failed rather
 than stopping at the first, and `.github/workflows/verify.yml` runs the same
-thing on every pull request, split into three: lint, types and build; the 26
+thing on every pull request, split into three: lint, types and build; the 30
 suites that need nothing; and the three that need a local Postgres. The list
 is read out of `package.json` by `scripts/run-verify.mjs`, so a suite added
 there is a suite CI runs - there is no second list to keep up to date.
@@ -294,6 +324,12 @@ own integration and nothing here should take that over.
   that read as statements of fact - "the nightly import is off by default" -
   because a checker cannot tell a wrong answer from a right one worded
   backwards. Keep it that way when adding one.
+- `npm run verify:menus` — the header and footer menus: where a menu item may
+  point, what survives being read back out of the column, and that the shipped
+  menus come through the validator unchanged. It also asserts that the header
+  and the footer take their menus as props rather than importing the arrays,
+  which is the one way this feature can be quietly inert. No API key, no
+  database, no network.
 - `npm run verify:import` — the CSV importer.
 - `npm run verify:enquiries` — what the pricing page's enquiry form accepts
   and refuses, and what survives the cleaning on the way to the column. No

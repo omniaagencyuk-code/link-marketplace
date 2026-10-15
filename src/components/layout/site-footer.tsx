@@ -2,9 +2,23 @@ import Link from 'next/link';
 import { Container } from './container';
 import { Logo } from './logo';
 import { brand } from '@/lib/config/brand';
-import { footerNav } from '@/lib/config/navigation';
+import { defaultMenu } from '@/lib/navigation/defaults';
+import type { MenuNode } from '@/lib/navigation/menus';
 
-export function SiteFooter() {
+/**
+ * The footer, drawn from a menu it is given.
+ *
+ * The columns arrive as a prop for the same reason the header's do: they are
+ * editable, and a component that imported `footerNav` directly would be a
+ * component no edit could reach. The default is that same array, so a caller
+ * with no menu to hand renders exactly what shipped.
+ *
+ * A column is a top-level item and its links are that item's children - one
+ * shape for the header and the footer, with the difference drawn here rather
+ * than stored. What a column has instead of a dropdown is a heading, and the
+ * heading is a link only when somebody gave it one.
+ */
+export function SiteFooter({ menu = defaultMenu('footer') }: { menu?: MenuNode[] } = {}) {
   const year = new Date().getFullYear();
 
   return (
@@ -32,20 +46,36 @@ export function SiteFooter() {
             </div>
           </div>
 
-          {footerNav.map((group) => (
-            <nav key={group.title} aria-label={group.title}>
+          {menu.map((group, groupIndex) => (
+            <nav key={`${groupIndex}-${group.label}`} aria-label={group.label}>
               <h2 className="text-[12px] font-semibold tracking-wide text-ink uppercase">
-                {group.title}
+                {/* A heading that was given a destination keeps it, which is
+                    what a one-link column looks like. Without one it is text,
+                    not an anchor to nowhere. */}
+                {group.href ? (
+                  <Link href={group.href} className="transition-colors hover:text-accent-700">
+                    {group.label}
+                  </Link>
+                ) : (
+                  group.label
+                )}
               </h2>
               <ul className="mt-4 space-y-2.5">
-                {group.items.map((item) => (
-                  <li key={`${group.title}-${item.href}-${item.label}`}>
-                    <Link
-                      href={item.href}
-                      className="text-[13px] text-muted transition-colors hover:text-ink"
-                    >
-                      {item.label}
-                    </Link>
+                {group.children.map((item, itemIndex) => (
+                  <li key={`${itemIndex}-${item.label}`}>
+                    {item.href ? (
+                      <Link
+                        href={item.href}
+                        className="text-[13px] text-muted transition-colors hover:text-ink"
+                      >
+                        {item.label}
+                      </Link>
+                    ) : (
+                      /* Half a row, left visible. An editor who typed a label
+                         and no link should see it in the footer and go back
+                         for the link, rather than wonder where it went. */
+                      <span className="text-[13px] text-muted-soft">{item.label}</span>
+                    )}
                   </li>
                 ))}
               </ul>
