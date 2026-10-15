@@ -90,6 +90,28 @@ export interface SectionProps {
   style: ResolvedStyle;
 }
 
+/**
+ * How wide a column of reading is, by the variant an editor chose.
+ *
+ * Here rather than beside either section that offers it, because two of them
+ * do now - Rich Text and Expandable Content - and a second copy of these
+ * three classes is a second answer to "what does wide mean", which drifts the
+ * first time one is tuned.
+ *
+ * `max-w-none` is full *content* width: the section's `Container` still holds
+ * the page's gutter, so "wide" is the width of the page rather than the width
+ * of the screen.
+ */
+export const READING_WIDTH: Record<string, string> = {
+  default: 'max-w-2xl',
+  narrow: 'max-w-xl',
+  wide: 'max-w-none',
+};
+
+/** The class for a chosen variant, falling back to the usual column. */
+export const readingWidth = (variant: string): string =>
+  READING_WIDTH[variant] ?? READING_WIDTH.default!;
+
 export const str = (values: SectionValues, key: string): string =>
   typeof values[key] === 'string' ? (values[key] as string) : '';
 

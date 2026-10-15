@@ -754,7 +754,13 @@ const COMPONENTS: ComponentDef[] = [
       'An introduction with the rest behind a link. Every word is in the page source, so search engines read all of it.',
     animatable: false,
     styling: { backgrounds: 'full' },
-    variants: [{ key: 'default', label: 'Standard' }],
+    // The same three Rich Text offers, worded the same way: an editor should
+    // learn "wide" once rather than once per section.
+    variants: [
+      { key: 'default', label: 'Standard', help: 'The usual reading column.' },
+      { key: 'narrow', label: 'Narrow article', help: 'Tighter measure, for long reading.' },
+      { key: 'wide', label: 'Wide', help: 'Full content width, for tables and wide images.' },
+    ],
     fields: [
       text('heading', 'Heading', { maxLength: 160 }),
       richtext('intro', 'Always visible', { rows: 8 }),
