@@ -19,6 +19,7 @@ import {
   MarketplaceDemoSection,
   MarketplacePreviewSection,
   MarketplaceSearchSection,
+  MarketplaceShowcaseSection,
   MarketplaceStatsSection,
   MetricCardsSection,
   NicheCategoriesSection,
@@ -32,6 +33,7 @@ import {
   ParrotViewSection,
   RelatedPagesSection,
   RichTextSection,
+  SeoMetricsSection,
   ServiceCardsSection,
   StatsSection,
   StepsSection,
@@ -83,6 +85,8 @@ const RENDERERS: Record<string, SectionRenderer> = {
   'agency-panel': AgencyPanelSection,
   editorial: EditorialSection,
   'metric-cards': MetricCardsSection,
+  'marketplace-showcase': MarketplaceShowcaseSection,
+  'seo-metrics': SeoMetricsSection,
 
   // niche landing pages - the blocks the gambling page is made of
   'niche-hero': NicheHeroSection,
@@ -167,6 +171,13 @@ const ANIMATABLE = new Set([
   // animating long-form reading is what makes a site feel like a template.
   'trust-stats', 'testimonials', 'marketplace-demo', 'old-vs-new',
   'service-cards', 'feature-list', 'agency-panel', 'metric-cards',
+  /*
+    Both showcases animate themselves, and `Reveal` on top of that is still
+    worth offering: it fades the section in as you reach it, and neither one
+    starts its own sequence until it is on screen anyway. Near the top of a
+    page `Reveal` declines to arm at all, so it cannot delay the paint.
+  */
+  'marketplace-showcase', 'seo-metrics',
   'marketplace-preview', 'marketplace-stats', 'niche-categories', 'marketplace-search',
   'feature-cards', 'stats', 'checklist', 'comparison', 'icon-grid', 'trust-bar', 'steps',
   'parrot-says', 'parrot-checklist', 'parrot-view', 'parrot-cta', 'parrot-flight-path',

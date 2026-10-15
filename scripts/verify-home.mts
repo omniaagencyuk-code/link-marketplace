@@ -469,6 +469,75 @@ ok(
   'and there are publishers outside that niche for the filter to remove',
 );
 
+/* ------------------------------------------------------------------------ */
+/* 6. Both homepages, not one                                                */
+/* ------------------------------------------------------------------------ */
+
+/*
+  This is the check that would have saved a day.
+
+  The route asks `PageSections` for rows and renders `LegacyHomePage` only
+  when there are none. The live site has rows, so the composition in
+  `page.tsx` is not what anybody sees - and a redesign built entirely in it
+  shipped, passed every test, went green in CI and changed nothing.
+
+  Nothing about that was detectable from here: rows are data, this is code,
+  and a clone has no database. What *is* detectable is the asymmetry - a band
+  that exists on one path and not the other. So every showpiece the fallback
+  draws has to be reachable from the builder too, which is the thing that was
+  actually missing.
+*/
+
+const builder = read('src/components/cms/sections/home.tsx');
+const schema = read('src/lib/cms/components/schema.ts');
+const renderers = read('src/lib/cms/components/render.tsx');
+
+/** The components a built homepage can be given, on both halves of the registry. */
+for (const key of ['marketplace-showcase', 'seo-metrics']) {
+  ok(schema.includes(`key: '${key}'`), `the editor can add a ${key} section`);
+  ok(renderers.includes(`'${key}':`), `and the public site knows how to draw it`);
+}
+
+/*
+  The two animated panels, reachable from both paths.
+
+  Named by their import rather than by their markup: the two compositions
+  around them differ and should be allowed to, but a panel that only one of
+  them can render is a band the live page cannot have.
+*/
+const SHOWPIECES: [string, string][] = [
+  ['MarketplaceShowcase', 'src/components/home/showcase-section.tsx'],
+  ['MetricsShowcase', 'src/components/home/seo-metrics-section.tsx'],
+];
+for (const [component, fallbackFile] of SHOWPIECES) {
+  /*
+    `<Component`, not the bare name.
+
+    The first version looked for the word, and passed when the builder's
+    section had stopped rendering the panel entirely - because the doc comment
+    above it still mentioned the component by name. A check a comment can
+    satisfy is a check of the comments.
+  */
+  const drawn = new RegExp(`<${component}[\\s/>]`);
+  ok(drawn.test(read(fallbackFile)), `the fallback homepage draws ${component}`);
+  ok(drawn.test(builder), `and a built homepage can draw ${component} too`);
+}
+
+/*
+  And the copy is the same copy. The fallback reads `showcase.*` from
+  `page_content`; a section carries its own values and falls back to the
+  component's defaults. Two sets of defaults that drift are two homepages
+  saying different things, so the headings are checked against each other
+  rather than assumed.
+*/
+for (const heading of [
+  'Find the Right Websites. Without the Guesswork.',
+  'Judge a Website on Measurements, Not on a Sales Email',
+]) {
+  ok(defaults.includes(heading), `the field editor ships "${heading.slice(0, 32)}..."`);
+  ok(schema.includes(heading), 'and the section ships the same heading');
+}
+
 console.log(`\n${checks - failures}/${checks} checks passed`);
 if (failures > 0) {
   console.error(`${failures} failed`);
