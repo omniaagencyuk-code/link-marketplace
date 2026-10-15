@@ -2,6 +2,7 @@ import { getAdminScopedClient } from '@/lib/supabase/server';
 import { isSupabaseEnabled } from '@/lib/supabase/config';
 import { AHREFS_MAX_BATCH, isAhrefsConfigured } from '@/lib/ahrefs/config';
 import { AhrefsError, batchAnalysis, subscriptionInfo, type AhrefsUsage } from '@/lib/ahrefs/client';
+import { appendReading, trendChange } from '@/lib/ahrefs/trend';
 import { outranksCountrySource } from '@/lib/types/country';
 import type { CountrySource } from '@/lib/types';
 
@@ -718,7 +719,8 @@ export async function runRefresh(options: RunOptions = {}): Promise<RunOutcome> 
     let batches = 0;
     let units = 0;
     let estimated = 0;
-    const now = new Date().toISOString();
+    const takenAt = new Date();
+    const now = takenAt.toISOString();
 
     /*
       The denominator, written before the first batch.
@@ -799,21 +801,34 @@ export async function runRefresh(options: RunOptions = {}): Promise<RunOutcome> 
         that market in the first place, for every listing whose country was not
         chosen by a person. `country_source` is what keeps those apart.
       */
+      /*
+        The series comes back on this query rather than on one of its own.
+
+        It is the same hundred ids, already being read for the country, so
+        carrying two more columns is free where a second round trip per batch
+        would not be - and this is the loop that was already the reason a
+        whole-inventory run could not finish in one invocation.
+      */
       const { data: countryRows } = await supabase
         .from('websites')
-        .select('id, country_code, country_source')
+        .select('id, country_code, country_source, traffic_trend, traffic_trend_month')
         .in(
           'id',
           slice.map((entry) => entry.id),
         );
-      const countryById = new Map(
+      const rowsById = new Map(
         (
           (countryRows ?? []) as {
             id: string;
             country_code: string | null;
             country_source: CountrySource | null;
+            traffic_trend: number[] | null;
+            traffic_trend_month: string | null;
           }[]
-        ).map((row) => [
+        ).map((row) => [row.id, row]),
+      );
+      const countryById = new Map(
+        [...rowsById.values()].map((row) => [
           row.id,
           { code: row.country_code ?? undefined, source: row.country_source ?? undefined },
         ]),
@@ -872,6 +887,7 @@ export async function runRefresh(options: RunOptions = {}): Promise<RunOutcome> 
                   : { organic_keywords: metrics.organicKeywords }),
                 last_ahrefs_refresh_at: now,
                 ...audiencePatch(metrics, countryById.get(entry.id)),
+                ...trendPatch(rowsById.get(entry.id), metrics.organicTraffic, takenAt),
               })
               .eq('id', entry.id);
 
@@ -983,6 +999,48 @@ async function readUsage(): Promise<AhrefsUsage | null> {
  * a measurement rather than on a default. The country a person chose is never
  * touched; see `outranksCountrySource`.
  */
+/**
+ * One more monthly reading on a listing's traffic series.
+ *
+ * The reading is free: `org_traffic` is already on the batch this refresh
+ * just paid for, and until now it was written to `organic_traffic` and
+ * discarded. Buying the same history from `site-explorer/metrics-history`
+ * was measured at 143 units a domain, which is 1.74 million units for the
+ * inventory against a two million unit monthly allowance - see the note on
+ * `src/lib/ahrefs/trend.ts`.
+ *
+ * Nothing is written when Ahrefs gave no traffic reading. A refresh that
+ * could not measure the site must not record a zero, which is the same rule
+ * the referring domain and keyword columns follow two lines up: a reading
+ * nobody took is not a reading of zero, and on a chart it is a cliff.
+ *
+ * `traffic_change_pct` is written beside the series because the panel needs
+ * both - `hasTrend` wants a series *and* a figure - so a series written
+ * without it would still read "Not recorded". It is null until there are two
+ * readings, which is honest: one reading is not a change.
+ */
+export function trendPatch(
+  row: { traffic_trend: number[] | null; traffic_trend_month: string | null } | undefined,
+  traffic: number | null | undefined,
+  takenAt: Date,
+): Record<string, unknown> {
+  if (traffic == null) return {};
+
+  const { trend, month } = appendReading(
+    row?.traffic_trend ?? [],
+    row?.traffic_trend_month ?? null,
+    traffic,
+    takenAt,
+  );
+  const change = trendChange(trend);
+
+  return {
+    traffic_trend: trend,
+    traffic_trend_month: month,
+    traffic_change_pct: change?.pct ?? null,
+  };
+}
+
 export function audiencePatch(
   metrics: { organicTraffic: number; topCountries: { country: string; traffic: number }[] },
   held: { code?: string; source?: CountrySource } | undefined,

@@ -26,6 +26,16 @@ export function WebsiteMetrics({ website }: { website: Website }) {
   const change = metrics.trafficChangePct;
   const hasTrend = metrics.trafficTrend.length > 0 && typeof change === 'number';
   const positive = (change ?? 0) >= 0;
+  /*
+    What the series actually covers.
+
+    Readings rather than months: the refresh records one a month, but a
+    listing nobody refreshed in a given month has no reading for it, and the
+    array cannot say which. "11 monthly readings" is true either way, where
+    "the last 11 months" would not be.
+  */
+  const months = metrics.trafficTrend.length;
+  const span = `${months} monthly ${months === 1 ? 'reading' : 'readings'}`;
 
   return (
     <dl className="grid grid-cols-2 gap-px overflow-hidden rounded-[var(--radius-card)] border border-line bg-line shadow-[var(--shadow-card)] sm:grid-cols-3 lg:grid-cols-5">
@@ -71,15 +81,17 @@ export function WebsiteMetrics({ website }: { website: Website }) {
                 height={30}
                 stroke={positive ? 'var(--color-accent-500)' : 'var(--color-negative)'}
                 /*
-                  The line and the figure beside it are two different periods,
-                  and saying so is the whole fix. `trafficTrend` is twelve
-                  monthly points; `trafficChangePct` compares the last of them
-                  with the sixth, so it is a six-month change. The caption
-                  underneath read "Last 6 months" while this read "the last 12
-                  months" - each was right about one of them and wrong about
-                  the other, and a reader got whichever they looked at.
+                  The span is counted, not assumed.
+
+                  This said "the last 12 months" while the caption underneath
+                  said "Last 6 months" - each right about one of the two things
+                  in the cell and wrong about the other. Now that the refresh
+                  builds the series a reading at a time, a listing holds
+                  however many monthly readings it has been refreshed for, so
+                  both labels count the points rather than naming a period
+                  neither of them can know.
                 */
-                label={`Organic traffic over the last 12 months. Change over the last six months, ${formatPercent(change as number)}`}
+                label={`Organic traffic over ${span}. Change across that period, ${formatPercent(change as number)}`}
               />
               <span
                 className={`tabular inline-flex items-center text-[13px] font-semibold ${
@@ -94,9 +106,7 @@ export function WebsiteMetrics({ website }: { website: Website }) {
                 {formatPercent(change as number)}
               </span>
             </dd>
-            <p className="mt-1 text-[11px] text-muted">
-              12 months, change over 6
-            </p>
+            <p className="mt-1 text-[11px] text-muted">{span}</p>
           </>
         ) : (
           <>
