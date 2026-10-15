@@ -6,7 +6,7 @@ import { RichText, type RichTextValue } from '@/lib/cms/rich-text-render';
 import { Faq, type FaqItem } from '@/components/shared/faq';
 import { MonsteraLeaf, PalmFrond } from '@/components/shared/foliage';
 import { cn } from '@/lib/utils/cn';
-import { link as linkOf, rows, str, type SectionProps } from './shared';
+import { link as linkOf, readingWidth, rows, str, type SectionProps } from './shared';
 
 /**
  * The frontend half of the component registry.
@@ -37,12 +37,6 @@ export * from './home';
 
 // --------------------------------------------------------------- rich text
 
-const RICH_TEXT_WIDTH: Record<string, string> = {
-  default: 'max-w-2xl',
-  narrow: 'max-w-xl',
-  wide: 'max-w-none',
-};
-
 export function RichTextSection({ values, variant }: SectionProps) {
   const heading = str(values, 'heading');
   const body = values.body as RichTextValue | undefined;
@@ -51,7 +45,7 @@ export function RichTextSection({ values, variant }: SectionProps) {
   return (
     <section className="border-b border-line bg-white">
       <Container size="wide" className="py-12 lg:py-16">
-        <div className={cn('mx-auto', RICH_TEXT_WIDTH[variant] ?? RICH_TEXT_WIDTH.default)}>
+        <div className={cn('mx-auto', readingWidth(variant))}>
           {heading ? (
             <h2 className="text-[1.375rem] font-semibold tracking-tight text-ink sm:text-2xl">
               {heading}

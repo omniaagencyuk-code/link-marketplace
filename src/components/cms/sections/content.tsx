@@ -3,7 +3,7 @@ import { Container } from '@/components/layout/container';
 import { RichText, type RichTextValue } from '@/lib/cms/rich-text-render';
 import { TableScroll } from '@/components/ui/table-scroll';
 import { cn } from '@/lib/utils/cn';
-import { image as imageOf, link as linkOf, rows, str, type SectionProps } from './shared';
+import { image as imageOf, link as linkOf, readingWidth, rows, str, type SectionProps } from './shared';
 
 /**
  * Content sections: words, pictures, tables, and the long-form disclosure.
@@ -213,7 +213,7 @@ export function TableSection({ values }: SectionProps) {
  * disclosure, and browsers open it automatically when the reader uses
  * find-in-page on text inside it.
  */
-export function ExpandableSection({ values }: SectionProps) {
+export function ExpandableSection({ values, variant }: SectionProps) {
   const intro = values.intro as RichTextValue | undefined;
   const more = values.more as RichTextValue | undefined;
   if (!intro && !more) return null;
@@ -224,7 +224,12 @@ export function ExpandableSection({ values }: SectionProps) {
   return (
     <section className="border-b border-line bg-white">
       <Container size="wide" className="py-12 lg:py-16">
-        <div className="mx-auto max-w-2xl">
+        {/*
+          The same width choice Rich Text offers, from the same definition.
+          It was a fixed `max-w-2xl`, so a long disclosure holding a table or
+          a wide image had nowhere to put it.
+        */}
+        <div className={cn('mx-auto', readingWidth(variant))}>
           {heading ? (
             <h2 className="text-[1.375rem] font-semibold tracking-tight text-ink sm:text-2xl">
               {heading}
