@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { ExternalLink } from 'lucide-react';
 import { Table, TableWrap, Td, Th, Tr } from '@/components/ui/table';
-import { OrderStatusBadge } from '@/components/shared/status-badge';
+import { OrderStatusBadge, PaymentBadge } from '@/components/shared/status-badge';
 import { formatDate, formatPrice } from '@/lib/utils/format';
 import { linkTypeLabels } from '@/lib/utils/labels';
 import { acceptedNicheLabel } from '@/lib/config/accepted-niches';
@@ -98,7 +98,21 @@ export function OrdersTable({ orders, limit }: { orders: Order[]; limit?: number
                 {formatDate(order.placedAt)}
               </Td>
               <Td>
-                <OrderStatusBadge status={item.status} paymentStatus={order.paymentStatus} />
+                <div className="flex flex-col items-start gap-1">
+                  <OrderStatusBadge status={item.status} paymentStatus={order.paymentStatus} />
+                  {/*
+                    Beside the status, not folded into it. "Awaiting Content"
+                    answers where the work is; it says nothing about whether
+                    the customer's money arrived, which is the thing they
+                    came to this page to check.
+                  */}
+                  <PaymentBadge
+                    paymentStatus={order.paymentStatus}
+                    amount={formatPrice(order.chargedMinor ?? order.totalMinor, {
+                      currency: order.currency,
+                    })}
+                  />
+                </div>
               </Td>
               <Td className="tabular text-right text-[13px] font-semibold text-ink">
                 {formatPrice(item.priceMinor)}
