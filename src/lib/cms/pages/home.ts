@@ -416,7 +416,7 @@ export const defaults: PageValues = {
   showcase: {
     eyebrow: 'How you find them',
     heading: 'Find the Right Websites. Without the Guesswork.',
-    body: 'Every listing arrives with the figures you would otherwise go and look up one site at a time: domain rating, twelve months of organic traffic, referring domains, the countries its readers are in and what it already ranks for. Filter on them, compare what is left, and shortlist the publishers worth buying from.',
+    body: 'Every listing arrives with the figures you would otherwise go and look up one site at a time: domain rating, organic search traffic, referring domains, the countries its readers are in and what it already ranks for. Filter on them, compare what is left, and shortlist the publishers worth buying from.',
     steps: [
       {
         label: 'Choose a niche',
@@ -436,7 +436,7 @@ export const defaults: PageValues = {
       },
       {
         label: 'Read the real numbers',
-        body: 'Twelve months of organic traffic, where the readers actually are, and the terms the site already ranks for.',
+        body: 'The organic search traffic it really gets, where its readers actually are, and the terms it already ranks for.',
       },
       {
         label: 'Shortlist it',
@@ -451,9 +451,9 @@ export const defaults: PageValues = {
   seoMetrics: {
     eyebrow: 'What you are buying',
     heading: 'Judge a Website on Measurements, Not on a Sales Email',
-    body: 'A publisher telling you their site is authoritative is not evidence. These four are: what the site ranks for, how much search traffic it genuinely gets, how many other sites link to it, and which countries its readers are in. Every listing in the marketplace carries all four, with the date they were measured.',
+    body: 'A publisher telling you their site is authoritative is not evidence. These four are: what the site ranks for, how much search traffic it genuinely gets, how many other sites link to it, and which countries its readers are in. Every listing in the marketplace carries all four, measured by Ahrefs rather than quoted to us.',
     items: [
-      { label: 'Organic traffic over twelve months, not a single flattering month' },
+      { label: 'Organic search traffic, measured rather than quoted by the publisher' },
       { label: 'Domain rating, and the referring domains behind it' },
       { label: 'Traffic by country, so a link reaches the market you sell to' },
       { label: 'The keywords the site already ranks for' },

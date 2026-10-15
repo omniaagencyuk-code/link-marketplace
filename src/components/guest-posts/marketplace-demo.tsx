@@ -352,7 +352,7 @@ function DemoDetail({
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="text-[10px] font-semibold tracking-wide text-muted uppercase">
-            Organic traffic, 12 months
+            Organic traffic
           </p>
           <Sparkline values={listing.trend} width={132} height={30} filled className="mt-1" />
         </div>

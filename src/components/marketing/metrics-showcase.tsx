@@ -9,6 +9,22 @@ import { demoFeatured } from '@/lib/marketing/demo-data';
 /**
  * The four figures a buyer actually checks, drawn rather than listed.
  *
+ * ## What the line is not
+ *
+ * It is not a promise of twelve months of history on a listing. It said
+ * "12 months" until somebody read it against the product: `traffic_trend`
+ * ships empty from the CSV importer and the Ahrefs refresh never asks for
+ * history, so a real listing's Traffic Trend panel reads "Not recorded".
+ *
+ * Buying that history was measured rather than guessed at:
+ * `site-explorer/metrics-history` costs 11 units a row for `date,org_traffic`
+ * - `org_traffic` is a ten-unit column - so thirteen monthly rows is 143 units
+ * for one domain, and 12,190 active listings is 1.74 million units a pass
+ * against a two million unit monthly allowance. It is not a column we can add.
+ *
+ * So the line stays, as the illustration the caption beside it says it is, and
+ * the figure under it is the one every listing genuinely carries.
+ *
  * Shared by /guest-posts and the homepage, which is why it lives in
  * `marketing/` rather than under either of them. One copy of the drawing: the
  * traffic line, the counters and the country bars are the fiddly part, and two
@@ -87,7 +103,7 @@ function Panel({
   );
 }
 
-/** Twelve months of organic traffic, drawn as it comes into view. */
+/** Organic traffic, drawn as it comes into view. */
 function TrafficPanel({
   trend,
   live,
@@ -114,7 +130,7 @@ function TrafficPanel({
   const area = `${line} L${width},${height} L0,${height} Z`;
 
   return (
-    <Panel label="Organic traffic" hint="12 months">
+    <Panel label="Organic traffic" hint="Ahrefs">
       <p className="tabular mt-3 text-3xl font-semibold text-ink">
         <Counter to={trend[trend.length - 1]! * 1000} live={live} still={still} compact />
       </p>
@@ -127,7 +143,7 @@ function TrafficPanel({
         className="mt-4 h-[150px] w-full"
         preserveAspectRatio="none"
         role="img"
-        aria-label="A traffic line rising across twelve months"
+        aria-label="A traffic line rising over time"
       >
         <defs>
           <linearGradient id="gp-traffic-fill" x1="0" y1="0" x2="0" y2="1">

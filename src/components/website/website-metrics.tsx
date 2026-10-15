@@ -70,7 +70,16 @@ export function WebsiteMetrics({ website }: { website: Website }) {
                 width={92}
                 height={30}
                 stroke={positive ? 'var(--color-accent-500)' : 'var(--color-negative)'}
-                label={`Organic traffic over the last 12 months, ${formatPercent(change as number)}`}
+                /*
+                  The line and the figure beside it are two different periods,
+                  and saying so is the whole fix. `trafficTrend` is twelve
+                  monthly points; `trafficChangePct` compares the last of them
+                  with the sixth, so it is a six-month change. The caption
+                  underneath read "Last 6 months" while this read "the last 12
+                  months" - each was right about one of them and wrong about
+                  the other, and a reader got whichever they looked at.
+                */
+                label={`Organic traffic over the last 12 months. Change over the last six months, ${formatPercent(change as number)}`}
               />
               <span
                 className={`tabular inline-flex items-center text-[13px] font-semibold ${
@@ -85,7 +94,9 @@ export function WebsiteMetrics({ website }: { website: Website }) {
                 {formatPercent(change as number)}
               </span>
             </dd>
-            <p className="mt-1 text-[11px] text-muted">Last 6 months</p>
+            <p className="mt-1 text-[11px] text-muted">
+              12 months, change over 6
+            </p>
           </>
         ) : (
           <>
