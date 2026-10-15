@@ -6,6 +6,7 @@ import { mockStore } from './mock-store';
 import { mapOrder, type OrderRow } from '@/lib/supabase/mappers';
 import { promoService } from './promo-service';
 import { cleanCustomerReference } from '@/lib/orders/customer-reference';
+import { isPlaced } from '@/lib/orders/placed';
 import type { DraftOrderItem, Order, UserProfile } from '@/lib/types';
 
 /**
@@ -147,6 +148,50 @@ export interface AppliedPromo {
   discountMinor: number;
 }
 
+/**
+ * One basket line as a database row.
+ *
+ * Extracted because two paths write these now - a first checkout and a
+ * retried one - and a column added to one and not the other is a placement
+ * that loses its anchor text on the second attempt.
+ */
+function orderItemRow(line: PricedLine) {
+  return {
+    website_id: line.websiteId,
+    // Copied in rather than joined: `websites` is readable only while a
+    // listing is active, so a join would blank the domain on a customer's
+    // own order the day the publisher was archived.
+    website_domain: line.websiteDomain,
+    website_slug: line.websiteSlug,
+    service_type: line.serviceType,
+    topic: line.topic ?? null,
+    price_minor: line.priceMinor,
+    list_price_minor: line.listPriceMinor,
+    target_url: line.targetUrl,
+    anchor_text: line.anchorText,
+    preferred_landing_page: line.preferredLandingPage ?? null,
+    notes: line.notes ?? null,
+    status: 'draft',
+  };
+}
+
+/** The same line for the in-memory store, which speaks the app's own shape. */
+function orderItemFields(line: PricedLine) {
+  return {
+    websiteId: line.websiteId,
+    websiteDomain: line.websiteDomain,
+    websiteSlug: line.websiteSlug,
+    serviceType: line.serviceType,
+    topic: line.topic,
+    priceMinor: line.priceMinor,
+    listPriceMinor: line.listPriceMinor,
+    targetUrl: line.targetUrl,
+    anchorText: line.anchorText,
+    preferredLandingPage: line.preferredLandingPage,
+    notes: line.notes,
+  };
+}
+
 export async function createPendingOrder(
   user: UserProfile,
   pricing: PricingResult,
@@ -234,26 +279,9 @@ export async function createPendingOrder(
     throw new Error(`Could not create the order: ${orderError?.message ?? 'unknown error'}`);
   }
 
-  const { error: itemsError } = await supabase.from('order_items').insert(
-    pricing.lines.map((line) => ({
-      order_id: orderRow.id,
-      website_id: line.websiteId,
-      // Copied in rather than joined: `websites` is readable only while a
-      // listing is active, so a join would blank the domain on a customer's
-      // own order the day the publisher was archived.
-      website_domain: line.websiteDomain,
-      website_slug: line.websiteSlug,
-      service_type: line.serviceType,
-      topic: line.topic ?? null,
-      price_minor: line.priceMinor,
-      list_price_minor: line.listPriceMinor,
-      target_url: line.targetUrl,
-      anchor_text: line.anchorText,
-      preferred_landing_page: line.preferredLandingPage ?? null,
-      notes: line.notes ?? null,
-      status: 'draft',
-    })),
-  );
+  const { error: itemsError } = await supabase
+    .from('order_items')
+    .insert(pricing.lines.map((line) => ({ order_id: orderRow.id, ...orderItemRow(line) })));
 
   if (itemsError) {
     // An order with no lines would be charged for nothing. Remove it rather
@@ -264,6 +292,135 @@ export async function createPendingOrder(
 
   const { data } = await supabase.from('orders').select(ORDER_SELECT).eq('id', orderRow.id).single();
   return mapOrder(data as unknown as OrderRow);
+}
+
+/**
+ * The order a customer's next checkout attempt should rewrite, if there is
+ * one.
+ *
+ * An order row is written before the customer is sent to Stripe, so a
+ * checkout opened and abandoned leaves one behind. Three attempts at the
+ * same basket left three orders in the admin list, which is the complaint
+ * this answers: one open order per customer, rewritten, rather than a new
+ * row per click of Pay.
+ *
+ * `isPlaced` decides it, which is the same rule the orders page uses to
+ * separate what somebody bought from what they started - deliberately one
+ * copy, because the two answers must never disagree. An order it calls
+ * placed is somebody's purchase and is never rewritten.
+ *
+ * The session id comes back with it because the caller has to make the old
+ * checkout unpayable before pointing the order at a new one.
+ */
+export async function openOrderFor(
+  userId: string,
+): Promise<{ id: string; sessionId: string | null } | null> {
+  if (!isSupabaseEnabled()) {
+    const open = [...mockOrders.values()]
+      .filter((order) => order.userId === userId && !isPlaced(order))
+      .sort((a, b) => b.placedAt.localeCompare(a.placedAt))[0];
+    return open ? { id: open.id, sessionId: null } : null;
+  }
+
+  const supabase = await getServerClient();
+  const { data } = await supabase
+    .from('orders')
+    .select('id, status, payment_status, stripe_checkout_session_id')
+    .eq('user_id', userId)
+    .eq('status', 'draft')
+    .order('placed_at', { ascending: false })
+    .limit(5);
+
+  const open = (data ?? []).find((row) =>
+    !isPlaced({
+      status: row.status as Order['status'],
+      paymentStatus: row.payment_status as Order['paymentStatus'],
+    }),
+  );
+
+  if (!open) return null;
+  return {
+    id: open.id as string,
+    sessionId: (open.stripe_checkout_session_id as string | null) ?? null,
+  };
+}
+
+/**
+ * Point an open order at a new basket.
+ *
+ * Every line is replaced rather than merged: the basket is the whole of
+ * what is being bought, and a line left behind from a previous attempt
+ * would be a placement nobody asked for on an order somebody is about to
+ * pay. The prices are the re-read ones, so a listing that changed between
+ * attempts is charged at today's figure.
+ *
+ * The caller has already made the previous Stripe session unpayable. This
+ * clears the session id and puts the payment back to `unpaid` so that an
+ * order rewritten and then abandoned again does not keep claiming a
+ * checkout is in flight.
+ */
+export async function replaceOrderLines(
+  orderId: string,
+  pricing: PricingResult,
+  promo?: AppliedPromo,
+  customerReference?: string,
+): Promise<Order | null> {
+  const now = new Date().toISOString();
+
+  if (!isSupabaseEnabled()) {
+    const existing = mockOrders.get(orderId);
+    if (!existing) return null;
+    const updated: Order = {
+      ...existing,
+      customerReference: cleanCustomerReference(customerReference),
+      totalMinor: pricing.totalMinor,
+      ...(promo
+        ? { promoCode: promo.code, discountMinor: promo.discountMinor }
+        : { promoCode: undefined, discountMinor: undefined }),
+      items: pricing.lines.map((line, index) => ({
+        ...orderItemFields(line),
+        id: `itm_${Date.now().toString(36)}_${index}`,
+        orderId: existing.reference,
+        status: 'draft',
+        createdAt: now,
+        updatedAt: now,
+      })),
+      placedAt: now,
+      updatedAt: now,
+    };
+    mockOrders.set(orderId, updated);
+    return updated;
+  }
+
+  const supabase = await getServerClient();
+
+  const { error: clearError } = await supabase.from('order_items').delete().eq('order_id', orderId);
+  if (clearError) throw new Error(`Could not reuse the order: ${clearError.message}`);
+
+  const { error: itemsError } = await supabase
+    .from('order_items')
+    .insert(pricing.lines.map((line) => ({ order_id: orderId, ...orderItemRow(line) })));
+  if (itemsError) throw new Error(`Could not reuse the order: ${itemsError.message}`);
+
+  const { error: orderError } = await supabase
+    .from('orders')
+    .update({
+      customer_reference: cleanCustomerReference(customerReference) ?? null,
+      total_minor: pricing.totalMinor,
+      // Cleared as well as set: an attempt made with a code and then retried
+      // without one must not keep the discount.
+      promo_code_id: promo?.codeId ?? null,
+      promo_code: promo?.code ?? null,
+      discount_minor: promo?.discountMinor ?? null,
+      payment_status: 'unpaid',
+      stripe_checkout_session_id: null,
+      placed_at: now,
+    })
+    .eq('id', orderId);
+  if (orderError) throw new Error(`Could not reuse the order: ${orderError.message}`);
+
+  const { data } = await supabase.from('orders').select(ORDER_SELECT).eq('id', orderId).single();
+  return data ? mapOrder(data as unknown as OrderRow) : null;
 }
 
 /** Record which Stripe session is paying for an order. */
