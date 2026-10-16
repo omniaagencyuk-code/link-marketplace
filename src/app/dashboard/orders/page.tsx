@@ -8,7 +8,6 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { orderService, settingsService } from '@/lib/services';
 import { requireCustomerSession } from '@/lib/auth/customer-access';
-import { tierFor } from '@/lib/utils/pricing';
 import { splitOrders } from '@/lib/orders/placed';
 
 /*
@@ -47,7 +46,7 @@ export default async function OrdersPage() {
         }
       />
 
-      <DraftOrder tier={tierFor(user.plan)} />
+      <DraftOrder />
 
       <section className="mt-8" aria-labelledby="all-orders">
         <div className="mb-4 flex flex-wrap items-center gap-2">

@@ -19,10 +19,11 @@ import type { PageDef, PageValues } from '../types';
  *
  * Every word below is editable, which is why it is here. What is deliberately
  * NOT editable is any claim about a discount: there are no percentages, no
- * minimum spends and no named rates anywhere in these defaults, because
- * `profiles.plan` still decides what a buyer is actually charged at checkout
- * and a page promising a figure the pricing code does not apply is a figure
- * we would have to honour or retract.
+ * minimum spends and no named rates anywhere in these defaults. Every buyer
+ * pays the listed price - 0089 removed the plans - and the only discount is
+ * a promo code, which Stripe applies and reports back. A page promising a
+ * figure the pricing code does not apply is a figure we would have to
+ * honour or retract.
  */
 
 export const definition: PageDef = {

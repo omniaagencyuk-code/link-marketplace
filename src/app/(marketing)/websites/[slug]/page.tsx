@@ -8,7 +8,6 @@ import { OrderCard } from '@/components/website/order-card';
 import { RelatedWebsites } from '@/components/website/related-websites';
 import { websiteService } from '@/lib/services';
 import { requireCustomerSession } from '@/lib/auth/customer-access';
-import { tierFor } from '@/lib/utils/pricing';
 import { nicheName } from '@/lib/data/categories';
 import { countryName } from '@/lib/data/countries';
 import { formatPrice } from '@/lib/utils/format';
@@ -54,9 +53,15 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
 
 export default async function WebsiteDetailPage({ params }: PageProps) {
   const { slug } = await params;
-  // Second gate. proxy.ts already redirected signed-out requests; this makes
-  // the page safe on its own terms if the matcher is ever changed.
-  const viewer = await requireCustomerSession(`/websites/${slug}`);
+  /*
+    Second gate. proxy.ts already redirected signed-out requests; this makes
+    the page safe on its own terms if the matcher is ever changed.
+
+    The session itself is no longer wanted - it was read for `viewer.plan`,
+    and 0089 removed plans - but the call stays: what it does here is refuse
+    a stranger, and its return value was always incidental to that.
+  */
+  await requireCustomerSession(`/websites/${slug}`);
 
   const website = await websiteService.getBySlug(slug);
   if (!website || website.status === 'archived') notFound();
@@ -79,7 +84,7 @@ export default async function WebsiteDetailPage({ params }: PageProps) {
 
           <aside aria-label="Order this placement" className="lg:order-last">
             <div className="lg:sticky lg:top-20">
-              <OrderCard website={website} tier={tierFor(viewer.plan)} />
+              <OrderCard website={website} />
             </div>
           </aside>
         </div>

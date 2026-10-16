@@ -7,8 +7,6 @@ export interface UserProfile {
   company?: string;
   role: UserRole;
   avatarInitials: string;
-  /** Account plan, mirrors the pricing page tiers. */
-  plan: 'starter' | 'growth' | 'agency';
   createdAt: string;
   updatedAt: string;
 }

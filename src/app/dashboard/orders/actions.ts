@@ -23,7 +23,6 @@ import { getStripe } from '@/lib/stripe/client';
 import { isStripeEnabled } from '@/lib/stripe/config';
 import { linkTypeLabels } from '@/lib/utils/labels';
 import { acceptedNicheLabel } from '@/lib/config/accepted-niches';
-import { tierFor } from '@/lib/utils/pricing';
 import { siteUrl } from '@/lib/config/brand';
 import type Stripe from 'stripe';
 import type { DraftOrderItem, Order } from '@/lib/types';
@@ -78,7 +77,7 @@ export async function checkPromoCodeAction(
   }
 
   const settings = await settingsService.get();
-  const pricing = await priceBasket(items, tierFor(user.plan));
+  const pricing = await priceBasket(items);
   if (pricing.lines.length === 0) {
     return { ok: false, error: 'None of these placements can be ordered right now.' };
   }
@@ -194,7 +193,7 @@ export async function startCheckoutAction(
   const settings = await settingsService.get();
   // The buyer's own tier, read from their profile on the server. A basket
   // that asked for the agency rate would be a basket that could claim it.
-  const pricing = await priceBasket(items, tierFor(user.plan));
+  const pricing = await priceBasket(items);
 
   if (pricing.lines.length === 0) {
     return {

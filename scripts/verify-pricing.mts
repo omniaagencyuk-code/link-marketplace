@@ -346,37 +346,53 @@ console.log('\n--- which buyer is charged what ---');
   };
 
   /*
-    Nobody gets a plan discount. There are no plans - none can be signed up
-    to and none is charged for - and the billing page claiming "7% discount
-    applied automatically to every placement" was a sentence true of no
-    account. A promo code is the only discount there is.
+    Nobody gets a plan discount, and since 0089 there is no column that
+    could say otherwise. There were no plans to be on, nothing charged for
+    one, and the billing page's "7% discount applied automatically to every
+    placement" was true of no account. A promo code is the only discount,
+    and Stripe applies it.
 
-    The agency machinery below is deliberately still asserted: the rates are
-    still stored and still editable, so the day plans exist, restoring one
-    branch in `tierFor` is the whole change. What must not happen in the
-    meantime is a profile quietly buying at a different price from the one
-    the listing showed.
-  */
-  is('a starter account is standard', tierFor('starter'), 'standard');
-  is('growth is standard too', tierFor('growth'), 'standard');
-  is('and so is an account still marked agency', tierFor('agency'), 'standard');
-  is('an unknown plan is standard', tierFor(undefined), 'standard');
-  is('as is a plan nobody has heard of', tierFor('enterprise'), 'standard');
+    `tierFor` - the function that read a profile and answered - is gone with
+    the column. So the assertion is not about what it returns; it is that
+    **nothing asks for a tier at all**, and the default is the list price.
 
-  /*
-    The property rather than five examples of it: no value a profile can
-    hold produces the agency tier. A sixth plan added to the column one day
-    is charged the list price by default, which is the safe direction - the
-    other way is a customer charged less than the listing said without
-    anybody deciding to.
+    The agency machinery below is still asserted on purpose: the rates are
+    still stored per listing and per niche and still editable, so the day
+    plans exist, what has to be built is the plan rather than the pricing.
   */
+  is('asked for nothing, a buyer is standard', placementPrice(site, 'guest-post')!.agencyRate, false);
   is(
-    'no plan value reaches the agency rate',
-    ['starter', 'growth', 'agency', 'enterprise', '', undefined].every(
-      (plan) => tierFor(plan) === 'standard',
-    ),
-    true,
+    'and pays the list price for it',
+    placementPrice(site, 'guest-post')!.priceMinor,
+    29500,
   );
+
+  {
+    /*
+      The source, because this is the half a type cannot hold: a call site
+      that derived a tier from an account would compile perfectly and charge
+      somebody a different price from the one the listing showed. Anchored
+      to a call rather than the word, because the comment explaining the
+      removal names it.
+    */
+    const callsTier = /\btierFor\s*\(/;
+    const files = [
+      'src/lib/utils/pricing.ts',
+      'src/lib/services/checkout-service.ts',
+      'src/app/dashboard/orders/actions.ts',
+      'src/app/dashboard/orders/page.tsx',
+      'src/app/(marketing)/websites/[slug]/page.tsx',
+    ];
+    // Joined rather than compared as arrays: `is` is an `===`, so two empty
+    // arrays are two different objects and the check would never pass.
+    is(
+      'nothing derives a buyer tier from an account any more',
+      files
+        .filter((file) => callsTier.test(fs.readFileSync(path.join(process.cwd(), file), 'utf8')))
+        .join(', '),
+      '',
+    );
+  }
 
   is('a standard buyer pays the list price', placementPrice(site, 'guest-post')!.priceMinor, 29500);
   is('an agency pays the agency price', placementPrice(site, 'guest-post', null, 'agency')!.priceMinor, 27500);
