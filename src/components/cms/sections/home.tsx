@@ -43,6 +43,7 @@ import { RichText, type RichTextValue } from '@/lib/cms/rich-text-render';
 import { linkTypeLabels } from '@/lib/utils/labels';
 import { formatNumber, initialsFromName } from '@/lib/utils/format';
 import { cn } from '@/lib/utils/cn';
+import { signupFor } from '@/lib/marketplace/entry';
 import { link as linkOf, rows, str, type SectionProps } from './shared';
 
 /**
@@ -528,7 +529,7 @@ export function MarketplaceDemoSection({ values, variant, data }: SectionProps) 
 
             <div className="mt-8">
               <Button asChild variant="accent" size="lg">
-                <Link href={cta.href || '/marketplace'}>
+                <Link href={cta.href || signupFor()}>
                   {cta.label}
                   <ArrowRight className="h-4 w-4" aria-hidden="true" />
                 </Link>

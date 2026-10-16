@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
+import { signupFor } from '@/lib/marketplace/entry';
 import { Check } from 'lucide-react';
 import { Container } from '@/components/layout/container';
 import { Button } from '@/components/ui/button';
@@ -129,7 +130,7 @@ export default async function PricingPage() {
                 <a href="#enquiry">{content.text('hero', 'primaryCta')}</a>
               </Button>
               <Button asChild variant="outline" size="lg">
-                <Link href="/marketplace">{content.text('hero', 'secondaryCta')}</Link>
+                <Link href={signupFor()}>{content.text('hero', 'secondaryCta')}</Link>
               </Button>
             </div>
 

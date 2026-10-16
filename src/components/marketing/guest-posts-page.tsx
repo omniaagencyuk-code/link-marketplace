@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { signupFor } from '@/lib/marketplace/entry';
 import { ArrowRight, Check, FileEdit, Filter, PenTool, Timer, type LucideIcon } from 'lucide-react';
 import { Container } from '@/components/layout/container';
 import { Button } from '@/components/ui/button';
@@ -204,7 +205,7 @@ export function GuestPostsPage({
               <MarketplaceDemo />
               <p className="mt-3 text-center text-[12px] text-muted">
                 A demonstration of the marketplace, using example publishers.{' '}
-                <Link href="/marketplace" className="font-medium text-accent-700 hover:underline">
+                <Link href={signupFor()} className="font-medium text-accent-700 hover:underline">
                   Browse the real inventory
                 </Link>
                 .
@@ -309,7 +310,7 @@ export function GuestPostsPage({
                     ))}
                   </ul>
                   <Button asChild variant="accent" size="lg" className="mt-7">
-                    <Link href="/marketplace">
+                    <Link href={signupFor()}>
                       Unlock the Marketplace
                       <ArrowRight className="h-4 w-4" aria-hidden="true" />
                     </Link>

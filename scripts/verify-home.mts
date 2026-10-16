@@ -214,10 +214,20 @@ for (const filter of FILTERS) {
 /* ------------------------------------------------------------------------ */
 
 const nicheGrid = read('src/components/home/niche-grid.tsx');
-ok(nicheGrid.includes('href="/marketplace"'), 'the niche grid still links to the marketplace');
+/*
+  Through `signupFor`, which is where these two links point now.
+
+  The destination is unchanged - the inventory needs an account either way,
+  and the gate answered the old hrefs with a 307 to the same signup. What
+  changed is that the homepage no longer spends a redirect saying so, and the
+  niche a visitor picked is carried in the `next` rather than reconstructed.
+  The assertion is the same one it always was: this grid leads to the
+  marketplace, and each tile leads to its own filter.
+*/
+ok(nicheGrid.includes('href={signupFor()}'), 'the niche grid still leads to the marketplace');
 ok(
-  nicheGrid.includes('href={`/marketplace?niche=${slug}`}'),
-  'each niche still links to its own marketplace filter',
+  nicheGrid.includes('href={signupFor(`/marketplace?niche=${slug}`)}'),
+  'each niche still leads to its own marketplace filter',
 );
 ok(
   read('src/components/home/seo-editorial.tsx').includes('href={`#${article.id}`}'),

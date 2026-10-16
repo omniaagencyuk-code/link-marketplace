@@ -9,6 +9,7 @@
  */
 import { readFileSync, readdirSync } from 'node:fs';
 import { safeReturnPath, returnPathFor } from '../src/lib/auth/return-to';
+import { leadsToInventory, signupFor } from '../src/lib/marketplace/entry';
 import { spread, toSampleRows, toStats, MIN_LISTINGS_FOR_A_PAGE } from '../src/lib/services/niche-landing';
 import { NICHE_COPY } from '../src/lib/content/niche-guest-posts';
 import { websiteOverview } from '../src/lib/websites/overview';
@@ -87,6 +88,100 @@ console.log('\n--- the gate ---');
   for (const path of ['/marketplace/:path*', '/websites/:path*', '/dashboard/:path*', '/admin/:path*']) {
     yes(`the matcher covers ${path}`, matcher.includes(path));
   }
+}
+
+console.log('\n--- where a public link into the inventory points ---');
+{
+  /*
+    The gate is not in question here; what a public page spends getting to it
+    is. Every link in public markup that leads at the inventory went straight
+    at `/marketplace` and was answered with a 307, so the main button on the
+    homepage cost a round trip before it did anything.
+  */
+  yes('the marketplace leads at the inventory', leadsToInventory('/marketplace'));
+  yes('and so does a filtered one', leadsToInventory('/marketplace?niche=gambling'));
+  yes('and a listing', leadsToInventory('/websites/some-publisher'));
+  yes('and the index', leadsToInventory('/websites'));
+  is('a marketing page does not', leadsToInventory('/pricing'), false);
+  // `/marketplace-guide` is not `/marketplace`, and a prefix test would say
+  // it was.
+  is('nor a path that merely starts the same way', leadsToInventory('/marketplace-guide'), false);
+  // A browser reads this as a host. It starts with a slash and goes nowhere
+  // near our inventory.
+  is('nor a protocol-relative URL', leadsToInventory('//evil.example/marketplace'), false);
+  is('nor nothing at all', leadsToInventory(undefined), false);
+
+  is(
+    'a signup link carries where they were going',
+    signupFor('/marketplace'),
+    '/signup?next=%2Fmarketplace',
+  );
+  /*
+    Encoded, and this is the assertion that matters: unencoded, the `?` of
+    the target ends the `next` value, and the filter somebody chose is lost
+    on the way to the form.
+  */
+  is(
+    'and encodes a query so the filter survives it',
+    signupFor('/marketplace?niche=gambling'),
+    '/signup?next=%2Fmarketplace%3Fniche%3Dgambling',
+  );
+
+  // The round trip: what the form reads back is what the link set out with.
+  const next = new URL(signupFor('/marketplace?niche=gambling'), 'https://x.test').searchParams.get(
+    'next',
+  );
+  is('and the form reads it back whole', safeReturnPath(next), '/marketplace?niche=gambling');
+
+  /*
+    The sentence on the signup form that explains why the form is there at
+    all. It asked `next === '/marketplace'`, so every filtered link - which
+    is most of them - lost it.
+  */
+  const form = read('src/components/auth/auth-form.tsx');
+  yes('the signup form asks whether next leads at the inventory', /leadsToInventory\(next\)/.test(form));
+  yes('rather than comparing it to one path', !/next === '\/marketplace'/.test(form));
+
+  /*
+    The regression guard. These are the public files that link into the
+    inventory; a new `href="/marketplace"` in any of them is a round trip
+    nobody notices, because the page still works.
+  */
+  const linkers = [
+    'src/components/home/niche-grid.tsx',
+    'src/components/home/how-it-works-section.tsx',
+    'src/components/marketing/guest-posts-page.tsx',
+    'src/components/marketing/service-page.tsx',
+    'src/components/cms/page-sections.tsx',
+    'src/components/cms/sections/home.tsx',
+    'src/components/cms/sections/niche.tsx',
+    'src/app/(marketing)/pricing/page.tsx',
+  ];
+  for (const path of linkers) {
+    const source = read(path);
+    const name = path.split('/').at(-1);
+    yes(`${name} links through signupFor`, /signupFor\(/.test(source));
+    yes(`and holds no bare inventory href`, !/href=\{?["'`]\/marketplace/.test(source));
+  }
+
+  /*
+    The one exception, asserted rather than left to look like an oversight.
+    A GET form replaces the whole query string with its own fields, so an
+    action of `/signup?next=...` would submit the search and drop the
+    destination. Pointing at the gate instead, `signedOutRedirect` carries
+    the path and the query into `next` together.
+  */
+  const search = read('src/components/cms/sections/marketplace.tsx');
+  yes('the search form still posts at the gate', /action="\/marketplace" method="get"/.test(search));
+  yes('and says why', /GET form cannot/.test(search));
+
+  /*
+    Left alone for a different reason: these are drawn only where there is
+    already a session, so the gate they would be saving a trip to is one
+    their reader never meets.
+  */
+  const header = read('src/components/layout/site-header.tsx');
+  yes('the header search is drawn only for an account', /\{user && searchOpen \? \(/.test(header));
 }
 
 console.log('\n--- the inventory pages have no signed-out render ---');

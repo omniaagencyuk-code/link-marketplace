@@ -8,6 +8,7 @@ import { applyTokens, type TokenValues } from '@/lib/cms/tokens';
 import { neededBy } from '@/lib/cms/components/needs';
 import { websiteService } from '@/lib/services';
 import { categories } from '@/lib/data/categories';
+import { signupFor } from '@/lib/marketplace/entry';
 import { siteUrl } from '@/lib/config/brand';
 import type { PageConfig, SectionData } from './sections/shared';
 import type { SectionValues } from '@/lib/cms/sections';
@@ -309,7 +310,7 @@ async function gather(
           slug: category.slug as string,
           label: category.name,
           count: counts[category.slug] ?? 0,
-          href: `/marketplace?niche=${category.slug}`,
+          href: signupFor(`/marketplace?niche=${category.slug}`),
         }))
         .sort((a, b) => b.count - a.count)
     : undefined;

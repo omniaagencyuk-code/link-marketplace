@@ -10,6 +10,7 @@ import { MonsteraLeaf } from '@/components/shared/foliage';
 import { NicheBanner } from './niche-banner';
 import { RichText, type RichTextValue } from '@/lib/cms/rich-text-render';
 import { siteUrl } from '@/lib/config/brand';
+import { signupFor } from '@/lib/marketplace/entry';
 import type { ContentAccessors } from '@/lib/cms/resolve';
 import type { PreviewRow } from '@/lib/services/marketplace-preview';
 
@@ -225,7 +226,7 @@ export function ServicePage({
                   ))}
                 </ul>
                 <Button asChild variant="accent" size="lg" className="mt-7">
-                  <Link href="/marketplace">
+                  <Link href={signupFor()}>
                     Unlock the Marketplace
                     <ArrowRight className="h-4 w-4" aria-hidden="true" />
                   </Link>
