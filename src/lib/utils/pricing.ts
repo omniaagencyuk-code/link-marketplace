@@ -147,13 +147,33 @@ export interface PlacementPrice {
 /**
  * Which buyers get the agency rate.
  *
- * The plan already on the profile, so there is no second notion of who is an
- * agency to drift out of step with the one on the billing page.
+ * **Nobody, currently.** There are no plans: none can be signed up to, none
+ * is charged for, and the billing page that said "7% discount applied
+ * automatically to every placement" was a hardcoded sentence that was true
+ * of no account. The only discount is a promo code, which Stripe applies and
+ * reports back.
+ *
+ * So this returns `standard` whatever the profile says. It is a function
+ * rather than a deleted branch on purpose:
+ *
+ *   * `profiles.plan` still exists and some rows say `agency`. A function
+ *     that reads it and declines is the honest description of that; ripping
+ *     the column out would be a migration to undo the day plans exist.
+ *   * `agencyPriceMinor` is still stored per listing and per niche, still
+ *     editable in the admin, and still the thing a plan would charge. None
+ *     of that is lost, and none of it reaches a customer.
+ *   * One place decides. The order card, the basket and `priceBasket` all
+ *     call this, so a buyer cannot be shown one price and charged another -
+ *     which is the whole reason the tier is a parameter rather than a lookup
+ *     inside the pricing function.
+ *
+ * To bring plans back: restore the branch, and nothing else in the pricing
+ * path changes.
  */
 export type BuyerTier = 'standard' | 'agency';
 
-export function tierFor(plan: string | undefined): BuyerTier {
-  return plan === 'agency' ? 'agency' : 'standard';
+export function tierFor(_plan: string | undefined): BuyerTier {
+  return 'standard';
 }
 
 /** The price for this buyer: the agency one where there is one. */

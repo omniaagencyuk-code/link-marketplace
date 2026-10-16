@@ -345,10 +345,38 @@ console.log('\n--- which buyer is charged what ---');
     ],
   };
 
+  /*
+    Nobody gets a plan discount. There are no plans - none can be signed up
+    to and none is charged for - and the billing page claiming "7% discount
+    applied automatically to every placement" was a sentence true of no
+    account. A promo code is the only discount there is.
+
+    The agency machinery below is deliberately still asserted: the rates are
+    still stored and still editable, so the day plans exist, restoring one
+    branch in `tierFor` is the whole change. What must not happen in the
+    meantime is a profile quietly buying at a different price from the one
+    the listing showed.
+  */
   is('a starter account is standard', tierFor('starter'), 'standard');
   is('growth is standard too', tierFor('growth'), 'standard');
-  is('only agency is agency', tierFor('agency'), 'agency');
-  is('and an unknown plan is standard', tierFor(undefined), 'standard');
+  is('and so is an account still marked agency', tierFor('agency'), 'standard');
+  is('an unknown plan is standard', tierFor(undefined), 'standard');
+  is('as is a plan nobody has heard of', tierFor('enterprise'), 'standard');
+
+  /*
+    The property rather than five examples of it: no value a profile can
+    hold produces the agency tier. A sixth plan added to the column one day
+    is charged the list price by default, which is the safe direction - the
+    other way is a customer charged less than the listing said without
+    anybody deciding to.
+  */
+  is(
+    'no plan value reaches the agency rate',
+    ['starter', 'growth', 'agency', 'enterprise', '', undefined].every(
+      (plan) => tierFor(plan) === 'standard',
+    ),
+    true,
+  );
 
   is('a standard buyer pays the list price', placementPrice(site, 'guest-post')!.priceMinor, 29500);
   is('an agency pays the agency price', placementPrice(site, 'guest-post', null, 'agency')!.priceMinor, 27500);

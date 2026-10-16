@@ -186,10 +186,7 @@ export default async function DashboardPage() {
                 <dt className="text-muted">Account</dt>
                 <dd className="truncate font-medium text-ink">{user.company || user.fullName}</dd>
               </div>
-              <div className="flex items-center justify-between gap-2">
-                <dt className="text-muted">Plan</dt>
-                <dd className="font-medium text-ink capitalize">{user.plan ?? 'Starter'}</dd>
-              </div>
+
               <div className="flex items-center justify-between gap-2">
                 <dt className="text-muted">Orders placed</dt>
                 <dd className="tabular font-medium text-ink">{summary ? summary.ordersAll : '—'}</dd>
