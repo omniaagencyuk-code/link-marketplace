@@ -412,8 +412,11 @@ const readStats = cache(async () => {
 function inventoryClient() {
   const admin = getAdminClient();
   if (!admin) {
+    /* Both names, in the order `serviceRoleKey()` checks them: this project
+       is on the newer `sb_secret_...` key, and an error naming only the old
+       variable sends somebody looking for one that was never set. */
     throw new Error(
-      'The inventory is read on the service role since 0090, and SUPABASE_SERVICE_ROLE_KEY is not set.',
+      'The inventory is read on the service role since 0090, and neither SUPABASE_SECRET_KEY nor SUPABASE_SERVICE_ROLE_KEY is set.',
     );
   }
   return admin;
