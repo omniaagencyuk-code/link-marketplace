@@ -42,6 +42,7 @@ export const RESERVED_SLUGS = new Set([
   'how-it-works',
   'link-building',
   'link-building-agencies',
+  'link-building-planner',
   'login',
   'marketplace',
   'niche-edits',

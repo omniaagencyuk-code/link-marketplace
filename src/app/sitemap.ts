@@ -56,6 +56,9 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     { path: '/link-building-agencies', priority: 0.8, changeFrequency: 'monthly' },
     { path: '/how-it-works', priority: 0.7, changeFrequency: 'monthly' },
     { path: '/link-building-metrics', priority: 0.7, changeFrequency: 'monthly' },
+    /* The free planner. Indexable and worth indexing: it is the one page
+       here that offers something without asking for money for it. */
+    { path: '/link-building-planner', priority: 0.8, changeFrequency: 'monthly' },
     { path: '/pricing', priority: 0.7, changeFrequency: 'monthly' },
     { path: '/resources', priority: 0.7, changeFrequency: 'weekly' },
     { path: '/terms', priority: 0.3, changeFrequency: 'monthly' },
