@@ -1,22 +1,32 @@
 'use client';
 
 import Script from 'next/script';
-import { useEffect, useRef, useState } from 'react';
-import { ArrowUpRight, Mail, MessageCircle, Send, X } from 'lucide-react';
-import { usePathname } from 'next/navigation';
-import { Button } from '@/components/ui/button';
-import { Input, Textarea } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { supportChat } from '@/lib/config/support';
-import { brand } from '@/lib/config/brand';
-import { cn } from '@/lib/utils/cn';
 
 /**
- * Always-available support launcher.
+ * The live chat widget.
  *
- * With a hosted provider configured this only loads that provider's script and
- * lets their launcher take over. Otherwise it renders a small panel that hands
- * the message to email, so the control is never a dead end.
+ * Nothing of ours is drawn any more. Tawk.to's own launcher is the chat on
+ * this site, and this component exists only to put their snippet on the
+ * page - which is why it renders a script and no markup.
+ *
+ * ## Where the snippet ends up, and why that does not matter
+ *
+ * Tawk's instructions say to paste it before the closing `</body>`. Their
+ * code does not depend on that: it creates a script element and inserts it
+ * before the first `<script>` already in the document, wherever this one
+ * runs from. `lazyOnload` therefore costs the page nothing and the widget
+ * arrives a moment after the content it sits on top of, which is the right
+ * order for a thing nobody came here to see.
+ *
+ * ## The panel that used to be here
+ *
+ * There was a built-in launcher - a bubble, a message box and an email
+ * hand-off - that shipped so the site always had some way to reach support
+ * before a provider existed. One exists now, so it is gone rather than left
+ * behind a flag: two chat widgets that can both be switched on is a
+ * configuration mistake waiting to happen, and the one that would win is
+ * whichever somebody set last.
  */
 export function SupportChat() {
   const { provider } = supportChat;
@@ -45,124 +55,10 @@ export function SupportChat() {
     );
   }
 
-  return <BuiltInChat />;
-}
-
-function BuiltInChat() {
-  const [open, setOpen] = useState(false);
-  const [message, setMessage] = useState('');
-  const [email, setEmail] = useState('');
-  const pathname = usePathname();
-  const messageRef = useRef<HTMLTextAreaElement>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    messageRef.current?.focus();
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setOpen(false);
-    };
-    document.addEventListener('keydown', onKeyDown);
-    return () => document.removeEventListener('keydown', onKeyDown);
-  }, [open]);
-
-  function send(event: React.FormEvent) {
-    event.preventDefault();
-    // Hand off to email until a hosted chat provider is connected.
-    const subject = encodeURIComponent(`Question from ${brand.domain}`);
-    const body = encodeURIComponent(
-      `${message}\n\n---\nPage: ${pathname}\nReply to: ${email || 'not supplied'}`,
-    );
-    window.location.href = `mailto:${supportChat.email}?subject=${subject}&body=${body}`;
-    setOpen(false);
-    setMessage('');
-  }
-
-  return (
-    <div className="fixed right-4 bottom-4 z-50 flex flex-col items-end gap-3 sm:right-6 sm:bottom-6 print:hidden">
-      {open ? (
-        <div
-          role="dialog"
-          aria-label="Chat with support"
-          className="w-[min(22rem,calc(100vw-2rem))] overflow-hidden rounded-xl border border-line bg-white shadow-[var(--shadow-pop)]"
-        >
-          <div className="flex items-start justify-between gap-3 bg-navy-900 px-4 py-3.5 text-white">
-            <div>
-              <p className="text-[14px] font-semibold">Chat to us</p>
-              <p className="mt-0.5 text-[12px] text-white/70">{supportChat.responseTime}</p>
-            </div>
-            <button
-              type="button"
-              onClick={() => setOpen(false)}
-              aria-label="Close chat"
-              className="rounded-md p-1 text-white/70 transition-colors hover:bg-white/10 hover:text-white"
-            >
-              <X className="h-4 w-4" />
-            </button>
-          </div>
-
-          <form onSubmit={send} className="space-y-3 px-4 py-4">
-            <div>
-              <Label htmlFor="chat-message">How can we help?</Label>
-              <Textarea
-                id="chat-message"
-                ref={messageRef}
-                required
-                value={message}
-                onChange={(event) => setMessage(event.target.value)}
-                placeholder="Ask about a website, pricing or an order..."
-                className="mt-1.5 min-h-24"
-              />
-            </div>
-            <div>
-              <Label htmlFor="chat-email">Your email</Label>
-              <Input
-                id="chat-email"
-                type="email"
-                value={email}
-                onChange={(event) => setEmail(event.target.value)}
-                placeholder="you@company.com"
-                className="mt-1.5"
-              />
-            </div>
-            <Button type="submit" variant="accent" className="w-full">
-              <Send className="h-3.5 w-3.5" />
-              Send message
-            </Button>
-          </form>
-
-          <div className="border-t border-line bg-surface px-4 py-3">
-            <p className="text-[12px] text-muted">{supportChat.hours}</p>
-            <a
-              href={`mailto:${supportChat.email}`}
-              className="mt-1.5 inline-flex items-center gap-1.5 text-[12px] font-medium text-accent-700 hover:underline"
-            >
-              <Mail className="h-3 w-3" aria-hidden="true" />
-              {supportChat.email}
-              <ArrowUpRight className="h-3 w-3" aria-hidden="true" />
-            </a>
-          </div>
-        </div>
-      ) : null}
-
-      <button
-        type="button"
-        onClick={() => setOpen((value) => !value)}
-        aria-expanded={open}
-        aria-label={open ? 'Close chat' : 'Chat to us'}
-        className={cn(
-          'flex h-12 items-center gap-2 rounded-full bg-navy-900 pr-5 pl-4 text-white shadow-[var(--shadow-pop)] transition-transform hover:scale-[1.03] active:scale-100',
-          open && 'h-11 w-11 justify-center px-0',
-        )}
-      >
-        {open ? (
-          <X className="h-5 w-5" aria-hidden="true" />
-        ) : (
-          <>
-            <MessageCircle className="h-5 w-5 text-accent-400" aria-hidden="true" />
-            <span className="text-[14px] font-medium">Chat to us</span>
-          </>
-        )}
-      </button>
-    </div>
-  );
+  /*
+    A provider named with nothing to load. Silence rather than a fallback
+    widget: a chat launcher that opens a mail client is not the live chat
+    the page is promising, and somebody has to notice the ids are missing.
+  */
+  return null;
 }
