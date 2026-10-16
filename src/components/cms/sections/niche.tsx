@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { ArrowRight, BadgeCheck, Check, Coins, Gauge, Lock, ShoppingBag } from 'lucide-react';
 import { Container } from '@/components/layout/container';
 import { Button } from '@/components/ui/button';
+import { signupFor } from '@/lib/marketplace/entry';
 import { RedactedPreview } from '@/components/marketplace/redacted-preview';
 import { MonsteraLeaf } from '@/components/shared/foliage';
 import { NicheMascot } from '@/components/marketing/niche-mascot';
@@ -219,7 +220,7 @@ export function NichePreviewSection({ values, data }: SectionProps) {
             </p>
 
             <Button asChild variant="accent" size="lg" className="mt-6">
-              <Link href={cta.href || '/marketplace'}>
+              <Link href={cta.href || signupFor()}>
                 {cta.label}
                 <ArrowRight className="h-4 w-4" aria-hidden="true" />
               </Link>

@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { signupFor } from '@/lib/marketplace/entry';
 import {
   Bitcoin,
   Briefcase,
@@ -63,7 +64,7 @@ export function NicheGrid({ counts }: { counts: Partial<Record<NicheSlug, number
             </h2>
           </div>
           <Link
-            href="/marketplace"
+            href={signupFor()}
             className="text-[13px] font-medium text-accent-700 hover:underline"
           >
             See the whole marketplace
@@ -77,7 +78,7 @@ export function NicheGrid({ counts }: { counts: Partial<Record<NicheSlug, number
             return (
               <li key={slug}>
                 <Link
-                  href={`/marketplace?niche=${slug}`}
+                  href={signupFor(`/marketplace?niche=${slug}`)}
                   className="group flex h-full flex-col gap-3 rounded-[var(--radius-card)] border border-line bg-white p-4 shadow-[var(--shadow-card)] transition-all hover:-translate-y-0.5 hover:border-accent-300 hover:shadow-[var(--shadow-raised)]"
                 >
                   <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-accent-50 text-accent-700 transition-colors group-hover:bg-accent-600 group-hover:text-white">

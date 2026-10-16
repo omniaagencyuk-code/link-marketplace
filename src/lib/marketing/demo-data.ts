@@ -190,3 +190,116 @@ export const DEMO_FEATURED_ID = 'demo-1';
 
 export const demoFeatured = (): DemoListing =>
   DEMO_LISTINGS.find((listing) => listing.id === DEMO_FEATURED_ID) ?? DEMO_LISTINGS[0]!;
+
+// ------------------------------------------------------------ the planner demo
+
+/**
+ * The plan the Link Building Planner animation walks through.
+ *
+ * ## Why it reuses the publishers above
+ *
+ * Same reason the two marketplace animations share one set: a visitor who
+ * reads the homepage and then the planner page should meet the same invented
+ * publishers rather than two unrelated inventories. These rows plan links
+ * against `DEMO_LISTINGS`, so the DR and traffic the panel fills in on the
+ * lookup beat are the figures the marketplace animation showed for the same
+ * domain - which is also what the real lookup does, since it reads our own
+ * `websites` table and nothing else.
+ *
+ * ## The project is example.com
+ *
+ * Reserved by RFC 2606 like the `.example` domains above, so the site being
+ * planned for cannot be mistaken for a customer's, and nobody can register
+ * it and find themselves illustrated.
+ *
+ * ## The rows are a plan in progress, not an empty board
+ *
+ * Two paid and live, two still owed, and a fifth the sequence fills in from
+ * nothing. That shape is what makes the last beat true rather than
+ * decorative: when the new row goes live it is still unpaid, so the committed
+ * figure moves and the paid figure does not. "A link going live does not make
+ * it paid" is the sentence `reports.tsx` prints under the real figures, and an
+ * animation where going live moved money would teach the opposite.
+ */
+
+/** The statuses used here, with the names and colours a new project is seeded with. */
+export const DEMO_PLAN_STATUSES = {
+  planned: { name: 'Planned', colour: '#64748b' },
+  ordered: { name: 'Ordered', colour: '#2563eb' },
+  live: { name: 'Live', colour: '#059669' },
+} as const;
+
+export interface DemoPlanRow {
+  /** The listing this row plans a link on, by id. */
+  listingId: string;
+  domain: string;
+  source: string;
+  month: string;
+  priceMinor: number;
+  status: keyof typeof DEMO_PLAN_STATUSES;
+  paid: boolean;
+}
+
+export const DEMO_PLAN_PROJECT = 'example.com';
+
+/** The month the new row is planned into, and the date its metrics were measured. */
+export const DEMO_PLAN_MONTH = 'March';
+export const DEMO_PLAN_MEASURED = '12 Mar';
+
+/**
+ * The four rows already on the board, then the one the sequence builds.
+ *
+ * The third is last because it is the one every beat after the first is
+ * about; the panel draws it as an empty slot until the domain is typed, so
+ * no row arrives or leaves while the animation runs.
+ */
+export const DEMO_PLAN: DemoPlanRow[] = [
+  {
+    listingId: 'demo-2',
+    domain: 'theledgerweekly.example',
+    source: 'Direct',
+    month: 'February',
+    priceMinor: 24000,
+    status: 'live',
+    paid: true,
+  },
+  {
+    listingId: 'demo-4',
+    domain: 'claybrookhealth.example',
+    source: 'Outreach',
+    month: 'February',
+    priceMinor: 18000,
+    status: 'ordered',
+    paid: false,
+  },
+  {
+    listingId: 'demo-3',
+    domain: 'harbourtechreview.example',
+    source: 'Press Parrot',
+    month: 'March',
+    priceMinor: 28000,
+    status: 'live',
+    paid: true,
+  },
+  {
+    listingId: 'demo-5',
+    domain: 'wanderlistjournal.example',
+    source: 'Direct',
+    month: 'March',
+    priceMinor: 15000,
+    status: 'planned',
+    paid: false,
+  },
+  {
+    listingId: 'demo-1',
+    domain: 'northfieldfinance.example',
+    source: 'Press Parrot',
+    month: DEMO_PLAN_MONTH,
+    priceMinor: 32000,
+    status: 'live',
+    paid: false,
+  },
+];
+
+/** The row the sequence fills in: the last one, and the only one that changes. */
+export const DEMO_PLAN_NEW = DEMO_PLAN.length - 1;

@@ -319,6 +319,23 @@ export function MarketplaceSearchSection({ values }: SectionProps) {
             <p className="mt-3 text-[15px] leading-relaxed text-muted">{str(values, 'body')}</p>
           ) : null}
 
+          {/*
+            The one public link left pointing straight at the gate, and it is
+            left there on purpose.
+
+            Every other public link into the inventory goes through
+            `signupFor`, which saves a redirect. A GET form cannot: the
+            browser replaces the whole query string with the form's own
+            fields, so an action of `/signup?next=/marketplace` submits as
+            `/signup?q=finance` - the signup with no idea where they were
+            going, and the search thrown away.
+
+            Pointing at `/marketplace` instead, the gate does the work and
+            does it better than this markup could: `signedOutRedirect` carries
+            the path *and* the query into `next`, so somebody who searched for
+            "finance" signs up and arrives at that search. The redirect is the
+            feature here.
+          */}
           <form action="/marketplace" method="get" className="mt-7 flex flex-wrap gap-2.5">
             <div className="relative min-w-0 flex-1">
               <Search

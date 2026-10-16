@@ -16,6 +16,7 @@ import {
 import { isSupabaseEnabled } from '@/lib/supabase/config';
 import { isGoogleAuthEnabled } from '@/lib/auth/google';
 import { brand } from '@/lib/config/brand';
+import { leadsToInventory } from '@/lib/marketplace/entry';
 
 /**
  * Login and signup UI.
@@ -50,7 +51,7 @@ export function AuthForm({ mode, next }: { mode: 'login' | 'signup'; next?: stri
           : 'Access your account to find, order and track high-quality backlinks from trusted publishers.'}
       </p>
 
-      {next === '/marketplace' && isSignup ? (
+      {leadsToInventory(next) && isSignup ? (
         <p className="mt-4 rounded-lg border border-accent-500/30 bg-accent-50 px-3.5 py-2.5 text-[13px] text-accent-800">
           Your account unlocks the full marketplace straight away.
         </p>

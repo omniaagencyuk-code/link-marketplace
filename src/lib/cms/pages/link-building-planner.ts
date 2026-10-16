@@ -1,4 +1,5 @@
 import { serviceSections } from './service-page-schema';
+import { list, section, text, textarea } from '../fields';
 import type { PageDef, PageValues } from '../types';
 
 /**
@@ -36,12 +37,47 @@ import type { PageDef, PageValues } from '../types';
  * 5,247 listings against an inventory of 12,190.
  */
 
+/**
+ * The `preview` section, carrying the animation's captions.
+ *
+ * The shared schema's `preview` is a heading and a line over the redacted
+ * marketplace table. This page shows the planner being used instead, so the
+ * section keeps the same key - the band reads `preview` either way, and a
+ * page that had been edited before this changed keeps its heading - and gains
+ * the six captions beside the animation.
+ */
+const plannerBandSection = section(
+  'preview',
+  'The planner animation',
+  [
+    text('heading', 'Heading', { maxLength: 120 }),
+    textarea('body', 'Supporting copy', { rows: 3, maxLength: 400 }),
+    list(
+      'steps',
+      'Captions beside the animation',
+      [
+        text('label', 'Label', { maxLength: 60 }),
+        textarea('body', 'One line', { rows: 2, maxLength: 200 }),
+      ],
+      {
+        itemLabelKey: 'label',
+        maxItems: 6,
+        help:
+          'Six, in the order the animation runs: the plan, typing a domain, the metrics arriving, the month and price, marking it live, the totals. The animation highlights whichever one it is on, so re-ordering these without re-ordering the animation would highlight the wrong line.',
+      },
+    ),
+  ],
+  'The animated panel. The publishers in it are invented, on reserved .example domains, and the project is example.com - the panel says it is a demonstration on its face.',
+);
+
 export const definition: PageDef = {
   slug: 'link-building-planner',
   label: 'Link building planner',
   path: '/link-building-planner',
   description: 'The public page for the free Link Building Planner.',
-  sections: serviceSections(),
+  sections: serviceSections().map((item) =>
+    item.key === 'preview' ? plannerBandSection : item,
+  ),
 };
 
 export const defaults: PageValues = {
@@ -77,8 +113,34 @@ export const defaults: PageValues = {
   },
 
   preview: {
-    heading: 'The publishers behind the domain lookup',
-    body: 'Type a domain the marketplace already holds and the planner fills in its domain rating, traffic, keywords and referring domains, with the date they were measured. A domain we do not hold says so rather than guessing at it.',
+    heading: 'One row, start to finish',
+    body: 'A plan with four links in it, and a fifth being added: the domain typed in, the metrics we already hold arriving against it, the month and the price set, and the status moved to Live by hand. Watch the two figures under the table on the last beat - going live moves what you have committed, not what you have paid.',
+    steps: [
+      {
+        label: 'A row per link you plan',
+        body: 'From us, from another marketplace, or from a publisher you deal with directly. The source is yours to fill in.',
+      },
+      {
+        label: 'Type the domain',
+        body: 'That is the whole of adding a row. Everything else can wait until you know it.',
+      },
+      {
+        label: 'We fill in what we already hold',
+        body: 'Domain rating, traffic, keywords and referring domains for a domain the marketplace lists, with the date they were measured. A domain we do not hold says so rather than guessing.',
+      },
+      {
+        label: 'Set the month and the price',
+        body: 'Blank is not zero: a row you have not priced yet is worth nothing in a total rather than counting as free.',
+      },
+      {
+        label: 'You mark it live',
+        body: 'There is no link checking here and nothing watches your placements. Live means somebody pressed Live.',
+      },
+      {
+        label: 'Paid and committed stay apart',
+        body: 'Money that has left, and priced work still to be paid for. A link going live does not make it paid, so the two figures never add up into one.',
+      },
+    ],
   },
 
   body: {

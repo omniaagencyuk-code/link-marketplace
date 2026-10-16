@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { signupFor } from '@/lib/marketplace/entry';
 import { ArrowRight } from 'lucide-react';
 import { Container } from '@/components/layout/container';
 import { Button } from '@/components/ui/button';
@@ -82,7 +83,7 @@ export function JourneySteps({
             size="lg"
             className="text-white/80 hover:bg-white/10 hover:text-white"
           >
-            <Link href="/marketplace">Browse the marketplace</Link>
+            <Link href={signupFor()}>Browse the marketplace</Link>
           </Button>
         </div>
       </Container>
