@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import { Container } from '@/components/layout/container';
@@ -8,6 +9,7 @@ import { OrderCard } from '@/components/website/order-card';
 import { RelatedWebsites } from '@/components/website/related-websites';
 import { websiteService } from '@/lib/services';
 import { requireCustomerSession } from '@/lib/auth/customer-access';
+import { spendInventoryRows } from '@/lib/marketplace/budget';
 import { nicheName } from '@/lib/data/categories';
 import { countryName } from '@/lib/data/countries';
 import { formatPrice } from '@/lib/utils/format';
@@ -61,7 +63,38 @@ export default async function WebsiteDetailPage({ params }: PageProps) {
     and 0089 removed plans - but the call stays: what it does here is refuse
     a stranger, and its return value was always incidental to that.
   */
-  await requireCustomerSession(`/websites/${slug}`);
+  const viewer = await requireCustomerSession(`/websites/${slug}`);
+
+  /*
+    Five rows: this listing and the four beside it.
+
+    The same budget the marketplace page spends from, because this is the
+    other way to collect the inventory - one listing at a time, which is
+    slower per row and invisible if only the bulk screen were counted.
+
+    A refusal says so. It was a 404 for a paragraph: a page that cannot be
+    read is not a page that does not exist, and a customer who clicks a site
+    they saved last week and is told it is gone will believe us. The slug is
+    already in their address bar and they already have an account - there is
+    nothing left for a 404 to protect.
+  */
+  const budget = await spendInventoryRows(viewer.id, 5);
+  if (!budget.allowed) {
+    return (
+      <Container size="narrow" className="py-20 text-center">
+        <h1 className="text-[22px] font-semibold text-ink">This listing is taking a breather</h1>
+        <p className="mx-auto mt-3 max-w-md text-[14px] leading-relaxed text-muted">
+          {budget.message}
+        </p>
+        <p className="mt-5 text-[13px] text-muted">
+          <Link href="/dashboard/saved" className="font-medium text-accent-700 hover:underline">
+            Your saved sites
+          </Link>{' '}
+          and your orders are unaffected.
+        </p>
+      </Container>
+    );
+  }
 
   const website = await websiteService.getBySlug(slug);
   if (!website || website.status === 'archived') notFound();

@@ -457,17 +457,36 @@ check('clearing a country clears its source', cleared.country_code === null && c
 
 console.log('\n== the gate still holds with real data ==');
 psql("grant usage on schema public to anon, authenticated; grant select on all tables in schema public to anon, authenticated;");
-// The policy exposes active listings only, so the expected number is the
-// active count rather than everything inserted.
+/*
+  Both keys see nothing, and the service role sees the inventory.
+
+  This used to assert that `authenticated` saw exactly the active listings -
+  which was true, and was the hole 0090 closed: the publishable key carrying
+  that session ships in every page, so "a customer may read the active rows"
+  is also "anybody with a free account may download them, a thousand at a
+  time". The policy is gone and the application reads on the service role.
+
+  The shape of the assertion is deliberately kept: with real rows in the
+  table, ask each role what it can see. What changed is the expected answer
+  for one of them, and the third line is new - because "nobody can read it"
+  is only good news while the application still can.
+*/
 const activeCount = Number(psql("select count(*) from public.websites where status = 'active';"));
 const anonDomains = psql("set role anon; select count(*) from public.websites;");
 const authDomains = psql("set role authenticated; select count(*) from public.websites;");
+const serviceDomains = psql("set role service_role; select count(*) from public.websites;");
 check(`anon sees 0 websites (saw ${anonDomains})`, anonDomains === '0');
+check(`a signed-in customer sees 0 too (saw ${authDomains})`, authDomains === '0');
+/* Against what the table actually holds rather than against what this file
+   inserted: the constraint checks above leave rows behind too, and an
+   assertion that counts the wrong thing fails for the wrong reason. */
+psql('reset role;');
+const totalRows = psql('select count(*) from public.websites;');
 check(
-  `authenticated sees the ${activeCount} active listings (saw ${authDomains})`,
-  Number(authDomains) === activeCount,
+  `the service role still sees every row (${serviceDomains} of ${totalRows})`,
+  serviceDomains === totalRows && Number(totalRows) > 0,
 );
-check(`drafts and paused are hidden too (${inserted - activeCount} of ${inserted})`, activeCount < inserted);
+check(`and ${activeCount} of them are the active ones the marketplace sells`, activeCount < inserted);
 
 const anonPosts = psql("set role anon; select count(*) from public.posts;");
 const livePosts = seedPosts.filter((p) => p.status === 'published').length;

@@ -90,6 +90,102 @@ console.log('\n--- the gate ---');
   }
 }
 
+console.log('\n--- the inventory is read on the service role ---');
+{
+  /*
+    0090 dropped the policy that let a customer's token read `websites`,
+    because a policy that lets a browser read the table lets it read all of
+    the table - a thousand rows a request, thirteen requests for the lot.
+
+    What that moves into this file is a requirement the database used to
+    hold: every customer-facing read now has to say `status = 'active'`
+    itself. The policy was doing it, and two reads had been relying on it
+    without saying so - the listing page and the basket. A paused listing
+    appearing at its own URL would be a quiet consequence of a security fix,
+    which is the worst kind.
+  */
+  const repo = read('src/lib/services/supabase/website-repository.ts');
+
+  yes('the inventory has a client of its own', /function inventoryClient\(\)/.test(repo));
+  yes('and it is the service role', /const admin = getAdminClient\(\)/.test(repo));
+  // Falling back to the customer's client would render an empty marketplace,
+  // which looks like an inventory nobody has rather than a key nobody set.
+  yes('with no fallback to the customer', !/admin \?\? \(await getServerClient\(\)\)/.test(repo));
+
+  /*
+    One read still goes through the customer's client, and should: counts,
+    from a definer function anon has been able to call since 0006.
+  */
+  const serverReads = repo.match(/await getServerClient\(\)/g) ?? [];
+  is('only the counts are still read as the customer', serverReads.length, 1);
+  yes('and that read is marketplace_stats', /getServerClient\(\)[\s\S]{0,120}marketplace_stats/.test(repo));
+
+  /*
+    Every `from('websites')` in the file, checked for the filter the policy
+    used to apply. The admin reads are exempt and named: the admin area is
+    the one caller that has business seeing a paused listing.
+  */
+  const marker = "from('websites')";
+  const reads: { before: string; after: string }[] = [];
+  for (let at = repo.indexOf(marker); at !== -1; at = repo.indexOf(marker, at + 1)) {
+    /*
+      Each read ends at its own semicolon.
+
+      It was a fixed four hundred characters, which reached past the end of
+      one read and into the next - so deleting `status = 'active'` from the
+      listing page's read was covered by the filter on the read below it, and
+      this assertion went on passing. Found by mutating the thing it exists
+      to protect rather than by reading it, which is the only way that class
+      of hole is ever found.
+    */
+    const ends = repo.indexOf(';', at);
+    reads.push({
+      before: repo.slice(Math.max(0, at - 1400), at),
+      after: repo.slice(at, ends === -1 ? at + 420 : ends + 1),
+    });
+  }
+
+  /*
+    Which client the read uses decides whether it has to say `active`.
+
+    The admin area is the one caller with business seeing a paused listing -
+    it is where somebody pauses one - and it runs on the scoped client. Every
+    other read is a customer's, however it got here.
+
+    This first asked whether the function's *name* appeared after the call,
+    which classified `getDomainIndex` as customer-facing because its name is
+    written above the read rather than below it. The client is on the line
+    before, where a reader of this file would look for it.
+  */
+  const admin = (read: { before: string; after: string }) =>
+    /getAdminScopedClient\(\)|getAdminClient\(\)/.test(read.before.split('async ').at(-1) ?? '') ||
+    read.after.includes('WEBSITE_SELECT_ADMIN');
+  const writes = (read: { after: string }) => /\.update\(|\.insert\(|\.delete\(/.test(read.after);
+  const filtersActive = (read: { after: string }) => /status', 'active'/.test(read.after);
+
+  const unguarded = reads.filter((read) => !admin(read) && !writes(read) && !filtersActive(read));
+  is(
+    'every customer-facing read of websites filters to active',
+    unguarded.length === 0 ? 'none unguarded' : unguarded.map((r) => r.after.slice(0, 60)).join(' | '),
+    'none unguarded',
+  );
+
+  const budget = read('src/lib/marketplace/budget.ts');
+  yes('rows are spent against a budget', /spend_inventory_budget/.test(budget));
+  // Rows, not requests: a request is whatever page size somebody asks for.
+  yes('and the unit is rows', /p_rows: rows/.test(budget));
+  // The refusal must not teach somebody where the line is.
+  yes('the refusal quotes no figure', !/\d{3,}/.test(budget.split('message:')[1] ?? ''));
+  yes('and it fails open', /catch \{\n    return ALLOWED;/.test(budget));
+
+  const marketplace = read('src/app/(app)/marketplace/page.tsx');
+  yes('the marketplace spends before it reads', /spendInventoryRows\(user\.id, pageSize\)/.test(marketplace));
+  yes('and shows the refusal instead of an empty table', /budget\.message/.test(marketplace));
+
+  const listing = read('src/app/(marketing)/websites/[slug]/page.tsx');
+  yes('a listing page spends too', /spendInventoryRows\(viewer\.id/.test(listing));
+}
+
 console.log('\n--- where a public link into the inventory points ---');
 {
   /*

@@ -381,9 +381,47 @@ const readStats = cache(async () => {
   };
 });
 
+/**
+ * The client the inventory is read with.
+ *
+ * Every customer-facing read below used `getServerClient()` - the customer's
+ * own session, with row level security deciding what came back. 0090 took
+ * that decision away from row level security, because a policy that lets a
+ * browser read `websites` lets it read all of `websites`: the publishable key
+ * ships in the page, and PostgREST will serve a thousand rows a request to
+ * anybody holding it.
+ *
+ * So the inventory is read on the service role, from server code, and the two
+ * things the dropped policy was doing are done here instead:
+ *
+ *   * **`status = 'active'`.** Most of these reads already said so. Two did
+ *     not - the listing page and the basket - and relied on the policy to
+ *     hide a paused listing. Both say it now, and `verify:access` asserts
+ *     that every read in this file does.
+ *   * **"is there a session".** Still asked, twice, before any of this runs:
+ *     `proxy.ts` refuses an inventory path without one and each page asks
+ *     again with `requireCustomerSession`. What is gone is the third copy,
+ *     which was the only one a browser could talk to directly.
+ *
+ * It throws rather than falling back when the key is absent. The fallback
+ * would be the customer's client, which now reads nothing at all, so a
+ * missing key would render as a marketplace with no publishers in it - and an
+ * empty marketplace is indistinguishable from a sold-out one. A thrown error
+ * is at least a thing somebody can find.
+ */
+function inventoryClient() {
+  const admin = getAdminClient();
+  if (!admin) {
+    throw new Error(
+      'The inventory is read on the service role since 0090, and SUPABASE_SERVICE_ROLE_KEY is not set.',
+    );
+  }
+  return admin;
+}
+
 export const supabaseWebsiteRepository = {
   async getAll(): Promise<WebsiteListItem[]> {
-    const supabase = await getServerClient();
+    const supabase = inventoryClient();
 
     // Ordered by `id` as well as by rank. Domain ratings tie constantly - a
     // hundred listings share a DR of 40 - and paging by offset over an order
@@ -551,17 +589,20 @@ export const supabaseWebsiteRepository = {
   },
 
   async getBySlug(slug: string): Promise<Website | null> {
-    const supabase = await getServerClient();
+    const supabase = inventoryClient();
     const { data } = await supabase
       .from('websites')
       .select(WEBSITE_SELECT)
       .eq('slug', slug)
+      /* The policy used to say this. Without it, reading on the service role
+         would publish every paused and draft listing at its own URL. */
+      .eq('status', 'active')
       .maybeSingle();
     return data ? mapWebsite(data as unknown as WebsiteRow) : null;
   },
 
   async getSlugs(): Promise<string[]> {
-    const supabase = await getServerClient();
+    const supabase = inventoryClient();
     const { data } = await supabase.from('websites').select('slug').eq('status', 'active');
     return (data ?? []).map((row) => row.slug as string);
   },
@@ -582,7 +623,7 @@ export const supabaseWebsiteRepository = {
    * inventory grew.
    */
   async getRelated(current: Website, limit = 4): Promise<WebsiteListItem[]> {
-    const supabase = await getServerClient();
+    const supabase = inventoryClient();
 
     /*
       The niche, as a category id.
@@ -679,7 +720,7 @@ export const supabaseWebsiteRepository = {
     query: WebsiteQuery,
     topic?: string,
   ): Promise<PaginatedResult<WebsiteListItem>> {
-    const supabase = await getServerClient();
+    const supabase = inventoryClient();
     const page = Math.max(1, query.page ?? 1);
     const pageSize = Math.max(1, query.pageSize ?? 25);
 
@@ -736,7 +777,7 @@ export const supabaseWebsiteRepository = {
    * not holding. One call for all three, keyed by kind.
    */
   async facets(topic?: string): Promise<MarketplaceFacets> {
-    const supabase = await getServerClient();
+    const supabase = inventoryClient();
     const { data, error } = await supabase.rpc('marketplace_facets', {
       p_topic: topic ?? null,
     });
@@ -765,13 +806,20 @@ export const supabaseWebsiteRepository = {
 
   async getByIds(ids: string[]): Promise<WebsiteListItem[]> {
     if (ids.length === 0) return [];
-    const supabase = await getServerClient();
-    const { data } = await supabase.from('websites').select(WEBSITE_SELECT).in('id', ids);
+    const supabase = inventoryClient();
+    /* `.eq('status', 'active')` for the reason `getBySlug` has it: a listing
+       somebody saved last month and we paused last week is not for sale, and
+       the policy is no longer here to say so. */
+    const { data } = await supabase
+      .from('websites')
+      .select(WEBSITE_SELECT)
+      .in('id', ids)
+      .eq('status', 'active');
     return ((data as unknown as WebsiteRow[] | null) ?? []).map((row) => toListItem(mapWebsite(row)));
   },
 
   async getFeatured(limit = 6): Promise<WebsiteListItem[]> {
-    const supabase = await getServerClient();
+    const supabase = inventoryClient();
     const { data } = await supabase
       .from('websites')
       .select(WEBSITE_SELECT)
@@ -794,7 +842,7 @@ export const supabaseWebsiteRepository = {
    * have no listings simply absent, exactly as counting produced.
    */
   async countByNiche(): Promise<Record<NicheSlug, number>> {
-    const supabase = await getServerClient();
+    const supabase = inventoryClient();
 
     const { data, error } = await supabase.rpc('marketplace_niche_counts');
     if (error) throw new Error(`Failed to load the niche counts: ${error.message}`);
@@ -849,8 +897,10 @@ export const supabaseWebsiteRepository = {
    * niches in another, which is what `countByNiche` does too.
    */
   async listForNiche(niche: NicheSlug): Promise<WebsiteListItem[]> {
-    const admin = getAdminClient();
-    const supabase = admin ?? (await getServerClient());
+    /* Was `admin ?? the customer's client`. The fallback half of that reads
+       nothing since 0090, and these are the public niche pages - so it is the
+       service role or an error, not the service role or an empty page. */
+    const supabase = inventoryClient();
 
     const data = await readAllPages<WebsiteRow>('the listings in a niche', (from, to) =>
       supabase
@@ -868,8 +918,10 @@ export const supabaseWebsiteRepository = {
   },
 
   async getPublicPreview(limit = 6, niche?: NicheSlug): Promise<MarketplacePreview> {
-    const admin = getAdminClient();
-    const supabase = admin ?? (await getServerClient());
+    /* The service role, for the reason `listForNiche` has it. The rows it
+       reads never leave this function as rows: `toPreviewRows` masks them
+       before anything renders. */
+    const supabase = inventoryClient();
 
     /*
       A niche page asks the database for its sample and its counts.
