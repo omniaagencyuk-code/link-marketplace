@@ -89,6 +89,34 @@ console.log('\n--- the gate ---');
   }
 }
 
+console.log('\n--- the inventory pages have no signed-out render ---');
+{
+  /*
+    The gate decides what arrives. This decides what a page does if anything
+    ever gets past it.
+
+    The marketplace page read the session and rendered a public gateway for a
+    visitor without one - two hundred lines that had been unreachable since
+    the gate closed, and that disagreed with every assertion above it. What
+    replaces it is what /websites/[slug] has always done.
+  */
+  const marketplace = read('src/app/(app)/marketplace/page.tsx');
+  yes(
+    'the marketplace page requires a session',
+    /requireCustomerSession\('\/marketplace'\)/.test(marketplace),
+  );
+  yes('rather than reading one and branching', !/getCurrentUser\(/.test(marketplace));
+  // The masked preview is for the pages that are public. A copy here would be
+  // a second answer to "what does a stranger see", on the page that has none.
+  yes('and renders no redacted preview', !/RedactedPreview/.test(marketplace));
+
+  const listing = read('src/app/(marketing)/websites/[slug]/page.tsx');
+  yes('the listing page requires one too', /requireCustomerSession\(/.test(listing));
+
+  const layout = read('src/app/(app)/marketplace/layout.tsx');
+  yes('and the segment wears one chrome rather than choosing', !/SiteHeader/.test(layout));
+}
+
 console.log('\n--- crawl rules ---');
 {
   const robots = read('src/app/robots.ts');

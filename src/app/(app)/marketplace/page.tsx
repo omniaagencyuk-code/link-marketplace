@@ -1,144 +1,60 @@
 import { Suspense } from 'react';
 import type { Metadata } from 'next';
-import Link from 'next/link';
-import {
-  ArrowRight,
-  Filter,
-  Globe2,
-  Lock,
-  ShieldCheck,
-  SlidersHorizontal,
-  Timer,
-} from 'lucide-react';
-import { Container } from '@/components/layout/container';
-import { Button } from '@/components/ui/button';
 import { MarketplaceView } from '@/components/marketplace/marketplace-view';
 import { BulkPricingNote } from '@/components/marketplace/bulk-pricing-note';
 import { ProjectsPanel } from '@/components/marketplace/projects-panel';
-import { RedactedPreview } from '@/components/marketplace/redacted-preview';
-import { HandwrittenNote } from '@/components/shared/handwritten';
-import { getCurrentUser } from '@/lib/auth/customer-access';
+import { requireCustomerSession } from '@/lib/auth/customer-access';
 import { settingsService, websiteService } from '@/lib/services';
 import { gapService } from '@/lib/services/gap-service';
 import { parseFilters, toWebsiteQuery } from '@/lib/marketplace/filters';
 import { sortOptions } from '@/lib/utils/labels';
 import type { SortKey } from '@/lib/types';
-import { marketingStats } from '@/lib/config/marketing';
-import { brand, siteUrl } from '@/lib/config/brand';
 
 /**
- * The marketplace, and its front door.
+ * The marketplace. One render, for somebody with an account.
  *
- * One route, two renders. Signed out it is a public, indexable gateway that
- * explains the marketplace and sells the signup - with a preview whose rows
- * are redacted on the server, so no publisher is identifiable from the page.
- * Signed in it is the marketplace itself.
+ * ## What used to be here
  *
- * `proxy.ts` lets `/marketplace` through precisely because of the signed-out
- * half; everything below it (`/websites`, `/websites/[slug]`) is gated there.
+ * Two renders: this one, and a public gateway that explained the marketplace
+ * and sold the signup to anybody arriving without an account. Its comment
+ * said `proxy.ts` let `/marketplace` through "precisely because of the
+ * signed-out half".
+ *
+ * That stopped being true and the comment did not. `/marketplace` is an
+ * inventory path in `isInventoryPath`, so a request without a session is
+ * 307'd to /signup before this file runs - the gateway had been unreachable
+ * ever since, and the comment was the only thing still claiming otherwise.
+ *
+ * The gateway's job - being the public, indexable page that describes the
+ * inventory - belongs to /guest-posts and its niche pages now, and that
+ * decision is held in four places rather than one: the gate in `proxy.ts`,
+ * the segment's `robots` in the layout beside this file, `/marketplace`'s
+ * deliberate absence from the sitemap, and `verify:access`, which asserts
+ * all three. Deleting two hundred lines of unreachable page is the only one
+ * of the five that had not caught up.
+ *
+ * So this is not a feature being removed. It is the last copy of a decision
+ * already taken agreeing with the other four.
+ *
+ * ## The session is required rather than checked
+ *
+ * `requireCustomerSession`, as `/websites/[slug]` does it - the second of the
+ * two checks AGENTS.md describes, where the proxy is the first. A page that
+ * read the session and branched on it would be a page that renders something
+ * for a visitor the gate is there to stop, which is exactly what was left
+ * here to delete.
  */
 
-export const metadata: Metadata = {
-  title: 'Link building marketplace',
-  description:
-    'Search thousands of hand-vetted publishers by domain rating, organic traffic, niche, country and price. Create a free Press Parrot account to unlock the full marketplace.',
-  alternates: { canonical: '/marketplace' },
-  openGraph: {
-    title: `Link building marketplace | ${brand.name}`,
-    description:
-      'Thousands of vetted publishers, real SEO metrics and upfront pricing. Free account, no subscription.',
-    url: `${siteUrl}/marketplace`,
-  },
-};
+/*
+  A title and nothing else.
 
-const filterChips = [
-  'Domain Rating',
-  'Organic Traffic',
-  'Referring Domains',
-  'Country',
-  'Niche',
-  'Price',
-  'Turnaround',
-  'Link Type',
-];
-
-/**
- * The signed-out gateway's three selling points.
- *
- * A function rather than a constant because one of them quotes the size of
- * the marketplace, and that figure is counted per request. It used to be a
- * literal in the array - which is exactly how it came to say 5,247 against
- * an inventory of 12,190 and stayed that way.
- */
-const gatewayPoints = (inventory: number) => [
-  {
-    icon: ShieldCheck,
-    title: 'Every site vetted by hand',
-    body: 'We check traffic quality, outbound link patterns, indexation and editorial standards before a publisher is listed. Sites that fail are not listed at a lower price - they are not listed.',
-  },
-  {
-    icon: SlidersHorizontal,
-    title: 'Filter on the metrics that matter',
-    body: 'Domain rating, organic traffic, referring domains, country, language, niche, turnaround and price. Sort and stack them until the shortlist is exactly right.',
-  },
-  {
-    icon: Globe2,
-    title: 'Broad coverage, no filler',
-    body: `${marketingStats.nicheCount}+ niches and ${inventory.toLocaleString('en-GB')} websites across ${'50'}+ countries, including the hard niches most marketplaces quietly skip.`,
-  },
-  {
-    icon: Timer,
-    title: 'Upfront prices, real turnaround',
-    body: 'Each listing shows its own price and typical turnaround before you commit. No enquiry forms, no negotiation, no surprise invoice.',
-  },
-];
-
-/**
- * Filters worth carrying through a sign-up.
- *
- * A visitor arriving from a niche landing page hits this gateway with the
- * filter they chose already in the URL, and losing it at the sign-up form
- * would drop them into an unfiltered marketplace wondering where the gambling
- * sites went. Only keys the marketplace itself understands are carried, so
- * the round trip cannot be used to smuggle anything through.
- */
-const CARRIED_PARAMS = [
-  'q',
-  'topic',
-  'niche',
-  'country',
-  'audCountry',
-  'audShare',
-  'audTraffic',
-  'lang',
-  'service',
-  'attr',
-  'drMin',
-  'drMax',
-  'trMin',
-  'trMax',
-  'rdMin',
-  'rdMax',
-  'priceMin',
-  'priceMax',
-  'turnaround',
-  'verified',
-  'sort',
-  'view',
-  'size',
-];
-
-function marketplaceTarget(params: Record<string, string | string[] | undefined>): string {
-  const carried = new URLSearchParams();
-  for (const key of CARRIED_PARAMS) {
-    const value = params[key];
-    const single = Array.isArray(value) ? value[0] : value;
-    if (typeof single === 'string' && single !== '') carried.set(key, single);
-  }
-  const query = carried.toString();
-  return query ? `/marketplace?${query}` : '/marketplace';
-}
-
+  This carried a description, a canonical and an Open Graph block, written for
+  a page meant to be found in search. The segment's layout answers
+  `robots: { index: false, follow: false }` for everything under it, so there
+  is no search listing for any of it to describe - and metadata that implies
+  otherwise is the same drift as the comment above.
+*/
+export const metadata: Metadata = { title: 'Link building marketplace' };
 
 /**
  * The sort in the URL, if it is one the dropdown offers.
@@ -157,11 +73,10 @@ export default async function MarketplacePage({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  const user = await getCurrentUser();
+  const user = await requireCustomerSession('/marketplace');
 
   /*
-    The inventory figure, counted rather than advertised, for both halves of
-    this page.
+    The inventory figure, counted rather than advertised.
 
     It was `marketingStats.inventory` - a constant of 5,247 declared in the
     mock data file. Measured against the live marketplace it was wrong by
@@ -173,248 +88,92 @@ export default async function MarketplacePage({
     real number nearer nine hundred. That one was caught because it
     overstated; this one sat here understating for just as long.
 
-    `getStats` counts in the database and is memoised for the request, so the
-    signed-out hero and the signed-in heading share one read.
+    `getStats` counts in the database and is memoised for the request.
   */
   const stats = await websiteService.getStats();
   const inventory = stats.totalWebsites;
 
-  if (user) {
-    /*
-      Filtered in the database, not in the browser.
+  /*
+    Filtered in the database, not in the browser.
 
-      The URL is already where the filters live - `useMarketplaceFilters` has
-      always written them there - so the page can read them straight out of
-      `searchParams` and ask for the one page it needs. Reading them with the
-      same parser the browser writes with is the whole of why that parser moved
-      out of the hook: two readings of one URL is one filter's spelling away
-      from showing a customer a different list from the one their address bar
-      describes.
-    */
-    const params = new URLSearchParams();
-    for (const [key, value] of Object.entries(await searchParams)) {
-      const single = Array.isArray(value) ? value[0] : value;
-      if (typeof single === 'string' && single !== '') params.set(key, single);
-    }
-
-    const settings = await settingsService.get();
-    const filters = parseFilters(params);
-    const sort = sortFromParams(params);
-    const page = Math.max(1, Number(params.get('page') ?? '1') || 1);
-    const pageSize = Math.max(1, Number(params.get('size') ?? String(settings.defaultPageSize)) || settings.defaultPageSize);
-
-    const [result, facets] = await Promise.all([
-      websiteService.search(toWebsiteQuery(filters, sort, page, pageSize), filters.topic),
-      websiteService.facets(filters.topic),
-    ]);
-
-    const projects = user.id ? await gapService.projects(user.id, 5) : [];
-
-    return (
-      <div className="space-y-5">
-        {/*
-          The header and the projects panel share a row on a wide screen and
-          stack below it. Compact on purpose: this sits inside the customer
-          rail now, and a decorative band pushing the first publisher below
-          the fold is the opposite of what a marketplace is for.
-        */}
-        <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_26rem]">
-          <section className="relative flex flex-col justify-center overflow-hidden rounded-[var(--radius-card)] border border-accent-100 bg-accent-50/60 px-5 py-5 sm:px-6">
-            <div
-              aria-hidden="true"
-              className="pointer-events-none absolute -top-16 -right-10 h-48 w-48 rounded-full bg-accent-100/70 blur-3xl"
-            />
-            <div className="relative">
-              <h1 className="text-[26px] leading-tight font-semibold tracking-tight text-ink sm:text-[30px]">
-                Publisher Marketplace
-              </h1>
-              <p className="mt-1.5 max-w-xl text-[14px] leading-relaxed text-ink-soft">
-                Find high-quality websites and order backlinks from trusted publishers.
-              </p>
-              {inventory > 0 ? (
-                <p className="mt-3 text-[12px] text-muted">
-                  <strong className="tabular font-semibold text-ink">
-                    {inventory.toLocaleString('en-GB')}
-                  </strong>{' '}
-                  vetted websites, counted from the live marketplace.
-                </p>
-              ) : null}
-            </div>
-          </section>
-
-          <ProjectsPanel projects={projects} />
-        </div>
-
-        {/*
-          Outside the filters and the listings, between the header row and
-          the results. Anywhere inside `MarketplaceView` would put a
-          promotional line among the controls somebody is using to find a
-          publisher; here it is a sibling and the view is untouched.
-        */}
-        <BulkPricingNote />
-
-        <Suspense fallback={<MarketplaceSkeleton />}>
-          <MarketplaceView
-            result={result}
-            facets={facets}
-            defaultPageSize={settings.defaultPageSize}
-          />
-        </Suspense>
-      </div>
-    );
+    The URL is already where the filters live - `useMarketplaceFilters` has
+    always written them there - so the page can read them straight out of
+    `searchParams` and ask for the one page it needs. Reading them with the
+    same parser the browser writes with is the whole of why that parser moved
+    out of the hook: two readings of one URL is one filter's spelling away
+    from showing a customer a different list from the one their address bar
+    describes.
+  */
+  const params = new URLSearchParams();
+  for (const [key, value] of Object.entries(await searchParams)) {
+    const single = Array.isArray(value) ? value[0] : value;
+    if (typeof single === 'string' && single !== '') params.set(key, single);
   }
 
-  const preview = await websiteService.getPublicPreview(6);
+  const settings = await settingsService.get();
+  const filters = parseFilters(params);
+  const sort = sortFromParams(params);
+  const page = Math.max(1, Number(params.get('page') ?? '1') || 1);
+  const pageSize = Math.max(1, Number(params.get('size') ?? String(settings.defaultPageSize)) || settings.defaultPageSize);
 
-  // Where sign-up sends them back to: whatever they were already filtering by.
-  const next = encodeURIComponent(marketplaceTarget(await searchParams));
-  const signupHref = `/signup?next=${next}`;
-  const loginHref = `/login?next=${next}`;
+  const [result, facets] = await Promise.all([
+    websiteService.search(toWebsiteQuery(filters, sort, page, pageSize), filters.topic),
+    websiteService.facets(filters.topic),
+  ]);
+
+  const projects = user.id ? await gapService.projects(user.id, 5) : [];
 
   return (
-    <>
-      <section className="tropical-wash relative overflow-hidden border-b border-line bg-white">
-        <Container size="wide" className="relative py-12 lg:py-16">
-          <div className="grid items-start gap-10 lg:grid-cols-[minmax(0,1.05fr)_minmax(0,0.85fr)] lg:gap-14">
-            <div className="min-w-0">
-              <p className="inline-flex items-center gap-1.5 rounded-full border border-line-strong bg-white px-3 py-1 text-[11px] font-semibold tracking-[0.1em] text-accent-700 uppercase">
-                <Lock className="h-3 w-3" aria-hidden="true" />
-                Members only
-              </p>
-
-              <h1 className="mt-5 text-[2.25rem] leading-[1.06] font-semibold tracking-tight text-ink sm:text-5xl">
-                {inventory.toLocaleString('en-GB')} vetted websites.
-                <br />
-                <span className="text-accent-600">One marketplace.</span>
-              </h1>
-
-              <p className="mt-5 max-w-xl text-[16px] leading-relaxed text-muted lg:text-[17px]">
-                Search thousands of hand-vetted publishers using real SEO metrics, transparent
-                pricing and powerful filters.
-              </p>
-
-              <div className="mt-7 flex flex-wrap items-center gap-3">
-                <Button asChild variant="accent" size="lg">
-                  <Link href={signupHref}>
-                    Create Free Account
-                    <ArrowRight className="h-4 w-4" aria-hidden="true" />
-                  </Link>
-                </Button>
-                <Button asChild variant="outline" size="lg">
-                  <Link href={loginHref}>Log In</Link>
-                </Button>
-              </div>
-
-              <p className="mt-4 text-[13px] text-muted">
-                Free access. No subscription required.
-              </p>
-
-              <dl className="mt-9 grid max-w-lg grid-cols-3 gap-4 border-t border-line pt-6">
-                {[
-                  { value: inventory.toLocaleString('en-GB'), label: 'Vetted websites' },
-                  { value: `${marketingStats.nicheCount}+`, label: 'Niches' },
-                  { value: '50+', label: 'Countries' },
-                ].map((stat) => (
-                  <div key={stat.label}>
-                    <dt className="sr-only">{stat.label}</dt>
-                    <dd>
-                      <span className="block text-xl font-semibold tracking-tight text-ink">
-                        {stat.value}
-                      </span>
-                      <span className="mt-0.5 block text-[12px] text-muted">{stat.label}</span>
-                    </dd>
-                  </div>
-                ))}
-              </dl>
-            </div>
-
-            <div className="relative min-w-0">
-              <HandwrittenNote
-                arrow="none"
-                className="absolute -top-8 -left-1 hidden rotate-[-6deg] lg:block"
-              >
-                A peek behind the perch.
-              </HandwrittenNote>
-              <RedactedPreview
-                rows={preview.rows}
-                cta={{
-                  label: 'Unlock the Marketplace',
-                  href: signupHref,
-                  caption: 'Free account. No subscription required.',
-                }}
-              />
-            </div>
-          </div>
-        </Container>
-      </section>
-
-      <section className="border-b border-line bg-surface">
-        <Container size="wide" className="py-14 lg:py-20">
-          <div className="max-w-2xl">
-            <h2 className="text-2xl font-semibold tracking-tight text-ink sm:text-3xl">
-              What you get when you log in
-            </h2>
-            <p className="mt-3 text-[15px] leading-relaxed text-muted">
-              The listings themselves are the part an account unlocks. Everything else about how the
-              marketplace works is on this page.
+    <div className="space-y-5">
+      {/*
+        The header and the projects panel share a row on a wide screen and
+        stack below it. Compact on purpose: this sits inside the customer
+        rail now, and a decorative band pushing the first publisher below
+        the fold is the opposite of what a marketplace is for.
+      */}
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_26rem]">
+        <section className="relative flex flex-col justify-center overflow-hidden rounded-[var(--radius-card)] border border-accent-100 bg-accent-50/60 px-5 py-5 sm:px-6">
+          <div
+            aria-hidden="true"
+            className="pointer-events-none absolute -top-16 -right-10 h-48 w-48 rounded-full bg-accent-100/70 blur-3xl"
+          />
+          <div className="relative">
+            <h1 className="text-[26px] leading-tight font-semibold tracking-tight text-ink sm:text-[30px]">
+              Publisher Marketplace
+            </h1>
+            <p className="mt-1.5 max-w-xl text-[14px] leading-relaxed text-ink-soft">
+              Find high-quality websites and order backlinks from trusted publishers.
             </p>
+            {inventory > 0 ? (
+              <p className="mt-3 text-[12px] text-muted">
+                <strong className="tabular font-semibold text-ink">
+                  {inventory.toLocaleString('en-GB')}
+                </strong>{' '}
+                vetted websites, counted from the live marketplace.
+              </p>
+            ) : null}
           </div>
+        </section>
 
-          <div className="mt-10 grid gap-5 sm:grid-cols-2">
-            {gatewayPoints(inventory).map((point) => (
-              <div
-                key={point.title}
-                className="rounded-[var(--radius-card)] border border-line bg-white p-6 shadow-[var(--shadow-card)]"
-              >
-                <point.icon className="h-5 w-5 text-accent-600" aria-hidden="true" />
-                <h3 className="mt-4 text-[16px] font-semibold text-ink">{point.title}</h3>
-                <p className="mt-2 text-[14px] leading-relaxed text-muted">{point.body}</p>
-              </div>
-            ))}
-          </div>
+        <ProjectsPanel projects={projects} />
+      </div>
 
-          <div className="mt-10 rounded-[var(--radius-card)] border border-line bg-white p-6 shadow-[var(--shadow-card)]">
-            <h3 className="flex items-center gap-2 text-[15px] font-semibold text-ink">
-              <Filter className="h-4 w-4 text-accent-600" aria-hidden="true" />
-              Filters available inside the marketplace
-            </h3>
-            <ul className="mt-4 flex flex-wrap gap-2">
-              {filterChips.map((chip) => (
-                <li
-                  key={chip}
-                  className="rounded-md border border-line-strong bg-surface px-2.5 py-1.5 text-[12px] font-medium text-ink-soft"
-                >
-                  {chip}
-                </li>
-              ))}
-            </ul>
-          </div>
-        </Container>
-      </section>
+      {/*
+        Outside the filters and the listings, between the header row and
+        the results. Anywhere inside `MarketplaceView` would put a
+        promotional line among the controls somebody is using to find a
+        publisher; here it is a sibling and the view is untouched.
+      */}
+      <BulkPricingNote />
 
-      <section className="bg-navy-950 text-white">
-        <Container size="wide" className="py-14 text-center lg:py-20">
-          <h2 className="mx-auto max-w-2xl text-2xl font-semibold tracking-tight sm:text-3xl">
-            Ready to see the list?
-          </h2>
-          <p className="mx-auto mt-3 max-w-xl text-[15px] leading-relaxed text-white/70">
-            Creating an account takes under a minute and costs nothing. You only pay when you place
-            an order.
-          </p>
-          <div className="mt-7 flex flex-wrap items-center justify-center gap-3">
-            <Button asChild variant="accent" size="lg">
-              <Link href={signupHref}>
-                Create Free Account
-                <ArrowRight className="h-4 w-4" aria-hidden="true" />
-              </Link>
-            </Button>
-            <Button asChild variant="outline" size="lg" className="border-white/25 bg-transparent text-white hover:bg-white/10 hover:text-white">
-              <Link href="/how-it-works">How It Works</Link>
-            </Button>
-          </div>
-        </Container>
-      </section>
-    </>
+      <Suspense fallback={<MarketplaceSkeleton />}>
+        <MarketplaceView
+          result={result}
+          facets={facets}
+          defaultPageSize={settings.defaultPageSize}
+        />
+      </Suspense>
+    </div>
   );
 }
 

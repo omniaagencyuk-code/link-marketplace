@@ -334,18 +334,29 @@ console.log('\n--- the menus reach the components that draw them ---');
   );
 
   const marketing = read('src/app/(marketing)/layout.tsx');
+  ok(/siteMenus\(\)/.test(marketing), 'the marketing layout reads the stored menus');
+  ok(
+    /signedOut=\{menus\['header-signed-out'\]\}/.test(marketing) &&
+      /menu=\{menus\.footer\}/.test(marketing),
+    'and passes them to the header and the footer',
+  );
+
+  /*
+    The marketplace layout was in this loop, because it drew the public header
+    and footer around a signed-out visitor. That render could not be reached -
+    `/marketplace` is an inventory path in `proxy.ts`, so a request without a
+    session is redirected before the layout runs - and it has been deleted, so
+    the assertion that was true of it is gone with it.
+
+    What is worth asserting is the opposite, and it is asserted rather than
+    assumed: the segment draws the customer shell only, which is also why it
+    no longer pays a round trip for menus nothing on the screen renders.
+  */
   const marketplace = read('src/app/(app)/marketplace/layout.tsx');
-  for (const [name, source] of [
-    ['the marketing layout', marketing],
-    ['the marketplace layout', marketplace],
-  ] as const) {
-    ok(/siteMenus\(\)/.test(source), `${name} reads the stored menus`);
-    ok(
-      /signedOut=\{menus\['header-signed-out'\]\}/.test(source) &&
-        /menu=\{menus\.footer\}/.test(source),
-      `and passes them to the header and the footer`,
-    );
-  }
+  ok(
+    !/siteMenus\(\)/.test(marketplace) && !/SiteHeader/.test(marketplace),
+    'and the marketplace layout draws no menu, having no signed-out render',
+  );
 
   /*
     The service is what makes an empty table safe: it falls back to the code.
