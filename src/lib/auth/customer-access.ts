@@ -74,7 +74,7 @@ async function getSupabaseUser(): Promise<UserProfile | null> {
 
   const { data: profile } = await supabase
     .from('profiles')
-    .select('id, email, full_name, company, role, plan, created_at, updated_at')
+    .select('id, email, full_name, company, role, created_at, updated_at')
     .eq('id', user.id)
     .maybeSingle();
 
@@ -93,7 +93,6 @@ async function getSupabaseUser(): Promise<UserProfile | null> {
         (user.user_metadata?.full_name as string) || email,
         email,
       ),
-      plan: 'starter',
       createdAt: user.created_at,
       updatedAt: user.created_at,
     };
@@ -106,7 +105,6 @@ async function getSupabaseUser(): Promise<UserProfile | null> {
     company: profile.company ?? undefined,
     role: profile.role,
     avatarInitials: initialsFor(profile.full_name, profile.email),
-    plan: profile.plan as UserProfile['plan'],
     createdAt: profile.created_at,
     updatedAt: profile.updated_at,
   };

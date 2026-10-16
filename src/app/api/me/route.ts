@@ -51,7 +51,6 @@ export async function GET() {
           company: user.company ?? null,
           role: user.role,
           avatarInitials: user.avatarInitials,
-          plan: user.plan,
           createdAt: user.createdAt,
           updatedAt: user.updatedAt,
         },

@@ -1,7 +1,7 @@
 import { isSupabaseEnabled } from '@/lib/supabase/config';
 import { getServerClient, getAdminScopedClient } from '@/lib/supabase/server';
 import { websiteService } from './website-service';
-import { needsTopic, placementPrice, tierFor, type BuyerTier } from '@/lib/utils/pricing';
+import { needsTopic, placementPrice, type BuyerTier } from '@/lib/utils/pricing';
 import { mockStore } from './mock-store';
 import { mapOrder, type OrderRow } from '@/lib/supabase/mappers';
 import { promoService } from './promo-service';

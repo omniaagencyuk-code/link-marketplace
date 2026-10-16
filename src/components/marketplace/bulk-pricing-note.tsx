@@ -10,10 +10,10 @@ import { ArrowRight, Layers } from 'lucide-react';
  * row, outside the filter and listing components entirely, and it links out
  * rather than opening anything.
  *
- * It does not say what a discount would be, because nothing here knows -
- * `profiles.plan` decides what a buyer is actually charged, and a banner
- * promising a figure the pricing code does not apply is a figure we would
- * have to honour or retract.
+ * It does not say what a discount would be, because there is not one to
+ * name: every buyer pays the listed price, and a promo code is the only
+ * thing that changes it. A banner promising a figure the pricing code does
+ * not apply is a figure we would have to honour or retract.
  */
 export function BulkPricingNote() {
   return (

@@ -27,12 +27,12 @@ const SLUG = 'pricing';
  *
  * ## What is not on it, and why
  *
- * No percentages, no minimum spends, no named rates. `profiles.plan` still
- * decides what a buyer is charged at checkout, through `tierFor` and
- * `placementPrice`, and this page cannot promise a figure that pricing code
- * does not apply - a price we never set is one we have to honour or retract.
- * Every card here says a conversation is possible, which is true, and none
- * of them says what it will conclude.
+ * No percentages, no minimum spends, no named rates. Since 0089 there are
+ * no plans at all - every buyer pays the listed price, and a promo code is
+ * the only discount, applied by Stripe at checkout. So there is nothing for
+ * this page to name even if it wanted to: a price we never set is one we
+ * have to honour or retract. Every card here says a conversation is
+ * possible, which is true, and none of them says what it will conclude.
  *
  * The authority-band price table went with the plans. It quoted indicative
  * ranges that nothing kept in step with the marketplace, so a visitor who

@@ -147,34 +147,24 @@ export interface PlacementPrice {
 /**
  * Which buyers get the agency rate.
  *
- * **Nobody, currently.** There are no plans: none can be signed up to, none
- * is charged for, and the billing page that said "7% discount applied
- * automatically to every placement" was a hardcoded sentence that was true
- * of no account. The only discount is a promo code, which Stripe applies and
- * reports back.
+ * **Nobody, and there is no longer a column that could say otherwise.**
+ * `profiles.plan` is gone (0089): there were no plans to be on, nothing
+ * charged for one, and the billing page's "7% discount applied
+ * automatically to every placement" was true of no account. A promo code is
+ * the only discount there is, and Stripe applies it.
  *
- * So this returns `standard` whatever the profile says. It is a function
- * rather than a deleted branch on purpose:
+ * The tier itself stays, deliberately. `agencyPriceMinor` is still stored
+ * per listing and per niche, still editable in the admin, and still the
+ * thing a plan would charge - so the day plans exist, what has to be built
+ * is the plan, not the pricing. Everything below already works when a tier
+ * is handed to it; nothing hands it one.
  *
- *   * `profiles.plan` still exists and some rows say `agency`. A function
- *     that reads it and declines is the honest description of that; ripping
- *     the column out would be a migration to undo the day plans exist.
- *   * `agencyPriceMinor` is still stored per listing and per niche, still
- *     editable in the admin, and still the thing a plan would charge. None
- *     of that is lost, and none of it reaches a customer.
- *   * One place decides. The order card, the basket and `priceBasket` all
- *     call this, so a buyer cannot be shown one price and charged another -
- *     which is the whole reason the tier is a parameter rather than a lookup
- *     inside the pricing function.
- *
- * To bring plans back: restore the branch, and nothing else in the pricing
- * path changes.
+ * `tierFor` was the function that read a profile and answered. It is not
+ * here because there is nothing left for it to read, and a function that
+ * returns the same answer whatever it is asked is a comment pretending to
+ * be code.
  */
 export type BuyerTier = 'standard' | 'agency';
-
-export function tierFor(_plan: string | undefined): BuyerTier {
-  return 'standard';
-}
 
 /** The price for this buyer: the agency one where there is one. */
 function forTier(

@@ -519,7 +519,6 @@ export interface ProfileRow {
   full_name: string | null;
   company: string | null;
   role: 'customer' | 'admin';
-  plan: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -542,7 +541,6 @@ export function mapProfile(row: ProfileRow): UserProfile {
     company: row.company ?? undefined,
     role: row.role,
     avatarInitials: initials,
-    plan: (row.plan ?? 'starter') as UserProfile['plan'],
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };

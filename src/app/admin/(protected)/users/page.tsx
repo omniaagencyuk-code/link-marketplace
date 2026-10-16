@@ -74,9 +74,6 @@ export default async function AdminUsersPage() {
                   <Td>
                     <Badge tone={user.role === 'admin' ? 'navy' : 'neutral'}>{user.role}</Badge>
                   </Td>
-                  <Td className="hidden text-[13px] text-ink-soft capitalize md:table-cell">
-                    {user.plan}
-                  </Td>
                   <Td className="tabular text-right text-[13px] text-ink-soft">
                     {user.orders}
                   </Td>

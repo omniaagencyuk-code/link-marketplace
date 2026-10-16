@@ -91,7 +91,6 @@ export const userService = {
       // The admin allowlist is the single source of truth for elevated access.
       role: isAdminEmail(address) ? 'admin' : 'customer',
       avatarInitials: initialsFor(fullName, address),
-      plan: 'starter',
       createdAt: now,
       updatedAt: now,
     };
