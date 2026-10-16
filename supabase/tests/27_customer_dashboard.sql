@@ -146,9 +146,31 @@ select 'a customer who has never ordered is told it is not personalised: ' ||
 select 'and is still shown something to look at: ' ||
   (select count(*) > 0 from public.customer_recommendations(4));
 
+/*
+  The two assertions that name a listing read `websites`, and a customer
+  cannot any more: 0090 dropped the policy that let them, because a policy
+  that lets a browser read the table lets it read all of the table.
+
+  So the ids are collected as the customer - which is the half that has to
+  run as them, since the function personalises by `auth.uid()` - and the
+  join that turns an id into a slug is done after `reset role`. The
+  assertion is the one it always was; what changed is who may look up the
+  slug.
+
+  Worth doing rather than deleting: left as it was, `count(*) = 0` would
+  have gone on passing, because a join that returns nothing counts zero.
+  That is the shape of a test that stops testing without failing.
+*/
+create temp table cd_suggested as
+  select * from public.customer_recommendations(12);
+
+reset role;
+
 select 'a paused listing is never suggested: ' ||
-  (select count(*) = 0 from public.customer_recommendations(12) r
+  (select count(*) = 0 from cd_suggested r
    join public.websites w on w.id = r.id where w.slug = 'cd-off');
+
+set role authenticated;
 
 set request.jwt.claim.sub = '00000000-0000-4000-b000-000000000001';
 
@@ -161,9 +183,17 @@ select 'a customer who has ordered is told it is personalised: ' ||
   Without this the flag could be right while the list was the whole
   marketplace, which is the failure that would look like it worked.
 */
+-- Collected as them, looked up as somebody who may read the table. See above.
+create temp table cd_suggested_b as
+  select * from public.customer_recommendations(12);
+
+reset role;
+
 select 'and the suggestion comes from that category: ' ||
-  (select count(*) = 1 from public.customer_recommendations(12) r
+  (select count(*) = 1 from cd_suggested_b r
    join public.websites w on w.id = r.id where w.slug = 'cd-three');
+
+set role authenticated;
 
 /*
   Never suggest something they already bought.
@@ -172,7 +202,7 @@ select 'and the suggestion comes from that category: ' ||
   reads as the site not knowing who they are.
 */
 select 'a listing they already bought is not suggested back: ' ||
-  (select count(*) = 0 from public.customer_recommendations(12) r
+  (select count(*) = 0 from cd_suggested_b r
    join public.websites w on w.id = r.id where w.slug in ('cd-one', 'cd-two'));
 
 reset request.jwt.claim.sub;

@@ -7,6 +7,7 @@ import { requireCustomerSession } from '@/lib/auth/customer-access';
 import { settingsService, websiteService } from '@/lib/services';
 import { gapService } from '@/lib/services/gap-service';
 import { parseFilters, toWebsiteQuery } from '@/lib/marketplace/filters';
+import { spendInventoryRows } from '@/lib/marketplace/budget';
 import { sortOptions } from '@/lib/utils/labels';
 import type { SortKey } from '@/lib/types';
 
@@ -116,10 +117,27 @@ export default async function MarketplacePage({
   const page = Math.max(1, Number(params.get('page') ?? '1') || 1);
   const pageSize = Math.max(1, Number(params.get('size') ?? String(settings.defaultPageSize)) || settings.defaultPageSize);
 
-  const [result, facets] = await Promise.all([
-    websiteService.search(toWebsiteQuery(filters, sort, page, pageSize), filters.topic),
-    websiteService.facets(filters.topic),
-  ]);
+  /*
+    Charged before the read rather than after it.
+
+    A page of the marketplace is `pageSize` listings, and this is the screen
+    that serves them in bulk - so it is the one with a budget. Charging first
+    means a read that errors still costs, which is the only version that
+    cannot be walked by asking for pages that fail.
+
+    `requireCustomerSession` ran above, so there is always an account to
+    charge; the budget is keyed on it rather than on an address, for the
+    reason the planner's lookup is - an IP-keyed limit throttles an agency
+    office sharing one and resets for anybody on a phone.
+  */
+  const budget = await spendInventoryRows(user.id, pageSize);
+
+  const [result, facets] = budget.allowed
+    ? await Promise.all([
+        websiteService.search(toWebsiteQuery(filters, sort, page, pageSize), filters.topic),
+        websiteService.facets(filters.topic),
+      ])
+    : [null, null];
 
   const projects = user.id ? await gapService.projects(user.id, 5) : [];
 
@@ -166,13 +184,33 @@ export default async function MarketplacePage({
       */}
       <BulkPricingNote />
 
-      <Suspense fallback={<MarketplaceSkeleton />}>
-        <MarketplaceView
-          result={result}
-          facets={facets}
-          defaultPageSize={settings.defaultPageSize}
-        />
-      </Suspense>
+      {/*
+        The listings, or the sentence that replaces them.
+
+        A refusal renders as a card where the table would be rather than as
+        an empty table: a marketplace that answers "no publishers match"
+        when the real answer is "not right now" is the site lying about its
+        own inventory, which is the failure this whole change is against.
+      */}
+      {result && facets ? (
+        <Suspense fallback={<MarketplaceSkeleton />}>
+          <MarketplaceView
+            result={result}
+            facets={facets}
+            defaultPageSize={settings.defaultPageSize}
+          />
+        </Suspense>
+      ) : (
+        <div className="rounded-[var(--radius-card)] border border-line bg-white px-6 py-12 text-center shadow-[var(--shadow-card)]">
+          <p className="text-[15px] font-semibold text-ink">The marketplace is taking a breather</p>
+          <p className="mx-auto mt-2 max-w-md text-[13px] leading-relaxed text-muted">
+            {budget.message}
+          </p>
+          <p className="mt-4 text-[13px] text-muted">
+            Your saved sites and your orders are unaffected.
+          </p>
+        </div>
+      )}
     </div>
   );
 }

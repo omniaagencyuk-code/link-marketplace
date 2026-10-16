@@ -221,6 +221,10 @@ run -f "$ROOT/supabase/tests/35_pricing_enquiries.sql" 2>&1 | grep -v '^$'
 echo
 echo "--- the header and footer menus: public to read, admin to write ---"
 run -f "$ROOT/supabase/tests/36_navigation_menus.sql" 2>&1 | grep -v '^$'
+
+echo
+echo "--- the inventory is not a download ---"
+run -f "$ROOT/supabase/tests/37_the_inventory_is_not_a_download.sql" 2>&1 | grep -v '^$'
 } | tee "$ASSERTIONS"
 
 # ------------------------------------------------------------- the verdict
