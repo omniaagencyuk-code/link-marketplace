@@ -1,4 +1,7 @@
 import { PageTitle } from '@/components/dashboard/page-title';
+import { Badge, type BadgeTone } from '@/components/ui/badge';
+import { stripeReadiness } from '@/lib/services/stripe-readiness';
+import type { Verdict } from '@/lib/stripe/readiness-rules';
 import { Table, TableWrap, Td, Th, Tr } from '@/components/ui/table';
 import { getCurrentUser } from '@/lib/auth/customer-access';
 import { getServerClient } from '@/lib/supabase/server';
@@ -59,7 +62,29 @@ async function timed<T>(label: string, run: () => Promise<T>) {
   }
 }
 
+const verdictTone: Record<Verdict, BadgeTone> = {
+  ok: 'positive',
+  warn: 'warning',
+  bad: 'negative',
+  unknown: 'neutral',
+};
+
+const verdictWord: Record<Verdict, string> = {
+  ok: 'Ready',
+  warn: 'Not taking real money',
+  bad: 'Broken',
+  unknown: 'Cannot tell',
+};
+
 export default async function AdminDiagnosticsPage() {
+  /*
+    Payments first, because this is the screen somebody opens when the site
+    is misbehaving and "are we taking money" outranks "is the homepage
+    slow". It asks Stripe rather than reading the environment: every
+    configuration answer was yes on the afternoon this site spent taking
+    sandbox payments.
+  */
+  const payments = await stripeReadiness();
   /*
     One at a time, on purpose.
 
@@ -91,9 +116,59 @@ export default async function AdminDiagnosticsPage() {
   return (
     <>
       <PageTitle
-        title="Where the time goes"
-        description="The homepage's server-side reads, run one at a time against this deployment's database. Reload for a fresh measurement."
+        title="Diagnostics"
+        description="Whether this deployment can take payments, and where the homepage's server time goes. Reload for a fresh measurement."
       />
+
+      <section className="mb-8" aria-labelledby="payments">
+        <div className="mb-3 flex flex-wrap items-center gap-2">
+          <h2 id="payments" className="text-[15px] font-semibold text-ink">
+            Can we take payments?
+          </h2>
+          <Badge tone={verdictTone[payments.verdict]}>{verdictWord[payments.verdict]}</Badge>
+        </div>
+
+        <TableWrap>
+          <Table>
+            <caption className="sr-only">Stripe readiness</caption>
+            <thead>
+              <tr>
+                <Th className="w-56">Check</Th>
+                <Th className="w-28">Verdict</Th>
+                <Th>What it means</Th>
+              </tr>
+            </thead>
+            <tbody>
+              {payments.checks.map((check) => (
+                <Tr key={check.label}>
+                  <Td className="text-[13px] font-medium text-ink">{check.label}</Td>
+                  <Td>
+                    <Badge tone={verdictTone[check.verdict]}>{check.verdict === 'ok' ? 'Yes' : check.verdict === 'bad' ? 'No' : check.verdict === 'warn' ? 'Not live' : '?'}</Badge>
+                  </Td>
+                  <Td className="text-[13px] text-muted">{check.detail}</Td>
+                </Tr>
+              ))}
+            </tbody>
+          </Table>
+        </TableWrap>
+
+        {/*
+          The limit of what this screen can know, said on the screen. A
+          signing secret is shown by Stripe once and never again, so no
+          amount of asking proves the stored one belongs to the endpoint
+          above it - only a delivery that verified.
+        */}
+        <p className="mt-3 max-w-2xl text-[13px] leading-relaxed text-muted">
+          Every row but the last asks Stripe, not this deployment&rsquo;s configuration.
+          What none of them can prove is that the stored webhook secret belongs to the
+          endpoint found: Stripe shows a signing secret once, at creation. The last
+          delivery accepted is the only evidence, because a signature that verified
+          could only have come from the right secret. Setup is written up in
+          <code className="mx-1 rounded bg-surface-sunken px-1 py-0.5 text-[12px]">docs/stripe-setup.md</code>.
+        </p>
+      </section>
+
+      <h2 className="mb-3 text-[15px] font-semibold text-ink">Where the time goes</h2>
 
       <TableWrap>
         <Table>

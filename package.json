@@ -29,6 +29,7 @@
     "verify:home": "tsx scripts/verify-home.mts",
     "verify:trend": "tsx scripts/verify-trend.mts",
     "verify:menus": "tsx scripts/verify-menus.mts",
+    "verify:stripe": "tsx scripts/verify-stripe.mts",
     "verify:paging": "tsx scripts/verify-paging.mts",
     "report:duplicates": "tsx --env-file=.env.local scripts/report-duplicate-listings.mts",
     "import:placed-links": "tsx --env-file=.env.local scripts/import-placed-links.mts",

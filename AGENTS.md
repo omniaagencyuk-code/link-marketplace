@@ -283,6 +283,45 @@ renders when nothing is stored.
   type system catches that, which is why `verify:menus` asserts the import is
   absent.
 
+## Taking payment
+
+Stripe Checkout, hosted by Stripe: the customer is redirected and pays on
+`checkout.stripe.com`, so there is no publishable key and no Stripe.js in
+the codebase. `docs/stripe-setup.md` is the setup, including the parts that
+only bite once.
+
+- **The order is written before the customer leaves.** An order created
+  after payment would mean somebody who paid and then lost their connection
+  was charged with nothing on record to attach the money to. The cost is
+  that an abandoned checkout leaves a row, which is why a customer's next
+  checkout rewrites their open order rather than writing another - after
+  expiring the previous Stripe session, because a session stays payable for
+  24 hours and the webhook finds orders by session id.
+- **Only the webhook marks an order paid.** The customer returning to the
+  success page is not evidence: they can close the tab, lose signal, or
+  visit that URL themselves. `src/app/api/stripe/webhook/route.ts` verifies
+  the signature against the raw body, claims the event id so a redelivery is
+  acted on once, and answers 500 on a failure it cannot resolve so Stripe
+  retries.
+- **`payment_status = 'processing'` means checkout opened, not that money
+  arrived.** The enum says so in 0011. It was read as "Payment received" on
+  the orders page, and every abandoned checkout told a customer their card
+  had been charged. `paymentWording` in `src/components/shared/status-badge.tsx`
+  is the one copy of what each state is called; `isPlaced` in
+  `src/lib/orders/placed.ts` is the one copy of what counts as bought.
+- **Stripe works out the tax, not us.** Sessions carry `automatic_tax`, so
+  Stripe applies the rate for the billing address it collected and any VAT
+  number entered. It also refuses to open a session at all when Tax has no
+  origin address, and says nothing about tax when it does - the customer
+  just sees that checkout would not open.
+- **Readiness is measured, not configured.** `/admin/diagnostics` asks
+  Stripe whether the key is live, the account can charge, Tax is active and
+  an endpoint points here, because an afternoon of sandbox payments passed
+  every test of the form "is the variable set". The one thing it cannot ask
+  is whether the stored webhook secret belongs to that endpoint - Stripe
+  shows a signing secret once - so the last verified delivery is reported
+  beside it as the only proof there is.
+
 ## Where it runs
 
 The functions run in `lhr1` and the database is in London. They have to match,
@@ -306,7 +345,7 @@ dashboard will not take effect while `vercel.json` names one.
 
 `npm run verify:all` runs every suite below and reports which failed rather
 than stopping at the first, and `.github/workflows/verify.yml` runs the same
-thing on every pull request, split into three: lint, types and build; the 30
+thing on every pull request, split into three: lint, types and build; the 31
 suites that need nothing; and the three that need a local Postgres. The list
 is read out of `package.json` by `scripts/run-verify.mjs`, so a suite added
 there is a suite CI runs - there is no second list to keep up to date.
@@ -324,6 +363,13 @@ own integration and nothing here should take that over.
   that read as statements of fact - "the nightly import is off by default" -
   because a checker cannot tell a wrong answer from a right one worded
   backwards. Keep it that way when adding one.
+- `npm run verify:stripe` - whether this deployment can take real money: live
+  key or test, an endpoint in this mode pointing at our URL subscribed to both
+  events, and what the one sentence at the top of the readiness panel says. No
+  key, no network - these are the judgements, and the screen asks Stripe for
+  the facts. Worth being exhaustive about because of how the failure presents:
+  a check reporting what is configured rather than what is true shows a tick
+  beside a site taking sandbox payments.
 - `npm run verify:menus` — the header and footer menus: where a menu item may
   point, what survives being read back out of the column, and that the shipped
   menus come through the validator unchanged. It also asserts that the header

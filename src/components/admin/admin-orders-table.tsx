@@ -8,6 +8,7 @@ import { Select } from '@/components/ui/select';
 import { Table, TableWrap, Td, Th, Tr } from '@/components/ui/table';
 import { adminOrderPageAction, setOrderStatusAction } from '@/app/admin/actions';
 import { DEFAULT_PAGE_SIZE, type PageSize } from '@/lib/admin/paging';
+import { PaymentBadge } from '@/components/shared/status-badge';
 import { formatDate, formatPrice } from '@/lib/utils/format';
 import { linkTypeLabels, orderStatusLabels } from '@/lib/utils/labels';
 import type { Order, OrderStatus } from '@/lib/types';
@@ -186,6 +187,13 @@ export function AdminOrdersTable() {
               <Th className="hidden lg:table-cell">Service</Th>
               <Th className="hidden md:table-cell">Date</Th>
               <Th className="text-right">Amount</Th>
+              {/*
+                Beside the fulfilment status rather than inside it. "Draft"
+                answers neither "did they pay" nor "how much did we take" -
+                and on this screen those are the two questions the figures
+                in every other column depend on.
+              */}
+              <Th>Payment</Th>
               <Th className="w-44">Status</Th>
               <Th className="w-20 text-right">
                 <span className="sr-only">Open</span>
@@ -195,7 +203,7 @@ export function AdminOrdersTable() {
           <tbody>
             {rows.length === 0 ? (
               <Tr>
-                <Td colSpan={8} className="py-10 text-center text-[13px] text-muted">
+                <Td colSpan={9} className="py-10 text-center text-[13px] text-muted">
                   {failed
                     ? 'Could not load the order list. Try again, or reload the page.'
                     : loading
@@ -258,8 +266,28 @@ export function AdminOrdersTable() {
                 <Td className="tabular hidden text-[13px] whitespace-nowrap text-muted md:table-cell">
                   {formatDate(order.placedAt)}
                 </Td>
+                {/* The order's own currency, not the site's current default:
+                    an order is charged in what it was placed in. */}
                 <Td className="tabular text-right text-[13px] font-semibold text-ink">
-                  {formatPrice(order.totalMinor)}
+                  {formatPrice(order.totalMinor, { currency: order.currency })}
+                </Td>
+                <Td>
+                  <PaymentBadge
+                    paymentStatus={order.paymentStatus}
+                    amount={formatPrice(order.chargedMinor ?? order.totalMinor, {
+                      currency: order.currency,
+                    })}
+                  />
+                  {/* A dash rather than nothing: a blank cell reads as a
+                      column that failed to load. */}
+                  {order.paymentStatus === undefined || order.paymentStatus === 'unpaid' ? (
+                    <span className="text-[13px] text-muted-soft">&mdash;</span>
+                  ) : null}
+                  {order.taxMinor ? (
+                    <span className="mt-0.5 block text-[11px] text-muted">
+                      incl. {formatPrice(order.taxMinor, { currency: order.currency })} VAT
+                    </span>
+                  ) : null}
                 </Td>
                 <Td>
                   <label htmlFor={`status-${order.id}`} className="sr-only">
