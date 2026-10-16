@@ -110,7 +110,7 @@ If you are evaluating Press Parrot for a specific agency workflow, tell us what 
       { label: 'Link building', href: '/link-building', description: 'How the service works.' },
       { label: 'Content writing', href: '/content-writing', description: 'Content at campaign volume.' },
       { label: 'Pricing', href: '/pricing', description: 'What placements cost.' },
-      { label: 'Marketplace', href: '/marketplace', description: 'See the inventory.' },
+      { label: 'Marketplace', href: '/signup?next=/marketplace', description: 'See the inventory.' },
     ],
   },
 
