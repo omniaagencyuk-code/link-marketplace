@@ -9,9 +9,13 @@ import {
   attachCheckoutSession,
   completeFreeOrder,
   createPendingOrder,
+  openOrderFor,
   priceBasket,
+  replaceOrderLines,
+  type PricingResult,
 } from '@/lib/services/checkout-service';
 import { cleanCustomerReference } from '@/lib/orders/customer-reference';
+import { sessionIsUnpayable } from '@/lib/orders/checkout-session';
 import { promoService } from '@/lib/services/promo-service';
 import { orderService } from '@/lib/services/order-service';
 import { promoSummary } from '@/lib/promos/rules';
@@ -21,7 +25,8 @@ import { linkTypeLabels } from '@/lib/utils/labels';
 import { acceptedNicheLabel } from '@/lib/config/accepted-niches';
 import { tierFor } from '@/lib/utils/pricing';
 import { siteUrl } from '@/lib/config/brand';
-import type { DraftOrderItem } from '@/lib/types';
+import type Stripe from 'stripe';
+import type { DraftOrderItem, Order } from '@/lib/types';
 
 /**
  * Checkout.
@@ -105,6 +110,65 @@ async function currentOrigin(): Promise<string> {
   return `${protocol}://${host}`;
 }
 
+/**
+ * Make a checkout the customer walked away from unpayable.
+ *
+ * A Stripe session stays payable for 24 hours. Pointing an order at a new
+ * session without closing the old one leaves a tab that can still be paid
+ * into an order whose `stripe_checkout_session_id` has moved on - and the
+ * webhook finds orders by that id, so the money would arrive with nothing
+ * to attach it to. Expiring first is what makes reusing the row safe.
+ *
+ * False means "do not reuse", and the caller writes a new order instead,
+ * which is what happened before any of this existed. Two cases reach it:
+ *
+ *   * The call failed. An order with a live session is left alone.
+ *   * Stripe says the session is already **complete** - the customer paid
+ *     and the webhook has not landed yet. That order is somebody's
+ *     purchase a second before we find out, and rewriting its lines would
+ *     change what they just bought.
+ *
+ * An already-expired session is the one error that means yes: there is
+ * nothing left to make unpayable.
+ */
+async function expirePreviousSession(stripe: Stripe, sessionId: string): Promise<boolean> {
+  try {
+    await stripe.checkout.sessions.expire(sessionId);
+    return true;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : '';
+    if (sessionIsUnpayable(message)) return true;
+    console.error('Could not expire the previous checkout session', error);
+    return false;
+  }
+}
+
+/**
+ * One open order per customer, rewritten, rather than a row per attempt.
+ *
+ * Returns null when there is nothing to reuse or reusing would not be safe,
+ * and the caller creates an order exactly as it always did.
+ */
+async function reuseOpenOrder(
+  stripe: Stripe | null,
+  userId: string,
+  pricing: PricingResult,
+  promo?: { codeId: string; code: string; discountMinor: number },
+  customerReference?: string,
+): Promise<Order | null> {
+  const open = await openOrderFor(userId);
+  if (!open) return null;
+
+  if (open.sessionId) {
+    // No client, no way to close the old checkout, so no reuse. Writing a
+    // new order is always safe; this is only ever an optimisation.
+    if (!stripe) return null;
+    if (!(await expirePreviousSession(stripe, open.sessionId))) return null;
+  }
+
+  return replaceOrderLines(open.id, pricing, promo, customerReference);
+}
+
 export async function startCheckoutAction(
   items: DraftOrderItem[],
   rawPromoCode?: string,
@@ -178,13 +242,10 @@ export async function startCheckoutAction(
     come back to anyway.
   */
   if (promo && promo.payableMinor === 0) {
-    const order = await createPendingOrder(
-      user,
-      pricing,
-      settings.currency,
-      { codeId: promo.codeId, code: promo.code, discountMinor: promo.discountMinor },
-      rawCustomerReference,
-    );
+    const applied = { codeId: promo.codeId, code: promo.code, discountMinor: promo.discountMinor };
+    const order =
+      (await reuseOpenOrder(getStripe(), user.id, pricing, applied, rawCustomerReference)) ??
+      (await createPendingOrder(user, pricing, settings.currency, applied, rawCustomerReference));
 
     const settled = await completeFreeOrder({
       orderId: order.id,
@@ -209,15 +270,19 @@ export async function startCheckoutAction(
   let checkoutUrl: string;
 
   try {
-    const order = await createPendingOrder(
-      user,
-      pricing,
-      settings.currency,
-      promo
-        ? { codeId: promo.codeId, code: promo.code, discountMinor: promo.discountMinor }
-        : undefined,
-      rawCustomerReference,
-    );
+    const applied = promo
+      ? { codeId: promo.codeId, code: promo.code, discountMinor: promo.discountMinor }
+      : undefined;
+
+    /*
+      The customer's own open order where there is one, rewritten with this
+      basket, rather than a fourth row for a fourth attempt at the same
+      purchase. Falls back to a new order whenever reuse would not be safe -
+      see `reuseOpenOrder`.
+    */
+    const order =
+      (await reuseOpenOrder(stripe, user.id, pricing, applied, rawCustomerReference)) ??
+      (await createPendingOrder(user, pricing, settings.currency, applied, rawCustomerReference));
 
     const session = await stripe.checkout.sessions.create({
       mode: 'payment',

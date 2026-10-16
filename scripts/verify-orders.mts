@@ -22,6 +22,7 @@ import {
 } from '../src/lib/orders/customer-reference';
 import { paymentWording } from '../src/components/shared/status-badge';
 import { chargedNote, isPlaced, splitOrders } from '../src/lib/orders/placed.ts';
+import { sessionIsUnpayable } from '../src/lib/orders/checkout-session.ts';
 import type { Order } from '../src/lib/types';
 
 let failed = 0;
@@ -416,6 +417,46 @@ is(
   ),
   'part of US$297.60 charged',
 );
+
+/* -------------------------------------------------------------------------
+   Whether an abandoned checkout can still be paid.
+
+   A customer's next checkout rewrites their open order rather than writing
+   a fourth row for a fourth attempt - but only once the previous Stripe
+   session has been made unpayable. A session stays payable for 24 hours,
+   and the webhook finds orders by session id, so reusing a row whose old
+   tab can still be paid would mean money arriving with nothing to attach
+   it to.
+
+   The expiry call therefore decides whether reuse is safe, and reading its
+   failures correctly is the whole of that decision.
+   ------------------------------------------------------------------------- */
+
+console.log('\n--- can the old checkout still be paid? ---');
+
+yes(
+  'a session Stripe says is already expired is safe to reuse past',
+  sessionIsUnpayable('You may only expire a session that is open. This session has expired.'),
+);
+yes('however it is worded', sessionIsUnpayable('The session is already expired'));
+
+/*
+  The one that matters, and the one an eager reading gets wrong: completed
+  means the customer **paid** and the webhook has not landed yet. Their
+  order is a second from being a purchase, and rewriting its lines would
+  change what they bought. A duplicate row is the cheaper mistake by a wide
+  margin.
+*/
+yes(
+  'a completed session is not safe - that is a payment we have not heard about yet',
+  sessionIsUnpayable('You may only expire a session that is open. This session is completed.') ===
+    false,
+);
+yes(
+  'and neither is anything we could not reach',
+  sessionIsUnpayable('An error occurred with our connection to Stripe') === false,
+);
+yes('nor an error with nothing in it', sessionIsUnpayable('') === false);
 
 console.log(failed === 0 ? '\n  all passed' : `\n  ${failed} failed`);
 process.exit(failed === 0 ? 0 : 1);
