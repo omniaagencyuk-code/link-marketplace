@@ -305,7 +305,7 @@ We brief every article from the search results for its target keyword, which sho
     heading: 'Order your first article',
     body: 'Create a free account, brief the piece and we will take it from there.',
     primaryCta: { label: 'Order Content', href: '/dashboard/content/new' },
-    secondaryCta: { label: 'Explore the marketplace', href: '/marketplace' },
+    secondaryCta: { label: 'Explore the marketplace', href: '/signup?next=/marketplace' },
   },
 
   seo: {

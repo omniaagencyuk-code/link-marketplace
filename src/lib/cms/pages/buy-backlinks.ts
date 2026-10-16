@@ -33,7 +33,7 @@ export const defaults: PageValues = {
     title: 'Buy Backlinks From Websites With Real Readers',
     intro:
       'Choose the publisher yourself, see its traffic and its price before you commit, and pay for the placements you want. No packages, no subscription, and nothing listed that we would not use ourselves.',
-    primaryCta: { label: 'Browse Websites', href: '/marketplace' },
+    primaryCta: { label: 'Browse Websites', href: '/signup?next=/marketplace' },
     secondaryCta: { label: 'Create Free Account', href: '/signup' },
     microcopy: 'Free account · No subscription · Pay only for what you order',
   },
@@ -162,7 +162,7 @@ Guest posts and [niche edits](/niche-edits) are priced separately on each listin
   cta: {
     heading: 'See what is available in your niche',
     body: 'Create a free account and filter thousands of publishers by traffic, relevance and price.',
-    primaryCta: { label: 'Browse Websites', href: '/marketplace' },
+    primaryCta: { label: 'Browse Websites', href: '/signup?next=/marketplace' },
     secondaryCta: { label: 'Create Free Account', href: '/signup' },
   },
 

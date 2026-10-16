@@ -122,7 +122,7 @@ export const defaults: PageValues = {
     title: 'From shortlist to live link, without the back-and-forth',
     intro:
       'Press Parrot replaces outreach spreadsheets, email chains and invoice chasing with a single marketplace. You see the site, the metrics and the price before you commit.',
-    primaryCta: { label: 'Browse the marketplace', href: '/marketplace' },
+    primaryCta: { label: 'Browse the marketplace', href: '/signup?next=/marketplace' },
     secondaryCta: { label: 'Create an account', href: '/signup' },
   },
 

@@ -115,7 +115,7 @@ export const defaults: PageValues = {
     title: 'Link Building Metrics: What to Look At Before You Buy',
     intro:
       'Every listing on Press Parrot carries the same set of numbers. This page explains what each one measures, what it is useful for, and — the part most guides skip — what it cannot tell you on its own.',
-    primaryCta: { label: 'Browse Websites', href: '/marketplace' },
+    primaryCta: { label: 'Browse Websites', href: '/signup?next=/marketplace' },
     secondaryCta: { label: 'Create Free Account', href: '/signup' },
   },
 
@@ -268,7 +268,7 @@ Every listing on Press Parrot shows these figures before you order, and the ones
   cta: {
     heading: 'See the metrics on real listings',
     body: 'Create a free account and filter thousands of publishers by the numbers on this page.',
-    primaryCta: { label: 'Browse Websites', href: '/marketplace' },
+    primaryCta: { label: 'Browse Websites', href: '/signup?next=/marketplace' },
     secondaryCta: { label: 'Create Free Account', href: '/signup' },
   },
 

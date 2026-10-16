@@ -12,6 +12,22 @@ import type { PageDef, PageValues } from '../types';
  * Icons, the mascot artwork and the niche grid stay in code. The niche grid in
  * particular is generated from live marketplace counts, so it is data rather
  * than copy.
+ *
+ * ## Why four buttons here point at /signup rather than /marketplace
+ *
+ * They pointed at /marketplace, which is an inventory path in `proxy.ts`: a
+ * visitor without an account was 307'd to `/signup?next=/marketplace`. So the
+ * destination is unchanged - this is the same journey with the redirect
+ * written down, which is also why the `next` is spelled out rather than left
+ * to the gate to add.
+ *
+ * It is honest rather than good. A button saying "Browse Websites" still
+ * opens a form, and the page that used to stand between them - the gateway
+ * that described the marketplace from masked rows and then asked for the
+ * signup - is deleted, because the gate had made it unreachable. Giving
+ * /guest-posts that content is the fix; this is the stop-gap, and the labels
+ * are editable in /admin/pages when somebody wants to say what the buttons
+ * now do.
  */
 
 export const definition: PageDef = {
@@ -394,7 +410,7 @@ export const defaults: PageValues = {
     titleAccent: 'Better Rankings.',
     intro:
       'Buy backlinks and guest posts on real websites with genuine traffic. Compare SEO metrics, see the price before you order, and track every placement from one account.',
-    primaryCta: { label: 'Browse Websites', href: '/marketplace' },
+    primaryCta: { label: 'Browse Websites', href: '/signup?next=/marketplace' },
     secondaryCta: { label: 'Create Free Account', href: '/signup' },
     reassurance: [
       { label: 'Free account' },
@@ -443,7 +459,7 @@ export const defaults: PageValues = {
         body: 'Save the ones worth having and order when you are ready. No outreach, no negotiation, nothing to chase.',
       },
     ],
-    cta: { label: 'Browse the Marketplace', href: '/marketplace' },
+    cta: { label: 'Browse the Marketplace', href: '/signup?next=/marketplace' },
     caption:
       'A demonstration of the marketplace using example publishers. Create a free account to browse the real inventory.',
   },
@@ -468,7 +484,7 @@ export const defaults: PageValues = {
     eyebrow: 'The marketplace',
     heading: 'Thousands of Link Building Opportunities in One Place',
     body: 'Registered customers search thousands of publishers on the metrics that matter, then order guest posts, niche edits and digital PR in a few clicks. No outreach, no negotiation and no waiting on a quote.',
-    cta: { label: 'Unlock the Marketplace', href: '/marketplace' },
+    cta: { label: 'Unlock the Marketplace', href: '/signup?next=/marketplace' },
     ctaCaption: 'Create a free account to browse publishers and pricing.',
   },
 
@@ -708,7 +724,7 @@ Links get a page considered. The page itself has to do the rest: answer the ques
     heading: 'Find link building opportunities',
     body: 'Search by domain, topic or country. Filter by domain rating, traffic, price and turnaround until the shortlist fits the campaign, then order the placements you want.',
     placeholder: 'Try "finance", "casino" or a domain you have in mind',
-    cta: { label: 'Search websites', href: '/marketplace' },
+    cta: { label: 'Search websites', href: '/signup?next=/marketplace' },
     note: 'Publisher names and pricing appear once you have a free account.',
   },
 
