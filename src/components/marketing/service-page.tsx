@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import Link from 'next/link';
 import { ArrowRight, Check } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
@@ -27,6 +28,16 @@ export interface ServicePageProps {
   highlightIcons: LucideIcon[];
   /** Redacted rows, when the page shows the marketplace. */
   preview?: PreviewRow[];
+  /**
+   * A band of this page's own, in place of the marketplace one.
+   *
+   * The band below `preview` is not generic: it lists the marketplace's eight
+   * filters and ends in a button into the inventory. That is right on a page
+   * selling placements and wrong on one selling anything else, so a page with
+   * a different thing to show in that slot passes the whole section rather
+   * than a visual to drop into a frame built for the marketplace.
+   */
+  previewBand?: ReactNode;
   /** Canonical path, used for the breadcrumb structured data. */
   path: string;
   /** Breadcrumb label. */
@@ -56,6 +67,7 @@ export function ServicePage({
   content,
   highlightIcons,
   preview,
+  previewBand,
   path,
   breadcrumbLabel,
 }: ServicePageProps) {
@@ -184,7 +196,7 @@ export function ServicePage({
         </section>
       ) : null}
 
-      {preview ? (
+      {previewBand ?? (preview ? (
         <section className="border-b border-line bg-surface">
           <Container size="wide" className="py-14 lg:py-20">
             <div className="grid items-center gap-10 lg:grid-cols-[minmax(0,1fr)_minmax(0,26rem)] lg:gap-14">
@@ -229,7 +241,7 @@ export function ServicePage({
             </div>
           </Container>
         </section>
-      ) : null}
+      ) : null)}
 
       <section className="border-b border-line bg-white">
         <Container size="wide" className="py-14 lg:py-20">
