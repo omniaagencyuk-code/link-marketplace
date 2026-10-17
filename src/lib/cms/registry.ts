@@ -14,6 +14,7 @@ import * as contentWriting from './pages/content-writing';
 import * as terms from './pages/terms';
 import * as privacy from './pages/privacy';
 import * as cookies from './pages/cookies';
+import * as refundPolicy from './pages/refund-policy';
 import type { PageDef, PageValues } from './types';
 
 /**
@@ -46,6 +47,7 @@ export const pageRegistry: RegisteredPage[] = [
   terms,
   privacy,
   cookies,
+  refundPolicy,
 ];
 
 const bySlug = new Map(pageRegistry.map((page) => [page.definition.slug, page]));

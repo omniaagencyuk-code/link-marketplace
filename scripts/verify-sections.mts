@@ -2336,5 +2336,103 @@ console.log('\n--- a service page is its sections, hero first ---');
   yes('and the starter adds only empty bands to write into', offered.includes('faq'));
 }
 
+console.log('\n--- the refund policy, and the figures it must not restate ---');
+{
+  /*
+    One question, one answer, in one document.
+
+    The refund terms were three lines in section 7 of /terms. They are a page
+    now, and the thing worth checking is not that the page exists - it is that
+    nothing else still answers the same question, and that the editable copy
+    does not quote a figure the checker decides. Both failures look fine on
+    screen and only show up in an argument about money.
+  */
+  const { pageRegistry } = await import('../src/lib/cms/registry');
+  const { footerNav } = await import('../src/lib/config/navigation');
+
+  const bodyOf = (slug: string) => {
+    const page = pageRegistry.find((entry) => entry.definition.slug === slug);
+    const section = page?.defaults.page as Record<string, unknown> | undefined;
+    return typeof section?.body === 'string' ? section.body : '';
+  };
+
+  const refund = pageRegistry.find((entry) => entry.definition.slug === 'refund-policy');
+  yes('the refund policy is an editable page', Boolean(refund));
+  is('at /refund-policy', refund?.definition.path, '/refund-policy');
+
+  const body = bodyOf('refund-policy');
+  yes('it ships with a document rather than a stub', body.length > 1_000);
+
+  /*
+    No figure in the copy.
+
+    `GuaranteePanel` renders the guarantee's length, the publisher's deadline,
+    the check cadence and how many failed checks it takes, from the constants
+    the checker runs on. An editor cannot see those constants, so a sentence
+    here saying "within 14 days" is a promise that silently stops matching the
+    code the first time either changes. Spelled-out numbers count: "fourteen
+    days" drifts exactly as well as "14 days".
+  */
+  const UNITS = 'months?|weeks?|days?|checks?';
+  const typed = body.match(new RegExp(`\\b\\d+\\s*(${UNITS})\\b`, 'gi')) ?? [];
+  const spelled =
+    body.match(
+      new RegExp(
+        `\\b(one|two|three|four|five|six|seven|eight|nine|ten|twelve|fourteen|thirty)\\s+(${UNITS})\\b`,
+        'gi',
+      ),
+    ) ?? [];
+  const quoted = [...typed, ...spelled];
+  yes(
+    `the copy quotes no guarantee figure${quoted.length ? `: ${JSON.stringify(quoted.slice(0, 3))}` : ''}`,
+    quoted.length === 0,
+  );
+  yes('and points at the panel that does', body.includes('on the terms set out above'));
+
+  // Nothing else answers the question.
+  const terms = bodyOf('terms');
+  yes('the terms of service send the reader here', terms.includes('(/refund-policy)'));
+  yes(
+    'and keep no refund terms of their own',
+    !/full refund|withhold the cost|cost of work already done|offer a replacement/i.test(terms),
+  );
+
+  const legal = footerNav.find((column) => column.title === 'Legal');
+  yes(
+    'the footer links it beside the other legal documents',
+    Boolean(legal?.items.some((item) => item.href === '/refund-policy')),
+  );
+
+  const sitemapSource = readFileSync(new URL('../src/app/sitemap.ts', import.meta.url), 'utf8');
+  yes('and the sitemap lists it', sitemapSource.includes("path: '/refund-policy'"));
+
+  /*
+    Every link inside a legal document goes somewhere.
+
+    The homepage's links are checked further up; these were not checked at
+    all, and they are the ones written as markdown by hand - a clause pointing
+    at /refunds because somebody typed the plural is a 404 in the middle of
+    the document a customer reads when they are already unhappy.
+  */
+  const ROUTES = new Set([
+    '/',
+    '/dashboard',
+    '/login',
+    '/marketplace',
+    '/resources',
+    '/signup',
+    '/websites',
+    ...pageRegistry.map((entry) => entry.definition.path),
+  ]);
+
+  for (const page of pageRegistry) {
+    const source = bodyOf(page.definition.slug);
+    for (const [, href] of source.matchAll(/\]\((\/[^)\s]*)\)/g)) {
+      const path = href.split('?')[0]!.split('#')[0]!;
+      yes(`${page.definition.slug}: "${href}" goes somewhere real`, ROUTES.has(path));
+    }
+  }
+}
+
 console.log(failed ? `\n  ${failed} FAILED\n` : '\n  all passed\n');
 process.exit(failed ? 1 : 0);

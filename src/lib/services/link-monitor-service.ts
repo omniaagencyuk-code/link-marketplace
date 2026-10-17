@@ -14,6 +14,9 @@ import {
   type BrandBits,
 } from '@/lib/email/templates';
 import { siteUrl } from '@/lib/config/brand';
+/* The length of the guarantee and the publisher's deadline, which the
+   refund policy page states publicly from the same two constants. */
+import { GUARANTEE_MONTHS, PUBLISHER_GRACE_DAYS } from '@/lib/monitoring/guarantee';
 
 /**
  * The twelve month guarantee, and the score that comes out of it.
@@ -29,18 +32,6 @@ import { siteUrl } from '@/lib/config/brand';
  * that appears in a page, and knowing one must never be enough to spend
  * somebody else's guarantee.
  */
-
-/** Twelve months, which is what the marketing says. */
-const GUARANTEE_MONTHS = 12;
-
-/**
- * How long a publisher gets before it becomes the buyer's choice.
- *
- * Fourteen days. Long enough for somebody who only reads their email on
- * Mondays and is halfway through a site migration; short enough that a buyer
- * is not left waiting a month to find out they can have their money back.
- */
-const PUBLISHER_GRACE_DAYS = 14;
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 

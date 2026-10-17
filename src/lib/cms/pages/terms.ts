@@ -6,9 +6,14 @@ import type { PageDef, PageValues } from '../types';
  *
  * A first draft describing how Press Parrot actually works, written to be
  * edited rather than relied on as it stands. It deliberately promises nothing
- * the platform does not do: no uptime guarantee, no ranking guarantee, no
- * refund terms beyond what the marketing pages already say. A solicitor should
- * review it before it carries any weight.
+ * the platform does not do: no uptime guarantee and no ranking guarantee.
+ * A solicitor should review it before it carries any weight.
+ *
+ * Section 7 is a link rather than a clause. It used to carry three lines of
+ * refund terms and /refund-policy now carries all of them - one question, one
+ * answer, in the document that is actually about it. Two copies would be one
+ * document revised and one left behind, and a customer reading the stale one
+ * would be reading a promise nobody meant to make.
  */
 
 export const definition: PageDef = {
@@ -59,11 +64,7 @@ Where you order content from us, ownership passes to you on payment. One round o
 
 ## 7. Cancellation and refunds
 
-You may cancel an order before it has been sent to a publisher, for a full refund.
-
-Once a publisher has begun work, or content has been written, we may withhold the cost of work already done.
-
-If a placement cannot be delivered, we will offer a replacement of comparable quality or a refund.
+Our [refund policy](/refund-policy) sets out when an order can be cancelled, what is refunded once work has started, and what happens to a placement that cannot be delivered or that comes down after it went live. It forms part of these terms.
 
 ## 8. What we do not promise
 

@@ -13,7 +13,14 @@
  */
 import { normaliseUrl, sameUrl, isHomepage } from '../src/lib/monitoring/url';
 import { verdictForPage, verdictForNetworkError, type FetchedPage } from '../src/lib/monitoring/verdict';
+import { readFileSync } from 'node:fs';
 import { nextState, nextCheckAt, type LinkState } from '../src/lib/monitoring/status';
+import {
+  CHECK_AFTER_GUARANTEE_DAYS,
+  CHECK_EVERY_DAYS,
+  GUARANTEE_MONTHS,
+  PUBLISHER_GRACE_DAYS,
+} from '../src/lib/monitoring/guarantee';
 import { checkLink } from '../src/lib/monitoring/check';
 
 let failed = 0;
@@ -286,6 +293,70 @@ console.log('\n--- the checker end to end, without a network ---');
     },
   );
   is('and a timeout as soft, not as a crash', timedOut.verdict.kind, 'soft');
+}
+
+console.log('\n--- the guarantee has one set of figures ---');
+{
+  /*
+    The length of the guarantee, the publisher's deadline and the two check
+    cadences are an enforcement rule and a public promise at the same time.
+    They were two private constants in the claim service and two literals in
+    the checker, which was survivable while nobody published them. Now
+    /refund-policy prints them, and a second copy anywhere is a page that can
+    promise a year while the code means half of one.
+  */
+  const read = (path: string) => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8');
+  const service = read('src/lib/services/link-monitor-service.ts');
+  const checker = read('src/lib/monitoring/status.ts');
+  const panel = read('src/components/marketing/guarantee-panel.tsx');
+
+  is('the guarantee runs for a year', GUARANTEE_MONTHS, 12);
+  is('the publisher gets a fortnight to put a link back', PUBLISHER_GRACE_DAYS, 14);
+  is('a link under guarantee is looked at weekly', CHECK_EVERY_DAYS, 7);
+  is('and monthly once it has run out', CHECK_AFTER_GUARANTEE_DAYS, 30);
+
+  /*
+    The cadence the checker schedules, measured against the constant the page
+    prints. The block above this one asserts the same two intervals against
+    the literals 7 and 30 - that pins what the promise is, and this pins that
+    the promise and the schedule are the same number.
+  */
+  const now = new Date('2026-06-01T00:00:00.000Z');
+  const inDays = (iso: string) => Math.round((new Date(iso).getTime() - now.getTime()) / 86_400_000);
+  is(
+    'the checker schedules the cadence the page publishes',
+    inDays(nextCheckAt('ok', '2027-01-01T00:00:00.000Z', now, () => 0)),
+    CHECK_EVERY_DAYS,
+  );
+  is(
+    'and the one it publishes for afterwards',
+    inDays(nextCheckAt('ok', '2026-01-01T00:00:00.000Z', now, () => 0)),
+    CHECK_AFTER_GUARANTEE_DAYS,
+  );
+
+  yes(
+    'the claim service takes both of its figures from that module',
+    /import \{[^}]*GUARANTEE_MONTHS[^}]*PUBLISHER_GRACE_DAYS[^}]*\} from '@\/lib\/monitoring\/guarantee'/.test(
+      service,
+    ),
+  );
+  yes(
+    'and declares neither of them itself',
+    !/const\s+(GUARANTEE_MONTHS|PUBLISHER_GRACE_DAYS)\s*=/.test(service),
+  );
+  yes('the checker holds no interval of its own', !/\b(7|30)\s*\*\s*DAY_MS/.test(checker));
+  yes(
+    'the panel a customer reads states no figure of its own',
+    !/\b\d+\s*(month|week|day|check)/i.test(panel),
+  );
+  for (const name of [
+    'GUARANTEE_MONTHS',
+    'PUBLISHER_GRACE_DAYS',
+    'CHECK_EVERY_DAYS',
+    'HARD_FAILURES_TO_LOSE',
+  ]) {
+    yes(`it prints ${name} instead`, panel.includes(`${name}`));
+  }
 }
 
 console.log(failed ? `\n  ${failed} FAILED\n` : '\n  all passed\n');

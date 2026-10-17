@@ -281,10 +281,11 @@ export const adminNav: NavItem[] = [
  * The columns across the bottom of every page.
  *
  * Five columns, which is the shape both marketplaces measured against run -
- * and they carry two columns' worth that we have no page for yet: company
- * (about, careers, case studies, testimonials), support, a refund policy and
- * a partner programme. Those are pages to write, not links to invent, so
- * nothing here points at one that does not exist.
+ * and they carry a column's worth that we have no page for yet: company
+ * (about, careers, case studies, testimonials), support and a partner
+ * programme. Those are pages to write, not links to invent, so nothing here
+ * points at one that does not exist. The refund policy was on that list and
+ * is now a page, under Legal.
  */
 export const footerNav: { title: string; items: NavItem[] }[] = [
   {
@@ -339,6 +340,10 @@ export const footerNav: { title: string; items: NavItem[] }[] = [
     title: 'Legal',
     items: [
       { label: 'Terms of service', href: '/terms' },
+      /* Above privacy, because it is the one legal page somebody comes
+         looking for with a question rather than a worry, and the only one
+         that answers what happens to their money. */
+      { label: 'Refund policy', href: '/refund-policy' },
       { label: 'Privacy policy', href: '/privacy' },
       { label: 'Cookie policy', href: '/cookies' },
     ],
