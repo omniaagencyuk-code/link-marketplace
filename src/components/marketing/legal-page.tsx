@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import Link from 'next/link';
 import { Container } from '@/components/layout/container';
 import { RichText } from '@/lib/cms/rich-text-render';
@@ -13,9 +14,16 @@ import type { ContentAccessors } from '@/lib/cms/resolve';
 export function LegalPage({
   content,
   breadcrumbLabel,
+  summary,
 }: {
   content: ContentAccessors;
   breadcrumbLabel: string;
+  /**
+   * Rendered between the standfirst and the document, for the one thing on a
+   * legal page that must not be editable copy: a figure the code enforces.
+   * Only the refund policy passes one.
+   */
+  summary?: ReactNode;
 }) {
   const updatedAt = content.text('page', 'updatedAt');
   const intro = content.text('page', 'intro');
@@ -46,6 +54,8 @@ export function LegalPage({
         {intro ? (
           <p className="mt-5 text-[16px] leading-relaxed text-muted">{intro}</p>
         ) : null}
+
+        {summary}
 
         <div className="mt-10 border-t border-line pt-10">
           <RichText source={content.richText('page', 'body')} />

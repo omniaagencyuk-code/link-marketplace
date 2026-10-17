@@ -1,4 +1,5 @@
 import type { VerdictKind } from './verdict';
+import { CHECK_AFTER_GUARANTEE_DAYS, CHECK_EVERY_DAYS } from './guarantee';
 
 /**
  * What a verdict does to a link's record.
@@ -105,9 +106,10 @@ const DAY_MS = 24 * 60 * 60 * 1000;
  * When to look again.
  *
  * Weekly while the guarantee runs, because that is the window where finding a
- * problem is worth something to the buyer. Monthly afterwards, because the
- * durability score keeps earning from links long after their guarantee ends
- * and a listing's score is the thing a new buyer reads.
+ * problem is worth something to the buyer, and monthly afterwards. Both
+ * cadences come from `guarantee.ts`, which is also what the refund policy
+ * page prints: the page says we look weekly because this is the line that
+ * decides it.
  *
  * Tomorrow after any failure, hard or soft: a hard failure needs its second
  * opinion quickly, and a soft one is usually a site that will be reachable
@@ -124,7 +126,7 @@ export function nextCheckAt(
   if (kind !== 'ok') return new Date(now.getTime() + DAY_MS + jitter).toISOString();
 
   const underGuarantee = new Date(guaranteeEndsAt).getTime() > now.getTime();
-  const base = underGuarantee ? 7 * DAY_MS : 30 * DAY_MS;
+  const base = (underGuarantee ? CHECK_EVERY_DAYS : CHECK_AFTER_GUARANTEE_DAYS) * DAY_MS;
 
   return new Date(now.getTime() + base + jitter).toISOString();
 }

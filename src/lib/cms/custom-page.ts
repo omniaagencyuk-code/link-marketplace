@@ -47,6 +47,7 @@ export const RESERVED_SLUGS = new Set([
   'marketplace',
   'niche-edits',
   'pricing',
+  'refund-policy',
   'resources',
   'signup',
   'websites',
