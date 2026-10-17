@@ -137,6 +137,59 @@ select 'a window that has expired starts again: ' ||
 select 'a read of nothing costs nothing: ' ||
   (select public.spend_inventory_budget('t:four', 0, 1, 3600) = 0);
 
+-- --------------------------------------------------------- what was refused
+/*
+  A refusal is the one event worth keeping.
+
+  The counter in `rate_limits` resets when the window rolls, so without this
+  a customer stopped at two in the afternoon leaves no trace by three - and
+  "the marketplace told me to come back later" is unanswerable. 0091 records
+  it inside the function rather than in the caller, so it cannot be
+  forgotten by a future one.
+*/
+/*
+  Spent in its own statement, asserted in the next.
+
+  The first version called the function in a `from` subquery and counted the
+  rows in the same statement, which reported none: a statement reads the
+  snapshot taken when it started, so an insert the function makes while it
+  runs is not visible to the rest of it. A `do` block spends and prints
+  nothing, and the count that follows sees what it wrote.
+*/
+do $$ begin perform public.spend_inventory_budget('t:quiet', 5, 100, 3600); end; $$;
+
+select 'nothing is recorded while the budget holds: ' ||
+  (select count(*) = 0 from public.inventory_refusals where bucket = 't:quiet');
+
+do $$ begin perform public.spend_inventory_budget('t:loud', 500, 100, 3600); end; $$;
+
+select 'a refusal is recorded: ' ||
+  (select count(*) = 1 from public.inventory_refusals where bucket = 't:loud');
+
+select 'with what the read would have cost: ' ||
+  (select bool_and(rows_asked = 500) from public.inventory_refusals where bucket = 't:loud');
+
+-- A second refusal is a second row: one of them is a customer at a ceiling,
+-- ten in a minute is somebody walking the inventory.
+do $$ begin perform public.spend_inventory_budget('t:loud', 10, 100, 3600); end; $$;
+
+select 'and each refusal is its own row: ' ||
+  (select count(*) = 2 from public.inventory_refusals where bucket = 't:loud');
+
+set role authenticated;
+set request.jwt.claim.sub = '00000000-0000-4000-b000-000000000001';
+
+/*
+  Internal, on the terms every other internal table here has. What it holds
+  is which customer asked for too much and when, which is a judgement about
+  them rather than inventory.
+*/
+select 'a customer cannot read who was refused: ' ||
+  (select count(*) = 0 from public.inventory_refusals);
+
+reset request.jwt.claim.sub;
+reset role;
+
 -- ------------------------------------------------ the service role still reads
 /*
   The half that is easy to forget.

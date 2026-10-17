@@ -184,6 +184,41 @@ console.log('\n--- the inventory is read on the service role ---');
 
   const listing = read('src/app/(marketing)/websites/[slug]/page.tsx');
   yes('a listing page spends too', /spendInventoryRows\(viewer\.id/.test(listing));
+
+  /*
+    And somebody can see who it stopped.
+
+    A budget that refuses silently is one support cannot answer for and
+    nobody can tune: the counter resets hourly, so without a record a
+    customer stopped at two has no trace by three. 0091 records refusals;
+    this is the half that reads them.
+  */
+  const report = read('src/lib/services/inventory-reads.ts');
+  yes('refusals are read on the service role', /getAdminClient\(\)/.test(report));
+  // Internal data: it says which customer asked for too much and when.
+  yes('and never on the customer', !/getServerClient/.test(report));
+  /*
+    A failed read and a quiet week are different answers, on both paths.
+
+    There are two ways this read fails - an error on the response and a
+    thrown exception - and the first version of this assertion only asked
+    whether `failed: true` appeared anywhere in the file. It does, in the
+    catch block, so deleting it from the other path changed nothing here.
+    Caught by mutating it; counted now.
+  */
+  is(
+    'both ways of failing say so, rather than reading as nobody',
+    (report.match(/failed: true/g) ?? []).length,
+    2,
+  );
+  // One query for the names, not one per row.
+  yes('names are fetched in one read', /\.in\('id', ids\)/.test(report));
+
+  const diagnostics = read('src/app/admin/(protected)/diagnostics/page.tsx');
+  yes('the admin panel shows the budget', /inventoryReadReport\(\)/.test(diagnostics));
+  yes('with the cap beside it', /capRows/.test(diagnostics));
+  // The figures live here precisely because the refusal carries none.
+  yes('and the refusals under it', /inventory\.refusals\.map/.test(diagnostics));
 }
 
 console.log('\n--- where a public link into the inventory points ---');
