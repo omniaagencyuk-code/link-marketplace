@@ -41,6 +41,15 @@ Nothing extracted reaches a listing without a human pressing Approve.
 `src/lib/services/draft-approval.ts` is the only path, and it never writes a
 sell price: what we charge is a separate decision from what we pay.
 
+A publisher can also offer us a site directly, through /list-your-site, and
+that lands in `publisher_submissions` rather than in `listing_drafts`. Not a
+preference: `listing_drafts.email_id` is not null and points at
+`inbound_emails`, so a form submission would need an email invented for it
+that nobody sent - and every draft records the `prompt_version` that read it,
+which is a lie to stamp on something no prompt ever saw. The queue a person
+works is the same; where the two came from is the part that cannot be
+recovered afterwards.
+
 There is one exception and it has to stay the only one. `repeat-offers.ts`
 approves a draft where a seller we have **already** approved for that site now
 wants strictly less: same company by the domain after the `@`, same site, both
@@ -107,13 +116,24 @@ table with an admin-only policy and no customer-facing policy at all:
 Before adding a column that holds a cost, a contact or a commercial term, ask
 which of those tables it belongs in. It does not belong on `websites`.
 
-`pricing_enquiries` is the odd one: it is the only table a stranger can cause
-a row in, through the form on /pricing. It therefore has an admin policy and
-**no insert policy at all** - the form writes through a server action running
-as the service role, which throttles first. An insert policy for `anon` would
-be a second door into it, unthrottled, from any browser holding the anon key.
-What it holds is a named person's work address, their employer and what they
-said they could spend, which is `prospect_contacts`-grade data.
+`pricing_enquiries` and `publisher_submissions` are the odd ones: they are
+the only two tables a stranger can cause a row in, through the form on
+/pricing and the form on /list-your-site. Both therefore have an admin policy
+and **no insert policy at all** - each form writes through a server action
+running as the service role, which throttles first. An insert policy for
+`anon` would be a second door, unthrottled, from any browser holding the anon
+key. The first holds a named person's work address, their employer and what
+they said they could spend; the second holds a named person's address, the
+site they own and what they want paid for a placement. Both are
+`prospect_contacts`-grade, and the second is also a cost.
+
+A third form would get the same three things or it does not ship: its own
+throttle in `RATE_LIMITS` (never sharing a bucket, or one form's traffic
+turns the other away), a pure rules module that decides what is acceptable
+without a database, and a table with no insert policy. `publishers/rules.ts`
+is the newer of the two to copy; the price rule in it is the one worth
+reading, because a number stored without knowing its currency becomes a cost
+we never agreed to.
 
 The Sales Centre's fourteen tables are internal on the same terms and for a
 sharper reason: a prospect is a company somebody decided to approach, a

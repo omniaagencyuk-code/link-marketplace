@@ -19,6 +19,7 @@ import {
   RefreshCw,
   Settings,
   ShieldCheck,
+  Store,
   ShoppingCart,
   Target,
   TicketPercent,
@@ -251,6 +252,14 @@ export const adminNav: NavItem[] = [
   { label: 'Users', href: '/admin/users', icon: Users },
   { label: 'Categories', href: '/admin/categories', icon: FolderTree },
   { label: 'Publisher inbox', href: '/admin/sourcing', icon: Inbox },
+  /*
+    Beside the inbox, not inside it. Both are publishers offering us a site,
+    and that is where the likeness ends: the inbox holds emails a model read
+    into drafts, each stamped with the prompt version that read it, and these
+    were typed by the publisher and read by nobody. `listing_drafts.email_id`
+    is not null, so they could not be merged even if it were a good idea.
+  */
+  { label: 'Publisher offers', href: '/admin/publisher-offers', icon: Store },
   { label: 'Sales Centre', href: '/admin/sales', icon: Target },
   /*
     Beside the Sales Centre, which is the outbound half of the same job.
@@ -312,6 +321,11 @@ export const footerNav: { title: string; items: NavItem[] }[] = [
       { label: 'Link building planner', href: '/link-building-planner' },
       { label: 'Link building metrics', href: '/link-building-metrics' },
       { label: 'For agencies', href: '/link-building-agencies' },
+      /* The one link in the footer addressed to somebody selling rather
+         than buying. In Platform rather than a column of its own, because
+         one publisher link does not make a column, and the footer is where
+         a publisher who has read a listing goes looking for it. */
+      { label: 'List your site', href: '/list-your-site' },
     ],
   },
   {

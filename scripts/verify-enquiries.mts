@@ -2,8 +2,9 @@
  * Prove the pricing enquiry form accepts what it should and no more.
  *
  * No key, no network, no database: the rules are pure, which is the point.
- * This is the only form on the site a stranger can submit, so what it will
- * and will not take is worth checking exhaustively rather than by sampling,
+ * This is one of the two forms a stranger can submit - `verify:publishers`
+ * covers the other - so what it will and will not take is worth checking
+ * exhaustively rather than by sampling,
  * and the failures matter in both directions. A rule too strict loses an
  * agency that wanted to spend money with us and says nothing; a rule too
  * loose is a row the database refuses, which the person experiences as the

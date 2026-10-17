@@ -43,6 +43,7 @@ export const RESERVED_SLUGS = new Set([
   'link-building',
   'link-building-agencies',
   'link-building-planner',
+  'list-your-site',
   'login',
   'marketplace',
   'niche-edits',

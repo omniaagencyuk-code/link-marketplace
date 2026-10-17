@@ -60,6 +60,10 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
        here that offers something without asking for money for it. */
     { path: '/link-building-planner', priority: 0.8, changeFrequency: 'monthly' },
     { path: '/pricing', priority: 0.7, changeFrequency: 'monthly' },
+    /* The publisher-facing page. Indexable and worth indexing: the people
+       it is written for search for it, and they are the only visitors who
+       arrive wanting to add to the inventory rather than buy from it. */
+    { path: '/list-your-site', priority: 0.7, changeFrequency: 'monthly' },
     { path: '/resources', priority: 0.7, changeFrequency: 'weekly' },
     { path: '/terms', priority: 0.3, changeFrequency: 'monthly' },
     { path: '/refund-policy', priority: 0.3, changeFrequency: 'monthly' },
