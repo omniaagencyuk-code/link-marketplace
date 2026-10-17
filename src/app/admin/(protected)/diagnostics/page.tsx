@@ -7,6 +7,8 @@ import { getCurrentUser } from '@/lib/auth/customer-access';
 import { getServerClient } from '@/lib/supabase/server';
 import { pageContentService } from '@/lib/services/page-content-service';
 import { websiteService } from '@/lib/services';
+import { inventoryReadReport } from '@/lib/services/inventory-reads';
+import { formatDate } from '@/lib/utils/format';
 
 export const dynamic = 'force-dynamic';
 
@@ -86,6 +88,12 @@ export default async function AdminDiagnosticsPage() {
   */
   const payments = await stripeReadiness();
   /*
+    Who the inventory budget has stopped, which is the half of 0090 a
+    customer is deliberately told nothing about. Read before the timings
+    below so its two queries are not counted as homepage time.
+  */
+  const inventory = await inventoryReadReport();
+  /*
     One at a time, on purpose.
 
     The homepage runs four of these at once, so measuring them that way would
@@ -119,6 +127,128 @@ export default async function AdminDiagnosticsPage() {
         title="Diagnostics"
         description="Whether this deployment can take payments, and where the homepage's server time goes. Reload for a fresh measurement."
       />
+
+      <section className="mb-8" aria-labelledby="inventory">
+        <div className="mb-3 flex flex-wrap items-center gap-2">
+          <h2 id="inventory" className="text-[15px] font-semibold text-ink">
+            The inventory budget
+          </h2>
+          <span className="text-[13px] text-muted">
+            {inventory.capRows.toLocaleString('en-GB')} rows per account per{' '}
+            {inventory.windowHours === 1 ? 'hour' : `${inventory.windowHours} hours`}
+          </span>
+        </div>
+
+        <p className="mb-4 max-w-3xl text-[13px] leading-relaxed text-muted">
+          Since 0090 a customer&rsquo;s own key reads nothing from the publisher tables, so the
+          only way to collect the inventory is to drive the pages - and this is what that
+          costs them. A refusal says &ldquo;try again shortly&rdquo; and quotes none of these
+          figures, which is why they are here instead.{' '}
+          {inventory.refusalsEver > 0 ? (
+            <>
+              <strong className="font-semibold text-ink">
+                {inventory.refusalsEver.toLocaleString('en-GB')}
+              </strong>{' '}
+              refusals recorded in total.
+            </>
+          ) : (
+            'Nothing has been refused yet.'
+          )}
+        </p>
+
+        {inventory.failed ? (
+          <p className="rounded-[var(--radius-card)] border border-line bg-white px-4 py-6 text-[13px] text-muted shadow-[var(--shadow-card)]">
+            Could not read the budget tables. That is a failure to report, not an account
+            behaving itself.
+          </p>
+        ) : (
+          <div className="grid gap-5 lg:grid-cols-2">
+            <div>
+              <h3 className="mb-2 text-[13px] font-semibold text-ink">Spending now</h3>
+              <TableWrap>
+                <Table>
+                  <caption className="sr-only">Accounts inside the current window</caption>
+                  <thead>
+                    <tr>
+                      <Th>Account</Th>
+                      <Th className="text-right">Rows</Th>
+                      <Th className="text-right">Window ends</Th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {inventory.spenders.length === 0 ? (
+                      <Tr>
+                        <Td colSpan={3} className="py-6 text-center text-[13px] text-muted">
+                          Nobody has read a listing this hour.
+                        </Td>
+                      </Tr>
+                    ) : null}
+                    {inventory.spenders.map((account) => (
+                      <Tr key={`${account.label}-${account.at}`}>
+                        <Td className="max-w-[18rem] truncate text-[13px] text-ink">
+                          {account.label}
+                        </Td>
+                        {/* Against the cap, because a number on its own does not
+                            say whether somebody is about to be stopped. */}
+                        <Td className="tabular text-right text-[13px] text-ink">
+                          {account.rows.toLocaleString('en-GB')}
+                          <span className="ml-1 text-[11px] text-muted">
+                            of {inventory.capRows.toLocaleString('en-GB')}
+                          </span>
+                        </Td>
+                        <Td className="tabular text-right text-[12px] whitespace-nowrap text-muted">
+                          {new Date(account.at).toLocaleTimeString('en-GB', {
+                            hour: '2-digit',
+                            minute: '2-digit',
+                          })}
+                        </Td>
+                      </Tr>
+                    ))}
+                  </tbody>
+                </Table>
+              </TableWrap>
+            </div>
+
+            <div>
+              <h3 className="mb-2 text-[13px] font-semibold text-ink">Refused</h3>
+              <TableWrap>
+                <Table>
+                  <caption className="sr-only">Reads the budget refused</caption>
+                  <thead>
+                    <tr>
+                      <Th>Account</Th>
+                      <Th className="text-right">Asked for</Th>
+                      <Th className="text-right">When</Th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {inventory.refusals.length === 0 ? (
+                      <Tr>
+                        <Td colSpan={3} className="py-6 text-center text-[13px] text-muted">
+                          Nobody has been refused.
+                        </Td>
+                      </Tr>
+                    ) : null}
+                    {inventory.refusals.map((account) => (
+                      <Tr key={`${account.label}-${account.at}`}>
+                        <Td className="max-w-[18rem] truncate text-[13px] text-ink">
+                          {account.label}
+                        </Td>
+                        <Td className="tabular text-right text-[13px] text-ink">
+                          {account.rows.toLocaleString('en-GB')}
+                        </Td>
+                        <Td className="tabular text-right text-[12px] whitespace-nowrap text-muted">
+                          {formatDate(account.at)}
+                        </Td>
+                      </Tr>
+                    ))}
+                  </tbody>
+                </Table>
+              </TableWrap>
+            </div>
+          </div>
+        )}
+      </section>
 
       <section className="mb-8" aria-labelledby="payments">
         <div className="mb-3 flex flex-wrap items-center gap-2">
