@@ -43,3 +43,13 @@ export async function setPublisherSubmissionStatusAction(id: string, status: str
   revalidatePath('/admin/publisher-offers');
   return { ok: true as const };
 }
+
+export async function deletePublisherSubmissionAction(id: string) {
+  await requireAdminSession();
+
+  const removed = await publisherSubmissionService.remove(id);
+  if (!removed) return { error: 'That submission has already gone.' };
+
+  revalidatePath('/admin/publisher-offers');
+  return { ok: true as const };
+}

@@ -275,3 +275,57 @@ select 'the table carries exactly one policy, and it is the admin''s: ' ||
 select 'row level security is on: ' ||
   (select relrowsecurity from pg_class
     where oid = 'public.publisher_submissions'::regclass);
+
+-- ------------------------------------------------- throwing one away
+
+/*
+  A delete rather than a sixth status, and the difference is what each is
+  for. `spam` records that somebody tried, which is worth keeping when the
+  same address tries again; a delete is for the rows that are not offers at
+  all - a test submission, or a form filled in twice by refreshing.
+
+  The admin policy is `for all`, so it already covers this. The other half is
+  that a customer's delete removes nothing, and it is worth being exact about
+  *why*, because mutation testing showed it is not the reason it first
+  looks: `authenticated` holds the DELETE grant, and adding a permissive
+  delete policy to this table still deletes no rows. What stops it is the
+  absence of a SELECT policy - a delete with a `where` has to read the rows
+  before it can match them, and there are none it may read.
+
+  So this pair is a statement about that, not about the delete policy. What
+  catches a customer-facing policy of any kind is the policy count at the end
+  of this file, which is the assertion that failed when the mutation added
+  one.
+*/
+insert into public.publisher_submissions (full_name, email, domain)
+values ('Delete Me', 'delete@zqpub.test', 'zqpub-delete.com');
+
+set role authenticated;
+set request.jwt.claim.sub = '00000000-0000-4000-9200-000000000001';
+
+do $$
+declare removed integer;
+begin
+  delete from public.publisher_submissions where email = 'delete@zqpub.test';
+  get diagnostics removed = row_count;
+  raise notice 'a customer deletes nothing: %', (removed = 0);
+exception
+  when insufficient_privilege then raise notice 'a customer deletes nothing: true';
+  when others then raise notice 'a customer deletes nothing: true';
+end;
+$$;
+
+reset request.jwt.claim.sub;
+reset role;
+
+select 'and the offer is still there afterwards: ' ||
+  (select count(*) = 1 from public.publisher_submissions where email = 'delete@zqpub.test');
+
+with gone as (
+  delete from public.publisher_submissions
+   where email = 'delete@zqpub.test' returning 1
+)
+select 'the service role may throw one away: ' || (select count(*) = 1 from gone);
+
+select 'and it is gone: ' ||
+  (select count(*) = 0 from public.publisher_submissions where email = 'delete@zqpub.test');

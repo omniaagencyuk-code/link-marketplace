@@ -199,6 +199,42 @@ export const publisherSubmissionService = {
     return error ? 0 : (count ?? 0);
   },
 
+  /**
+   * Throw one away.
+   *
+   * Deliberately a delete rather than a sixth status. The five statuses are
+   * for offers that happened - an offer marked `spam` is a record that
+   * somebody tried, and worth keeping when the same address tries again. This
+   * is for the rows that are not offers at all: a test submission, a
+   * duplicate, a form somebody filled in twice by refreshing.
+   *
+   * There is no undo and no copy anywhere else, so the screen confirms by
+   * name before calling this. Returns false when the row was already gone,
+   * which is what a second click on a stale page looks like.
+   */
+  async remove(id: string): Promise<boolean> {
+    if (!isSupabaseEnabled()) {
+      return store.delete(id);
+    }
+
+    const supabase = getAdminScopedClient();
+    /*
+      `select` on the way out, so a delete that matched nothing is told apart
+      from one that worked. Without it PostgREST answers the same either way,
+      and the screen would report success for a row somebody else had already
+      deleted.
+    */
+    const { data, error } = await supabase
+      .from('publisher_submissions')
+      .delete()
+      .eq('id', id)
+      .select('id')
+      .maybeSingle();
+
+    if (error) throw new Error(`Could not delete that submission: ${error.message}`);
+    return Boolean(data);
+  },
+
   /** Move an offer along, and record who did it. */
   async setStatus(
     id: string,
