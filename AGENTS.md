@@ -305,8 +305,8 @@ renders when nothing is stored.
 
 ## The service pages
 
-/link-building and /niche-edits are drawn by their own compositions;
-/buy-backlinks, /digital-pr, /link-building-agencies and the service starter
+/link-building, /niche-edits and /digital-pr are drawn by their own
+compositions; /buy-backlinks, /link-building-agencies and the service starter
 are still drawn by `ServicePage`. All of them take their words from the same
 place - the page's row in the CMS, falling back to the shipped defaults in
 `src/lib/cms/pages/` - so a composition decides the drawing and never the
@@ -316,8 +316,8 @@ copy, and a section saved in /admin/pages still replaces the whole thing.
   template and the new composition from the same content and compares them:
   every paragraph, every bullet, every question and its answer, every
   destination the old page linked to, both structured-data documents.
-  `verify:link-building` and `verify:niche-edits` are that comparison plus
-  what is particular to each page. The failure it exists for is a silent one
+  `verify:link-building`, `verify:niche-edits` and `verify:digital-pr` are
+  that comparison plus what is particular to each page. The failure it exists for is a silent one
   - a paragraph stops being rendered, nothing says so, and a month later the
   ranking has moved and nobody connects the two.
 - **Nothing is hidden until JavaScript arrives.** `Reveal` hides only what it
@@ -331,11 +331,19 @@ copy, and a section saved in /admin/pages still replaces the whole thing.
   before anything runs and stays there if nothing does. A reader who never
   sees it animate sees an article with a link in it, which is the argument
   the page is making.
-- **What both pages share has one copy.** `OrderSteps` (the four steps of an
-  order), `ServiceCta`, `MarketplaceMock` and the motion kit in
-  `page-motion.tsx`. Two service pages describing the same order flow in
-  their own words are two descriptions to keep true, and nobody reads two
-  service pages side by side to notice that one has stopped being so.
+- **What the pages share has one copy.** `OrderSteps` (the four steps of an
+  order), `ServiceCta`, `MarketplaceMock`, `MARKETPLACE_FILTERS` and the
+  motion kit in `page-motion.tsx`. Two service pages describing the same
+  order flow in their own words are two descriptions to keep true, and
+  nobody reads two service pages side by side to notice that one has stopped
+  being so.
+
+  The exception proves where the line is. /digital-pr draws `PrStages`
+  rather than `OrderSteps`, because its own copy says digital PR is "a
+  campaign rather than a single order" - the two bands describe different
+  things, and sharing them would have made the page contradict its own
+  paragraph. Shared because it is the same thing; separate because it is
+  not.
 - **An illustration must not look like a listing.** The drawings on
   /niche-edits invent an article and three figures, and every one of them is
   captioned as an example and hidden from assistive technology. A publisher's
@@ -343,6 +351,22 @@ copy, and a section saved in /admin/pages still replaces the whole thing.
   gave us permission to show; made-up figures presented as measured are a
   claim about a site. `verify:niche-edits` checks the captions and checks no
   domain is named anywhere on the page.
+- **A drawing must not promise what the copy beside it refuses to.**
+  /digital-pr sells an approach to an editor who does not have to publish
+  anything, and its fourth section exists to say so. So its mastheads are
+  invented and checked against a list of the real ones somebody would reach
+  for first; its comparison table is checked to have guest posts winning more
+  rows than digital PR, because the copy says a guest post is the better
+  choice when the story is not there; its third stage is "Editorial
+  consideration" rather than "Get published"; and every sentence on the page
+  containing "guarantee" is counted and checked to be denying one. That is
+  the failure a redesign on a page like this actually has - not a lost
+  paragraph, but a picture that oversells the paragraph it sits beside, which
+  nothing in a type system or a build will catch.
+- **The marketplace drawing names a link type only on /digital-pr.** The
+  listings are a mixture, and a table of unlabelled rows under a heading
+  about publications reads as a list of digital PR opportunities. The other
+  pages leave `showLinkTypes` off and are drawn exactly as before.
 
 ## Taking payment
 
@@ -438,12 +462,14 @@ own integration and nothing here should take that over.
   and the footer take their menus as props rather than importing the arrays,
   which is the one way this feature can be quietly inert. No API key, no
   database, no network.
-- `npm run verify:link-building` and `npm run verify:niche-edits` — that the
-  two redrawn service pages still say everything the template said. Both
-  render the old `ServicePage` and the new composition from the same shipped
-  content and compare them, through `scripts/service-redraw.mts`; what each
-  adds is its own page's illustrations and the claims they must not make. No
-  key, no database, no network, no browser.
+- `npm run verify:link-building`, `npm run verify:niche-edits` and
+  `npm run verify:digital-pr` — that the three redrawn service pages still
+  say everything the template said. Each renders the old `ServicePage` and
+  the new composition from the same shipped content and compares them,
+  through `scripts/service-redraw.mts`; what each adds is its own page's
+  illustrations and the claims they must not make. The digital PR one is the
+  longest for the reason given above: on that page a drawing can be wrong
+  without a word being missing. No key, no database, no network, no browser.
 - `npm run verify:import` — the CSV importer.
 - `npm run verify:enquiries` — what the pricing page's enquiry form accepts
   and refuses, and what survives the cleaning on the way to the column. No

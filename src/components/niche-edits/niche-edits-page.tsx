@@ -6,6 +6,7 @@ import { Faq, type FaqItem } from '@/components/shared/faq';
 import { Reveal } from '@/components/cms/reveal';
 import { Ink } from '@/components/marketing/page-motion';
 import { OrderSteps } from '@/components/marketing/order-steps';
+import { MARKETPLACE_FILTERS } from '@/components/marketing/marketplace-filters';
 import { ServiceCta } from '@/components/marketing/service-cta';
 import { MarketplaceMock } from '@/components/marketing/marketplace-mock';
 import { ArticleDemo } from './article-demo';
@@ -67,18 +68,6 @@ const FADE_UP: Animation = { entrance: 'fade-up', speed: 'normal', delay: 'none'
 const STAGGER: Animation = { entrance: 'stagger', speed: 'normal', delay: 'none' };
 const SLIDE_LEFT: Animation = { entrance: 'slide-left', speed: 'normal', delay: 'none' };
 const SLIDE_RIGHT: Animation = { entrance: 'slide-right', speed: 'normal', delay: 'none' };
-
-/** The marketplace's own filters, as the template has always listed them. */
-const FILTERS = [
-  'Domain Rating',
-  'Organic Traffic',
-  'Referring Domains',
-  'Country',
-  'Niche',
-  'Price',
-  'Turnaround',
-  'Link Type',
-];
 
 /** A drawing for each body section, in the order the sections ship. */
 const BODY_VISUALS = [BeforeAfter, Comparison, MetricsIllustration, AnchorIllustration] as const;
@@ -307,7 +296,7 @@ export function NicheEditsPage({
                 </p>
 
                 <ul className="mt-7 grid gap-2.5 sm:grid-cols-2">
-                  {FILTERS.map((filter) => (
+                  {MARKETPLACE_FILTERS.map((filter) => (
                     <li key={filter} className="flex items-center gap-2 text-[14px] text-ink-soft">
                       <Check className="h-4 w-4 shrink-0 text-accent-600" aria-hidden="true" />
                       {filter}

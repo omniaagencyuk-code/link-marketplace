@@ -13,6 +13,7 @@ import { MetricsShowcase } from '@/components/marketing/metrics-showcase';
 import { siteUrl } from '@/lib/config/brand';
 import type { ContentAccessors } from '@/lib/cms/resolve';
 import type { PreviewRow } from '@/lib/services/marketplace-preview';
+import { MARKETPLACE_FILTERS } from '@/components/marketing/marketplace-filters';
 
 /**
  * /guest-posts.
@@ -69,18 +70,6 @@ interface Highlight extends Record<string, unknown> {
 
 /** Fixed in code. Editors change copy, not composition. */
 const HIGHLIGHT_ICONS: LucideIcon[] = [Filter, PenTool, FileEdit, Timer];
-
-/** The filters the marketplace actually offers, listed beside the preview. */
-const FILTERS = [
-  'Domain Rating',
-  'Organic Traffic',
-  'Referring Domains',
-  'Country',
-  'Niche',
-  'Price',
-  'Turnaround',
-  'Link Type',
-];
 
 export function GuestPostsPage({
   content,
@@ -302,7 +291,7 @@ export function GuestPostsPage({
                     {content.text('preview', 'body')}
                   </p>
                   <ul className="mt-6 grid gap-2.5 sm:grid-cols-2">
-                    {FILTERS.map((filter) => (
+                    {MARKETPLACE_FILTERS.map((filter) => (
                       <li key={filter} className="flex items-center gap-2 text-[14px] text-ink-soft">
                         <Check className="h-4 w-4 shrink-0 text-accent-600" aria-hidden="true" />
                         {filter}

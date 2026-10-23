@@ -1,8 +1,9 @@
 import { Bookmark, Plus, Search } from 'lucide-react';
 import { nicheName } from '@/lib/data/categories';
+import { linkTypeLabels } from '@/lib/utils/labels';
 import { cn } from '@/lib/utils/cn';
 import type { PreviewRow } from '@/lib/services/marketplace-preview';
-import type { NicheSlug } from '@/lib/types';
+import type { LinkTypeSlug, NicheSlug } from '@/lib/types';
 
 /**
  * The marketplace, drawn rather than run.
@@ -20,6 +21,16 @@ import type { NicheSlug } from '@/lib/types';
  * a mock full of made-up domains at made-up prices is a claim about the
  * inventory, and this one makes none.
  *
+ * ## What each row is for sale as
+ *
+ * `linkTypes` says whether a listing offers a guest post, a niche edit, a
+ * digital PR placement, or more than one. /digital-pr asks for that column
+ * (`showLinkTypes`) because without it the table reads as a list of digital
+ * PR opportunities, and most of the inventory is not - a page about
+ * editorial coverage showing guest-post listings unlabelled is the page
+ * making a claim the rows do not support. The other pages leave it off and
+ * are drawn exactly as before.
+ *
  * ## It does nothing, and says so
  *
  * Not a second marketplace: there are no controls, no links and nothing
@@ -31,10 +42,13 @@ import type { NicheSlug } from '@/lib/types';
 export function MarketplaceMock({
   rows,
   className,
+  showLinkTypes = false,
   caption = 'An illustration of the Press Parrot marketplace: a search box, filters for niche, domain rating, traffic, country and price, and a table of publishers with their metrics.',
 }: {
   rows: PreviewRow[];
   className?: string;
+  /** Print what each listing is for sale as. Off everywhere but /digital-pr. */
+  showLinkTypes?: boolean;
   caption?: string;
 }) {
   return (
@@ -75,9 +89,55 @@ export function MarketplaceMock({
               <span className="min-w-0 flex-1 truncate text-[12px] font-medium text-ink">
                 {row.maskedDomain}
               </span>
-              <span className="hidden w-20 shrink-0 truncate text-[11px] text-muted sm:block">
-                {row.niche ? nicheName(row.niche as NicheSlug) : '—'}
-              </span>
+              {/*
+                Link type in the niche column's place rather than beside it.
+                The drawing sits in a 32rem column, which has room for one
+                category and not two: added as a seventh cell the badges
+                pushed the row's "Add" button past the card's own edge, where
+                the band's clipping hid it. The filters listed beside the
+                drawing still name both.
+              */}
+              {showLinkTypes ? (
+                <span className="hidden w-24 shrink-0 gap-1 truncate sm:flex">
+                  {(() => {
+                    /*
+                      One badge, and where a listing offers more than one
+                      thing the named one is the digital PR. Not a thumb on
+                      the scale: the column is only drawn on the page about
+                      digital PR, and naming the guest post on a listing that
+                      also sells the thing the reader came for would be the
+                      drawing hiding the answer. A listing without it still
+                      says what it is.
+                    */
+                    const named = row.linkTypes.includes('digital-pr')
+                      ? 'digital-pr'
+                      : row.linkTypes[0];
+                    if (!named) return null;
+                    return (
+                      <>
+                        <span
+                          className={
+                            named === 'digital-pr'
+                              ? 'truncate rounded border border-accent-200 bg-accent-50 px-1.5 py-0.5 text-[10px] font-medium text-accent-800'
+                              : 'truncate rounded border border-line bg-surface px-1.5 py-0.5 text-[10px] font-medium text-muted'
+                          }
+                        >
+                          {linkTypeLabels[named as LinkTypeSlug] ?? named}
+                        </span>
+                        {row.linkTypes.length > 1 ? (
+                          <span className="self-center text-[10px] text-muted">
+                            +{row.linkTypes.length - 1}
+                          </span>
+                        ) : null}
+                      </>
+                    );
+                  })()}
+                </span>
+              ) : (
+                <span className="hidden w-20 shrink-0 truncate text-[11px] text-muted sm:block">
+                  {row.niche ? nicheName(row.niche as NicheSlug) : '—'}
+                </span>
+              )}
               <span className="tabular w-12 shrink-0 text-[11px] text-ink-soft">
                 DR {row.domainRating}
               </span>
