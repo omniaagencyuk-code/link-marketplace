@@ -53,7 +53,8 @@
     "verify:enquiries": "tsx scripts/verify-enquiries.mts",
     "verify:publishers": "tsx scripts/verify-publishers.mts",
     "verify:link-building": "tsx scripts/verify-link-building.mts",
-    "verify:niche-edits": "tsx scripts/verify-niche-edits.mts"
+    "verify:niche-edits": "tsx scripts/verify-niche-edits.mts",
+    "verify:digital-pr": "tsx scripts/verify-digital-pr.mts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.128.0",

@@ -13,6 +13,10 @@
 @theme {
   --font-sans: var(--font-inter), ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
   --font-handwritten: var(--font-caveat), 'Segoe Script', cursive;
+  /* The masthead on /digital-pr's newsroom drawing, and nothing else.
+     Declared rather than borrowed from the framework's default serif,
+     because a stack nobody chose is a stack nobody notices changing. */
+  --font-masthead: ui-serif, Georgia, Cambria, 'Times New Roman', serif;
 
   --color-navy-950: #06111c;
   --color-navy-900: #0b1b2b;
@@ -859,6 +863,125 @@
 @media (prefers-reduced-motion: reduce) {
   [data-pp-ne],
   [data-reveal][data-revealed] [data-pp-draw] {
+    animation: none;
+  }
+}
+
+/* ------------------------------------------------- the newsroom drawing --
+
+   /digital-pr's hero: a front page, and three pieces of coverage arriving
+   around it from three directions. The same arrangement the niche edit
+   demonstration uses and for the same reasons - delays on one timeline, all
+   of it `both`-filled, so the finished picture is painted at the first frame
+   and a reader whose JavaScript never arrives sees the arrangement rather
+   than an empty box.
+
+   What is different here is where the motion stops. The cards settle and
+   then drift, because a newsroom is a thing in motion and a front page is
+   not; the drift is a separate, infinite animation that starts only once the
+   entrance has finished, so the two never fight over `transform`. */
+
+@keyframes pp-dpr-paper {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 1.5rem, 0) scale3d(0.97, 0.97, 1);
+  }
+}
+
+@keyframes pp-dpr-from-left {
+  from {
+    opacity: 0;
+    transform: translate3d(-2.5rem, 0.75rem, 0) rotate(-4deg);
+  }
+}
+
+@keyframes pp-dpr-from-right {
+  from {
+    opacity: 0;
+    transform: translate3d(2.5rem, 0.75rem, 0) rotate(4deg);
+  }
+}
+
+@keyframes pp-dpr-from-below {
+  from {
+    opacity: 0;
+    transform: translate3d(1.5rem, 2rem, 0) rotate(3deg);
+  }
+}
+
+@keyframes pp-dpr-settle {
+  50% {
+    transform: translate3d(0, -0.5rem, 0);
+  }
+}
+
+[data-pp-dpr='paper'] {
+  animation: pp-dpr-paper 700ms cubic-bezier(0.22, 0.61, 0.36, 1) 120ms both;
+}
+
+/*
+  Each card runs its entrance and then its drift. Two animations on one
+  element, the second delayed past the end of the first, so neither has to
+  know what the other left behind.
+*/
+[data-pp-dpr='card'][data-pp-dpr-stage='one'] {
+  animation:
+    pp-dpr-from-left 700ms cubic-bezier(0.22, 0.61, 0.36, 1) 600ms both,
+    pp-dpr-settle 7s ease-in-out 1300ms infinite;
+}
+
+[data-pp-dpr='card'][data-pp-dpr-stage='two'] {
+  animation:
+    pp-dpr-from-right 700ms cubic-bezier(0.22, 0.61, 0.36, 1) 900ms both,
+    pp-dpr-settle 8s ease-in-out 1600ms infinite;
+}
+
+[data-pp-dpr='card'][data-pp-dpr-stage='three'] {
+  animation:
+    pp-dpr-from-below 700ms cubic-bezier(0.22, 0.61, 0.36, 1) 1200ms both,
+    pp-dpr-settle 9s ease-in-out 1900ms infinite;
+}
+
+/*
+  A brand noticed inside somebody else's article. Armed by `Reveal`, because
+  this one is below the fold and arriving on load would mean it had already
+  happened by the time anybody scrolled to it - the opposite of the hero,
+  which is on screen from the first frame.
+*/
+[data-pp-dpr='mention'] {
+  background-image: linear-gradient(var(--color-accent-100), var(--color-accent-100));
+  background-repeat: no-repeat;
+  background-position: 0 0;
+  background-size: 100% 100%;
+  border-radius: 2px;
+  padding: 0 3px;
+  font-weight: 600;
+  color: var(--color-accent-800);
+}
+
+[data-reveal][data-revealed] [data-pp-dpr='mention'] {
+  animation: pp-ne-highlight 800ms cubic-bezier(0.22, 0.61, 0.36, 1) 300ms both;
+}
+
+/*
+  The line joining the four stages of a campaign uses `data-pp-draw`, the
+  attribute /niche-edits' trend line already has: same dash counted down to
+  nothing, same `Reveal` deciding when, one rule for both. A second
+  attribute doing the same thing is a second timing to keep in step.
+*/
+
+/*
+  The cards are matched here by both their attributes, not just the first.
+  `[data-pp-dpr='card'][data-pp-dpr-stage='one']` is two attribute selectors
+  and a media query adds no specificity, so a bare `[data-pp-dpr]` lost to it
+  and the entrances kept running for a reader who had asked them not to -
+  which the browser reported plainly as three finished animations under
+  `prefers-reduced-motion`.
+*/
+@media (prefers-reduced-motion: reduce) {
+  [data-pp-dpr],
+  [data-pp-dpr='card'][data-pp-dpr-stage],
+  [data-reveal][data-revealed] [data-pp-dpr='mention'] {
     animation: none;
   }
 }

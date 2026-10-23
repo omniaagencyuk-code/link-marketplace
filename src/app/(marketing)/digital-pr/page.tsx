@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 import { Megaphone, Newspaper, Quote, Users } from 'lucide-react';
-import { ServicePage } from '@/components/marketing/service-page';
+import { DigitalPrPage } from '@/components/digital-pr/digital-pr-page';
 import { PageSections } from '@/components/cms/page-sections';
 import { metadataForPage } from '@/lib/cms/metadata';
 import { pageContentService } from '@/lib/services/page-content-service';
@@ -33,7 +33,7 @@ export default async function Page() {
       slug={SLUG}
       provided={{ preview: preview.rows }}
       fallback={
-        <ServicePage
+        <DigitalPrPage
           content={content}
           highlightIcons={highlightIcons}
           preview={preview.rows}
