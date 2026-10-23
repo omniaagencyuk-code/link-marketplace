@@ -78,6 +78,26 @@ end;
 $$;
 
 /*
+  0093's counting function, on the same terms. The figures it returns are
+  printed on a public page, but the page reads them through the service-role
+  client like everything else here, and a function the anon key can call is
+  a function somebody can walk.
+*/
+do $$
+declare
+  v_refused boolean;
+begin
+  begin
+    perform * from public.niche_page_counts();
+    v_refused := false;
+  exception when insufficient_privilege then
+    v_refused := true;
+  end;
+  raise notice 'nor count the niches: %', v_refused;
+end;
+$$;
+
+/*
   The one that keeps its grant, and why.
 
   `customer_recommendations` personalises by auth.uid(); on the service role
@@ -216,6 +236,14 @@ select 'the service role may search: ' ||
 
 select 'and may spend from a budget: ' ||
   (select public.spend_inventory_budget('t:service', 1, 100, 3600) = 0);
+
+/*
+  And may count the niches, which is what /guest-posts asks on every
+  revalidation. Before 0093 it asked by reading every active listing, and
+  the answer came back as a statement timeout.
+*/
+select 'and may count the niches: ' ||
+  (select count(*) >= 0 from public.niche_page_counts());
 
 select 'and the services under it: ' ||
   (select count(*) > 0 from public.services);

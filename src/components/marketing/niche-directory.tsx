@@ -19,7 +19,27 @@ import type { NicheSlug } from '@/lib/types';
  * marketplace to the people who are not buying it - which is most of them.
  */
 export async function NicheDirectory() {
-  const niches = await publishedNiches();
+  /*
+    A failed count hides the directory. It does not take the page down.
+
+    This block is the only thing on /guest-posts that asks the database
+    anything beyond the page's own content, and until 0093 the question it
+    asked read every active listing to count them - which timed out, threw,
+    and 500'd a page whose other eight sections were sitting there ready. The
+    sitemap has wrapped the same call in `soften` from the beginning, for the
+    same reason: a page missing one band is worth far more than no page.
+
+    Logged rather than swallowed, because a directory that quietly stops
+    appearing is a directory nobody notices has gone.
+  */
+  let niches: NicheSlug[];
+  try {
+    niches = await publishedNiches();
+  } catch (error) {
+    console.error('[niche-directory] could not list the niches:', String(error).slice(0, 200));
+    return null;
+  }
+
   if (niches.length === 0) return null;
 
   const ordered = [
