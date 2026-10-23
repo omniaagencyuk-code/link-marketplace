@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 import { BadgeCheck, Gauge, Receipt, Workflow } from 'lucide-react';
-import { ServicePage } from '@/components/marketing/service-page';
+import { LinkBuildingPage } from '@/components/link-building/link-building-page';
 import { PageSections } from '@/components/cms/page-sections';
 import { metadataForPage } from '@/lib/cms/metadata';
 import { pageContentService } from '@/lib/services/page-content-service';
@@ -33,7 +33,13 @@ export default async function Page() {
       slug={SLUG}
       provided={{ preview: preview.rows }}
       fallback={
-        <ServicePage
+        /*
+          Its own composition, not the shared template. `ServicePage` still
+          renders the other five service pages unchanged - redesigning it
+          would have redesigned them too, which is the reason /guest-posts
+          has one of these as well.
+        */
+        <LinkBuildingPage
           content={content}
           highlightIcons={highlightIcons}
           preview={preview.rows}
