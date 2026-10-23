@@ -1,13 +1,13 @@
-import Image from 'next/image';
 import Link from 'next/link';
 import { ArrowRight, Check, type LucideIcon } from 'lucide-react';
-import { ClipboardList, MousePointerClick, PackageCheck, SlidersHorizontal } from 'lucide-react';
 import { Container } from '@/components/layout/container';
 import { Button } from '@/components/ui/button';
 import { Faq, type FaqItem } from '@/components/shared/faq';
 import { Reveal } from '@/components/cms/reveal';
-import { Float, Ink } from './ink';
-import { MarketplaceMock } from './marketplace-mock';
+import { Float, Ink } from '@/components/marketing/page-motion';
+import { OrderSteps } from '@/components/marketing/order-steps';
+import { ServiceCta } from '@/components/marketing/service-cta';
+import { MarketplaceMock } from '@/components/marketing/marketplace-mock';
 import { BODY_VISUALS } from './visuals';
 import { RichText, type RichTextValue } from '@/lib/cms/rich-text-render';
 import { siteUrl } from '@/lib/config/brand';
@@ -106,13 +106,6 @@ const FILTERS = [
  * supply your target URL and anchor text, and track the order through to a
  * live URL." The labels are that sentence, cut into its four stages.
  */
-const STEPS: { icon: LucideIcon; label: string }[] = [
-  { icon: SlidersHorizontal, label: 'Filter the marketplace' },
-  { icon: MousePointerClick, label: 'Choose the sites that fit' },
-  { icon: ClipboardList, label: 'Add them to an order' },
-  { icon: PackageCheck, label: 'Track each one to a live URL' },
-];
-
 export function LinkBuildingPage({
   content,
   highlightIcons,
@@ -206,7 +199,7 @@ export function LinkBuildingPage({
           <div className="grid items-center gap-12 lg:grid-cols-[minmax(0,1fr)_minmax(0,30rem)] lg:gap-16">
             <div className="min-w-0">
               <p
-                data-lb-enter=""
+                data-pp-enter=""
                 className="inline-flex rounded-full bg-accent-50 px-3 py-1 text-[11px] font-semibold tracking-[0.12em] text-accent-700 uppercase"
               >
                 {content.text('hero', 'eyebrow')}
@@ -218,24 +211,24 @@ export function LinkBuildingPage({
                 zero opacity counts as unpainted.
               */}
               <h1
-                data-lb-enter="heading"
-                style={{ '--lb-delay': '80ms' } as React.CSSProperties}
+                data-pp-enter="heading"
+                style={{ '--pp-delay': '80ms' } as React.CSSProperties}
                 className="mt-5 text-[2.25rem] leading-[1.06] font-semibold tracking-tight text-ink sm:text-5xl lg:text-[3.25rem]"
               >
                 {content.text('hero', 'title')}
               </h1>
 
               <p
-                data-lb-enter=""
-                style={{ '--lb-delay': '220ms' } as React.CSSProperties}
+                data-pp-enter=""
+                style={{ '--pp-delay': '220ms' } as React.CSSProperties}
                 className="mt-6 max-w-xl text-[16px] leading-relaxed text-muted lg:text-[17px]"
               >
                 {content.text('hero', 'intro')}
               </p>
 
               <div
-                data-lb-enter=""
-                style={{ '--lb-delay': '340ms' } as React.CSSProperties}
+                data-pp-enter=""
+                style={{ '--pp-delay': '340ms' } as React.CSSProperties}
                 className="mt-8 flex flex-wrap items-center gap-3"
               >
                 <Button asChild variant="accent" size="lg">
@@ -250,8 +243,8 @@ export function LinkBuildingPage({
               </div>
 
               <p
-                data-lb-enter=""
-                style={{ '--lb-delay': '420ms' } as React.CSSProperties}
+                data-pp-enter=""
+                style={{ '--pp-delay': '420ms' } as React.CSSProperties}
                 className="mt-4 text-[13px] text-muted"
               >
                 {content.text('hero', 'microcopy')}
@@ -265,8 +258,8 @@ export function LinkBuildingPage({
               */}
               {highlights.length ? (
                 <ul
-                  data-lb-enter=""
-                  style={{ '--lb-delay': '500ms' } as React.CSSProperties}
+                  data-pp-enter=""
+                  style={{ '--pp-delay': '500ms' } as React.CSSProperties}
                   className="mt-8 flex flex-wrap gap-x-6 gap-y-3 border-t border-line pt-6"
                 >
                   {highlights.map((highlight, index) => {
@@ -289,8 +282,8 @@ export function LinkBuildingPage({
 
             {/* ------------------------------------------- the dashboard */}
             <div
-              data-lb-enter="panel"
-              style={{ '--lb-delay': '200ms' } as React.CSSProperties}
+              data-pp-enter="panel"
+              style={{ '--pp-delay': '200ms' } as React.CSSProperties}
               className="relative min-w-0"
             >
               {/* The glow behind it. */}
@@ -434,29 +427,8 @@ export function LinkBuildingPage({
           </Reveal>
 
           <Reveal animation={STAGGER}>
-            {/*
-              The connecting line is drawn behind the row and only on a wide
-              screen, where the steps are side by side. Stacked on a phone, a
-              horizontal line between them would point at nothing.
-            */}
-            <div className="relative mt-10">
-              <div
-                aria-hidden="true"
-                className="absolute top-6 right-[12.5%] left-[12.5%] hidden h-px bg-gradient-to-r from-accent-200 via-accent-300 to-accent-200 lg:block"
-              />
-              <ol data-reveal-items="" className="relative grid gap-8 sm:grid-cols-2 lg:grid-cols-4">
-                {STEPS.map((step, index) => (
-                  <li key={step.label} className="text-center">
-                    <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-full border border-accent-100 bg-white text-accent-700 shadow-[var(--shadow-card)]">
-                      <step.icon className="h-5 w-5" aria-hidden="true" />
-                    </span>
-                    <p className="mt-4 text-[11px] font-semibold tracking-[0.1em] text-muted uppercase">
-                      Step {index + 1}
-                    </p>
-                    <p className="mt-1 text-[15px] font-semibold text-ink">{step.label}</p>
-                  </li>
-                ))}
-              </ol>
+            <div className="mt-10">
+              <OrderSteps />
             </div>
           </Reveal>
         </Container>
@@ -586,53 +558,12 @@ export function LinkBuildingPage({
       ) : null}
 
       {/* -------------------------------------------------------- final CTA */}
-      <section className="relative overflow-hidden bg-accent-50">
-        <div
-          aria-hidden="true"
-          className="pointer-events-none absolute inset-0"
-          style={{
-            backgroundImage:
-              'radial-gradient(40rem 24rem at 50% 120%, rgba(16,185,129,0.22) 0%, transparent 65%)',
-          }}
-        />
-
-        <Container size="wide" className="relative py-16 text-center lg:py-24">
-          <Reveal animation={FADE_UP}>
-            <div>
-              {/* Decorative: the words below say everything it says. */}
-              <Float seconds={7} className="mx-auto w-fit">
-                <Image
-                  src="/images/parrots/gambling-parrot.webp"
-                  alt=""
-                  width={160}
-                  height={160}
-                  aria-hidden="true"
-                  className="h-20 w-20 object-contain"
-                />
-              </Float>
-
-              <h2 className="mx-auto mt-6 max-w-2xl text-2xl font-semibold tracking-tight text-ink sm:text-3xl">
-                {content.text('cta', 'heading')}
-              </h2>
-              <p className="mx-auto mt-3 max-w-xl text-[15px] leading-relaxed text-ink-soft">
-                {content.text('cta', 'body')}
-              </p>
-
-              <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
-                <Button asChild variant="accent" size="lg">
-                  <Link href={ctaPrimary.href}>
-                    {ctaPrimary.label}
-                    <ArrowRight className="h-4 w-4" aria-hidden="true" />
-                  </Link>
-                </Button>
-                <Button asChild variant="outline" size="lg">
-                  <Link href={ctaSecondary.href}>{ctaSecondary.label}</Link>
-                </Button>
-              </div>
-            </div>
-          </Reveal>
-        </Container>
-      </section>
+      <ServiceCta
+        heading={content.text('cta', 'heading')}
+        body={content.text('cta', 'body')}
+        primary={ctaPrimary}
+        secondary={ctaSecondary}
+      />
     </>
   );
 }
