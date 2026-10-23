@@ -51,7 +51,8 @@
     "verify:pure": "node scripts/run-verify.mjs pure",
     "verify:database": "node scripts/run-verify.mjs database",
     "verify:enquiries": "tsx scripts/verify-enquiries.mts",
-    "verify:publishers": "tsx scripts/verify-publishers.mts"
+    "verify:publishers": "tsx scripts/verify-publishers.mts",
+    "verify:link-building": "tsx scripts/verify-link-building.mts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.128.0",

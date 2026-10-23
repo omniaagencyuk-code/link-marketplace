@@ -641,3 +641,122 @@
     background-image: none;
   }
 }
+
+/* ------------------------------------------------- the link building page --
+
+   Three effects the page's redesign needs that `Reveal` does not cover: the
+   hero's entrance, a highlighter passing under a phrase, and a card that
+   drifts. They follow the same two rules the reveal block above sets out, and
+   for the same reasons.
+
+   **Nothing is hidden unless something can un-hide it.** The hero runs as a
+   CSS `animation` with `both` fill rather than a transition armed by
+   JavaScript: the from-state is in effect at the first paint, so there is no
+   frame where server-rendered copy is visible and then taken away, and a
+   visitor whose bundle never arrives still sees the finished page rather
+   than an empty one. The highlight works the other way round - it is drawn
+   by default and only animates once JavaScript marks it armed - because a
+   decoration that never arrives should leave the phrase highlighted, not
+   bare.
+
+   **Opacity and transform only**, so the compositor can do all of it.
+
+   The heading animates its transform and not its opacity, deliberately. It
+   is the largest element on the first screen and almost certainly the LCP
+   candidate; an element at `opacity: 0` has not been painted as far as the
+   browser is concerned, so fading the headline in would delay the metric
+   that measures the headline arriving. Moving it costs nothing. */
+
+@keyframes lb-rise {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 1.25rem, 0);
+  }
+}
+
+/* No opacity. See above: this one is the LCP candidate. */
+@keyframes lb-rise-painted {
+  from {
+    transform: translate3d(0, 1.25rem, 0);
+  }
+}
+
+@keyframes lb-slide-in {
+  from {
+    opacity: 0;
+    transform: translate3d(2.5rem, 0, 0);
+  }
+}
+
+@keyframes lb-drift {
+  50% {
+    transform: translate3d(0, -0.75rem, 0);
+  }
+}
+
+[data-lb-enter] {
+  animation: lb-rise 600ms cubic-bezier(0.22, 0.61, 0.36, 1) both;
+  animation-delay: var(--lb-delay, 0ms);
+}
+
+[data-lb-enter='heading'] {
+  animation-name: lb-rise-painted;
+}
+
+[data-lb-enter='panel'] {
+  animation-name: lb-slide-in;
+  animation-duration: 800ms;
+}
+
+[data-lb-float] {
+  animation: lb-drift var(--lb-float, 6s) ease-in-out infinite;
+  animation-delay: var(--lb-delay, 0ms);
+}
+
+/* A highlighter passing under the words, and a line drawing itself.
+
+   Painted as the element's own background rather than a pseudo-element, so
+   the text sits on top of it without a stacking context to arrange and
+   nothing to clip when a phrase wraps across two lines. */
+[data-lb-ink] {
+  background-repeat: no-repeat;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+}
+
+[data-lb-ink='highlight'] {
+  background-image: linear-gradient(var(--color-accent-100), var(--color-accent-100));
+  background-position: 0 88%;
+  background-size: 100% 42%;
+  border-radius: 2px;
+}
+
+[data-lb-ink='underline'] {
+  background-image: linear-gradient(var(--color-accent-600), var(--color-accent-600));
+  background-position: 0 100%;
+  background-size: 100% 2px;
+}
+
+/* Armed by JavaScript only, so without it the phrase keeps its highlight. */
+[data-lb-ink][data-lb-armed]:not([data-lb-on]) {
+  background-size: 0% 42%;
+}
+
+[data-lb-ink='underline'][data-lb-armed]:not([data-lb-on]) {
+  background-size: 0% 2px;
+}
+
+[data-lb-ink][data-lb-armed] {
+  transition: background-size 700ms cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-lb-enter],
+  [data-lb-float] {
+    animation: none;
+  }
+
+  [data-lb-ink][data-lb-armed] {
+    transition: none;
+  }
+}
