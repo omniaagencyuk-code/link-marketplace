@@ -445,6 +445,33 @@ export const supabaseWebsiteRepository = {
   },
 
   /**
+   * How many active listings each niche has, counted in the database.
+   *
+   * `getAll()` above is the read this replaces for the one caller that only
+   * ever wanted a count. Twelve thousand rows over thirteen requests to
+   * answer "which niches have ten listings" is what put a statement timeout
+   * on /guest-posts; 0093 answers it in one.
+   *
+   * The counting rule lives in the function, off `marketplace_listings`, so
+   * primary and secondary niches and 0077's "no category counts under
+   * nothing" are expressed once rather than here as well.
+   */
+  async nicheCounts(): Promise<Record<string, number>> {
+    const supabase = inventoryClient();
+
+    const { data, error } = await supabase.rpc('niche_page_counts');
+    if (error) throw new Error(`Could not count the niches: ${error.message}`);
+
+    const counts: Record<string, number> = {};
+    for (const row of (data ?? []) as { niche: string; listings: number }[]) {
+      // `bigint` comes back as a string over PostgREST on some versions, and
+      // a count compared with `>=` as a string is a comparison nobody meant.
+      counts[row.niche] = Number(row.listings);
+    }
+    return counts;
+  },
+
+  /**
    * One page of the admin website table.
    *
    * The full read below is still here and still correct; it is just no longer

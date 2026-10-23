@@ -1,5 +1,4 @@
 import { websiteService } from '@/lib/services';
-import { inNiche } from '@/lib/marketplace/topic';
 import { countryShortNameOrUnknown } from '@/lib/data/countries';
 import { currencySymbol } from '@/lib/utils/format';
 import { NICHE_COPY } from '@/lib/content/niche-guest-posts';
@@ -144,22 +143,23 @@ export function toStats(websites: readonly WebsiteListItem[], symbol = currencyS
  */
 export async function publishedNiches(): Promise<NicheSlug[]> {
   /*
-    Counted the way the pages themselves select, with `inNiche`.
+    Counted the way the pages themselves select: primary and secondary both,
+    which is what `inNiche` means.
 
-    `countByNiche` was the obvious thing to reach for and is the wrong rule: it
-    counts a listing under its primary niche only, while a niche page shows
-    every listing in that niche primary or secondary - the same rule the
-    marketplace's own filter uses. Finance had seven primary and ten in total,
-    so the page rendered and the sitemap never mentioned it. One read, one
-    predicate, and the two cannot disagree again.
+    `countByNiche` was the obvious thing to reach for and is the wrong rule:
+    it counts a listing under its primary niche only. Finance had seven
+    primary and ten in total, so the page rendered and the sitemap never
+    mentioned it.
+
+    Counted in the database since 0093. This used to read every active
+    listing and count the rows in here, which is twelve thousand rows over
+    thirteen requests to answer a question with one number in it - and it
+    had been timing out on /guest-posts since the 14th of October.
   */
-  const active = await websiteService.getAll();
+  const counts = await websiteService.nicheCounts();
 
   return (Object.keys(NICHE_COPY) as NicheSlug[])
-    .filter(
-      (slug) =>
-        active.filter((website) => inNiche(website, slug)).length >= MIN_LISTINGS_FOR_A_PAGE,
-    )
+    .filter((slug) => (counts[slug] ?? 0) >= MIN_LISTINGS_FOR_A_PAGE)
     .sort();
 }
 

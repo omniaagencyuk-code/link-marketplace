@@ -129,12 +129,52 @@ function matchesAdminFilter(website: WebsiteListItem, filter: AdminWebsiteFilter
     .includes(needle);
 }
 
+/**
+ * Count listings per niche the way a niche page selects them.
+ *
+ * Primary and secondary both, which is what `inNiche` means and what the
+ * pages show. Exported because `verify:search` compares it against the SQL
+ * function that says the same thing in the database.
+ */
+export function countNiches(websites: WebsiteListItem[]): Record<string, number> {
+  const counts: Record<string, number> = {};
+
+  for (const website of websites) {
+    const slugs = new Set<string>();
+    if (website.niche) slugs.add(website.niche);
+    for (const slug of website.secondaryNiches) slugs.add(slug);
+
+    for (const slug of slugs) counts[slug] = (counts[slug] ?? 0) + 1;
+  }
+
+  return counts;
+}
+
 export const websiteService = {
   /** Every active listing, as list items. */
   async getAll(): Promise<WebsiteListItem[]> {
     if (isSupabaseEnabled()) return publicItems(await supabaseWebsiteRepository.getAll());
 
     return publicItems(listItems());
+  },
+
+  /**
+   * Active listings per niche, counting primary and secondary.
+   *
+   * The one caller that used to reach for `getAll()` and count the result:
+   * a count is not a reason to send twelve thousand rows across the wire,
+   * and doing so is what put a statement timeout on /guest-posts.
+   *
+   * The in-memory half counts with `inNiche`, which is the rule the SQL
+   * function implements. They are two expressions of one rule, so
+   * `verify:search` runs both against the same fixtures and compares - the
+   * way it already does for the marketplace's filters, and for the reason it
+   * does: a port like this fails quietly.
+   */
+  async nicheCounts(): Promise<Record<string, number>> {
+    if (isSupabaseEnabled()) return supabaseWebsiteRepository.nicheCounts();
+
+    return countNiches(publicItems(listItems()));
   },
 
   /** Every listing including drafts, paused and archived. Admin only. */

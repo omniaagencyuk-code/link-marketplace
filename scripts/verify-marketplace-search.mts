@@ -19,6 +19,7 @@ import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
 import { readdirSync } from 'node:fs';
 import { runQuery } from '../src/lib/services/query-engine';
+import { countNiches } from '../src/lib/services/website-service';
 import { forTopic } from '../src/lib/marketplace/topic';
 import type { SortKey, WebsiteQuery } from '../src/lib/types/query';
 import type { WebsiteListItem } from '../src/lib/types';
@@ -512,6 +513,86 @@ else bad('the total counts every match, not the page', `got ${totalFromSql} of $
 const capped = psql(`select count(*) from public.marketplace_search(p_limit := 100000)`);
 if (Number(capped) <= 100) ok('an absurd page size is capped by the database');
 else bad('an absurd page size is capped by the database', `got ${capped}`);
+
+/* ------------------------------------------ which niches get a page
+
+  The second port in this file, and the same danger.
+
+  /guest-posts lists the niches with enough listings to deserve a page. That
+  used to read every active listing and count them in JavaScript, which timed
+  out; 0093 counts them in SQL. A counting query that disagrees does not fail
+  - it publishes a different set of niche pages, and the sitemap follows it.
+
+  So both sides run against these fixtures and the whole map is compared, not
+  a spot check: a slug missing from one side is exactly what this is for.
+*/
+{
+  const expected = countNiches(all);
+
+  const actual: Record<string, number> = {};
+  const rows = psql(
+    `select niche || ' ' || listings from public.niche_page_counts() order by niche`,
+  );
+  for (const row of rows.split('\n').filter(Boolean)) {
+    const [slug, count] = row.split(' ');
+    actual[slug!] = Number(count);
+  }
+
+  const show = (counts: Record<string, number>) =>
+    JSON.stringify(Object.entries(counts).sort(([a], [b]) => a.localeCompare(b)));
+
+  if (show(expected) === show(actual)) {
+    ok('the database counts each niche exactly as the filter does');
+  } else {
+    bad('the database counts each niche exactly as the filter does', `${show(actual)} vs ${show(expected)}`);
+  }
+
+  /*
+    A listing counts under its secondary niches too, which is the rule
+    `countByNiche` gets wrong and the reason this function exists rather than
+    a `group by primary_category_id`. alpha-casino is primary igaming and
+    secondary sports; delta-sport is the other way round.
+  */
+  if (actual.sports === 2) ok('a secondary niche counts the listing too');
+  else bad('a secondary niche counts the listing too', `sports = ${actual.sports}`);
+
+  /*
+    And eta-unfiled has no category at all, so it counts under nothing -
+    0077's rule, which `coalesce(pc.slug, 'technology')` used to break by
+    selling every unfiled listing as a technology site.
+  */
+  const unfiled = Object.values(actual).reduce((total, count) => total + count, 0);
+  const filed = all.filter((item) => item.niche || item.secondaryNiches.length > 0).length;
+  if (unfiled >= filed) ok('every filed listing is counted somewhere');
+  else bad('every filed listing is counted somewhere', `${unfiled} counted, ${filed} filed`);
+
+  const nameless = psql(
+    `select count(*) from public.niche_page_counts() where niche is null or btrim(niche) = ''`,
+  );
+  if (nameless === '0') ok('and nothing is counted under a niche with no name');
+  else bad('and nothing is counted under a niche with no name', `got ${nameless}`);
+
+  /*
+    Only active listings. A paused one is not on the marketplace, so a niche
+    page built from a count that included it would promise listings nobody
+    can buy. Mutated and put back rather than asserted from the fixtures,
+    because every fixture here is active and a rule nothing exercises is a
+    rule that is not being checked.
+  */
+  const before = Number(
+    psql(`select listings from public.niche_page_counts() where niche = 'health'`),
+  );
+  psql(`update public.websites set status = 'paused' where domain = 'epsilon-health.test'`);
+  const after = psql(`select coalesce((select listings from public.niche_page_counts() where niche = 'health'), 0)`);
+  psql(`update public.websites set status = 'active' where domain = 'epsilon-health.test'`);
+
+  if (Number(after) === before - 1) ok('a paused listing stops counting towards its niche');
+  else bad('a paused listing stops counting towards its niche', `${before} then ${after}`);
+
+  const restored = psql(`select listings from public.niche_page_counts() where niche = 'health'`);
+  if (Number(restored) === before) ok('and counts again once it is active');
+  else bad('and counts again once it is active', `got ${restored}`);
+}
 
 console.log(fail === 0 ? `\n  all ${pass} passed\n` : `\n  ${fail} FAILED\n`);
 process.exit(fail === 0 ? 0 : 1);
