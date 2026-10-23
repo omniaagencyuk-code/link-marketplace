@@ -1,6 +1,14 @@
 import { getServerClient, getAdminScopedClient } from '@/lib/supabase/server';
 import { mapPost, postToRow, type PostRow } from '@/lib/supabase/mappers';
 import type { PageContentRecord, PageValues } from '@/lib/cms/types';
+import { postCategories } from '@/lib/config/blog';
+import {
+  PER_PAGE,
+  pageCountFor,
+  readSearch,
+  type ListingQuery,
+  type ListingResult,
+} from '@/lib/blog/listing';
 import type { BlogPost, BlogPostInput, PostCategorySlug } from '@/lib/types/blog';
 
 /**
@@ -95,14 +103,30 @@ export const supabasePageContentRepository = {
 const POST_SELECT =
   'id, slug, title, excerpt, body, body_doc, sections, category, status, author, cover_image_src, cover_image_alt, seo_title, seo_description, published_at, created_at, updated_at, updated_by';
 
+/**
+ * The columns a listing actually draws.
+ *
+ * `body_doc` and `sections` are the two largest fields on a post - the whole
+ * article again as a document, and its per-post marketplace block, FAQs and
+ * closing call to action - and a card shows neither. `body` stays because
+ * `readingTime` counts its words, which is the one thing on a card that is
+ * derived rather than stored.
+ */
+const POST_CARD_SELECT =
+  'id, slug, title, excerpt, body, category, status, author, cover_image_src, cover_image_alt, seo_title, seo_description, published_at, created_at, updated_at, updated_by';
+
+/** Published, or scheduled and already due. Mirrors the read policy. */
+function liveFilter() {
+  return `status.eq.published,and(status.eq.scheduled,published_at.lte.${new Date().toISOString()})`;
+}
+
 export const supabaseBlogRepository = {
   async listPublished(options: { category?: PostCategorySlug; limit?: number } = {}) {
     const supabase = await getServerClient();
     let query = supabase
       .from('posts')
       .select(POST_SELECT)
-      // Mirrors the read policy: published, or scheduled and due.
-      .or(`status.eq.published,and(status.eq.scheduled,published_at.lte.${new Date().toISOString()})`)
+      .or(liveFilter())
       .order('published_at', { ascending: false });
 
     if (options.category) query = query.eq('category', options.category);
@@ -112,9 +136,87 @@ export const supabaseBlogRepository = {
     return ((data as unknown as PostRow[] | null) ?? []).map(mapPost);
   },
 
+  /**
+   * One page of the index, counted and sliced in the database.
+   *
+   * The PostgREST translation of `applyListing`. Every predicate there is
+   * the simplest shape that comes across one-to-one, which is what lets the
+   * two be compared: the category is an equality, the search is a
+   * case-insensitive substring over the same three things
+   * (`searchableText`), and the page is a `range`.
+   *
+   * The category name is searched by resolving the term to the slugs whose
+   * display name contains it, rather than by sending the label to a column
+   * that holds slugs. "digital pr" therefore finds the category, and so does
+   * "Digital PR", without a second copy of the names living in SQL.
+   */
+  async page(query: ListingQuery = {}): Promise<ListingResult> {
+    const supabase = await getServerClient();
+    const term = readSearch(query.search);
+
+    const build = () => {
+      let request = supabase
+        .from('posts')
+        .select(POST_CARD_SELECT, { count: 'exact' })
+        .or(liveFilter());
+
+      if (query.category) request = request.eq('category', query.category);
+
+      if (term) {
+        const escaped = term.replace(/[%,()]/g, ' ').trim();
+        const slugs = postCategories
+          .filter((entry) => entry.name.toLowerCase().includes(term.toLowerCase()))
+          .map((entry) => entry.slug);
+        const clauses = [`title.ilike.%${escaped}%`, `excerpt.ilike.%${escaped}%`];
+        if (slugs.length) clauses.push(`category.in.(${slugs.join(',')})`);
+        request = request.or(clauses.join(','));
+      }
+
+      return request.order('published_at', { ascending: false });
+    };
+
+    /*
+      Two round trips rather than one, and deliberately. The count has to be
+      known before the range can be clamped - a reader on page nine of a
+      search that now returns four posts gets page one, not an empty grid -
+      and PostgREST returns the count with the rows rather than before them.
+      The first request asks for no rows at all (`head`), so what the extra
+      trip costs is a round trip, not a second download.
+    */
+    const { count } = await build().range(0, 0).limit(0);
+    const total = count ?? 0;
+    const pageCount = pageCountFor(total, PER_PAGE);
+    const page = Math.min(Math.max(query.page ?? 1, 1), pageCount);
+    const offset = (page - 1) * PER_PAGE;
+
+    if (total === 0) return { posts: [], total: 0, page: 1, pageCount: 1 };
+
+    const { data } = await build().range(offset, offset + PER_PAGE - 1);
+    return {
+      posts: ((data as unknown as PostRow[] | null) ?? []).map(mapPost),
+      total,
+      page,
+      pageCount,
+    };
+  },
+
+  /**
+   * One post by its slug, asked for by slug.
+   *
+   * It used to read every live post and find one in the array, which is a
+   * whole archive downloaded - bodies, documents and all - to render one
+   * article. It is also the read that would have broken when the listing's
+   * select was narrowed, since this path needs the fields a card does not.
+   */
   async getPublishedBySlug(slug: string): Promise<BlogPost | null> {
-    const posts = await supabaseBlogRepository.listPublished();
-    return posts.find((post) => post.slug === slug) ?? null;
+    const supabase = await getServerClient();
+    const { data } = await supabase
+      .from('posts')
+      .select(POST_SELECT)
+      .eq('slug', slug)
+      .or(liveFilter())
+      .maybeSingle();
+    return data ? mapPost(data as unknown as PostRow) : null;
   },
 
   async getRelated(slug: string, limit = 3): Promise<BlogPost[]> {
@@ -188,11 +290,28 @@ export const supabaseBlogRepository = {
     return !error;
   },
 
+  /**
+   * How many live posts each category holds, without downloading any.
+   *
+   * One head request per category - five of them, in parallel, each asking
+   * for a count and no rows. The version this replaces read every post and
+   * tallied them in JavaScript, which is the same shape of mistake 0093 took
+   * out of the niche directory: an archive downloaded to produce five
+   * numbers.
+   */
   async countByCategory(): Promise<Record<string, number>> {
-    const posts = await supabaseBlogRepository.listPublished();
-    const counts: Record<string, number> = {};
-    for (const post of posts) counts[post.category] = (counts[post.category] ?? 0) + 1;
-    return counts;
+    const supabase = await getServerClient();
+    const entries = await Promise.all(
+      postCategories.map(async (category) => {
+        const { count } = await supabase
+          .from('posts')
+          .select('id', { count: 'exact', head: true })
+          .or(liveFilter())
+          .eq('category', category.slug);
+        return [category.slug, count ?? 0] as const;
+      }),
+    );
+    return Object.fromEntries(entries);
   },
 
   async getPublishedSlugs(): Promise<{ slug: string; updatedAt: string }[]> {

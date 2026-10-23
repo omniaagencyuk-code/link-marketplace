@@ -402,6 +402,60 @@ from copy. Two things follow.
   measurement, and a measurement of an invented article measures nothing.
   The suite asserts no score out of a hundred appears anywhere on the page.
 
+## The resources index
+
+/resources lists the articles, and it is the one redrawn page with no CMS
+copy behind it: what it draws is posts. The rule the whole page is built to
+is that **nothing is written down that the article system could be asked
+instead** - the categories, their descriptions, their counts, the featured
+article, the reading times and the article total are all read. The only
+sentences typed into it are the four in the strip under the hero, and each
+of those restates something already true.
+
+- **One copy of what a view is.** `src/lib/blog/listing.ts` decides what a
+  search matches, which posts are on a page, and what a view's URL is. The
+  in-memory store applies it directly and `cms-repository` translates it
+  into PostgREST, so every predicate is the simplest shape that comes across
+  one-to-one - the same arrangement, and the same limitation, that
+  `planner/filter.ts` records. `listingHref` is used by the pills, the
+  pager *and* the canonical tag, because a page's address and the address it
+  declares as its own cannot be allowed to disagree.
+- **A page of nine, not an archive.** `blogService.page` asks the database
+  for nine rows and a count. `listPublished` still exists and still returns
+  everything, which is right for a sitemap and wrong for a page. The listing
+  select also drops `body_doc` and `sections`, the two largest columns on a
+  post, which a card does not draw - and `getPublishedBySlug` now asks for
+  one post by slug rather than reading every live post and finding one in
+  the array.
+- **Counts are counted, not downloaded.** `countByCategory` is five head
+  requests for five numbers. It used to read every post and tally them in
+  JavaScript, which is the mistake 0093 took out of the niche directory.
+- **A search is `noindex`; a category is not.** A category is a section
+  somebody links to and a page of it is a page of that section, so both are
+  indexable and each declares itself. Every term a reader types also makes a
+  URL, and indexing those is how a site grows a thousand thin archive pages
+  that compete with the articles. A page number past the end canonicalises
+  to the page actually shown, which is why the metadata and the page share
+  one `cache`d read.
+- **The filter is a form.** `ResourceFilters` is the only client component
+  on the page and it enhances a real `<form method="get">`: typing navigates
+  on a debounce through the router, and pressing Enter without JavaScript
+  navigates too. On the page listing the articles the site is found for, "the
+  filter needs JavaScript" would mean "the archive needs JavaScript".
+- **There is no newsletter, so there is no sign-up box.** The design had an
+  email field, a Subscribe button and "Join 1,000+ already subscribed".
+  There is no list, no sender and no unsubscribe in this codebase, and
+  `sales_suppressions` exists because an email that has left cannot be
+  recalled - a field here would bank addresses outside all of that. The
+  Daily Squawk band points at the writing instead, and
+  `verify:resources` asserts the absence of the field, the word subscribe
+  and any subscriber count.
+- **A post without a cover gets a drawing, not a grey box.** No post has one
+  today, so the category fallback in `resources/cover.tsx` is the normal
+  case: a wash, the category's mark and its name, costing no request and
+  unable to 404. Exactly one image on the page is eager - the hero's, or the
+  first card's when there is no hero - and everything below it is lazy.
+
 ## Taking payment
 
 Stripe Checkout, hosted by Stripe: the customer is redirected and pays on
@@ -504,6 +558,16 @@ own integration and nothing here should take that over.
   illustrations and the claims they must not make. The digital PR one is the
   longest for the reason given above: on that page a drawing can be wrong
   without a word being missing. No key, no database, no network, no browser.
+- `npm run verify:resources` — the resources index: what a search finds,
+  which posts are on a page, what each view's URL and canonical are, and
+  what the page draws. Not a "did every paragraph survive" check, because
+  there are no paragraphs - what can go wrong here is a filter that drops a
+  post, a page two that repeats page one, a count of the wrong thing, or a
+  canonical telling a crawler that nineteen articles are really one page. So
+  the arithmetic is walked exhaustively: every page of a fixture archive is
+  collected and compared with the archive itself, in order, because an
+  off-by-one loses a post between two pages and neither page looks wrong on
+  its own. No key, no database, no network, no browser.
 - `npm run verify:content-writing` — the same claim for /content-writing,
   made differently. That page never rendered from `ServicePage`, so there is
   no old component to diff against and keeping a dead copy of one for a

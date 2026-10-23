@@ -2,6 +2,7 @@ import { seedPosts } from '@/lib/data/blog-posts';
 import { isSupabaseEnabled } from '@/lib/supabase/config';
 import { supabaseBlogRepository } from './supabase/cms-repository';
 import { blogSectionDefaults } from '@/lib/config/blog-sections';
+import { PER_PAGE, applyListing, type ListingQuery, type ListingResult } from '@/lib/blog/listing';
 import type { BlogPost, BlogPostInput, PostCategorySlug } from '@/lib/types/blog';
 
 /**
@@ -40,6 +41,25 @@ export interface BlogListOptions {
 }
 
 export const blogService = {
+  /**
+   * One page of the resources index: filtered, searched, sliced and counted.
+   *
+   * Separate from `listPublished` because it is the only read that must not
+   * grow with the library. `listPublished` hands back every live post, which
+   * is right for a sitemap and wrong for a page - this one asks the database
+   * for nine rows and a count, whatever the archive holds.
+   *
+   * `applyListing` is the rule; this is the in-memory path and
+   * `cms-repository` is the PostgREST translation of the same thing.
+   */
+  async page(query: ListingQuery = {}): Promise<ListingResult> {
+    if (isSupabaseEnabled()) return supabaseBlogRepository.page(query);
+
+    const now = Date.now();
+    const live = store.filter((post) => isLive(post, now)).sort(byNewest);
+    return applyListing(live, query, PER_PAGE);
+  },
+
   /** Live posts only. The public site never calls anything else. */
   async listPublished(options: BlogListOptions = {}): Promise<BlogPost[]> {
     if (isSupabaseEnabled()) return supabaseBlogRepository.listPublished(options);
