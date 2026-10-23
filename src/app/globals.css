@@ -986,3 +986,98 @@
     animation: none;
   }
 }
+
+/* ------------------------------------------- the agency campaign board --
+
+   /link-building-agencies' hero: a board of client campaigns that fills in -
+   the board, then its rows, then each row's progress bar, then the statuses,
+   then the total in the corner.
+
+   Same construction as the two drawings above, and for the same reason this
+   time twice over. Every keyframe carries only a `from`, so the element's
+   own style *is* the finished board and the animation is only the approach
+   to it; `both` fill paints the first frame without a flash; and the
+   reduced-motion block at the foot turns the animations off onto the
+   finished board rather than onto a shorter sequence.
+
+   The reason this one could not be Motion is the hero. The words are the
+   drawing - five clients, their niches, their counts and their spend - and a
+   Motion entrance renders `opacity: 0` into the server HTML, which is an
+   empty hero for anybody whose bundle has not arrived and an unpainted
+   largest element for whatever is measuring LCP.
+
+   The rows and the badges are staggered from one `--pp-ag-row` index set on
+   each element, rather than from a rule per row: five selectors counting
+   upwards is five timings to keep in step. */
+
+@keyframes pp-ag-board {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 1.25rem, 0) scale3d(0.98, 0.98, 1);
+  }
+}
+
+@keyframes pp-ag-row {
+  from {
+    opacity: 0;
+    transform: translate3d(-0.75rem, 0, 0);
+  }
+}
+
+@keyframes pp-ag-bar {
+  from {
+    transform: scaleX(0);
+  }
+}
+
+@keyframes pp-ag-badge {
+  from {
+    opacity: 0;
+    transform: scale3d(0.9, 0.9, 1);
+  }
+}
+
+@keyframes pp-ag-summary {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 0.75rem, 0);
+  }
+}
+
+[data-pp-ag='board'] {
+  animation: pp-ag-board 600ms cubic-bezier(0.22, 0.61, 0.36, 1) 100ms both;
+}
+
+[data-pp-ag='row'] {
+  animation: pp-ag-row 450ms cubic-bezier(0.22, 0.61, 0.36, 1) both;
+  animation-delay: calc(500ms + var(--pp-ag-row, 0) * 100ms);
+}
+
+/* The bar grows from its left edge to the width the figures beside it give
+   it, so the width stays the one declared on the element. */
+[data-pp-ag='bar'] {
+  transform-origin: left center;
+  animation: pp-ag-bar 700ms cubic-bezier(0.22, 0.61, 0.36, 1) both;
+  animation-delay: calc(1100ms + var(--pp-ag-row, 0) * 100ms);
+}
+
+[data-pp-ag='badge'] {
+  animation: pp-ag-badge 350ms cubic-bezier(0.22, 0.61, 0.36, 1) both;
+  animation-delay: calc(1900ms + var(--pp-ag-row, 0) * 80ms);
+}
+
+[data-pp-ag='summary'] {
+  animation: pp-ag-summary 500ms cubic-bezier(0.22, 0.61, 0.36, 1) 2500ms both;
+}
+
+/*
+  One selector per stage, matched the way the rules above match - `[data-pp-ag]`
+  alone is one attribute selector and so is each rule it has to override, and
+  a media query adds no specificity. The lesson the newsroom's cards taught is
+  written down two blocks up.
+*/
+@media (prefers-reduced-motion: reduce) {
+  [data-pp-ag] {
+    animation: none;
+  }
+}
