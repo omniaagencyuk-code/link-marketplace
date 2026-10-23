@@ -39,13 +39,13 @@ export function Ink({
     const box = element.getBoundingClientRect();
     if (box.top < window.innerHeight && box.bottom > 0) return;
 
-    element.dataset.lbArmed = 'true';
+    element.dataset.ppArmed = 'true';
 
     const observer = new IntersectionObserver(
       (entries) => {
         for (const entry of entries) {
           if (!entry.isIntersecting) continue;
-          (entry.target as HTMLElement).dataset.lbOn = 'true';
+          (entry.target as HTMLElement).dataset.ppOn = 'true';
           // One pass of the highlighter. Nothing here animates twice.
           observer.unobserve(entry.target);
         }
@@ -58,7 +58,7 @@ export function Ink({
   }, []);
 
   return (
-    <span ref={ref} data-lb-ink={variant}>
+    <span ref={ref} data-pp-ink={variant}>
       {children}
     </span>
   );
@@ -85,9 +85,9 @@ export function Float({
 }) {
   return (
     <div
-      data-lb-float=""
+      data-pp-float=""
       className={className}
-      style={{ '--lb-float': `${seconds}s`, '--lb-delay': `${delayMs}ms` } as React.CSSProperties}
+      style={{ '--pp-float': `${seconds}s`, '--pp-delay': `${delayMs}ms` } as React.CSSProperties}
     >
       {children}
     </div>

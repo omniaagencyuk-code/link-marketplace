@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 import { History, Link2, Timer, TrendingUp } from 'lucide-react';
-import { ServicePage } from '@/components/marketing/service-page';
+import { NicheEditsPage } from '@/components/niche-edits/niche-edits-page';
 import { PageSections } from '@/components/cms/page-sections';
 import { metadataForPage } from '@/lib/cms/metadata';
 import { pageContentService } from '@/lib/services/page-content-service';
@@ -33,7 +33,7 @@ export default async function Page() {
       slug={SLUG}
       provided={{ preview: preview.rows }}
       fallback={
-        <ServicePage
+        <NicheEditsPage
           content={content}
           highlightIcons={highlightIcons}
           preview={preview.rows}

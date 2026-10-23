@@ -303,6 +303,47 @@ renders when nothing is stored.
   type system catches that, which is why `verify:menus` asserts the import is
   absent.
 
+## The service pages
+
+/link-building and /niche-edits are drawn by their own compositions;
+/buy-backlinks, /digital-pr, /link-building-agencies and the service starter
+are still drawn by `ServicePage`. All of them take their words from the same
+place - the page's row in the CMS, falling back to the shipped defaults in
+`src/lib/cms/pages/` - so a composition decides the drawing and never the
+copy, and a section saved in /admin/pages still replaces the whole thing.
+
+- **A redraw keeps every word.** `scripts/service-redraw.mts` renders the old
+  template and the new composition from the same content and compares them:
+  every paragraph, every bullet, every question and its answer, every
+  destination the old page linked to, both structured-data documents.
+  `verify:link-building` and `verify:niche-edits` are that comparison plus
+  what is particular to each page. The failure it exists for is a silent one
+  - a paragraph stops being rendered, nothing says so, and a month later the
+  ranking has moved and nobody connects the two.
+- **Nothing is hidden until JavaScript arrives.** `Reveal` hides only what it
+  has armed in the browser, so the server-rendered HTML carries the whole
+  page and the suites assert that no element arrives armed and no inline rule
+  hides anything. The headline's entrance moves it and never fades it,
+  because an element at `opacity: 0` is one the browser has not painted and
+  the largest painted element is what LCP is measured on.
+- **The demonstration on /niche-edits runs on CSS alone.** Five stages on one
+  timeline with `both` fill, so the illustration is in its finished state
+  before anything runs and stays there if nothing does. A reader who never
+  sees it animate sees an article with a link in it, which is the argument
+  the page is making.
+- **What both pages share has one copy.** `OrderSteps` (the four steps of an
+  order), `ServiceCta`, `MarketplaceMock` and the motion kit in
+  `page-motion.tsx`. Two service pages describing the same order flow in
+  their own words are two descriptions to keep true, and nobody reads two
+  service pages side by side to notice that one has stopped being so.
+- **An illustration must not look like a listing.** The drawings on
+  /niche-edits invent an article and three figures, and every one of them is
+  captioned as an example and hidden from assistive technology. A publisher's
+  real page with real metrics beside it would be showing inventory nobody
+  gave us permission to show; made-up figures presented as measured are a
+  claim about a site. `verify:niche-edits` checks the captions and checks no
+  domain is named anywhere on the page.
+
 ## Taking payment
 
 Stripe Checkout, hosted by Stripe: the customer is redirected and pays on
@@ -365,10 +406,11 @@ dashboard will not take effect while `vercel.json` names one.
 
 `npm run verify:all` runs every suite below and reports which failed rather
 than stopping at the first, and `.github/workflows/verify.yml` runs the same
-thing on every pull request, split into three: lint, types and build; the 31
+thing on every pull request, split into three: lint, types and build; the
 suites that need nothing; and the three that need a local Postgres. The list
 is read out of `package.json` by `scripts/run-verify.mjs`, so a suite added
-there is a suite CI runs - there is no second list to keep up to date.
+there is a suite CI runs - there is no second list to keep up to date, which
+is also why the count is not written down here.
 
 Nothing in CI holds a secret, and nothing in it deploys. Every suite is
 written to need no key, no network and no database, which is what lets the
@@ -396,6 +438,12 @@ own integration and nothing here should take that over.
   and the footer take their menus as props rather than importing the arrays,
   which is the one way this feature can be quietly inert. No API key, no
   database, no network.
+- `npm run verify:link-building` and `npm run verify:niche-edits` — that the
+  two redrawn service pages still say everything the template said. Both
+  render the old `ServicePage` and the new composition from the same shipped
+  content and compare them, through `scripts/service-redraw.mts`; what each
+  adds is its own page's illustrations and the claims they must not make. No
+  key, no database, no network, no browser.
 - `npm run verify:import` — the CSV importer.
 - `npm run verify:enquiries` — what the pricing page's enquiry form accepts
   and refuses, and what survives the cleaning on the way to the column. No
