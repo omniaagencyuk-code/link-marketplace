@@ -2,12 +2,14 @@
 
 import { useEffect, useMemo, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
-import { ExternalLink, Mail } from 'lucide-react';
+import { ExternalLink, Mail, Trash2 } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 import { Select } from '@/components/ui/select';
 import { Table, TableWrap, Td, Th, Tr } from '@/components/ui/table';
 import { Pagination } from '@/components/ui/pagination';
 import { Badge } from '@/components/ui/badge';
 import {
+  deletePublisherSubmissionAction,
   publisherSubmissionPageAction,
   setPublisherSubmissionStatusAction,
 } from '@/app/admin/(protected)/publisher-offers/actions';
@@ -246,6 +248,40 @@ export function PublisherOffersTable() {
                       </option>
                     ))}
                   </Select>
+
+                  {/*
+                    Delete, under the status rather than beside it.
+
+                    A status is the thing anybody does to one of these, and a
+                    delete is the thing nobody undoes - so they are not two
+                    controls of equal weight on one line. It confirms by
+                    domain, because the rows differ by a line of small text
+                    and the one above is somebody's real offer.
+                  */}
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="mt-1.5 -ml-2 text-muted hover:text-negative"
+                    disabled={pending}
+                    onClick={() =>
+                      startTransition(async () => {
+                        if (
+                          !window.confirm(
+                            `Delete the offer of ${offer.domain} from ${offer.fullName}? ` +
+                              'There is no undo and no copy of it anywhere else.',
+                          )
+                        ) {
+                          return;
+                        }
+                        await deletePublisherSubmissionAction(offer.id);
+                        setReloadKey((key) => key + 1);
+                        router.refresh();
+                      })
+                    }
+                  >
+                    <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
+                    Delete
+                  </Button>
                 </Td>
               </Tr>
             ))}
