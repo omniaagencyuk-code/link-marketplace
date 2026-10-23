@@ -49,10 +49,10 @@ export const RATE_LIMITS = {
   /*
     The pricing page's enquiry form.
 
-    The only form on the site a stranger can submit, and the only way to
-    write to `pricing_enquiries` - 0086 gives that table no public insert
-    policy, so this throttle is in front of the one door rather than beside
-    several. Five an hour from one address is more than anybody describing a
+    One of the two forms a stranger can submit - /list-your-site is the
+    other - and the only way to write to `pricing_enquiries`: 0086 gives
+    that table no public insert policy, so this throttle is in front of the
+    one door rather than beside several. Five an hour from one address is more than anybody describing a
     campaign needs twice over, and few enough that a flooded inbox is not
     how we find out the honeypot was defeated.
 
@@ -61,6 +61,20 @@ export const RATE_LIMITS = {
     submitting on their behalf.
   */
   pricingEnquiry: { action: 'pricing-enquiry', max: 5, windowSeconds: 3600 },
+  /*
+    The "list your site" form.
+
+    The second form a stranger can submit, and the only way to write to
+    `publisher_submissions` - 0092 gives that table no public insert policy
+    either. Counted separately from the pricing enquiry rather than sharing
+    its bucket: a publisher offering four sites in an afternoon and an agency
+    asking about rates are different people doing different things, and one
+    filling the other's quota would silently turn away whichever came second.
+
+    Five an hour from one address covers a publisher with a portfolio and
+    stops a flooded queue being how we find out the honeypot was defeated.
+  */
+  publisherSubmission: { action: 'publisher-submission', max: 5, windowSeconds: 3600 },
 } as const satisfies Record<string, RateLimitRule>;
 
 export interface RateLimitResult {

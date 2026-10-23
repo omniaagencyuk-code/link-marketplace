@@ -15,6 +15,7 @@ import * as terms from './pages/terms';
 import * as privacy from './pages/privacy';
 import * as cookies from './pages/cookies';
 import * as refundPolicy from './pages/refund-policy';
+import * as listYourSite from './pages/list-your-site';
 import type { PageDef, PageValues } from './types';
 
 /**
@@ -48,6 +49,7 @@ export const pageRegistry: RegisteredPage[] = [
   privacy,
   cookies,
   refundPolicy,
+  listYourSite,
 ];
 
 const bySlug = new Map(pageRegistry.map((page) => [page.definition.slug, page]));

@@ -225,6 +225,10 @@ run -f "$ROOT/supabase/tests/36_navigation_menus.sql" 2>&1 | grep -v '^$'
 echo
 echo "--- the inventory is not a download ---"
 run -f "$ROOT/supabase/tests/37_the_inventory_is_not_a_download.sql" 2>&1 | grep -v '^$'
+
+echo
+echo "--- a publisher offering us their site ---"
+run -f "$ROOT/supabase/tests/38_publisher_submissions.sql" 2>&1 | grep -v '^$'
 } | tee "$ASSERTIONS"
 
 # ------------------------------------------------------------- the verdict

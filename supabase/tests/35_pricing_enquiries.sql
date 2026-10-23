@@ -4,9 +4,10 @@
 -- ---------------------------------------------------------------------------
 -- Requests for bulk, agency or negotiated pricing.
 --
--- The pricing page's form writes here, which makes this the one table in the
--- schema a stranger can cause a row in. Two things therefore matter more
--- than they would anywhere else:
+-- The pricing page's form writes here, which makes this one of the two
+-- tables in the schema a stranger can cause a row in - `publisher_submissions`
+-- being the other. Two things therefore matter more than they would anywhere
+-- else:
 --
 --   * **Nobody but an admin can read it.** It holds a named person's work
 --     address, their employer and what they said they could spend - the same
@@ -168,8 +169,8 @@ select 'anon reads no enquiries: ' ||
 /*
   And cannot write one either. The form reaches this table through a server
   action running as the service role; a policy letting a browser insert
-  directly would be an unthrottled second door into the only table on the
-  site a stranger can fill.
+  directly would be an unthrottled second door into a table a stranger can
+  fill.
 */
 do $$
 begin
