@@ -943,12 +943,13 @@
 }
 
 /*
-  A brand noticed inside somebody else's article. Armed by `Reveal`, because
-  this one is below the fold and arriving on load would mean it had already
-  happened by the time anybody scrolled to it - the opposite of the hero,
+  A phrase picked out inside somebody else's article - a brand on
+  /digital-pr, a keyword on /content-writing. Armed by `Reveal`, because
+  these are below the fold and arriving on load would mean they had already
+  happened by the time anybody scrolled to them - the opposite of a hero,
   which is on screen from the first frame.
 */
-[data-pp-dpr='mention'] {
+[data-pp-highlight] {
   background-image: linear-gradient(var(--color-accent-100), var(--color-accent-100));
   background-repeat: no-repeat;
   background-position: 0 0;
@@ -959,7 +960,7 @@
   color: var(--color-accent-800);
 }
 
-[data-reveal][data-revealed] [data-pp-dpr='mention'] {
+[data-reveal][data-revealed] [data-pp-highlight] {
   animation: pp-ne-highlight 800ms cubic-bezier(0.22, 0.61, 0.36, 1) 300ms both;
 }
 
@@ -981,7 +982,7 @@
 @media (prefers-reduced-motion: reduce) {
   [data-pp-dpr],
   [data-pp-dpr='card'][data-pp-dpr-stage],
-  [data-reveal][data-revealed] [data-pp-dpr='mention'] {
+  [data-reveal][data-revealed] [data-pp-highlight] {
     animation: none;
   }
 }
