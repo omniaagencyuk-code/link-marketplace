@@ -42,7 +42,7 @@ export function NewsroomIllustration() {
               the stylesheet, not the other way round, so it is already
               highlighted if nothing ever runs.
             */}
-            <span data-pp-dpr="mention">Your brand</span> was among those cited by the report&rsquo;s
+            <span data-pp-highlight="">Your brand</span> was among those cited by the report&rsquo;s
             authors.
           </p>
 

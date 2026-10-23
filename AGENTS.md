@@ -368,6 +368,40 @@ copy, and a section saved in /admin/pages still replaces the whole thing.
   about publications reads as a list of digital PR opportunities. The other
   pages leave `showLinkTypes` off and are drawn exactly as before.
 
+/content-writing is redrawn to match them but was never one of them: it has
+always had its own layout, because its prices come from settings rather than
+from copy. Two things follow.
+
+- **An editor owns every word on it and none of the figures.** The lengths
+  and the content types come from `config/content.ts`, the module the order
+  form reads, so a card cannot offer something the form will not take. The
+  prices come through `pricingTable`, so the page cannot quote a figure the
+  checkout does not charge, and an unconfigured length reads "On request"
+  rather than zero - an unset price is not a free one. `verify:content-writing`
+  renders the page against three pricing configurations (unset, tiered, per
+  word) and against a second currency, which is what a literal cannot
+  survive.
+- **The length cards are informational, not controls.** The order form takes
+  no word count in its URL and sits behind a session, so a card that looked
+  clickable would be a button that did nothing. The one CTA below them is
+  the way in, and every button on the page labelled "Order Content" is
+  asserted to point at it - not just one of them, which was true while the
+  hero's was repointed somewhere else.
+- **Motion drives the hero's editor, and only that.** It is a four-stage
+  sequence with a timeline, which is what `MetricsShowcase` and
+  `MarketplaceShowcase` already use Motion for; everything else on the page
+  is `Reveal` and the entrance CSS. The split that matters is inside the
+  drawing: the article, its heading and its keyword are plain markup at full
+  opacity, and Motion only ever adds things on top of them - the brief card,
+  a cover that retracts off the paragraph, the checks, the review notice. So
+  a visit with no JavaScript is a finished article in a finished editor
+  rather than an empty box. The suite counts the elements that start hidden
+  and fails on a ninth.
+- **A checklist is not a score.** The mockup this was drawn from had an "SEO
+  Score 92/100" badge. A check is a check; a number out of a hundred is a
+  measurement, and a measurement of an invented article measures nothing.
+  The suite asserts no score out of a hundred appears anywhere on the page.
+
 ## Taking payment
 
 Stripe Checkout, hosted by Stripe: the customer is redirected and pays on
@@ -470,6 +504,15 @@ own integration and nothing here should take that over.
   illustrations and the claims they must not make. The digital PR one is the
   longest for the reason given above: on that page a drawing can be wrong
   without a word being missing. No key, no database, no network, no browser.
+- `npm run verify:content-writing` — the same claim for /content-writing,
+  made differently. That page never rendered from `ServicePage`, so there is
+  no old component to diff against and keeping a dead copy of one for a
+  suite to diff would be shipping a page nobody renders. The expectations
+  are read from the sources the page itself reads - the CMS defaults for
+  every word, `config/content.ts` for the catalogue and the lengths,
+  `content-pricing.ts` for the figures - which is in one respect stronger: a
+  diff proves the new page says what the old page said, and this proves it
+  says what the product actually offers.
 - `npm run verify:import` — the CSV importer.
 - `npm run verify:enquiries` — what the pricing page's enquiry form accepts
   and refuses, and what survives the cleaning on the way to the column. No

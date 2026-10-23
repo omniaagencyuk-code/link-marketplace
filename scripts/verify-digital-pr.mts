@@ -370,7 +370,7 @@ console.log('\n== the drawing is beside the copy, not instead of it ==');
   // arriving drawn, and declares its own length to count down from.
   yes('the stage connector declares its length', after.includes('--pp-draw-length'));
   yes('and is marked for the reveal to arm', after.includes('data-pp-draw'));
-  yes('the brand mention is marked for its highlight', after.includes('data-pp-dpr="mention"'));
+  yes('the brand mention is marked for its highlight', after.includes('data-pp-highlight'));
 }
 
 report(check);
