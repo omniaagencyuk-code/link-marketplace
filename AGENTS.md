@@ -305,9 +305,9 @@ renders when nothing is stored.
 
 ## The service pages
 
-/link-building, /niche-edits and /digital-pr are drawn by their own
-compositions; /buy-backlinks, /link-building-agencies and the service starter
-are still drawn by `ServicePage`. All of them take their words from the same
+/link-building, /niche-edits, /digital-pr and /link-building-agencies are
+drawn by their own compositions; /buy-backlinks and the service starter are
+still drawn by `ServicePage`. All of them take their words from the same
 place - the page's row in the CMS, falling back to the shipped defaults in
 `src/lib/cms/pages/` - so a composition decides the drawing and never the
 copy, and a section saved in /admin/pages still replaces the whole thing.
@@ -316,8 +316,8 @@ copy, and a section saved in /admin/pages still replaces the whole thing.
   template and the new composition from the same content and compares them:
   every paragraph, every bullet, every question and its answer, every
   destination the old page linked to, both structured-data documents.
-  `verify:link-building`, `verify:niche-edits` and `verify:digital-pr` are
-  that comparison plus what is particular to each page. The failure it exists for is a silent one
+  `verify:link-building`, `verify:niche-edits`, `verify:digital-pr` and
+  `verify:agencies` are that comparison plus what is particular to each page. The failure it exists for is a silent one
   - a paragraph stops being rendered, nothing says so, and a month later the
   ranking has moved and nobody connects the two.
 - **Nothing is hidden until JavaScript arrives.** `Reveal` hides only what it
@@ -331,6 +331,20 @@ copy, and a section saved in /admin/pages still replaces the whole thing.
   before anything runs and stays there if nothing does. A reader who never
   sees it animate sees an article with a link in it, which is the argument
   the page is making.
+
+  /digital-pr's newsroom and /link-building-agencies' campaign board are
+  built the same way, and the rule that decides between CSS and Motion is
+  what the drawing is made of. Motion is right where it only ever *adds*
+  overlays to something already finished - /content-writing's editor, whose
+  article, heading and keyword are plain markup at full opacity. It is wrong
+  where the words **are** the drawing: the agency board is five clients,
+  their niches, their counts and their spend, and a Motion entrance renders
+  `opacity: 0` into the server HTML, which is an empty hero without a bundle
+  and an unpainted largest element for whatever measures LCP. Every keyframe
+  in the CSS kit carries only a `from`, so the element's own style is the
+  finished state and `prefers-reduced-motion` turning the animation off
+  lands on it rather than on a shorter sequence. `verify:agencies` reads
+  `globals.css` and asserts both halves of that.
 - **What the pages share has one copy.** `OrderSteps` (the four steps of an
   order), `ServiceCta`, `MarketplaceMock`, `MARKETPLACE_FILTERS` and the
   motion kit in `page-motion.tsx`. Two service pages describing the same
@@ -343,7 +357,9 @@ copy, and a section saved in /admin/pages still replaces the whole thing.
   campaign rather than a single order" - the two bands describe different
   things, and sharing them would have made the page contradict its own
   paragraph. Shared because it is the same thing; separate because it is
-  not.
+  not. /link-building-agencies draws `OrderSteps` for the other half of the
+  same reason: buying a placement for a client is the same four steps as
+  buying one for yourself.
 - **An illustration must not look like a listing.** The drawings on
   /niche-edits invent an article and three figures, and every one of them is
   captioned as an example and hidden from assistive technology. A publisher's
@@ -363,6 +379,25 @@ copy, and a section saved in /admin/pages still replaces the whole thing.
   the failure a redesign on a page like this actually has - not a lost
   paragraph, but a picture that oversells the paragraph it sits beside, which
   nothing in a type system or a build will catch.
+- **A drawing must not offer a feature the FAQs below it deny.** The same
+  failure as the one above, aimed at the software rather than at an outcome,
+  and /link-building-agencies is where it is easiest to ship. That page's
+  own answers say user seats, per-client workspaces and white-label
+  reporting are **not** available, and its fourth section is headed "What we
+  are building next for agencies" - while every stock agency design is built
+  out of a white-label badge, a row of client logos and a figure like "245
+  links placed, +42%". So the board shows only niches from
+  `accepted-niches.ts` and statuses from `orderStatusLabels`, drawn with the
+  real `OrderStatusBadge`, because a drawing showing a state the software
+  has no name for is the same mistake in smaller print; its corner total is
+  the sum of its own rows; the clients are "Client A" to "Client E", since
+  a plausible name is a customer we were not given permission to publish;
+  the capability list names the dashboard route each entry lives on, and
+  `verify:agencies` checks each route exists on disk; and the roadmap
+  section gets a panel that *keeps* the missing half visible rather than
+  softening it. The suite measures the denials sentence by sentence rather
+  than forbidding the words, because forbidding them would delete the
+  sentences doing the honest work.
 - **The marketplace drawing names a link type only on /digital-pr.** The
   listings are a mixture, and a table of unlabelled rows under a heading
   about publications reads as a list of digital PR opportunities. The other
@@ -550,14 +585,18 @@ own integration and nothing here should take that over.
   and the footer take their menus as props rather than importing the arrays,
   which is the one way this feature can be quietly inert. No API key, no
   database, no network.
-- `npm run verify:link-building`, `npm run verify:niche-edits` and
-  `npm run verify:digital-pr` — that the three redrawn service pages still
-  say everything the template said. Each renders the old `ServicePage` and
-  the new composition from the same shipped content and compares them,
-  through `scripts/service-redraw.mts`; what each adds is its own page's
-  illustrations and the claims they must not make. The digital PR one is the
-  longest for the reason given above: on that page a drawing can be wrong
-  without a word being missing. No key, no database, no network, no browser.
+- `npm run verify:link-building`, `npm run verify:niche-edits`,
+  `npm run verify:digital-pr` and `npm run verify:agencies` — that the four
+  redrawn service pages still say everything the template said. Each renders
+  the old `ServicePage` and the new composition from the same shipped content
+  and compares them, through `scripts/service-redraw.mts`; what each adds is
+  its own page's illustrations and the claims they must not make. The last
+  two are the long ones, for the reason given above: on those pages a drawing
+  can be wrong without a word being missing - /digital-pr by overselling an
+  outcome, /link-building-agencies by offering a feature its own answers
+  deny. The agencies one also reads `globals.css`, because "the finished
+  board is the element's own style" is a claim only the stylesheet can
+  settle. No key, no database, no network, no browser.
 - `npm run verify:resources` — the resources index: what a search finds,
   which posts are on a page, what each view's URL and canonical are, and
   what the page draws. Not a "did every paragraph survive" check, because
