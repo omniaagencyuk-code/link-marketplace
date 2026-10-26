@@ -10,6 +10,11 @@
 import { readFileSync, readdirSync } from 'node:fs';
 import { safeReturnPath, returnPathFor } from '../src/lib/auth/return-to';
 import { leadsToInventory, signupFor } from '../src/lib/marketplace/entry';
+import {
+  INVENTORY_BUDGET,
+  exemptFromBudget,
+  inventoryBucket,
+} from '../src/lib/marketplace/budget';
 import { spread, toSampleRows, toStats, MIN_LISTINGS_FOR_A_PAGE } from '../src/lib/services/niche-landing';
 import { NICHE_COPY } from '../src/lib/content/niche-guest-posts';
 import { websiteOverview } from '../src/lib/websites/overview';
@@ -179,11 +184,11 @@ console.log('\n--- the inventory is read on the service role ---');
   yes('and it fails open', /catch \{\n    return ALLOWED;/.test(budget));
 
   const marketplace = read('src/app/(app)/marketplace/page.tsx');
-  yes('the marketplace spends before it reads', /spendInventoryRows\(user\.id, pageSize\)/.test(marketplace));
+  yes('the marketplace spends before it reads', /spendInventoryRows\(user, pageSize\)/.test(marketplace));
   yes('and shows the refusal instead of an empty table', /budget\.message/.test(marketplace));
 
   const listing = read('src/app/(marketing)/websites/[slug]/page.tsx');
-  yes('a listing page spends too', /spendInventoryRows\(viewer\.id/.test(listing));
+  yes('a listing page spends too', /spendInventoryRows\(viewer, /.test(listing));
 
   /*
     And somebody can see who it stopped.
@@ -213,6 +218,159 @@ console.log('\n--- the inventory is read on the service role ---');
   );
   // One query for the names, not one per row.
   yes('names are fetched in one read', /\.in\('id', ids\)/.test(report));
+
+  /*
+    0094 moved the line, and the three ways it moved are the three things
+    worth holding in place. The budget was never meant to stop a customer
+    looking at the marketplace - it is there so that *copying* it is slow -
+    and the first account it refused was one of ours.
+  */
+  console.log('\n  -- what the budget is, after 0094 --');
+  {
+    // Three times what it was. Written as the arithmetic so that a later
+    // "tidy" back to a round two thousand has to argue with the comment.
+    is('the ceiling is three times the two thousand it replaced', INVENTORY_BUDGET.maxRows, 2000 * 3);
+    is('still counted over an hour', INVENTORY_BUDGET.windowSeconds, 3600);
+    /*
+      Raising it must not quietly widen what the refusal admits to. The
+      assertion above this section already forbids a literal three-digit
+      number in the message; this one forbids the other way in, which is
+      the one a bigger cap invites - interpolating the constant, so the
+      sentence stays figure-free in the source and quotes the limit to the
+      reader anyway.
+    */
+    const message = budget.slice(budget.indexOf('message:'));
+    const sentence = message.slice(0, message.indexOf('\n    };'));
+    yes(
+      'and the refusal names no constant of ours either',
+      !/INVENTORY_BUDGET|maxRows|retryAfter|\$\{/.test(sentence),
+    );
+    yes('  nor is it built from a template at all', !sentence.includes('`'));
+  }
+
+  console.log('\n  -- an administrator is never charged --');
+  {
+    /*
+      The rule, exercised rather than read. Both routes into the admin
+      prove the same thing: the Supabase account carrying role = 'admin'
+      and the transitional shared password. Exempting only the first would
+      strand the team the second exists to keep working.
+    */
+    const cookie = { email: 'a@b.c', exp: 0, source: 'shared-password' } as const;
+    yes('an admin by role is exempt', exemptFromBudget({ role: 'admin' }, null));
+    yes('and an admin by the shared-password cookie is too', exemptFromBudget({ role: 'customer' }, cookie));
+    /*
+      And nobody else. The thing it takes is proof - the role the database
+      holds, or a cookie already checked against the allowlist. An address
+      on ADMIN_EMAILS is not an administrator, and a customer whose email
+      happens to be on that list is not one either.
+    */
+    yes('a customer is not', !exemptFromBudget({ role: 'customer' }, null));
+    yes('and neither is nobody at all', !exemptFromBudget(null, null));
+
+    // Checked before the spend, so an admin never reaches the counter at all.
+    const guard = budget.split('async function spendInventoryRows')[1] ?? '';
+    const spendAt = guard.indexOf('spend_inventory_budget');
+    const exemptAt = guard.indexOf('isExemptFromBudget');
+    yes('the spend asks first', exemptAt >= 0 && spendAt >= 0 && exemptAt < spendAt);
+    /*
+      And that question fails closed, which is the opposite of everything
+      else in this file. A session read that throws means we do not know
+      who this is; charging an unknown is a counter going up, and the
+      budget's own fail-open handles that. Wrongly exempting is a hole.
+    */
+    yes(
+      'an unreadable session is charged, not exempted',
+      /export async function isExemptFromBudget[\s\S]*?catch \{\s*return false;/.test(budget),
+    );
+
+    /*
+      And asking costs nothing. `getAdminSession` answers this perfectly and
+      answers it with `auth.getUser()` plus a `profiles` read - two round
+      trips to London on every marketplace page view, for every customer, to
+      be told they are not an administrator. The role is already in hand
+      from `getCurrentUser`, which is request-cached and reads the same
+      column; the only fallback is the cookie, which touches no network.
+
+      This is the assertion, because the expensive version is the one
+      somebody writes first and nothing about it looks wrong.
+    */
+    // Comments stripped: the file names `getAdminSession` in the paragraph
+    // explaining why it is not called, which the first version of this read.
+    const budgetCode = budget.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/\/\/[^\n]*/g, ' ');
+    yes('the budget never fetches an admin session of its own', !/getAdminSession/.test(budgetCode));
+    yes('  reading the role it was handed instead', /viewer\?\.role === 'admin'/.test(budget));
+    yes('  and falling back only to the cookie', /getSharedPasswordAdmin/.test(budget));
+    for (const [name, path] of [
+      ['the marketplace', 'src/app/(app)/marketplace/page.tsx'],
+      ['a listing page', 'src/app/(marketing)/websites/[slug]/page.tsx'],
+    ] as const) {
+      // The whole profile, not the id: the id alone would send the budget
+      // back to the database for the role.
+      yes(`${name} hands over the viewer it already has`, /spendInventoryRows\((?:user|viewer), /.test(read(path)));
+    }
+  }
+
+  console.log('\n  -- a basket clears what the account has spent --');
+  {
+    const action = read('src/app/(app)/marketplace/actions.ts');
+    const provider = read('src/lib/providers/order-draft-provider.tsx');
+    const migration = read('supabase/migrations/0094_a_buyer_is_not_a_scraper.sql');
+
+    yes('adding to the basket tells the server', /basketGrewAction\(\)/.test(provider));
+    /*
+      Without waiting on it and without letting it fail. The basket is
+      local storage and the item is already in it; a counter on our side is
+      neither a reason for Add to spin nor a reason for Add to break.
+    */
+    yes('  without awaiting it', /void basketGrewAction\(\)/.test(provider));
+    yes('  and swallowing its failure', /basketGrewAction\(\)\.catch\(\(\) => \{\}\)/.test(provider));
+
+    // It takes no arguments, so the only account it can clear is the one in
+    // the session - there is no id for a caller to substitute.
+    yes('the action takes no account from the caller', /basketGrewAction\(\): Promise<void>/.test(action));
+    yes('  reading it from the session instead', /getCurrentUser\(\)/.test(action));
+    /*
+      `getCurrentUser`, never `requireCustomerSession`: that one redirects,
+      and a redirect thrown inside a background call made while somebody
+      clicks Add surfaces in their basket.
+    */
+    /*
+      Checked at the import rather than at the call site, which is where
+      the first two versions of this went wrong. Looking for the word
+      caught the comment that explains why it is the wrong function;
+      looking for `requireCustomerSession(` missed it being imported under
+      another name, which is exactly how it would arrive - somebody
+      swapping the import and leaving the call alone.
+    */
+    const imports = (action.match(/^import [\s\S]*?from '[^']+';$/gm) ?? []).join('\n');
+    yes('  and never redirecting out of a basket click', !imports.includes('requireCustomerSession'));
+
+    /*
+      The coupling worth checking, because it breaks silently. The SQL
+      refuses any bucket outside the inventory prefix - that refusal is the
+      whole of the function's authority - and if the prefix the TypeScript
+      builds ever drifts from the literal in the migration, clearing stops
+      working and returns false to nobody.
+    */
+    is('the bucket is built under the inventory prefix', inventoryBucket('abc'), 'inventory-rows:abc');
+    const literal = /not like '([^']+)'/.exec(migration)?.[1] ?? '';
+    is('which is the prefix the migration refuses to go outside', literal, `${INVENTORY_BUDGET.bucket}:%`);
+    /*
+      So a customer's happy path cannot reach the sign-in throttle. That
+      counter guards the front door, and this one is cleared by anybody
+      with an account.
+    */
+    yes('a sign-in bucket is outside it', !`sign-in:1.2.3.4`.startsWith(literal.replace('%', '')));
+
+    // Same shape as the function beside it: definer, and service role only.
+    yes('the clear runs as its owner', /create or replace function public\.clear_inventory_budget[\s\S]*?security definer/.test(migration));
+    yes('  revoked from anon and authenticated', /revoke all on function public\.clear_inventory_budget\(text\) from public, anon, authenticated;/.test(migration));
+    yes('  and granted only to the service role', /grant execute on function public\.clear_inventory_budget\(text\) to service_role;/.test(migration));
+    // Our server calls it, never a browser holding a customer's token.
+    yes('the clear is made on the service role', /getAdminClient\(\)/.test(budget.split('clearInventoryBudget')[1] ?? ''));
+    yes('and never throws at the basket', /catch \{[\s\S]*?\}\s*\}\s*$/.test(budget.trimEnd()));
+  }
 
   const diagnostics = read('src/app/admin/(protected)/diagnostics/page.tsx');
   yes('the admin panel shows the budget', /inventoryReadReport\(\)/.test(diagnostics));
