@@ -18,9 +18,12 @@ import { INVENTORY_BUDGET } from '@/lib/marketplace/budget';
  *   * **Who has been stopped?** From `inventory_refusals`, because the
  *     counter resets hourly and a refusal at two is gone by three.
  *
- * The second is the one support needs and the one that says whether two
- * thousand rows an hour is the right number. If the only names in it are
- * customers nobody suspects, the limit is too tight.
+ * The second is the one support needs and the one that says whether the
+ * ceiling is the right number. If the only names in it are customers nobody
+ * suspects, the limit is too tight - which is exactly what it turned out to
+ * say about the first figure, and why 0094 tripled it, stopped charging
+ * administrators at all, and clears an account's spend when it puts
+ * something in a basket.
  */
 
 export interface InventoryAccount {

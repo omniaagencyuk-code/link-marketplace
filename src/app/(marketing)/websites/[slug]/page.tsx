@@ -78,7 +78,7 @@ export default async function WebsiteDetailPage({ params }: PageProps) {
     already in their address bar and they already have an account - there is
     nothing left for a 404 to protect.
   */
-  const budget = await spendInventoryRows(viewer.id, 5);
+  const budget = await spendInventoryRows(viewer, 5);
   if (!budget.allowed) {
     return (
       <Container size="narrow" className="py-20 text-center">

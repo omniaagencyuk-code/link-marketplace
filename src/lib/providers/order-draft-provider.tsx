@@ -2,6 +2,7 @@
 
 import { createContext, useCallback, useContext, useMemo, type ReactNode } from 'react';
 import { useLocalStorage } from '@/lib/hooks/use-local-storage';
+import { basketGrewAction } from '@/app/(app)/marketplace/actions';
 import { storageKey } from '@/lib/config/brand';
 import type { DraftOrderItem } from '@/lib/types';
 
@@ -43,6 +44,19 @@ export function OrderDraftProvider({ children }: { children: ReactNode }) {
           addedAt: new Date().toISOString(),
         },
       ]);
+
+      /*
+        Tell the server the basket grew, so the account's inventory budget
+        starts again. Somebody choosing what to buy is the customer the
+        marketplace is for, and 0090's guard was stopping them.
+
+        Deliberately not awaited and deliberately swallowed. The basket is
+        local storage and the item is already in it; a counter on our side
+        is not a reason for Add to spin, and it is not a reason for Add to
+        fail. The worst a lost call costs is that the next page of the
+        marketplace is charged as it was before.
+      */
+      void basketGrewAction().catch(() => {});
     },
     [setValue],
   );

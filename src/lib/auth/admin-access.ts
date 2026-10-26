@@ -116,8 +116,16 @@ async function getSupabaseAdmin(): Promise<AdminSession | null> {
   };
 }
 
-/** The shared-password session. Transitional - see the note at the top. */
-async function getSharedPasswordAdmin(): Promise<AdminSession | null> {
+/**
+ * The shared-password session. Transitional - see the note at the top.
+ *
+ * Exported because it is the half of `getAdminSession` that costs nothing:
+ * a cookie, a signature check and an env var, with no round trip to the
+ * auth server. `spendInventoryRows` wants "is this an administrator?" on
+ * every marketplace page view, and the other half of that answer -
+ * `profiles.role` - it already holds from `getCurrentUser`.
+ */
+export async function getSharedPasswordAdmin(): Promise<AdminSession | null> {
   const store = await cookies();
   const session = await verifyAdminSessionToken(store.get(ADMIN_SESSION_COOKIE)?.value);
   if (!session) return null;

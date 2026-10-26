@@ -130,7 +130,7 @@ export default async function MarketplacePage({
     reason the planner's lookup is - an IP-keyed limit throttles an agency
     office sharing one and resets for anybody on a phone.
   */
-  const budget = await spendInventoryRows(user.id, pageSize);
+  const budget = await spendInventoryRows(user, pageSize);
 
   const [result, facets] = budget.allowed
     ? await Promise.all([
