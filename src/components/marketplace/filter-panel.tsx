@@ -5,9 +5,9 @@ import { ChevronDown, SlidersHorizontal, Search } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import { FilterSidebar } from './filter-sidebar';
+import { MultiSelectFilter } from './multi-select-filter';
 import { ActiveFilterChips, activeChips } from './active-filter-chips';
-import { categories, nicheName } from '@/lib/data/categories';
-import { countryName } from '@/lib/data/countries';
+import { countryOptions, nicheOptions } from '@/lib/marketplace/options';
 import { linkTypeLabels } from '@/lib/utils/labels';
 import { cn } from '@/lib/utils/cn';
 import type { MarketplaceFilters } from '@/lib/marketplace/filters';
@@ -81,17 +81,20 @@ export function FilterPanel({
   const chips = activeChips(filters);
 
   /*
-    One niche in the quick row, several in the advanced panel.
+    Niche and country hold lists, and the quick row now says so.
 
-    The field is a list and stays one - a buyer narrowing to three niches is
-    a thing the marketplace supports and the chips can describe. What a
-    single dropdown cannot do is *show* three, so it shows the one when
-    there is one and sits on "All niches" when there are more, with the
-    chips below carrying the truth. Choosing from it replaces the set rather
-    than adding to it, which is what picking from a dropdown means.
+    They were single dropdowns that replaced the set on every choice, so a
+    buyer who wanted Ireland *and* the Netherlands had to know the advanced
+    panel existed - and a buyer who already had three set from a shared link
+    saw "All countries", which was the one thing it was not. They are
+    comboboxes now: alphabetical, typeable, and several at a time, which is
+    what the checkbox lists in the advanced panel have always allowed.
+
+    Link type is left as it was. It has three values and its own tabs above
+    the panel, so a search field over three rows would be furniture.
   */
-  const singleNiche = filters.niches.length === 1 ? filters.niches[0] : '';
-  const singleCountry = filters.countries.length === 1 ? filters.countries[0] : '';
+  const niches = nicheOptions(nicheCounts);
+  const countries = countryOptions(countryCounts.countries);
   const singleType = filters.linkTypes.length === 1 ? filters.linkTypes[0] : '';
 
   return (
@@ -153,43 +156,44 @@ export function FilterPanel({
           </div>
         </Field>
 
-        <Field label="Niche">
-          <Select
-            value={singleNiche}
-            onChange={(event) =>
-              onChange({ niches: event.target.value ? [event.target.value as NicheSlug] : [] })
-            }
-          >
-            <option value="">All niches</option>
-            {categories.map((category) => {
-              const count = nicheCounts[category.slug as NicheSlug];
-              return (
-                <option key={category.slug} value={category.slug}>
-                  {nicheName(category.slug as NicheSlug)}
-                  {count ? ` (${count.toLocaleString('en-GB')})` : ''}
-                </option>
-              );
-            })}
-          </Select>
-        </Field>
+        <MultiSelectFilter
+          label="Niche"
+          options={niches}
+          selected={filters.niches}
+          onChange={(next) => onChange({ niches: next })}
+          allLabel="All niches"
+          noun="niches"
+          searchPlaceholder="Type a niche"
+          emptyText="No niches to filter on yet."
+        />
 
-        <Field label="Country">
-          <Select
-            value={singleCountry}
-            onChange={(event) =>
-              onChange({
-                countries: event.target.value ? [event.target.value as CountryCode] : [],
-              })
-            }
-          >
-            <option value="">All countries</option>
-            {countryCounts.countries.map(([code, count]) => (
-              <option key={code} value={code}>
-                {countryName(code)} ({count.toLocaleString('en-GB')})
-              </option>
-            ))}
-          </Select>
-        </Field>
+        <MultiSelectFilter
+          label="Country"
+          options={countries}
+          selected={filters.countries}
+          onChange={(next) => onChange({ countries: next })}
+          allLabel="All countries"
+          noun="countries"
+          searchPlaceholder="Type a country"
+          emptyText="No listing states a market yet, so there is nothing to filter on."
+          note={
+            countryCounts.unstated > 0 ? (
+              /*
+                The same sentence the advanced panel carries, for the reason
+                it carries it: most listings come from a publisher list or an
+                email, neither of which states a market, so ticking any
+                country hides every listing whose market nobody established.
+                Easier to tick several from here makes it more worth saying,
+                not less.
+              */
+              <p className="text-[11px] leading-snug text-muted">
+                {countryCounts.unstated.toLocaleString('en-GB')} more{' '}
+                {countryCounts.unstated === 1 ? 'listing does' : 'listings do'} not state a market
+                and {countryCounts.unstated === 1 ? 'is' : 'are'} hidden while a country is ticked.
+              </p>
+            ) : null
+          }
+        />
 
         <MinMax
           label="DR"

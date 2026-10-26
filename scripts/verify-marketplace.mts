@@ -7,6 +7,17 @@
  * $499 is worse than no price at all.
  */
 import { parseFilters } from '../src/lib/marketplace/filters';
+import {
+  countryOptions,
+  filterOptions,
+  nicheOptions,
+  normaliseQuery,
+  optionMatches,
+  selectedLabels,
+  summariseSelection,
+  toggleOption,
+} from '../src/lib/marketplace/options';
+import { categories } from '../src/lib/data/categories';
 import { acceptsTopic, forTopic, pricedForTopic } from '../src/lib/marketplace/topic';
 import {
   BUYABLE_TOPICS,
@@ -921,5 +932,184 @@ console.log('\n--- refreshing one tier ---');
   is('a half-filled example row is dropped', /if \(!title \|\| !path\) return null/.test(saveAction), true);
 }
 
+console.log('\n== what the niche and country filters offer, and in what order ==');
+{
+  /*
+    The quick row's two comboboxes and the advanced panel's two checkbox
+    lists are four drawings of two filters, and all four read these
+    functions. What is checked here is the part a reader would have to
+    scroll a list to notice: the order, what typing finds, and what the
+    closed control claims.
+  */
+  const niches = nicheOptions();
+  is('every niche is offered', niches.length, categories.length);
+  {
+    const labels = niches.map((option) => option.label);
+    const sorted = [...labels].sort((a, b) => a.localeCompare(b, 'en-GB', { sensitivity: 'base' }));
+    is(`niches are alphabetical (${labels.slice(0, 3).join(', ')}…)`, labels.join('|'), sorted.join('|'));
+  }
+  // The shipped order was `position`, which put iGaming first. If the sort
+  // were dropped this assertion is the one that notices.
+  is('and not in the shipped position order', niches[0]!.value === categories[0]!.slug, false);
+
+  {
+    // A count only where there is one: `undefined` is "not counted", 0 would
+    // be "none", and a control that prints "Finance 0" when nobody counted
+    // is making a claim about the inventory.
+    const counted = nicheOptions({ finance: 12, sports: 0 });
+    const finance = counted.find((option) => option.value === 'finance');
+    const sports = counted.find((option) => option.value === 'sports');
+    is('a counted niche carries its count', finance?.count, 12);
+    is('a niche counted at zero carries none', sports?.count, undefined);
+  }
+
+  /*
+    Countries arrive biggest-first off the facet query and are drawn
+    alphabetically. Deliberately given here out of order, and with the
+    biggest last, so a dropped sort cannot pass by accident.
+  */
+  const facet: [import('../src/lib/types').CountryCode, number][] = [
+    ['NL', 7],
+    ['IE', 12],
+    ['DE', 40],
+    ['GB', 486],
+  ];
+  const countries = countryOptions(facet);
+  is('every country that has listings is offered', countries.length, facet.length);
+  is('countries are alphabetical', countries.map((o) => o.label).join('|'),
+    ['Germany', 'Ireland', 'Netherlands', 'United Kingdom'].join('|'));
+  is('and the biggest is no longer first', countries[0]!.value, 'DE');
+  is('each keeps the count it arrived with', countries.find((o) => o.value === 'GB')?.count, 486);
+  // Only what the facet counted: offering a country nothing is in empties
+  // the screen with no hint why, which is older than this file.
+  is('a country with no listings is not offered', countries.some((o) => o.value === 'US'), false);
+
+  console.log('\n  -- typing to find one --');
+  is('a query matches on the name', optionMatches({ value: 'GB', label: 'United Kingdom' }, 'king'), true);
+  is('and ignores case', optionMatches({ value: 'GB', label: 'United Kingdom' }, 'UNITED'), true);
+  is('and surrounding space', optionMatches({ value: 'GB', label: 'United Kingdom' }, '  united '), true);
+  is('a query that matches nothing matches nothing', optionMatches({ value: 'GB', label: 'United Kingdom' }, 'spain'), false);
+  is('an empty query matches everything', optionMatches({ value: 'GB', label: 'United Kingdom' }, '   '), true);
+  /*
+    The code, which the name does not contain. Somebody who works with these
+    lists types GB before they type United.
+  */
+  is('a country code finds its country', optionMatches(countries.find((o) => o.value === 'GB')!, 'gb'), true);
+  is('and a niche has no code to match', optionMatches({ value: 'finance', label: 'Finance' }, 'fin'), true);
+  /*
+    Accents dropped on both sides. Not reachable from the curated thirteen,
+    but `countryName` falls through to `Intl.DisplayNames` for whatever
+    Ahrefs reports, and a filter that cannot find Côte d'Ivoire from "cote"
+    is a filter saying the country is not there.
+  */
+  is('accents are ignored', optionMatches({ value: 'CI', label: "Côte d’Ivoire" }, 'cote'), true);
+  is('and typing them still works', optionMatches({ value: 'CI', label: "Côte d'Ivoire" }, 'côte'), true);
+  is('normalising is idempotent', normaliseQuery(normaliseQuery('  Côte  D’IVOIRE ')), normaliseQuery('  Côte  D’IVOIRE '));
+
+  {
+    /*
+      "nd" is in Ireland and in Netherlands, and the facet handed those two
+      over in the other order - Netherlands at 7, Ireland at 12. So this is
+      the one query that tells the two orders apart.
+    */
+    const found = filterOptions(countries, 'nd');
+    is('filtering keeps every match', found.length, 2);
+    is('  Ireland among them', found.some((o) => o.value === 'IE'), true);
+    is('  and the Netherlands', found.some((o) => o.value === 'NL'), true);
+    /*
+      In the order they were already in, never re-ranked by how well each
+      matched and never back in the order they arrived. A list that reorders
+      itself under the cursor moves the row somebody is reaching for, which
+      is the whole thing the alphabetical order is for.
+    */
+    is('and still alphabetical, not back in facet order', found.map((o) => o.label).join('|'), 'Ireland|Netherlands');
+    is('a query matching nothing leaves nothing', filterOptions(countries, 'zzz').length, 0);
+  }
+
+  console.log('\n  -- picking more than one --');
+  {
+    /*
+      The ask, and the regression it replaces. The single dropdown wrote the
+      set on every choice, so the second country removed the first - which
+      looked entirely correct until somebody picked twice. Asserted on the
+      function the control actually calls rather than on the file that calls
+      it, because a source check cannot tell a pass-through from a
+      `.slice(-1)`.
+    */
+    is('picking one from nothing selects it', toggleOption<string>([], 'DE').join('|'), 'DE');
+    is('picking a second KEEPS the first', toggleOption<string>(['DE'], 'IE').join('|'), 'DE|IE');
+    is('and a third keeps both', toggleOption<string>(['DE', 'IE'], 'NL').join('|'), 'DE|IE|NL');
+    is('picking a selected one takes it out', toggleOption<string>(['DE', 'IE'], 'DE').join('|'), 'IE');
+    is('  leaving the rest alone', toggleOption<string>(['DE', 'IE', 'NL'], 'IE').join('|'), 'DE|NL');
+    is('taking out the last leaves nothing', toggleOption<string>(['DE'], 'DE').length, 0);
+    /*
+      The selection keeps the order it was built in; what is alphabetical is
+      the list it was picked from. Re-sorting here would move a chip the
+      buyer is about to click.
+    */
+    is('the selection is not re-sorted', toggleOption<string>(['NL'], 'DE').join('|'), 'NL|DE');
+    // And nothing is mutated: `filters` is state, and a toggle that edited
+    // the array in place would not re-render.
+    const before: string[] = ['DE'];
+    toggleOption(before, 'IE');
+    is('the array it was given is untouched', before.join('|'), 'DE');
+
+    // The control calls it, and hands what comes back straight on.
+    const control = readFileSync(new URL('../src/components/marketplace/multi-select-filter.tsx', import.meta.url), 'utf8');
+    is('the control toggles through it', /onChange\(toggleOption\(selected, value\)\)/.test(control), true);
+    const panel = readFileSync(new URL('../src/components/marketplace/filter-panel.tsx', import.meta.url), 'utf8');
+    is('the quick row passes the niches through whole',
+      /onChange=\{\(next\) => onChange\(\{ niches: next \}\)\}/.test(panel), true);
+    is('and the countries', /onChange=\{\(next\) => onChange\(\{ countries: next \}\)\}/.test(panel), true);
+  }
+
+  console.log('\n  -- what the closed control says --');
+  is('nothing picked reads as all', summariseSelection([], { all: 'All countries', noun: 'countries' }), 'All countries');
+  /*
+    One is named. This is the half the single dropdown got right and the
+    half that matters most: a closed control exists to say what is on.
+  */
+  is('one is named', summariseSelection(['Ireland'], { all: 'All countries', noun: 'countries' }), 'Ireland');
+  /*
+    And several are counted rather than listed - three country names do not
+    fit the box, and a truncated list is a worse answer than a number when
+    the chips underneath carry every name. What it must never do is the old
+    behaviour: three selected and the box reading "All countries", which was
+    the one thing it was not.
+  */
+  is('several are counted', summariseSelection(['Germany', 'Ireland'], { all: 'All countries', noun: 'countries' }), '2 countries');
+  is('and never read as all', summariseSelection(['Germany', 'Ireland', 'Netherlands'], { all: 'All countries', noun: 'countries' }) === 'All countries', false);
+
+  is('the labels come back in the drawn order',
+    selectedLabels(countries, ['GB', 'DE']).join('|'), 'Germany|United Kingdom');
+  is('and a value nothing offers contributes no label',
+    selectedLabels(countries, ['US' as never]).length, 0);
+
+  console.log('\n  -- all four drawings read the same list --');
+  {
+    /*
+      The failure this catches is the one the shared module exists to
+      prevent: a second copy of the option list, built in a component,
+      drifting from this one. Both files are read rather than rendered,
+      because what is asserted is where the list comes from.
+    */
+    const panel = readFileSync(new URL('../src/components/marketplace/filter-panel.tsx', import.meta.url), 'utf8');
+    const sidebar = readFileSync(new URL('../src/components/marketplace/filter-sidebar.tsx', import.meta.url), 'utf8');
+    for (const [name, source] of [['the quick row', panel], ['the advanced panel', sidebar]] as const) {
+      is(`${name} reads nicheOptions`, /nicheOptions\(/.test(source), true);
+      is(`${name} reads countryOptions`, /countryOptions\(/.test(source), true);
+      // Not the raw arrays, which is how a second order gets in.
+      is(`${name} does not map the raw category list`, /categories\.map\(/.test(source), false);
+      is(`${name} does not map the raw facet pairs`, /countryCounts\.countries\.map\(/.test(source), false);
+    }
+    // And the quick row can hold more than one of each, which is the ask.
+    is('the quick row\'s niche control is the multi-select', /<MultiSelectFilter[\s\S]*?label="Niche"/.test(panel), true);
+    is('and so is its country control', /<MultiSelectFilter[\s\S]*?label="Country"/.test(panel), true);
+    is('neither replaces the set on a choice', /niches: event\.target\.value \? \[/.test(panel), false);
+    is('and the country one carries the unstated-market caveat', /not state a market/.test(panel), true);
+  }
+}
+
 console.log(failed ? `\n  ${failed} FAILED\n` : '\n  all passed\n');
 process.exit(failed ? 1 : 0);
+

@@ -6,8 +6,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import { RangeFilter } from './range-filter';
-import { categories } from '@/lib/data/categories';
-import { countryName } from '@/lib/data/countries';
+import { countryOptions, nicheOptions } from '@/lib/marketplace/options';
 import { languageLabels, linkTypeLabels } from '@/lib/utils/labels';
 import { currencySymbol } from '@/lib/utils/format';
 import { useDebouncedSearch } from '@/lib/hooks/use-debounced-search';
@@ -47,11 +46,13 @@ export function FilterSidebar({
   activeFilterCount: number;
   availableLanguages: LanguageCode[];
   /**
-   * Countries that have listings, biggest first, and how many state no market.
+   * Countries that have listings, and how many state no market.
    *
    * Passed in rather than read from the curated list: a filter that offers a
    * country nothing is in empties the screen with no hint why, which is the
-   * same failure the topic picker had.
+   * same failure the topic picker had. The order they arrive in is not the
+   * order they are drawn in - `countryOptions` sorts them, so this list and
+   * the quick row's combobox cannot disagree about either.
    */
   countryCounts: { countries: [CountryCode, number][]; unstated: number };
   /**
@@ -125,16 +126,22 @@ export function FilterSidebar({
         </div>
       </Section>
 
+      {/*
+        The same options, in the same order, as the quick row's combobox -
+        both read `nicheOptions`. Two lists of one filter side by side on one
+        screen, ordered differently, is a reader wondering which of them is
+        the real list.
+      */}
       <Section title="Niche">
         <div className="hide-scrollbar max-h-56 space-y-1.5 overflow-y-auto pr-1">
-          {categories.map((category) => (
+          {nicheOptions().map((option) => (
             <CheckRow
-              key={category.slug}
-              id={`niche-${category.slug}`}
-              label={category.name}
-              checked={filters.niches.includes(category.slug)}
+              key={option.value}
+              id={`niche-${option.value}`}
+              label={option.label}
+              checked={filters.niches.includes(option.value)}
               onChange={() =>
-                onChange({ niches: toggleValue<NicheSlug>(filters.niches, category.slug) })
+                onChange({ niches: toggleValue<NicheSlug>(filters.niches, option.value) })
               }
             />
           ))}
@@ -148,14 +155,14 @@ export function FilterSidebar({
           </p>
         ) : (
           <div className="hide-scrollbar max-h-48 space-y-1.5 overflow-y-auto pr-1">
-            {countryCounts.countries.map(([code, count]) => (
+            {countryOptions(countryCounts.countries).map((option) => (
               <CheckRow
-                key={code}
-                id={`country-${code}`}
-                label={`${countryName(code)} (${count})`}
-                checked={filters.countries.includes(code)}
+                key={option.value}
+                id={`country-${option.value}`}
+                label={`${option.label} (${option.count})`}
+                checked={filters.countries.includes(option.value)}
                 onChange={() =>
-                  onChange({ countries: toggleValue<CountryCode>(filters.countries, code) })
+                  onChange({ countries: toggleValue<CountryCode>(filters.countries, option.value) })
                 }
               />
             ))}
@@ -207,9 +214,12 @@ export function FilterSidebar({
           }}
         >
           <option value="">Any country</option>
-          {countryCounts.countries.map(([code]) => (
-            <option key={code} value={code}>
-              {countryName(code)}
+          {/* Alphabetical here too, from the same list: this is a second
+              question about countries on the same screen, and two country
+              lists in different orders is a reader checking both. */}
+          {countryOptions(countryCounts.countries).map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
             </option>
           ))}
         </Select>
