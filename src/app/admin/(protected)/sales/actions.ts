@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache';
 import { requireAdminSession } from '@/lib/auth/admin-access';
 import { prospectService } from '@/lib/services/prospect-service';
 import { parsePastedProspects } from '@/lib/sales/paste-list';
+import { parseContactCsv } from '@/lib/sales/contact-csv';
 import { salesSettingsService } from '@/lib/services/sales-settings-service';
 import { salesContactService } from '@/lib/services/sales-contact-service';
 import { salesEmailService } from '@/lib/services/sales-email-service';
@@ -175,6 +176,91 @@ export async function addProspectsAction(formData: FormData): Promise<SalesActio
     }
 
     return ok(`${parts.join(', ')}.`);
+  } catch (error) {
+    return bad(reasonFor(error));
+  }
+}
+
+/**
+ * A Hunter export, straight in.
+ *
+ * Prospects and the people at them in one pass, because the file carries
+ * both and asking somebody to import the domains, wait, then import the
+ * contacts is asking them to do a join by hand.
+ *
+ * It spends nothing. The credits were spent in Hunter's own UI before the
+ * file was downloaded, so this writes no `hunter_lookups` row, needs no
+ * Hunter key and is not refused by the credit guard - which is the whole
+ * point of it existing beside `findContactsAction` rather than inside it.
+ */
+export async function importContactsAction(formData: FormData): Promise<SalesActionResult> {
+  const session = await requireAdminSession();
+
+  const file = formData.get('file');
+  if (!(file instanceof File) || file.size === 0) return bad('Choose a CSV to import.');
+
+  const segment = (String(formData.get('segment') ?? 'other') || 'other') as SalesSegment;
+
+  let parsed;
+  try {
+    parsed = parseContactCsv(await file.text());
+  } catch (error) {
+    // A column that could not be found is the operator's to fix, and the
+    // message names which one - so it is shown rather than swallowed.
+    return bad(reasonFor(error));
+  }
+
+  if (parsed.prospects.length === 0) {
+    return bad(`Nothing usable in ${file.name}: ${parsed.rows} rows read, none with a domain.`);
+  }
+
+  try {
+    const imported = await prospectService.importDomains(
+      parsed.prospects.map((entry) => ({ companyName: entry.companyName, domain: entry.domain })),
+      {
+        segment,
+        source: 'csv',
+        sourceDetail: `${file.name}, imported by ${session.email}`,
+        actor: session.email,
+      },
+    );
+
+    /*
+      Contacts go on every prospect the file names, not only the ones this
+      import created. A second export of the same agencies with better
+      addresses is the normal way this gets used, and refusing to attach
+      them because the company was already here would make the feature
+      useless on its second run.
+    */
+    const ids = await prospectService.idsForDomains(parsed.prospects.map((entry) => entry.domain));
+    const contacts = await salesContactService.importContacts(
+      parsed.prospects,
+      ids,
+      session.email,
+    );
+
+    revalidatePath('/admin/sales/prospects');
+
+    const parts = [
+      `${parsed.rows} rows`,
+      `${imported.added} new prospects`,
+      `${contacts.contacts} contacts`,
+      `${contacts.recipients} recipients chosen`,
+    ];
+    if (imported.duplicates > 0) parts.push(`${imported.duplicates} already here`);
+    if (imported.skippedPublishers > 0) parts.push(`${imported.skippedPublishers} we already sell`);
+    if (imported.skippedPlatforms > 0) parts.push(`${imported.skippedPlatforms} platforms`);
+    if (parsed.dropped.undeliverable > 0) {
+      parts.push(`${parsed.dropped.undeliverable} addresses Hunter calls invalid`);
+    }
+    if (parsed.dropped.duplicate > 0) parts.push(`${parsed.dropped.duplicate} repeated addresses`);
+    if (parsed.dropped.noEmail > 0) parts.push(`${parsed.dropped.noEmail} with no address`);
+    if (parsed.dropped.noDomain > 0) parts.push(`${parsed.dropped.noDomain} with no domain`);
+    if (contacts.failed.length > 0) {
+      parts.push(`${new Set(contacts.failed).size} prospects whose contacts would not save`);
+    }
+
+    return ok(`${parts.join(', ')}. No Hunter credits were spent.`);
   } catch (error) {
     return bad(reasonFor(error));
   }

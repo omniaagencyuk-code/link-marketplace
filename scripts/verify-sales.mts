@@ -7,6 +7,13 @@
  * If this is wrong, the emails are wrong, and finding that out from a reply is
  * expensive in a way a failing test is not.
  */
+import { readFileSync } from 'node:fs';
+import {
+  ContactCsvError,
+  parseContactCsv,
+  rankImported,
+  readCsv,
+} from '../src/lib/sales/contact-csv';
 import {
   guessSegment,
   pageKind,
@@ -1222,6 +1229,229 @@ isTrue('youtube is a platform', isPlatform('youtube.com'));
 isTrue('so is a market-specific amazon', isPlatform('amazon.co.uk'));
 isTrue('and a subdomain of one', isPlatform('m.facebook.com'));
 isTrue('an ordinary company is not', !isPlatform('northfieldseo.com'));
+
+
+console.log('\n--- a Hunter export, read ---');
+{
+  /*
+    The file somebody actually downloads. Quoted fields carrying commas, a
+    byte-order mark, CRLF endings, five people at one company and a column
+    order nobody promised - all four turn up in real exports, and the first
+    three each turn one row into something that is not a row.
+  */
+  const csv = [
+    '\uFEFF"Organization","Email address","Domain name","First name","Last name","Job title","Department","Confidence score","Verification status","Country"',
+    '"Acme SEO","help@acme.com","acme.com","","","Support Lead","Support","88","valid","US"',
+    '"Acme SEO","matt@acme.com","acme.com","Matt","Bowman","Founder, CEO","Executive","92","valid","US"',
+    '"Acme SEO","bounce@acme.com","acme.com","Jo","Smith","Head of SEO","Marketing","70","invalid","US"',
+    '"Acme SEO","burner@acme.com","acme.com","Kit","Vane","Head of SEO","Marketing","70","disposable","US"',
+    '"Acme SEO","odd@acme.com","acme.com","Lee","Fen","SEO Lead","Marketing","60","Niet Gecontroleerd","US"',
+    '"Bravo Ltd","sam@bravo.co.uk","bravo.co.uk","Sam","Ray","Head of SEO","Marketing","81","accept_all","GB"',
+    '"Bravo Ltd","sam@bravo.co.uk","bravo.co.uk","Sam","Ray","Head of SEO","Marketing","81","accept_all","GB"',
+  ].join('\r\n');
+
+  const out = parseContactCsv(csv);
+  is('every data row is counted, kept or not', out.rows, 7);
+  is('one prospect per domain', out.prospects.length, 2);
+
+  const acme = out.prospects.find((entry) => entry.domain === 'acme.com')!;
+  is('the company name comes off the row', acme.companyName, 'Acme SEO');
+  is('and the country, where the export carried one', acme.countryCode, 'US');
+  /*
+    A quoted comma inside a job title. Split on commas instead and this row
+    reads "CEO" as the department and shifts every column after it - which
+    is the failure that puts a street name in the email field.
+  */
+  is('a comma inside a quoted field does not split the row',
+    acme.people.find((p) => p.email === 'matt@acme.com')?.position, 'Founder, CEO');
+  /*
+    The BOM belongs to the file, not to the first heading. Asserted on the
+    reader rather than on the parsed result, because the result cannot tell:
+    JavaScript's `\s` matches U+FEFF, so the whitespace tidying every cell
+    goes through strips it anyway and a parse still succeeds with the strip
+    deleted. The strip stays because that masking is a coincidence of one
+    regex - narrow `tidy` to `trim()` one day and header matching breaks on
+    a file nobody can see anything wrong with.
+  */
+  is('the reader takes the byte-order mark off the first cell',
+    readCsv('\uFEFFOrganization,Email address')[0]?.[0], 'Organization');
+  isTrue('  and a BOM-led file still finds its columns', acme.companyName === 'Acme SEO');
+
+  console.log('\n  -- what is dropped, and counted --');
+  is('an address that will bounce is not imported', out.dropped.undeliverable, 2);
+  isTrue('  invalid is nowhere in the people',
+    !out.prospects.some((e) => e.people.some((p) => p.email === 'bounce@acme.com')));
+  /*
+    And disposable with it. The column these land in accepts five words and
+    `disposable` is not one of them, so keeping it and renaming it `unknown`
+    would lose the signal `bestContact` refuses it by - and make it eligible
+    to be written to.
+  */
+  isTrue('  and neither is a disposable address',
+    !out.prospects.some((e) => e.people.some((p) => p.email === 'burner@acme.com')));
+  is('the same address twice at one company is one contact', out.dropped.duplicate, 1);
+  is('  so Bravo has one person', out.prospects.find((e) => e.domain === 'bravo.co.uk')!.people.length, 1);
+  /*
+    `accept_all` is kept. It means the server answers yes to everything, so
+    Hunter cannot tell - and the ranker already scores it below a verified
+    address rather than treating it as a reason to throw somebody away.
+  */
+  is('an accept_all address is kept',
+    out.prospects.find((e) => e.domain === 'bravo.co.uk')!.people[0]!.verification, 'accept_all');
+  /*
+    A word the column does not know becomes `unknown`. Passed through, the
+    check constraint refuses it - and because contacts are written in
+    chunks, one odd row would take two hundred good ones down with it.
+  */
+  is('a verification word we do not know becomes unknown',
+    acme.people.find((p) => p.email === 'odd@acme.com')?.verification, 'unknown');
+  isTrue('  and the person is still imported',
+    acme.people.some((p) => p.email === 'odd@acme.com'));
+  isTrue('  with only words the column accepts',
+    out.prospects.every((e) => e.people.every((p) =>
+      ['unverified', 'valid', 'accept_all', 'invalid', 'unknown'].includes(p.verification ?? ''))));
+
+  console.log('\n  -- columns are found, never counted --');
+  {
+    // The same two contacts, columns shuffled and extras added. Hunter's
+    // export order depends on which fields were ticked, so a reader that
+    // trusts position reads job titles as addresses the first time somebody
+    // unticks a box.
+    const shuffled = [
+      'Phone number,Verification status,Job title,Email address,Organization,Postal code',
+      '555-0100,valid,Founder,matt@acme.com,Acme SEO,75204',
+    ].join('\n');
+    const read = parseContactCsv(shuffled);
+    is('a reordered export still finds the address',
+      read.prospects[0]?.people[0]?.email, 'matt@acme.com');
+    is('  and the job title', read.prospects[0]?.people[0]?.position, 'Founder');
+    // No domain column at all: the host is in the address.
+    is('  and the domain, read off the address', read.prospects[0]?.domain, 'acme.com');
+  }
+
+  console.log('\n  -- a file that cannot be read says which column is missing --');
+  {
+    let message = '';
+    try {
+      parseContactCsv('Organization,Country\nAcme,US');
+    } catch (error) {
+      message = error instanceof ContactCsvError ? error.message : 'wrong error type';
+    }
+    isTrue('a file with no email column is refused', message.includes('No email column'));
+    // Named, because "0 imported" sends somebody looking at their data
+    // rather than at their headings.
+    isTrue('  and the headings it did find are named', message.includes('Organization'));
+    isTrue('an empty file is refused too', (() => {
+      try { parseContactCsv(''); return false; } catch { return true; }
+    })());
+  }
+
+  console.log('\n  -- the recipient is the sweep\'s own choice --');
+  {
+    const ranked = rankImported(out.prospects);
+    const acmePick = ranked.find((entry) => entry.domain === 'acme.com')!;
+    /*
+      The import does not get its own idea of who reads email at an agency.
+      `rankImported` calls `bestContact`, the same function that ranks
+      Hunter's live replies - so support is disqualified here for exactly
+      the reason it is disqualified there.
+    */
+    /*
+      Support is first in the file on purpose. "Take the first row" and "ask
+      the ranker" give the same answer on a tidy fixture, so the fixture is
+      not tidy: anything that stops consulting `bestContact` picks the
+      support desk here.
+    */
+    is('the first row in the file is the support desk', acme.people[0]?.email, 'help@acme.com');
+    is('the founder is picked over support', acmePick.selected?.person.email, 'matt@acme.com');
+    isTrue('  and support is ranked, not deleted',
+      acmePick.ranked.some((entry) => entry.person.email === 'help@acme.com'));
+    isTrue('  with a reason a person can overrule', (acmePick.selected?.reason ?? '').length > 0);
+    is('every prospect in, every prospect out', ranked.length, out.prospects.length);
+    /*
+      Including one the ranker refuses outright. The parser drops the
+      addresses that would cause that, so this is asked of `rankImported`
+      directly rather than through a file: a company whose people cannot be
+      written to is still a company, and one that vanished between the file
+      and the screen is the failure `importDomains` counts every category to
+      avoid.
+    */
+    const empty = rankImported([{ domain: 'nobody.com', companyName: 'Nobody', people: [] }]);
+    is('a company the ranker refuses is still imported', empty.length, 1);
+    is('  with no recipient rather than no row', empty[0]?.selected, null);
+  }
+
+  console.log('\n  -- the CSV reader itself --');
+  is('a doubled quote is one quote', readCsv('a,"say ""hi"""')[0]?.[1], 'say "hi"');
+  is('a newline inside quotes stays in the cell', readCsv('a,"one\ntwo"').length, 1);
+  is('  and keeps both halves', readCsv('a,"one\ntwo"')[0]?.[1], 'one\ntwo');
+  is('a trailing newline is not a row', readCsv('a,b\n1,2\n').length, 2);
+  is('an empty line in the middle is not a row', readCsv('a,b\n\n1,2').length, 2);
+}
+
+console.log('\n--- importing contacts spends nothing ---');
+{
+  /*
+    The rule the whole feature rests on, and the one that would be quietly
+    lost first. The credits were spent in Hunter's UI before the file was
+    downloaded, so the import must not call the API, must not write the
+    ledger, and must not be refused by the guard that protects a budget it
+    is not spending from.
+
+    Checked by reading the sources, because the alternative is a test that
+    needs a Hunter key to prove a Hunter key is not needed.
+  */
+  const read = (path: string) => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8');
+  const strip = (source: string) =>
+    source.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/\/\/[^\n]*/g, ' ');
+
+  const parser = strip(read('src/lib/sales/contact-csv.ts'));
+  isTrue('the parser calls no API', !/domainSearch|fetch\(/.test(parser));
+  isTrue('and touches no ledger', !/hunter_lookups|creditsCharged/.test(parser));
+  isTrue('and asks no credit guard', !/mayLookUp|lookupsAffordable/.test(parser));
+
+  const action = strip(read('src/app/admin/(protected)/sales/actions.ts'));
+  const importAction = action.slice(
+    action.indexOf('export async function importContactsAction'),
+    action.indexOf('export async function researchProspectAction'),
+  );
+  isTrue('the import action exists', importAction.length > 0);
+  isTrue('  and never calls the contact sweep', !/findContacts\(/.test(importAction));
+  isTrue('  and never charges a credit', !/mayLookUp|hunter_lookups/.test(importAction));
+  // Prospects first, then the people on them: contacts cannot be attached
+  // to rows that do not exist yet.
+  /*
+    The calls, not the names. `importContacts` appears first in this slice
+    as the action's own name, which the first version of this read - so it
+    compared a declaration against a call and passed on an order it had not
+    checked.
+  */
+  isTrue('  it imports the domains before the contacts',
+    importAction.indexOf('prospectService.importDomains(') <
+      importAction.indexOf('salesContactService.importContacts('));
+  isTrue('  and both calls are really there',
+    importAction.includes('prospectService.importDomains(') &&
+      importAction.includes('salesContactService.importContacts('));
+  // Contacts go on every prospect the file names, not only new ones - a
+  // second export of the same agencies is the normal second use.
+  isTrue('  and looks up ids for every domain in the file',
+    /idsForDomains\(parsed\.prospects\.map/.test(importAction));
+
+  const service = strip(read('src/lib/services/sales-contact-service.ts'));
+  const importMethod = service.slice(service.indexOf('async importContacts'), service.indexOf('async startSweep'));
+  isTrue('the service method writes no lookup row', !/hunter_lookups/.test(importMethod));
+  // The guard too, not only the ledger. A guard that refuses a budget this
+  // is not spending from is a guard somebody has to explain away later.
+  isTrue('  and asks no credit guard', !/mayLookUp|lookupsAffordable/.test(importMethod));
+  isTrue('  and calls Hunter not at all', !/domainSearch|isHunterConfigured/.test(importMethod));
+  isTrue('  and records how the contact arrived', /via: 'csv'/.test(importMethod));
+  // `source` stays 'hunter' because the data is Hunter's; `via` is what
+  // separates an export from a call somebody paid for.
+  isTrue('  while still crediting Hunter as the source', /source: 'hunter'/.test(importMethod));
+  isTrue('  and marks the prospect as looked at, so no sweep pays again',
+    /contacts_status: 'found'/.test(importMethod));
+  isTrue('  and chooses through the shared ranker', /rankImported/.test(importMethod));
+}
 
 console.log(failed === 0 ? '\nAll sales checks passed.\n' : `\n${failed} sales check(s) failed.\n`);
 process.exit(failed === 0 ? 0 : 1);
