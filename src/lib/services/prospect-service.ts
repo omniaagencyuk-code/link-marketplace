@@ -431,6 +431,39 @@ export const prospectService = {
     return outcome;
   },
 
+  /**
+   * Prospect ids for a list of domains, however long the list.
+   *
+   * Asked in the same chunks `importDomains` asks its own questions in, for
+   * the same reason: a single `in` filter carrying three thousand domains is
+   * a URL PostgREST answers with a 414 rather than a shorter result.
+   *
+   * A domain nothing matches is simply absent from the map. The caller has
+   * just imported them, so a gap means the row was rejected as a platform or
+   * as one of our own publishers - both of which the import already counted,
+   * and neither of which is this method's to explain.
+   */
+  async idsForDomains(domains: string[]): Promise<Map<string, string>> {
+    const found = new Map<string, string>();
+    if (!isSupabaseEnabled() || domains.length === 0) return found;
+
+    const supabase = getAdminScopedClient();
+    const ASK_AT_ONCE = 200;
+    for (let index = 0; index < domains.length; index += ASK_AT_ONCE) {
+      const slice = domains.slice(index, index + ASK_AT_ONCE);
+      const { data, error } = await supabase
+        .from('prospects')
+        .select('id, domain')
+        .in('domain', slice);
+      if (error) throw new Error(`Could not look up those prospects: ${error.message}`);
+      for (const row of data ?? []) {
+        const entry = row as { id: string; domain: string };
+        found.set(String(entry.domain), String(entry.id));
+      }
+    }
+    return found;
+  },
+
   async update(
     id: string,
     patch: Partial<

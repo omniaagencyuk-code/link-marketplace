@@ -6,6 +6,7 @@ import { Table, TableWrap, Td, Th, Tr } from '@/components/ui/table';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Building2 } from 'lucide-react';
 import { AddProspects } from '@/components/admin/add-prospects';
+import { ImportContacts } from '@/components/admin/import-contacts';
 import { prospectService } from '@/lib/services/prospect-service';
 import { segmentLabel } from '@/lib/config/sales-segments';
 import type { ProspectStage, SalesSegment } from '@/lib/types/sales';
@@ -59,6 +60,13 @@ export default async function ProspectsPage({
       />
 
       <AddProspects />
+
+      {/* Beneath the paste box rather than beside it: pasting domains is the
+          common case, and a file of contacts is what you have only when
+          somebody has already run and paid for the search. */}
+      <div className="mt-4">
+        <ImportContacts />
+      </div>
 
       <div className="mt-8 mb-3 flex flex-wrap items-center justify-between gap-3">
         <h2 className="text-[15px] font-semibold text-ink">

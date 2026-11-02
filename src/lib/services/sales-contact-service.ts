@@ -3,6 +3,7 @@ import { isSupabaseEnabled } from '@/lib/supabase/config';
 import { domainSearch, type HunterResult } from '@/lib/sales/hunter-client';
 import { isHunterConfigured } from '@/lib/sales/hunter-config';
 import { bestContact, rankContacts } from '@/lib/sales/contact-ranking';
+import { rankImported, type ImportedProspect } from '@/lib/sales/contact-csv';
 import { lookupsAffordable, mayLookUp } from '@/lib/sales/credit-guard';
 import { scoreProspect } from '@/lib/sales/scoring';
 import { prospectService } from './prospect-service';
@@ -375,6 +376,123 @@ export const salesContactService = {
     });
 
     return { ok: true };
+  },
+
+  /**
+   * Contacts from a file, for prospects that already exist.
+   *
+   * The counterpart to `findContacts`, and deliberately a different method
+   * rather than a flag on it. That one is arranged around the credit ledger,
+   * because every answer it gets costs a credit and the ledger has to be
+   * written whether or not the call worked. This one buys nothing: the
+   * credits were spent in Hunter's own UI before the file was downloaded,
+   * so there is no lookup to record, no budget to check and no key to need.
+   * Putting both down one path would mean a guard that sometimes guards
+   * nothing, which is the kind of condition somebody later removes.
+   *
+   * What is shared is the part that must not differ: `rankImported` calls
+   * the same `bestContact` that ranks Hunter's own replies, so an imported
+   * contact and a looked-up one are chosen by one idea of who reads email.
+   *
+   * Written in chunks for the reason `importDomains` gives about its own
+   * reads - a file of three thousand contacts is one statement no server
+   * wants - and a chunk that fails does not take the rest of the file with
+   * it: its prospects are reported as failed and the import continues.
+   */
+  async importContacts(
+    prospects: ImportedProspect[],
+    idsByDomain: Map<string, string>,
+    actor?: string,
+  ): Promise<{ contacts: number; recipients: number; failed: string[] }> {
+    const result = { contacts: 0, recipients: 0, failed: [] as string[] };
+    if (!isSupabaseEnabled()) return result;
+
+    const supabase = getAdminScopedClient();
+    const ranked = rankImported(prospects).filter((entry) => idsByDomain.has(entry.domain));
+
+    const WRITE_AT_ONCE = 200;
+    const rows = ranked.flatMap((entry) =>
+      entry.ranked.map((contact) => ({
+        prospect_id: idsByDomain.get(entry.domain)!,
+        email: contact.person.email,
+        full_name:
+          [contact.person.firstName, contact.person.lastName].filter(Boolean).join(' ') || null,
+        first_name: contact.person.firstName ?? null,
+        last_name: contact.person.lastName ?? null,
+        role: contact.person.position ?? null,
+        seniority: contact.person.seniority ?? null,
+        department: contact.person.department ?? null,
+        linkedin_url: contact.person.linkedin ?? null,
+        email_confidence: contact.person.confidence ?? null,
+        verification: contact.person.verification ?? 'unverified',
+        source: 'hunter',
+        /*
+          `via` is the whole provenance question. The data is Hunter's, so
+          the source column says so - but nobody called the API for it, and
+          an operator looking at a contact that cost nothing should be able
+          to tell it from one that cost a credit.
+        */
+        hunter_payload: { rank: contact.score, reason: contact.reason, via: 'csv' },
+      })),
+    );
+
+    const written = new Set<string>();
+    for (let index = 0; index < rows.length; index += WRITE_AT_ONCE) {
+      const slice = rows.slice(index, index + WRITE_AT_ONCE);
+      const { error } = await supabase
+        .from('prospect_contacts')
+        .upsert(slice, { onConflict: 'prospect_id,email' });
+      if (error) {
+        for (const row of slice) result.failed.push(row.prospect_id);
+        continue;
+      }
+      result.contacts += slice.length;
+      for (const row of slice) written.add(row.prospect_id);
+    }
+
+    /*
+      The recipient, one prospect at a time.
+
+      `selectContact` clears the previous selection before setting the new
+      one, and a partial unique index allows one selected contact per
+      prospect - so this cannot be a bulk update without reimplementing both
+      halves of a rule that already exists in one place.
+    */
+    for (const entry of ranked) {
+      const prospectId = idsByDomain.get(entry.domain)!;
+      if (!entry.selected || !written.has(prospectId)) continue;
+
+      const { data } = await supabase
+        .from('prospect_contacts')
+        .select('id')
+        .eq('prospect_id', prospectId)
+        .eq('email', entry.selected.person.email)
+        .maybeSingle();
+      if (!data) continue;
+
+      try {
+        await prospectService.selectContact(prospectId, String((data as { id: string }).id), actor);
+        result.recipients += 1;
+      } catch {
+        result.failed.push(prospectId);
+      }
+    }
+
+    /*
+      And they have been looked for, which is what stops the sweep paying
+      Hunter for the answer that is already in the table.
+    */
+    const touched = [...written];
+    for (let index = 0; index < touched.length; index += WRITE_AT_ONCE) {
+      await supabase
+        .from('prospects')
+        .update({ contacts_status: 'found', contacts_checked_at: new Date().toISOString() })
+        .in('id', touched.slice(index, index + WRITE_AT_ONCE));
+    }
+
+    for (const prospectId of touched) await salesContactService.rescore(prospectId);
+
+    return result;
   },
 
   async startSweep(by?: string): Promise<string | null> {
