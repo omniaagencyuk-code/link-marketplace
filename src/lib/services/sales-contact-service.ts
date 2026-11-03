@@ -564,12 +564,13 @@ export const salesContactService = {
     /*
       Only prospects somebody would actually email.
 
-      Qualified, above the score floor, not a competitor, and no contact yet.
-      Spending a credit on a prospect below the floor is spending a credit on a
-      prospect nobody is going to write to.
+      Qualified, above the score floor, not a competitor, and no contact yet -
+      all four in `contactsQueue`, applied in the database, so `affordable`
+      limits rows that are genuinely waiting. Dropping the already-found ones
+      here instead meant a sweep could return empty while prospects waited a
+      few places down the list.
     */
-    const candidates = await prospectService.contactable(settings.minScoreToContact, affordable);
-    const needing = candidates.filter((prospect) => prospect.contactsStatus === 'pending');
+    const needing = await prospectService.contactable(settings.minScoreToContact, affordable);
 
     for (const prospect of needing) {
       if (Date.now() - started > budgetMs) {

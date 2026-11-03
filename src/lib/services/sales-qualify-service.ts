@@ -1,6 +1,7 @@
 import { zodOutputFormat } from '@anthropic-ai/sdk/helpers/zod';
 import { getAdminScopedClient } from '@/lib/supabase/server';
 import { isSupabaseEnabled } from '@/lib/supabase/config';
+import { QUALIFY_QUEUE, applyQueue } from '@/lib/sales/queues';
 import { estimateCostUsd, getClient, isExtractionConfigured, messageFor } from '@/lib/sourcing/client';
 import {
   QUALIFICATION_PROMPT_VERSION,
@@ -336,11 +337,10 @@ export async function advanceQualifySweep(
       after a redesign should be re-read. The order is by score so that where
       the budget runs out, it ran out on the least promising.
     */
-    const { data, error } = await supabase
-      .from('prospects')
-      .select('id')
-      .eq('research_status', 'done')
-      .is('qualified', null)
+    const { data, error } = await applyQueue(
+      supabase.from('prospects').select('id'),
+      QUALIFY_QUEUE,
+    )
       .order('created_at')
       .limit(CHUNK);
 

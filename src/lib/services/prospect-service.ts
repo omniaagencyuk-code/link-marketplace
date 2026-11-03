@@ -4,7 +4,7 @@ import { isPlatform } from '@/lib/gap/competitors';
 import { brand } from '@/lib/config/brand';
 import { readAllPages } from '@/lib/services/supabase/paged';
 import { normaliseDomain, isValidDomain } from '@/lib/import/normalise';
-import { isContactable } from '@/lib/config/sales-segments';
+import { applyQueue, contactsQueue } from '@/lib/sales/queues';
 import type {
   ContactsStatus,
   Prospect,
@@ -752,19 +752,34 @@ export const prospectService = {
   },
 
   /**
-   * Prospects we may approach, in the order worth approaching them.
+   * Prospects worth spending a Hunter credit on, in the order worth spending
+   * it in.
    *
-   * Three conditions, and the third is the one nobody thinks of: a competitor
-   * must not be pitched. `publisher_network` sells what we sell, so an email
-   * to one hands our price list to somebody selling against us - obvious
-   * afterwards, invisible in a list of four hundred rows.
+   * Four conditions, in `contactsQueue`, and two of them are the ones nobody
+   * thinks of. A competitor must not be pitched: `publisher_network` sells
+   * what we sell, so an email to one hands our price list to somebody selling
+   * against us - obvious afterwards, invisible in a list of four hundred
+   * rows. And nobody found yet, which used to be applied by the caller
+   * afterwards.
+   *
+   * That last move mattered more than it looks. The limit is how many
+   * lookups the credit guard will allow, so taking the top `limit` by score
+   * and then dropping the ones already found meant a sweep could come back
+   * with nothing to do while prospects sat waiting a few places down the
+   * list - the whole queue blocked by its own head. Filtered in the database,
+   * the limit lands on rows that are actually waiting.
    */
   async contactable(minScore: number, limit = 50): Promise<Prospect[]> {
-    const rows = await prospectService.list({ qualifiedOnly: true, minScore });
+    if (!isSupabaseEnabled()) return [];
 
-    return rows
-      .filter((prospect) => isContactable(prospect.segment))
-      .filter((prospect) => prospect.stage === 'qualified')
-      .slice(0, limit);
+    const query = getAdminScopedClient().from('prospects').select(PROSPECT_SELECT);
+
+    const { data, error } = await applyQueue(query, contactsQueue(minScore))
+      .order('score', { ascending: false, nullsFirst: false })
+      .order('created_at', { ascending: false })
+      .limit(limit);
+
+    if (error) throw new Error(`Could not read the contactable prospects: ${error.message}`);
+    return ((data ?? []) as Row[]).map(mapProspect);
   },
 };
