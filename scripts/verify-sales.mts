@@ -31,6 +31,15 @@ import {
   buildQualificationMessage,
 } from '../src/lib/sales/qualification-rules';
 import { isContactable, salesSegments, segmentDefinition } from '../src/lib/config/sales-segments';
+import { neverContactSegments } from '../src/lib/config/sales-segments';
+import {
+  QUALIFY_QUEUE,
+  RESEARCH_QUEUE,
+  applyQueue,
+  contactsQueue,
+  nothingWaiting,
+  type QueueTarget,
+} from '../src/lib/sales/queues';
 import { bestContact, rankContacts } from '../src/lib/sales/contact-ranking';
 import { lookupsAffordable, mayLookUp } from '../src/lib/sales/credit-guard';
 import { redactKey } from '../src/lib/sales/hunter-config';
@@ -1451,6 +1460,187 @@ console.log('\n--- importing contacts spends nothing ---');
   isTrue('  and marks the prospect as looked at, so no sweep pays again',
     /contacts_status: 'found'/.test(importMethod));
   isTrue('  and chooses through the shared ranker', /rankImported/.test(importMethod));
+}
+
+{
+  console.log('\n--- what a sweep is waiting on ---');
+
+  /*
+    A recorder standing in for the PostgREST builder.
+
+    The point of `queues.ts` is that the query which CLAIMS work and the
+    query which COUNTS it are built from one definition. Only one of those
+    two runs without a database, so what is checked here is the definition
+    itself and the function that applies it - which is the part that can
+    silently drop a condition.
+  */
+  type Applied = { method: string; args: unknown[] };
+
+  function recorder(): QueueTarget & { applied: Applied[] } {
+    const applied: Applied[] = [];
+    const self = {
+      applied,
+      eq(column: string, value: unknown) {
+        applied.push({ method: 'eq', args: [column, value] });
+        return self;
+      },
+      is(column: string, value: unknown) {
+        applied.push({ method: 'is', args: [column, value] });
+        return self;
+      },
+      gte(column: string, value: unknown) {
+        applied.push({ method: 'gte', args: [column, value] });
+        return self;
+      },
+      not(column: string, operator: string, value: unknown) {
+        applied.push({ method: 'not', args: [column, operator, value] });
+        return self;
+      },
+    };
+    return self;
+  }
+
+  const shape = (applied: Applied[]) =>
+    applied.map((entry) => `${entry.method}(${entry.args.map(String).join(',')})`).join(' ');
+
+  const research = recorder();
+  applyQueue(research, RESEARCH_QUEUE);
+  isTrue('research claims exactly the sites nobody has read: true',
+    shape(research.applied) === 'eq(research_status,pending)');
+
+  /*
+    The whole bug, as an assertion.
+
+    A site that refused the crawler is `failed`: not pending, so the sweep
+    never claims it, and not done, so the funnel subtraction counted it as
+    waiting for ever. The queue has to name `pending` rather than exclude
+    `done`, or the 58 come straight back.
+  */
+  isTrue('  and a site that refused the crawler is not among them: true',
+    RESEARCH_QUEUE.every(
+      (condition) => !(condition.op === 'eq' && condition.value === 'failed'),
+    ) && shape(research.applied).includes('pending'));
+
+  const qualify = recorder();
+  applyQueue(qualify, QUALIFY_QUEUE);
+  isTrue('qualify claims what has been read and never judged: true',
+    shape(qualify.applied) === 'eq(research_status,done) is(qualified,null)');
+
+  // `qualified is null` rather than `stage = new`: a prospect somebody moved
+  // by hand is still unread, and one re-researched should be read again.
+  isTrue('  by asking whether a verdict exists, not what stage says: true',
+    QUALIFY_QUEUE.some((condition) => condition.op === 'isNull' && condition.column === 'qualified') &&
+      !QUALIFY_QUEUE.some((condition) => condition.column === 'stage'));
+
+  const contacts = recorder();
+  applyQueue(contacts, contactsQueue(50));
+  isTrue('a Hunter credit is only spent on somebody worth writing to: true',
+    shape(contacts.applied) ===
+      'eq(qualified,true) gte(score,50) eq(stage,qualified) eq(contacts_status,pending) ' +
+        'not(segment,in,(publisher_network))');
+
+  /*
+    The condition that moved out of the caller and into the queue.
+
+    The sweep used to take the top `limit` by score and then drop the ones
+    already found, so a queue whose head was all found came back empty while
+    prospects waited a few rows down - the limit spent on work already done.
+  */
+  isTrue('  including that nobody has been found there yet: true',
+    contactsQueue(50).some(
+      (condition) => condition.column === 'contacts_status' && condition.op === 'eq' &&
+        condition.value === 'pending',
+    ));
+
+  const floor = recorder();
+  applyQueue(floor, contactsQueue(75));
+  isTrue('  and the floor is the one configured, not a literal: true',
+    shape(floor.applied).includes('gte(score,75)'));
+
+  /*
+    A deny-list, matching `isContactable` rather than restating it inverted.
+
+    An allow-list compiles identically today and quietly drops any segment
+    added to the config tomorrow - prospects that never reach the sweep, with
+    nothing to connect the symptom back to this line.
+  */
+  const excluded = contactsQueue(50).find((condition) => condition.op === 'notIn');
+  isTrue('  the segment test names only the competitors: true',
+    excluded?.op === 'notIn' &&
+      [...excluded.values].sort().join(',') === [...neverContactSegments].sort().join(','));
+  isTrue('  so every segment it does not name is contactable: true',
+    salesSegments
+      .filter((segment) => excluded?.op === 'notIn' && !excluded.values.includes(segment.slug))
+      .every((segment) => isContactable(segment.slug)));
+
+  // An empty queue applies nothing, and the object comes back as it went in -
+  // which is what lets `.order()` and `.limit()` chain off the filtered query.
+  const untouched = recorder();
+  isTrue('an empty queue filters nothing: true',
+    applyQueue(untouched, []) === untouched && untouched.applied.length === 0);
+
+  /*
+    Read back out of the sweeps, because one definition is only one
+    definition while nothing else carries a copy. A reintroduced literal
+    filter is the failure this guards: it would work, and it would drift.
+  */
+  /*
+    Comments stripped before matching, for the reason an earlier suite learned
+    the hard way: a check that reads a source can be satisfied by the prose
+    describing the code rather than by the code.
+  */
+  const readSource = (path: string) =>
+    readFileSync(new URL(`../${path}`, import.meta.url), 'utf8');
+  const strip = (source: string) =>
+    source.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/\/\/[^\n]*/g, ' ');
+
+  const researchSource = strip(readSource('src/lib/services/sales-research-service.ts'));
+  isTrue('the research sweep holds no second copy of its queue: true',
+    researchSource.includes('RESEARCH_QUEUE') && !/\.eq\('research_status'/.test(researchSource));
+
+  const qualifySource = strip(readSource('src/lib/services/sales-qualify-service.ts'));
+  isTrue('nor the qualify sweep: true',
+    qualifySource.includes('QUALIFY_QUEUE') &&
+      !/\.is\('qualified', null\)/.test(qualifySource));
+
+  const analytics = strip(readSource('src/lib/services/sales-analytics-service.ts'));
+  isTrue('and the dashboard counts them through the same definitions: true',
+    analytics.includes('countQueue(RESEARCH_QUEUE)') &&
+      analytics.includes('countQueue(QUALIFY_QUEUE)') &&
+      analytics.includes('countQueue(contactsQueue('));
+
+  /*
+    Counted with head:true, like every other figure on that page: a count
+    taken from rows stops at PostgREST's silent thousand.
+
+    Sliced to the one function rather than matched within a window of it.
+    Every other counter in this file ends `count: 'exact', head: true`, so a
+    loose match is satisfied by `countAll` sitting underneath and passes
+    whatever `countQueue` does - which is how the first version of this line
+    survived having the flag taken off it.
+  */
+  const countQueueBody = analytics.slice(
+    analytics.indexOf('async function countQueue'),
+    analytics.indexOf('async function countIn'),
+  );
+  isTrue('  without reading the rows to count them: true',
+    countQueueBody.length > 0 && /count: 'exact', head: true/.test(countQueueBody));
+
+  const dashboard = strip(readSource('src/app/admin/(protected)/sales/page.tsx'));
+  isTrue('and the cards show the counted queue, not funnel arithmetic: true',
+    dashboard.includes('waiting={queues?.research}') &&
+      !/waiting=\{\(funnel/.test(dashboard));
+
+  /*
+    Undefined is not zero.
+
+    Follow-ups show no count because their queue cannot be counted without
+    recomputing it, and a card that disabled itself on a missing number would
+    turn "we did not check" into "there is nothing".
+  */
+  isTrue('an empty queue refuses the button: true', nothingWaiting(0));
+  isTrue('  a queue with work in it does not: true', !nothingWaiting(7));
+  isTrue('  and a queue nobody counted does not either: true', !nothingWaiting(undefined));
 }
 
 console.log(failed === 0 ? '\nAll sales checks passed.\n' : `\n${failed} sales check(s) failed.\n`);

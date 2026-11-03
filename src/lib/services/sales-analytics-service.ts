@@ -1,6 +1,13 @@
 import { getAdminScopedClient } from '@/lib/supabase/server';
 import { isSupabaseEnabled } from '@/lib/supabase/config';
 import { salesSettingsService } from './sales-settings-service';
+import {
+  QUALIFY_QUEUE,
+  RESEARCH_QUEUE,
+  applyQueue,
+  contactsQueue,
+  type Queue,
+} from '@/lib/sales/queues';
 import type { ProspectStage, SalesSegment } from '@/lib/types/sales';
 
 /**
@@ -40,8 +47,26 @@ export interface SalesFunnel {
   customers: number;
 }
 
+/**
+ * What each sweep would pick up if it were started now.
+ *
+ * Counted with each sweep's own queue rather than subtracted from the funnel.
+ * The two agree while every stage succeeds and part company the moment one
+ * can fail: a site that refuses the crawler leaves `research_status =
+ * 'failed'`, which is neither pending nor done, so `prospects - researched`
+ * counts it as waiting forever while the sweep correctly never claims it.
+ *
+ * No `draft` figure, and that absence is deliberate - see `sales/queues.ts`.
+ */
+export interface SweepQueues {
+  research: number;
+  qualify: number;
+  contacts: number;
+}
+
 export interface SalesHeadline {
   funnel: SalesFunnel;
+  queues: SweepQueues;
   /** Replies as a share of emails sent. The only quality signal here. */
   replyRatePct: number;
   interestedRatePct: number;
@@ -80,6 +105,28 @@ async function countWhere(table: string, column: string, value: unknown): Promis
   return Number(count ?? 0);
 }
 
+/**
+ * Count a sweep's queue, by applying that sweep's own definition of it.
+ *
+ * `head: true` for the reason every other count here uses it: a count taken
+ * from rows stops at PostgREST's silent thousand and reads as a plateau.
+ *
+ * `prospects` is named here rather than carried on the queue because every
+ * sweep's queue is a question about prospects. A queue over another table
+ * would need its own counter, not a column added to this one.
+ *
+ * The three calls join the `Promise.all` below rather than running after it,
+ * so they cost the dashboard one more concurrent request and no extra wait -
+ * which matters because each of these is a round trip to London.
+ */
+async function countQueue(queue: Queue): Promise<number> {
+  const { count } = await applyQueue(
+    getAdminScopedClient().from('prospects').select('id', { count: 'exact', head: true }),
+    queue,
+  );
+  return Number(count ?? 0);
+}
+
 async function countIn(table: string, column: string, values: unknown[]): Promise<number> {
   const { count } = await getAdminScopedClient()
     .from(table)
@@ -110,6 +157,9 @@ export const salesAnalyticsService = {
       interested,
       unsubscribed,
       customers,
+      researchQueue,
+      qualifyQueue,
+      contactsWaiting,
     ] = await Promise.all([
       countAll('prospects'),
       countWhere('prospects', 'research_status', 'done'),
@@ -124,6 +174,9 @@ export const salesAnalyticsService = {
       countWhere('sales_replies', 'classification', 'interested'),
       countAll('sales_suppressions'),
       countAll('prospect_attributions'),
+      countQueue(RESEARCH_QUEUE),
+      countQueue(QUALIFY_QUEUE),
+      countQueue(contactsQueue(settings?.minScoreToContact ?? 0)),
     ]);
 
     const { data: stageRows } = await supabase.from('prospects').select('stage');
@@ -165,6 +218,11 @@ export const salesAnalyticsService = {
         interested,
         unsubscribed,
         customers,
+      },
+      queues: {
+        research: researchQueue,
+        qualify: qualifyQueue,
+        contacts: contactsWaiting,
       },
       replyRatePct: sent > 0 ? Math.round((replied / sent) * 1000) / 10 : 0,
       interestedRatePct: sent > 0 ? Math.round((interested / sent) * 1000) / 10 : 0,

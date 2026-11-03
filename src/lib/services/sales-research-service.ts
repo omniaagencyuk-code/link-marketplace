@@ -1,5 +1,6 @@
 import { getAdminScopedClient } from '@/lib/supabase/server';
 import { isSupabaseEnabled } from '@/lib/supabase/config';
+import { RESEARCH_QUEUE, applyQueue } from '@/lib/sales/queues';
 import {
   CRAWLER_USER_AGENT,
   FETCH_AT_ONCE,
@@ -318,10 +319,10 @@ export async function advanceResearchSweep(budgetMs = DEFAULT_BUDGET_MS): Promis
       the selection reflects work the previous slice did, so nothing is
       attempted twice.
     */
-    const { data, error } = await supabase
-      .from('prospects')
-      .select('id')
-      .eq('research_status', 'pending')
+    const { data, error } = await applyQueue(
+      supabase.from('prospects').select('id'),
+      RESEARCH_QUEUE,
+    )
       .order('created_at')
       .limit(CHUNK);
 

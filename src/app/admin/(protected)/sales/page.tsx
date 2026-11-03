@@ -12,6 +12,7 @@ import { isHunterConfigured } from '@/lib/sales/hunter-config';
 import { isExtractionConfigured } from '@/lib/sourcing/client';
 import { emailEnabled } from '@/lib/email/config';
 import { segmentLabel } from '@/lib/config/sales-segments';
+import { nothingWaiting } from '@/lib/sales/queues';
 import {
   type SalesActionResult,
   matchAttributionsAction,
@@ -45,6 +46,7 @@ export default async function SalesPage() {
   const enabled = settings?.enabled ?? false;
   const dryRun = settings?.dryRun ?? true;
   const funnel = headline?.funnel;
+  const queues = headline?.queues;
 
   const missing: string[] = [];
   if (!isExtractionConfigured()) missing.push('ANTHROPIC_API_KEY (qualifying and writing)');
@@ -213,7 +215,7 @@ export default async function SalesPage() {
               note="Reads their websites. Costs nothing."
               action={startSweepAction}
               args={['research']}
-              waiting={(funnel?.prospects ?? 0) - (funnel?.researched ?? 0)}
+              waiting={queues?.research}
               disabled={!enabled}
             />
             <Sweep
@@ -222,7 +224,7 @@ export default async function SalesPage() {
               note="Asks the model who buys. Costs model tokens."
               action={startSweepAction}
               args={['qualify']}
-              waiting={(funnel?.researched ?? 0) - (funnel?.qualified ?? 0) - (funnel?.disqualified ?? 0)}
+              waiting={queues?.qualify}
               disabled={!enabled || !isExtractionConfigured()}
             />
             <Sweep
@@ -231,7 +233,7 @@ export default async function SalesPage() {
               note="Spends a Hunter credit each."
               action={startSweepAction}
               args={['contacts']}
-              waiting={(funnel?.qualified ?? 0) - (funnel?.withContact ?? 0)}
+              waiting={queues?.contacts}
               disabled={!enabled || dryRun || !isHunterConfigured()}
               disabledReason={
                 dryRun ? 'Dry run refuses Hunter lookups.' : !isHunterConfigured() ? 'No Hunter key.' : undefined
@@ -402,6 +404,19 @@ function Sweep({
   disabled?: boolean;
   disabledReason?: string;
 }) {
+  /*
+    An empty queue is a refusal, not a button.
+
+    Starting a sweep over nothing claims a run, finds no rows and marks itself
+    completed - a few seconds of nothing that reads, on the Recent sweeps
+    list, exactly like a sweep that worked. Saying "nothing waiting" is the
+    same fact without the misleading row.
+
+    Undefined is not zero: a card with no count (follow-ups) keeps its button,
+    because not knowing what is waiting is not knowing that nothing is.
+  */
+  const empty = nothingWaiting(waiting);
+
   return (
     <div className="rounded-lg border border-line bg-white p-3">
       <p className="flex items-center gap-2 text-[13px] font-semibold text-ink">
@@ -410,14 +425,20 @@ function Sweep({
       </p>
       <p className="mt-1 mb-2.5 text-[12px] leading-relaxed text-muted">
         {note}
-        {waiting !== undefined && waiting > 0 ? ` ${waiting} waiting.` : ''}
+        {waiting !== undefined ? (empty ? ' Nothing waiting.' : ` ${waiting} waiting.`) : ''}
       </p>
       <SalesAction
         action={action}
         args={args}
         label="Start"
-        disabled={disabled}
-        disabledReason={disabled ? (disabledReason ?? 'Outbound is off.') : undefined}
+        disabled={disabled || empty}
+        disabledReason={
+          disabled
+            ? (disabledReason ?? 'Outbound is off.')
+            : empty
+              ? 'Nothing is waiting at this stage.'
+              : undefined
+        }
       />
     </div>
   );
