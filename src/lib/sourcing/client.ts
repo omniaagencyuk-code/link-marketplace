@@ -468,25 +468,59 @@ function safeJson(text: string): unknown {
  * the workspace one especially - are worth more than the raw message, and
  * every caller should get them.
  */
+/**
+ * The failures that are about us rather than about one prospect.
+ *
+ * Named, because a caller working through a list has to tell the difference.
+ * A prospect whose site could not be read is one to skip; an account with no
+ * credit will refuse the next two hundred exactly as it refused this one, and
+ * a loop that cannot tell them apart spends four minutes proving it - which
+ * is what a campaign run did the first time somebody pressed Draft with an
+ * empty account.
+ *
+ * Messages rather than error classes because that is what survives the trip:
+ * `draft` returns a sentence, not the exception it came from. They are
+ * constants so the test and the producer cannot drift, which is the whole
+ * reason not to write the same phrase twice.
+ */
+export const ACCOUNT_PROBLEMS = {
+  keyRejected: 'The Anthropic API key was rejected. Check ANTHROPIC_API_KEY in Vercel.',
+  rateLimited: 'Rate limited by the API. Try a smaller run, or switch the mode to batch.',
+  wrongScope:
+    'This API key belongs to the organisation rather than to a workspace. ' +
+    'Either create a workspace-scoped key in the Anthropic console and replace ' +
+    'ANTHROPIC_API_KEY, or set ANTHROPIC_WORKSPACE_ID in Vercel to the workspace id ' +
+    '(it is in the console URL when you open the workspace, starting wrkspc_). Redeploy after either.',
+  noCredit: 'The Anthropic account has no credit. Top it up in the console, then press Retry.',
+} as const;
+
+/**
+ * Whether a failure will happen again for every remaining item.
+ *
+ * Used to stop a run rather than to report one: carrying on past this is
+ * never useful, and the count of identical skips it produces reads like a
+ * finding about the prospects when it is a finding about us.
+ */
+export function isAccountProblem(message: string | undefined): boolean {
+  if (!message) return false;
+
+  return Object.values(ACCOUNT_PROBLEMS).some((known) => message.includes(known));
+}
+
 export function messageFor(error: unknown): string {
   if (error instanceof Anthropic.AuthenticationError) {
-    return 'The Anthropic API key was rejected. Check ANTHROPIC_API_KEY in Vercel.';
+    return ACCOUNT_PROBLEMS.keyRejected;
   }
   if (error instanceof Anthropic.RateLimitError) {
-    return 'Rate limited by the API. Try a smaller run, or switch the mode to batch.';
+    return ACCOUNT_PROBLEMS.rateLimited;
   }
   if (error instanceof Anthropic.APIError) {
     // The one error whose fix is not guessable from its own wording.
     if (/not scoped to a workspace/i.test(error.message)) {
-      return (
-        'This API key belongs to the organisation rather than to a workspace. ' +
-        'Either create a workspace-scoped key in the Anthropic console and replace ' +
-        'ANTHROPIC_API_KEY, or set ANTHROPIC_WORKSPACE_ID in Vercel to the workspace id ' +
-        '(it is in the console URL when you open the workspace, starting wrkspc_). Redeploy after either.'
-      );
+      return ACCOUNT_PROBLEMS.wrongScope;
     }
     if (/credit balance/i.test(error.message)) {
-      return 'The Anthropic account has no credit. Top it up in the console, then press Retry.';
+      return ACCOUNT_PROBLEMS.noCredit;
     }
     return `API error ${error.status}: ${error.message}`.slice(0, 400);
   }
