@@ -56,7 +56,12 @@ import {
   quoteIsReal,
   wireQualificationSchema,
 } from '../src/lib/sales/qualification-schema';
-import { renderOutbound, splitSubjectFromBody, unsubscribeUrl } from '../src/lib/sales/email-render';
+import {
+  renderOutbound,
+  splitSubjectFromBody,
+  stripSignOff,
+  unsubscribeUrl,
+} from '../src/lib/sales/email-render';
 import { isFreeMail } from '../src/lib/services/sales-attribution-service';
 import {
   REPLY_PROMPT_VERSION,
@@ -890,9 +895,16 @@ has('no meeting asks', EMAIL_RULES, 'Never ask for a call, a demo, a meeting');
 // ---------------------------------------------------------------------------
 console.log('\n--- checking a draft before a human reads it ---');
 
+/*
+  A greeting and no sign-off, which is what the rules ask for since
+  `sales-email-2`. The first real batch had neither: it opened straight into a
+  sentence, and it ended with the sender's name that the renderer then added
+  again underneath.
+*/
 const goodDraft = {
   subject: 'a few sites for your client work',
   body:
+    'Hi Maria,\n\n' +
     'You mention link building for ambitious brands on your site, so this may be useful.\n\n' +
     'We have 214 priced placements - alpha.example is DR 61 at £220, beta.example DR 44 at £140.\n\n' +
     'Which niches are you buying in at the moment?',
@@ -2002,6 +2014,104 @@ console.log('\n--- importing contacts spends nothing ---');
   );
   isTrue('    without telling anybody to press it again: true',
     stopBranch.length > 0 && !/Press it again/i.test(stopBranch));
+}
+
+{
+  console.log('\n--- an email that reads like a person wrote it ---');
+
+  /*
+    Both of these came out of the first batch a human actually read, and
+    both were the prompt's fault rather than the model's.
+
+    "No greeting flourishes" was meant to forbid "I hope this email finds you
+    well" and was read as forbidding the greeting, so every email opened mid
+    thought. And "sign off with just the sender's first name - it will be
+    appended" reads as write the name AND the name is added, so every email
+    ended:
+
+        Andy
+
+        Andy
+        Press Parrot
+
+    The rules are rewritten and `EMAIL_PROMPT_VERSION` bumped, which stops it
+    being written. These check it is also caught when written anyway - the
+    rule is an instruction to a model, and an instruction is not a guarantee.
+  */
+  // The shared fixture, with the names this section talks about.
+  const sampleBrief: EmailBrief = { ...brief, senderFirstName: 'Andy', contactFirstName: 'Dana' };
+
+  const noGreeting = checkDraft(
+    { subject: 'a few sites', body: 'You list guest posting on your site.\n\nWhich niches are you buying in?' },
+    sampleBrief,
+  );
+  isTrue('a draft with no greeting is caught: true',
+    noGreeting.some((problem) => problem.kind === 'no-greeting'));
+
+  for (const opener of ['Hi Dana,', 'Hello Dana,', 'Hey Dana,', 'Dear Dana,']) {
+    const greeted = checkDraft(
+      { subject: 'a few sites', body: `${opener}\n\nYou list guest posting.\n\nWhich niches?` },
+      sampleBrief,
+    );
+    isTrue(`  "${opener}" is a greeting: true`,
+      !greeted.some((problem) => problem.kind === 'no-greeting'));
+  }
+
+  // The sign-off, on the last line only - "thanks" inside a sentence is
+  // ordinary English and must not be flagged.
+  const signedOff = checkDraft(
+    { subject: 'a few sites', body: 'Hi Dana,\n\nYou list guest posting.\n\nWhich niches?\n\nAndy' },
+    sampleBrief,
+  );
+  isTrue('a draft that signs itself is caught: true',
+    signedOff.some((problem) => problem.kind === 'signed-off'));
+
+  const thanksInside = checkDraft(
+    { subject: 'a few sites', body: 'Hi Dana,\n\nThanks to the case study on your site, I can see the volume.\n\nWhich niches?' },
+    sampleBrief,
+  );
+  isTrue('  while the same word inside a sentence is not: true',
+    !thanksInside.some((problem) => problem.kind === 'signed-off'));
+
+  /*
+    And the renderer takes one off anyway, because the drafts already written
+    under `sales-email-1` all carry it and an email is not recoverable once
+    it has gone.
+  */
+  isTrue('the renderer takes the name back off: true',
+    stripSignOff('Which niches are you buying in?\n\nAndy', 'Andy') ===
+      'Which niches are you buying in?');
+  isTrue('  including a sign-off above it: true',
+    stripSignOff('Which niches?\n\nBest,\nAndy\nPress Parrot', 'Andy') === 'Which niches?');
+  isTrue('  and leaves a body that has none alone: true',
+    stripSignOff('Which niches are you buying in?', 'Andy') ===
+      'Which niches are you buying in?');
+
+  /*
+    The half that keeps it safe: it only ever eats whole trailing lines it
+    recognises. A renderer that trimmed sentences off an email a person had
+    approved would be a worse bug than the one it is fixing.
+  */
+  isTrue('  and never cuts into the body: true',
+    stripSignOff('Hi Dana,\n\nAndy at your agency mentioned link building.\n\nWhich niches?', 'Andy') ===
+      'Hi Dana,\n\nAndy at your agency mentioned link building.\n\nWhich niches?');
+
+  // End to end: the name appears once in what actually gets sent.
+  const sent = renderOutbound({
+    bodyText: 'Hi Dana,\n\nYou list guest posting.\n\nWhich niches?\n\nAndy',
+    senderFirstName: 'Andy',
+    unsubscribeToken: 'tok_123',
+    siteUrl: 'https://pressparrot.com',
+  });
+  isTrue('so the sent email says the name once: true',
+    (sent.text.match(/\bAndy\b/g) ?? []).length === 1);
+  isTrue('  and still opens with the greeting: true', sent.text.startsWith('Hi Dana,'));
+
+  // The rules say both things, and the version moved when they changed.
+  has('the rules ask for a greeting', EMAIL_RULES, 'Open with a greeting on its own line');
+  has('and forbid writing a name at the end', EMAIL_RULES, 'Do not sign off and do not write your name');
+  isTrue('and the prompt version moved with them: true',
+    EMAIL_PROMPT_VERSION === 'sales-email-2');
 }
 
 console.log(failed === 0 ? '\nAll sales checks passed.\n' : `\n${failed} sales check(s) failed.\n`);

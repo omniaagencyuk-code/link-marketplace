@@ -29,7 +29,7 @@ import { brand } from '@/lib/config/brand';
  *   single fastest way to make a company tell their filter about us.
  */
 
-export const EMAIL_PROMPT_VERSION = 'sales-email-1';
+export const EMAIL_PROMPT_VERSION = 'sales-email-2';
 
 export const EMAIL_RULES = `
 You write one short outbound email from ${brand.name}, a marketplace that sells
@@ -68,17 +68,29 @@ emoji, nothing that reads like a newsletter. It should look like a line a person
 typed.
 
 Body: 70 to 130 words. Plain text. Short paragraphs, one blank line between
-them. No greeting flourishes, no "I hope this email finds you well", no bullet
-lists of benefits, no postscript.
+them.
+
+**Open with a greeting on its own line.** \`Hi <their first name>,\` when you
+have been given a name, \`Hi there,\` when you have not. One line, then a blank
+line. An email that starts straight into a sentence about their services reads
+like a notification rather than like a person writing.
+
+What that rules out is the padding after it: no "I hope this email finds you
+well", no "hope you're having a good week", no bullet lists of benefits, no
+postscript.
 
 Structure that works:
-  1. One line that says why them, grounded in a quote if you have one.
-  2. One or two lines of what we have, using the real listings given.
-  3. One question that is easy to answer.
+  1. The greeting.
+  2. One line that says why them, grounded in a quote if you have one.
+  3. One or two lines of what we have, using the real listings given.
+  4. One question that is easy to answer.
 
-Sign off with just the sender's first name - it will be appended; do not write
-a signature, a company footer, or an unsubscribe line. Those are added after
-you.
+**Do not sign off and do not write your name.** The email ends on the question.
+A sign-off, the sender's name, a company name, a signature, a footer and an
+unsubscribe line are all appended after you by the renderer - so a name written
+here arrives twice, which is how the first batch of these read.
+
+Nothing after the question. No "Best", no "Cheers", no "Thanks", no name.
 
 # The ask
 
@@ -236,7 +248,15 @@ export function buildEmailBrief(brief: EmailBrief): string {
  * Pure, so each rule can be checked against the draft that triggers it.
  */
 export interface DraftProblem {
-  kind: 'invented-price' | 'invented-history' | 'too-long' | 'too-short' | 'no-question' | 'banned-phrase';
+  kind:
+    | 'invented-price'
+    | 'invented-history'
+    | 'too-long'
+    | 'too-short'
+    | 'no-question'
+    | 'banned-phrase'
+    | 'no-greeting'
+    | 'signed-off';
   detail: string;
 }
 
@@ -329,6 +349,50 @@ export function checkDraft(
     if (text.toLowerCase().includes(phrase)) {
       problems.push({ kind: 'banned-phrase', detail: `"${phrase}"` });
     }
+  }
+
+  /*
+    The two the first real batch got wrong, checked rather than trusted - the
+    same move the prices above make, and for the same reason: the rule is an
+    instruction to a model, and an instruction is not a guarantee.
+
+    Both were the prompt's fault rather than the model's. "No greeting
+    flourishes" was meant to forbid "I hope this email finds you well" and was
+    read as forbidding the greeting; "sign off with just the sender's first
+    name - it will be appended" reads as write the name AND the name is added,
+    so every email carried it twice. Both lines are rewritten and the version
+    bumped, and these two make the next drift visible in the review queue
+    rather than in somebody's inbox.
+  */
+  const lines = draft.body.trim().split('\n');
+  const opening = lines[0]?.trim() ?? '';
+
+  if (!/^(hi|hello|hey|dear)\b/i.test(opening)) {
+    problems.push({
+      kind: 'no-greeting',
+      detail: 'It starts straight into a sentence. An email to a person opens with their name.',
+    });
+  }
+
+  /*
+    A sign-off the renderer will add itself. Checked on the last non-empty
+    line only: "thanks" inside a sentence is ordinary English, and the same
+    word alone at the end is the thing that arrives twice.
+  */
+  const closing = [...lines].reverse().find((line) => line.trim() !== '')?.trim() ?? '';
+  const bare = closing.replace(/[,.!]+$/, '').toLowerCase();
+  const signOffs = ['best', 'best wishes', 'best regards', 'kind regards', 'regards',
+    'cheers', 'thanks', 'thank you', 'many thanks', 'all the best', 'speak soon'];
+
+  if (
+    bare === brief.senderFirstName.trim().toLowerCase() ||
+    bare === brand.name.trim().toLowerCase() ||
+    signOffs.includes(bare)
+  ) {
+    problems.push({
+      kind: 'signed-off',
+      detail: `It ends with "${closing}". The name and the sign-off are added after it, so this arrives twice.`,
+    });
   }
 
   return problems;
