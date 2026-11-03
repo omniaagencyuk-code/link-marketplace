@@ -47,6 +47,80 @@ export function unsubscribeUrl(siteUrl: string, token: string): string {
   return `${base}/sales/unsubscribe/${encodeURIComponent(token)}`;
 }
 
+/**
+ * Sign-offs the renderer takes back off the end of a draft.
+ *
+ * Matched whole-line and case-insensitively, with any trailing comma. Short
+ * and closed on purpose: anything longer than these is a sentence, and a
+ * renderer that trims sentences off approved emails is worse than one that
+ * occasionally leaves a "Warmest regards" in.
+ */
+const SIGN_OFFS = [
+  'best',
+  'best wishes',
+  'best regards',
+  'kind regards',
+  'regards',
+  'cheers',
+  'thanks',
+  'thank you',
+  'many thanks',
+  'all the best',
+  'speak soon',
+];
+
+/**
+ * Take the model's own sign-off back off, before adding ours.
+ *
+ * The prompt says not to write one. It said something subtler before - "sign
+ * off with just the sender's first name, it will be appended" - which reads
+ * as an instruction to write the name AND a note that the name is added, and
+ * the model reasonably did both. Every email in the first batch ended:
+ *
+ *     Andy
+ *
+ *     Andy
+ *     Press Parrot
+ *
+ * The prompt is fixed and versioned, which stops it happening again. This
+ * stops it in the drafts already written, and in the next one the model
+ * decides to be polite in - the rule is probabilistic and the email is not
+ * recoverable once it has gone.
+ *
+ * Only whole trailing lines, only the sender's first name, our own name, or
+ * one of a closed list of sign-offs. A line of anything else ends the
+ * stripping, so the body a person approved is never cut into.
+ */
+export function stripSignOff(body: string, senderFirstName: string): string {
+  const name = senderFirstName.trim().toLowerCase();
+  const company = brand.name.trim().toLowerCase();
+  const lines = body.trimEnd().split('\n');
+
+  while (lines.length > 0) {
+    const last = lines[lines.length - 1]!.trim();
+
+    if (last === '') {
+      lines.pop();
+      continue;
+    }
+
+    const bare = last.replace(/[,.!]+$/, '').toLowerCase();
+    // A first name alone is only a sign-off at the end of the email, which is
+    // the only place this looks.
+    const isName = name.length > 0 && bare === name;
+    const isCompany = company.length > 0 && bare === company;
+
+    if (isName || isCompany || SIGN_OFFS.includes(bare)) {
+      lines.pop();
+      continue;
+    }
+
+    break;
+  }
+
+  return lines.join('\n').trimEnd();
+}
+
 export function renderOutbound(input: RenderInput): RenderedEmail {
   const url = unsubscribeUrl(input.siteUrl, input.unsubscribeToken);
 
@@ -55,8 +129,11 @@ export function renderOutbound(input: RenderInput): RenderedEmail {
     different one each time. One line, their first name, and nothing else: a
     cold email with a six-line HTML signature is a cold email from a company,
     and this one is from a person.
+
+    Whatever sign-off the model wrote anyway comes off first, or the name
+    arrives twice.
   */
-  const signed = `${input.bodyText.trim()}\n\n${input.senderFirstName}\n${brand.name}`;
+  const signed = `${stripSignOff(input.bodyText, input.senderFirstName)}\n\n${input.senderFirstName}\n${brand.name}`;
 
   const text = [
     signed,
