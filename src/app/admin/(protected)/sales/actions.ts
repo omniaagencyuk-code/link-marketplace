@@ -700,6 +700,20 @@ export async function runCampaignAction(
       .slice(0, 4)
       .join(', ');
 
+    /*
+      An account-level stop is reported on its own and nothing else is
+      added, because everything else would be noise around it: how many were
+      looked at is not the point, and "press it again" is actively wrong -
+      the next press fails the same way until somebody fixes what it names.
+    */
+    if (outcome.stoppedOn) {
+      return bad(
+        outcome.drafted > 0
+          ? `Drafted ${outcome.drafted}, then stopped: ${outcome.stoppedOn}`
+          : `Nothing could be written. ${outcome.stoppedOn}`,
+      );
+    }
+
     return ok(
       `Looked at ${outcome.considered}, drafted ${outcome.drafted}.` +
         (skipped ? ` Skipped: ${skipped}.` : '') +

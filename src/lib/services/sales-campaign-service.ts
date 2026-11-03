@@ -5,6 +5,7 @@ import { salesEmailService } from './sales-email-service';
 import { salesSettingsService } from './sales-settings-service';
 import { isContactable, segmentDefinition } from '@/lib/config/sales-segments';
 import { websiteService } from './website-service';
+import { isAccountProblem } from '@/lib/sourcing/client';
 import type { MatchableListing } from '@/lib/sales/inventory-match';
 import type { SalesCampaign, SalesSegment } from '@/lib/types/sales';
 
@@ -80,6 +81,11 @@ export interface RunOutcome {
    * facts, and only one of them means "press it again".
    */
   ranOutOfTime?: boolean;
+  /**
+   * The run stopped because nothing could be written at all, and this says
+   * what to fix. Pressing the button again changes nothing until it is.
+   */
+  stoppedOn?: string;
 }
 
 export const salesCampaignService = {
@@ -326,6 +332,20 @@ export const salesCampaignService = {
         outcome.drafted += 1;
       } else if (draft.error?.includes('budget for this month is spent')) {
         skip('the model budget is spent');
+        break;
+      } else if (isAccountProblem(draft.error)) {
+        /*
+          Stop: this one is about us, not about them.
+
+          The first real run proved why. The account had no credit, so every
+          draft failed identically, and the loop worked through two hundred
+          and twenty-three prospects before its clock ran out - reporting
+          "223 skipped" and "there are more waiting", which reads as a fact
+          about the prospects and an instruction to press the button again.
+          Neither was true. The next press would have done the same thing.
+        */
+        skip(draft.error ?? 'the account cannot write anything');
+        outcome.stoppedOn = draft.error;
         break;
       } else if (draft.error?.includes('do-not-contact')) {
         skip('on the do-not-contact list');

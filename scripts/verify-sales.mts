@@ -31,6 +31,7 @@ import {
   matchInventory,
 } from '../src/lib/sales/inventory-match';
 import { pricedServices } from '../src/lib/services/query-engine';
+import { ACCOUNT_PROBLEMS, isAccountProblem } from '../src/lib/sourcing/client';
 import {
   QUALIFICATION_PROMPT_VERSION,
   QUALIFICATION_RULES,
@@ -1898,6 +1899,109 @@ console.log('\n--- importing contacts spends nothing ---');
   const drafter = strip(readSource('src/lib/services/sales-email-service.ts'));
   isTrue('a lone draft still reads its own inventory: true',
     /options\.inventory \?\? \(await websiteService\.matchableListings\(niches\)\)/.test(drafter));
+}
+
+{
+  console.log('\n--- a failure about us is not a finding about them ---');
+
+  /*
+    The first real campaign run found this one. The Anthropic account had no
+    credit, so every draft failed identically - and the loop worked through
+    two hundred and twenty-three prospects before its clock ran out, then
+    reported "223 skipped" and "there are more waiting, press it again".
+
+    Both readings were wrong. The skips said nothing about those companies,
+    and the next press would have failed the same way. A failure that will
+    repeat for every remaining item has to stop the run and name itself.
+  */
+  for (const [name, message] of Object.entries(ACCOUNT_PROBLEMS)) {
+    isTrue(`${name} is recognised as a failure about us: true`, isAccountProblem(message));
+  }
+
+  // Including when it arrives wrapped, which is how `draft` returns it.
+  isTrue('  and still recognised inside a longer sentence: true',
+    isAccountProblem(`Could not write it: ${ACCOUNT_PROBLEMS.noCredit}`));
+
+  /*
+    The other half, and the one a list of constants cannot give on its own:
+    that the thing which PRODUCES these messages still produces exactly
+    these. A `messageFor` returning its own wording for an empty account
+    would read perfectly, and `isAccountProblem` would stop recognising the
+    only message it is ever handed - the run would go back to grinding
+    through every prospect.
+
+    Checked by reading the function rather than by calling it, and that is a
+    retreat worth recording. Calling it means constructing real SDK errors,
+    and under this suite's loader the SDK resolves to a second copy, so
+    `instanceof Anthropic.AuthenticationError` is false inside the module
+    under test and every branch falls through to the fallback. The test
+    would have been measuring the loader.
+
+    So: no branch of `messageFor` may return a string literal. The two
+    legitimate ones are a template (`API error ${status}`) and the final
+    fallback, neither of which is a literal return. Anything else is wording
+    written in place of a constant, which is exactly the drift.
+  */
+  const client = readFileSync(
+    new URL('../src/lib/sourcing/client.ts', import.meta.url),
+    'utf8',
+  );
+  const messageForBody = client.slice(
+    client.indexOf('export function messageFor'),
+    client.indexOf("export { PROMPT_VERSION }"),
+  );
+  const literalReturns = messageForBody.match(/return\s+['"][^'"]/g) ?? [];
+
+  isTrue('every account message comes from the shared constant: true',
+    messageForBody.length > 0 &&
+      literalReturns.length === 0 &&
+      Object.keys(ACCOUNT_PROBLEMS).every((name) =>
+        messageForBody.includes(`ACCOUNT_PROBLEMS.${name}`),
+      ));
+
+  /*
+    And that ordinary failures are NOT caught by it. This is the half that
+    matters: a predicate that stopped on anything would end a run on the
+    first prospect whose site could not be read, and two hundred good
+    prospects would sit there because one was unreadable.
+  */
+  const ordinary = [
+    'No such prospect',
+    'nobody@example.com is on the do-not-contact list.',
+    'Nothing has been read from their site yet. Research them first.',
+    "The model's answer did not match the schema: subject is required",
+    'API error 500: internal server error',
+  ];
+  isTrue('while an ordinary failure is not: true',
+    ordinary.every((message) => !isAccountProblem(message)));
+  isTrue('  and neither is nothing at all: true', !isAccountProblem(undefined));
+
+  const readSource = (path: string) =>
+    readFileSync(new URL(`../${path}`, import.meta.url), 'utf8');
+  const strip = (source: string) =>
+    source.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/\/\/[^\n]*/g, ' ');
+
+  const campaign = strip(readSource('src/lib/services/sales-campaign-service.ts'));
+  const runBody = campaign.slice(campaign.indexOf('async run('));
+  isTrue('a run stops on one rather than working through the list: true',
+    runBody.length > 0 && /isAccountProblem\(draft\.error\)[\s\S]{0,200}break;/.test(runBody));
+
+  /*
+    Reported as a refusal, not as a result. The run "succeeded" in the sense
+    that it returned, and saying so next to a tick is how somebody reads
+    "nothing could be written" as "there was nobody to write to".
+  */
+  const action = strip(readSource('src/app/admin/(protected)/sales/actions.ts'));
+  const runAction = action.slice(action.indexOf('export async function runCampaignAction'));
+  isTrue('  and the screen refuses rather than reporting a tick: true',
+    runAction.length > 0 && /if \(outcome\.stoppedOn\)[\s\S]{0,300}return bad\(/.test(runAction));
+  // And without "press it again", which is the one instruction that cannot work.
+  const stopBranch = runAction.slice(
+    runAction.indexOf('outcome.stoppedOn'),
+    runAction.indexOf('return ok('),
+  );
+  isTrue('    without telling anybody to press it again: true',
+    stopBranch.length > 0 && !/Press it again/i.test(stopBranch));
 }
 
 console.log(failed === 0 ? '\nAll sales checks passed.\n' : `\n${failed} sales check(s) failed.\n`);
