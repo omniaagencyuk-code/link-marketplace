@@ -10,20 +10,39 @@ import type {
 /** Order services are presented in across list views. */
 const servicePriority: LinkTypeSlug[] = ['guest-post', 'niche-edit', 'digital-pr'];
 
-/** Attach the denormalised fields list views and sorting rely on. */
-export function toListItem(website: Website): WebsiteListItem {
-  const available = website.services.filter((service) => service.available);
-  const pool = available.length > 0 ? available : website.services;
-  const ordered = [...pool].sort(
+/**
+ * The services a listing is priced from, in the order it presents them.
+ *
+ * Available ones where there are any, every one where there are not - so a
+ * listing whose services are all paused still has a price rather than
+ * reading as free. Exported because the sales drafter needs the same
+ * headline price from a much narrower read than a whole `Website`, and two
+ * expressions of "what does this site cost" is one too many when one of them
+ * ends up in an email.
+ */
+export function pricedServices<S extends { type: LinkTypeSlug; available: boolean }>(
+  services: S[],
+): S[] {
+  const available = services.filter((service) => service.available);
+  const pool = available.length > 0 ? available : services;
+
+  return [...pool].sort(
     (a, b) => servicePriority.indexOf(a.type) - servicePriority.indexOf(b.type),
   );
+}
+
+/** Attach the denormalised fields list views and sorting rely on. */
+export function toListItem(website: Website): WebsiteListItem {
+  const ordered = pricedServices(website.services);
   const headlineService = ordered[0] ?? null;
 
   return {
     ...website,
     headlineService,
     headlinePriceMinor: headlineService?.priceMinor ?? 0,
-    lowestPriceMinor: pool.length ? Math.min(...pool.map((service) => service.priceMinor)) : 0,
+    lowestPriceMinor: ordered.length
+      ? Math.min(...ordered.map((service) => service.priceMinor))
+      : 0,
     fastestTurnaroundDays: headlineService?.turnaroundMinDays ?? 0,
     availableLinkTypes: ordered.map((service) => service.type),
   };

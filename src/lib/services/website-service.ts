@@ -6,6 +6,7 @@ import { normaliseDomain } from '@/lib/import/normalise';
 import { newWebsiteDefaults, toWebsitePatch } from '@/lib/import/to-website';
 import { toPreviewRows, type MarketplacePreview } from './marketplace-preview';
 import { isSupabaseEnabled } from '@/lib/supabase/config';
+import type { MatchableListing } from '@/lib/sales/inventory-match';
 import { publishBlocker, publishBlockerMessage } from '@/lib/websites/publishing';
 import { rankRelated, relatedTarget } from '@/lib/websites/related';
 import { pricingService } from './pricing-service';
@@ -154,6 +155,30 @@ export const websiteService = {
   /** Every active listing, as list items. */
   async getAll(): Promise<WebsiteListItem[]> {
     if (isSupabaseEnabled()) return publicItems(await supabaseWebsiteRepository.getAll());
+
+    return publicItems(listItems());
+  },
+
+  /**
+   * The listings a sales draft could cite, for the niches it needs.
+   *
+   * The second caller to stop reaching for `getAll()`, after `nicheCounts`,
+   * and for the same reason: it wanted a handful of listings and a few
+   * numbers, and was being handed the marketplace to find them in. Drafting
+   * twenty emails asked for every column of twelve thousand rows twenty
+   * times over, which Postgres eventually refused with a statement timeout.
+   *
+   * No `publicItems` here, unlike `getAll` above, and that is not an
+   * omission. `withoutCost` exists to strip what a wide read drags in - our
+   * buy price, a publisher's contact, the cost currency. This read never
+   * asks for any of them, so there is nothing to remove; the narrowness is
+   * doing the same job the stripping does there.
+   *
+   * The in-memory half returns everything and lets `canCarry` decide, which
+   * is what it did before: a clone has no database to be slow.
+   */
+  async matchableListings(wanted: string[]): Promise<MatchableListing[]> {
+    if (isSupabaseEnabled()) return supabaseWebsiteRepository.matchableListings(wanted);
 
     return publicItems(listItems());
   },

@@ -15,7 +15,10 @@ import {
   websiteToRow,
   type WebsiteRow,
 } from '@/lib/supabase/mappers';
-import { toListItem } from '../query-engine';
+import { acceptedNichesFromFlags } from '@/lib/config/accepted-niches';
+import { filterNiches } from '@/lib/sales/inventory-match';
+import type { MatchableListing } from '@/lib/sales/inventory-match';
+import { pricedServices, toListItem } from '../query-engine';
 import { toPreviewRows, type MarketplacePreview } from '../marketplace-preview';
 import { normaliseDomain } from '@/lib/import/normalise';
 import { newWebsiteDefaults, toWebsitePatch } from '@/lib/import/to-website';
@@ -409,6 +412,66 @@ const readStats = cache(async () => {
  * empty marketplace is indistinguishable from a sold-out one. A thrown error
  * is at least a thing somebody can find.
  */
+/** The narrow row `matchableListings` asks for. */
+interface MatchableRow {
+  id: string;
+  domain: string;
+  status: string;
+  domain_rating: number | null;
+  organic_traffic: number | null;
+  accepted_niches: string[] | null;
+  accepts_gambling: boolean | null;
+  accepts_finance: boolean | null;
+  accepts_crypto: boolean | null;
+  accepts_cbd: boolean | null;
+  accepts_adult: boolean | null;
+  services: { type: Service['type']; price_minor: number; available: boolean }[] | null;
+}
+
+/**
+ * The narrow row, as the matcher wants it.
+ *
+ * Two rules are borrowed rather than restated, and both would be quiet if
+ * they drifted. `pricedServices` decides which service is the headline one -
+ * available where any are, in presentation order - so a price quoted in an
+ * email is the price the listing page shows. `acceptedNichesFromFlags` is
+ * the legacy fallback `mapWebsite` applies, so a listing written before
+ * `accepted_niches` existed carries the same acceptance here as everywhere
+ * else rather than reading as accepting nothing.
+ */
+function toMatchable(row: MatchableRow): MatchableListing {
+  const headline = pricedServices(
+    (row.services ?? []).map((service) => ({
+      type: service.type,
+      available: service.available ?? true,
+      priceMinor: Number(service.price_minor ?? 0),
+    })),
+  )[0];
+
+  const accepted =
+    row.accepted_niches && row.accepted_niches.length > 0
+      ? row.accepted_niches
+      : acceptedNichesFromFlags({
+          acceptsGambling: row.accepts_gambling ?? false,
+          acceptsFinance: row.accepts_finance ?? false,
+          acceptsCrypto: row.accepts_crypto ?? false,
+          acceptsCbd: row.accepts_cbd ?? false,
+          acceptsAdult: row.accepts_adult ?? false,
+        });
+
+  return {
+    id: row.id,
+    domain: row.domain,
+    status: row.status,
+    headlinePriceMinor: headline?.priceMinor ?? 0,
+    metrics: {
+      domainRating: Number(row.domain_rating ?? 0),
+      organicTraffic: Number(row.organic_traffic ?? 0),
+    },
+    rules: { acceptedNiches: accepted },
+  };
+}
+
 function inventoryClient() {
   const admin = getAdminClient();
   if (!admin) {
@@ -442,6 +505,120 @@ export const supabaseWebsiteRepository = {
 
     warnIfOutgrown('the marketplace', rows.length);
     return rows.map((row) => toListItem(mapWebsite(row)));
+  },
+
+  /**
+   * The listings a sales draft could cite, and no more.
+   *
+   * `getAll()` above is the read this replaces for the drafter, for the
+   * reason `nicheCounts` replaced it for the niche counts: a question that
+   * is not "give me the marketplace" should not be answered by giving
+   * somebody the marketplace. Every column of twelve thousand rows with five
+   * joins hanging off it, over twenty-five paged requests to London, once
+   * per draft - so Draft 20 asked for the whole inventory twenty times and
+   * Postgres cancelled one of the pages on a statement timeout.
+   *
+   * Three things make this cheap where that was not.
+   *
+   * **The columns.** `matchInventory` and `inventorySummary` read six fields
+   * and a price, which `MatchableListing` now says out loud. The categories,
+   * niche prices and topics joins go, and `*` becomes a list.
+   *
+   * **The order.** `getAll` pages by domain rating, so every page re-sorts
+   * the whole table before discarding the rows ahead of it. Nothing here
+   * needs that order - `matchInventory` sorts by strength itself - so paging
+   * by primary key is both stable and nearly free.
+   *
+   * **The rows.** A gambling affiliate can only be shown listings that
+   * accept gambling, and asking the database for the rest is asking for
+   * twelve thousand rows to throw away eleven thousand.
+   *
+   * ## Why the filter is deliberately looser than the rule
+   *
+   * `canCarry` stays the one definition of what a listing can carry, in
+   * `inventory-match.ts`, pure and checked against fixtures. This filter is
+   * only a way of not fetching rows that could not possibly pass it, and it
+   * is written to be a strict superset: every row `canCarry` would keep is
+   * fetched, plus some it will drop.
+   *
+   * That asymmetry is the whole safety argument. A filter that is too loose
+   * costs a few rows nobody uses. A filter that is too tight silently drops
+   * listings from an email's "41 sites that accept gambling, from £180" -
+   * which is a figure a prospect can check, and finding it wrong is finding
+   * us wrong.
+   *
+   * So it names `general` alongside the wanted niches, because `canCarry`
+   * accepts a `general` listing for any ordinary topic; and it keeps rows
+   * whose `accepted_niches` is empty, because those predate the column and
+   * `mapWebsite` reads their acceptance off the legacy booleans instead - a
+   * filter trusting the array alone would drop every one of them.
+   */
+  async matchableListings(wanted: string[]): Promise<MatchableListing[]> {
+    const supabase = inventoryClient();
+
+    /*
+      Named columns, and the services join kept because the headline price
+      comes from it. `turnaround_min_days` and the rest are not read here, so
+      they are not asked for.
+    */
+    const SELECT = `
+      id, domain, status, domain_rating, organic_traffic, accepted_niches,
+      accepts_gambling, accepts_finance, accepts_crypto, accepts_cbd, accepts_adult,
+      services (type, price_minor, available)
+    `;
+
+    /*
+      The two halves of `couldCarry`, as PostgREST writes them: overlap with
+      the niches it names, or an array nobody has set. Built from
+      `filterNiches` rather than from a list spelled out here, so the rows
+      this skips and the rows the matcher would drop stay one decision.
+    */
+    const nicheFilter =
+      wanted.length > 0
+        ? `accepted_niches.ov.{${filterNiches(wanted).map((niche) => `"${niche}"`).join(',')}},` +
+          'accepted_niches.eq.{}'
+        : null;
+
+    const read = (filter: string | null) =>
+      readAllPages<MatchableRow>('the marketplace', (from, to) => {
+        const query = supabase
+          .from('websites')
+          .select(SELECT)
+          .eq('status', 'active')
+          // By primary key: stable under paging, and no sort of the table
+          // per page. The matcher does its own ordering.
+          .order('id', { ascending: true })
+          .range(from, to);
+
+        return filter ? query.or(filter) : query;
+      });
+
+    try {
+      return (await read(nicheFilter)).map(toMatchable);
+    } catch (error) {
+      if (!nicheFilter) throw error;
+
+      /*
+        Fall back to fetching every active listing, narrow, unfiltered.
+
+        Only the filter is given up, and the filter only ever skipped rows
+        `canCarry` was going to drop - so the unfiltered read is the
+        conservative one, not the lossy one. The decision about what may be
+        cited was never here; it is in `canCarry`, which runs on whatever
+        comes back either way.
+
+        This exists because the filter is the one part of this read that
+        cannot be checked without a live PostgREST: the suite proves the
+        predicate, not the server's parsing of it. A mistake in that string
+        should cost a slower read, not a Sales Centre that cannot draft.
+      */
+      console.warn(
+        '[websites] The niche filter was refused, reading every active listing instead:',
+        error instanceof Error ? error.message : error,
+      );
+
+      return (await read(null)).map(toMatchable);
+    }
   },
 
   /**

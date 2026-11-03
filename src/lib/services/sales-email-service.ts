@@ -169,10 +169,23 @@ export const salesEmailService = {
 
     const stepNumber = options.stepNumber ?? 1;
 
-    // The inventory, read once. `getAll` pages internally, so the whole
-    // marketplace arrives rather than its first thousand rows.
-    const inventory = await websiteService.getAll();
+    /*
+      Only the listings that could be cited to this prospect.
+
+      This used to be `websiteService.getAll()` - the whole marketplace,
+      every column, five joins, twenty-five paged requests, once per draft -
+      and Draft 20 therefore asked for all of it twenty times. Postgres
+      cancelled one of those pages on a statement timeout, which is the same
+      wall /guest-posts hit before 0093 moved its counting into the
+      database.
+      
+      The niches are worked out first and the read is given them, so the
+      database returns what `canCarry` might keep rather than everything it
+      will not. `canCarry` still decides: the filter is a superset of it, for
+      the reason `matchableListings` sets out.
+    */
     const niches = segmentDefinition(prospect.segment).niches;
+    const inventory = await websiteService.matchableListings(niches);
     const matched = matchInventory(inventory, prospect.segment, { limit: 3, niches });
     const summary = inventorySummary(inventory, prospect.segment, { niches });
 
