@@ -24,7 +24,13 @@ import {
 import { placementPoints, scoreProspect } from '../src/lib/sales/scoring';
 import { parsePastedProspects } from '../src/lib/sales/paste-list';
 import { isPlatform } from '../src/lib/gap/competitors';
-import { inventorySummary, matchInventory } from '../src/lib/sales/inventory-match';
+import {
+  couldCarry,
+  filterNiches,
+  inventorySummary,
+  matchInventory,
+} from '../src/lib/sales/inventory-match';
+import { pricedServices } from '../src/lib/services/query-engine';
 import {
   QUALIFICATION_PROMPT_VERSION,
   QUALIFICATION_RULES,
@@ -1641,6 +1647,257 @@ console.log('\n--- importing contacts spends nothing ---');
   isTrue('an empty queue refuses the button: true', nothingWaiting(0));
   isTrue('  a queue with work in it does not: true', !nothingWaiting(7));
   isTrue('  and a queue nobody counted does not either: true', !nothingWaiting(undefined));
+}
+
+{
+  console.log('\n--- the inventory a draft is allowed to skip fetching ---');
+
+  /*
+    The claim the narrowed read rests on.
+
+    `matchableListings` asks the database for fewer rows than the whole
+    marketplace, because reading every column of twelve thousand listings
+    once per draft is what a statement timeout eventually refused. That is
+    only safe while the filter is a strict SUPERSET of `canCarry`: a row the
+    matcher would have kept must never be one the database skipped.
+
+    The direction is everything. Too loose fetches rows that get dropped and
+    costs nothing anybody sees. Too tight removes listings from the count in
+    "41 sites that accept gambling, from £180" - a figure the prospect can
+    check, and being wrong about it is being caught being wrong.
+
+    So the implication is walked exhaustively rather than sampled: every
+    listing in the matrix below, against every wanted list, asserting that
+    `canCarry` keeping it implies `couldCarry` fetching it.
+  */
+  const acceptances: string[][] = [
+    [],                           // legacy: acceptance lives in the booleans
+    ['general'],
+    ['travel'],
+    ['gambling'],
+    ['gambling', 'general'],
+    ['business', 'marketing'],
+    ['finance'],
+    ['crypto', 'adult'],
+    ['general', 'technology', 'business', 'marketing'],
+  ];
+
+  const wantedLists: string[][] = [
+    [],                           // no niche required at all
+    ['general'],
+    ['gambling'],
+    ['crypto'],
+    ['general', 'business', 'marketing', 'technology'],   // seo_agency
+    ['travel'],
+    ['finance'],
+  ];
+
+  let keptButSkipped = 0;
+  let pairs = 0;
+
+  for (const accepted of acceptances) {
+    for (const wanted of wantedLists) {
+      pairs += 1;
+      const candidate = listing(`m-${pairs}`, 50, 20000, accepted);
+      // Through the matcher rather than through a copy of its rule: a
+      // listing the matcher cites is one it kept.
+      const kept = matchInventory([candidate], 'other', { limit: 1, niches: wanted })
+        .listings.length > 0;
+
+      if (kept && !couldCarry(accepted, wanted)) keptButSkipped += 1;
+    }
+  }
+
+  isTrue(`every listing the matcher would cite is one the read fetches (${pairs} pairs): true`,
+    pairs === acceptances.length * wantedLists.length && keptButSkipped === 0);
+
+  /*
+    And that it is genuinely looser, not merely equal - which is what makes
+    "the matcher still decides" true rather than decorative. A travel site
+    is fetched for a gambling campaign and then dropped by `canCarry`,
+    because the array cannot say whether a sensitive niche is accepted
+    without being read against the sensitive rule.
+  */
+  isTrue('  while still fetching rows the matcher then drops: true',
+    couldCarry(['general'], ['gambling']) &&
+      matchInventory([listing('general-only', 50, 20000, ['general'])], 'other',
+        { limit: 1, niches: ['gambling'] }).listings.length === 0);
+
+  // A listing that predates `accepted_niches` is always fetched, because its
+  // acceptance is in the legacy booleans and the array cannot rule it out.
+  isTrue('  and a listing with no niches set is never skipped: true',
+    wantedLists.every((wanted) => couldCarry([], wanted)));
+
+  // `general` is in the asked-for list, or the read misses most of what a
+  // non-sensitive campaign is allowed to cite.
+  isTrue('the read asks for general alongside the niches it wants: true',
+    filterNiches(['business']).includes('general') &&
+      filterNiches(['business']).includes('business'));
+  isTrue('  without asking for it twice: true',
+    filterNiches(['general', 'business']).filter((niche) => niche === 'general').length === 1);
+
+  /*
+    Read back out of the drafter and the repository.
+
+    The timeout was not a wrong number, it was a read nobody had sized. A
+    `getAll()` reintroduced here would work in development against a few
+    fixtures and fail on the marketplace, which is the shape of failure
+    worth a check that cannot be satisfied by a comment.
+  */
+  const readSource = (path: string) =>
+    readFileSync(new URL(`../${path}`, import.meta.url), 'utf8');
+  const strip = (source: string) =>
+    source.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/\/\/[^\n]*/g, ' ');
+
+  const drafter = strip(readSource('src/lib/services/sales-email-service.ts'));
+  isTrue('the drafter asks only for the listings it could cite: true',
+    drafter.includes('matchableListings(niches)') && !/websiteService\.getAll\(/.test(drafter));
+
+  /*
+    The price an email quotes is the price the listing shows.
+
+    `matchableListings` does not read a whole `Website`, so it cannot call
+    `toListItem` for the headline price - it calls `pricedServices`, the rule
+    `toListItem` itself now uses. Two expressions of "what does this site
+    cost" is one too many when one of them is posted to a stranger: a
+    prospect quoted £220 and finding £340 has been given a reason not to
+    come back.
+
+    The rule is: available services where any are available, every service
+    where none are - so a listing whose services are all paused still has a
+    price rather than reading as free - and within that, presentation order
+    decides which is the headline.
+  */
+  const svc = (type: 'guest-post' | 'niche-edit' | 'digital-pr', priceMinor: number, available: boolean) =>
+    ({ type, priceMinor, available });
+
+  isTrue('a paused service is not the price an email quotes: true',
+    pricedServices([svc('guest-post', 9900, false), svc('niche-edit', 22000, true)])[0]
+      ?.priceMinor === 22000);
+
+  isTrue('  and presentation order decides between two available ones: true',
+    pricedServices([svc('niche-edit', 22000, true), svc('guest-post', 31000, true)])[0]
+      ?.priceMinor === 31000);
+
+  // All paused is not free. Nothing downstream may read zero and write
+  // "from £0", which is why the pool falls back rather than emptying.
+  isTrue('  while a listing with nothing available still has a price: true',
+    pricedServices([svc('guest-post', 14000, false), svc('niche-edit', 9000, false)])[0]
+      ?.priceMinor === 14000);
+
+  isTrue('  and a listing with no services at all has none: true',
+    pricedServices([]).length === 0);
+
+  const repo = strip(readSource('src/lib/services/supabase/website-repository.ts'));
+  const readBody = repo.slice(
+    repo.indexOf('async matchableListings'),
+    repo.indexOf('async nicheCounts'),
+  );
+  isTrue('  and the read it calls pages by primary key, not by rank: true',
+    readBody.length > 0 && /order\('id'/.test(readBody) && !/order\('domain_rating'/.test(readBody));
+  // Paged, not capped: PostgREST stops at a thousand rows without saying so,
+  // and a summary counting the first thousand of twelve is a wrong figure in
+  // an email rather than a missing one.
+  isTrue('  and reads every page rather than the first thousand rows: true',
+    /readAllPages/.test(readBody));
+  // Named columns. `*` is what dragged five joins across the wire.
+  isTrue('  and names its columns instead of taking every one: true',
+    !/select\(WEBSITE_SELECT/.test(readBody) && /domain_rating, organic_traffic/.test(readBody));
+  // The filter built from the shared list, so the rows skipped and the rows
+  // dropped stay one decision.
+  isTrue('  and builds its niche filter from the matcher\'s own list: true',
+    /filterNiches\(wanted\)/.test(readBody));
+  isTrue('  keeping the listings that predate the column: true',
+    /accepted_niches\.eq\.\{\}/.test(readBody));
+
+  /*
+    And that losing the filter costs a slower read rather than the feature.
+
+    The filter string is the one part of this that no suite here can check -
+    proving the predicate is not proving PostgREST's parsing of it, and there
+    is no server to ask. So a refusal falls back to the same narrow read
+    without the filter, which is the conservative direction: the filter only
+    ever skipped rows `canCarry` was going to drop anyway.
+  */
+  isTrue('  and a refused filter costs a slower read, not a broken drafter: true',
+    /catch/.test(readBody) && /read\(null\)/.test(readBody));
+  isTrue('    saying so rather than silently: true', /console\.warn/.test(readBody));
+}
+
+{
+  console.log('\n--- drafting a batch without losing the batch ---');
+
+  const readSource = (path: string) =>
+    readFileSync(new URL(`../${path}`, import.meta.url), 'utf8');
+  const strip = (source: string) =>
+    source.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/\/\/[^\n]*/g, ' ');
+
+  const campaign = strip(readSource('src/lib/services/sales-campaign-service.ts'));
+  // `run` is the last method in the object, so the slice runs to the end of
+  // the file. Anchoring it on a later method name would silently produce an
+  // empty string, and every assertion over it would then pass on nothing.
+  const runBody = campaign.slice(campaign.indexOf('async run('));
+
+  /*
+    One read per niche list, not one per prospect.
+
+    Narrowing the inventory read stopped it timing out; it did not stop it
+    happening twenty times. Every prospect a segment-aimed campaign matches
+    shares that segment's niches and therefore the answer, and the live logs
+    showed the cost of not noticing: one full read logged per draft, about
+    thirty seconds apart, for as long as the request survived.
+  */
+  isTrue('a campaign reads the inventory once, not once per draft: true',
+    runBody.length > 0 &&
+      /inventories\s*=\s*new Map/.test(runBody) &&
+      /inventory: await inventoryFor\(/.test(runBody));
+  isTrue('  keyed by the niche list, so a mixed campaign still shares reads: true',
+    /niches\.join\(/.test(runBody));
+
+  /*
+    And it stops on its own clock.
+
+    A server action that overruns returns nothing: the browser says "Failed
+    to fetch" and the drafts that were written are invisible until somebody
+    reloads the page. Stopping early returns them and says there are more.
+  */
+  isTrue('a run stops on a time budget rather than on the request dying: true',
+    /budgetMs/.test(runBody) && /ranOutOfTime/.test(runBody));
+  isTrue('  checked before writing, not after: true',
+    runBody.indexOf('ranOutOfTime') < runBody.indexOf('salesEmailService.draft('));
+
+  /*
+    "drafted fewer than asked" has two causes and only one of them means
+    press it again, so the flag is reported rather than inferred.
+  */
+  const action = strip(readSource('src/app/admin/(protected)/sales/actions.ts'));
+  isTrue('  and the screen says so rather than leaving it to be guessed: true',
+    /outcome\.ranOutOfTime/.test(action));
+
+  /*
+    The route is allowed the time the run takes. Every other admin screen
+    that spends time on a model or a crawl sets this; the Sales Centre was
+    missed, so its actions ran on the platform default.
+  */
+  const layout = strip(readSource('src/app/admin/(protected)/sales/layout.tsx'));
+  isTrue('the Sales Centre routes are given time to finish: true',
+    /export const maxDuration = 300/.test(layout));
+
+  // The backstop has to be longer than the budget, or the run never gets to
+  // stop itself and the thing it exists to prevent happens anyway.
+  const budget = /budgetMs = (\d+)_?(\d*)/.exec(campaign);
+  const budgetSeconds = budget ? Number(`${budget[1]}${budget[2]}`) / 1000 : Number.NaN;
+  isTrue(`  with the run stopping first (${budgetSeconds}s inside 300s): true`,
+    Number.isFinite(budgetSeconds) && budgetSeconds > 0 && budgetSeconds < 300);
+
+  /*
+    A single draft from a prospect's own page still reads for itself. The
+    batch optimisation must not become a requirement to pass one in, or that
+    button quietly writes emails citing nothing.
+  */
+  const drafter = strip(readSource('src/lib/services/sales-email-service.ts'));
+  isTrue('a lone draft still reads its own inventory: true',
+    /options\.inventory \?\? \(await websiteService\.matchableListings\(niches\)\)/.test(drafter));
 }
 
 console.log(failed === 0 ? '\nAll sales checks passed.\n' : `\n${failed} sales check(s) failed.\n`);

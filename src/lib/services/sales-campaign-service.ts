@@ -3,7 +3,9 @@ import { isSupabaseEnabled } from '@/lib/supabase/config';
 import { prospectService } from './prospect-service';
 import { salesEmailService } from './sales-email-service';
 import { salesSettingsService } from './sales-settings-service';
-import { isContactable } from '@/lib/config/sales-segments';
+import { isContactable, segmentDefinition } from '@/lib/config/sales-segments';
+import { websiteService } from './website-service';
+import type { MatchableListing } from '@/lib/sales/inventory-match';
 import type { SalesCampaign, SalesSegment } from '@/lib/types/sales';
 
 /**
@@ -70,6 +72,14 @@ export interface RunOutcome {
   drafted: number;
   skipped: { reason: string; count: number }[];
   error?: string;
+  /**
+   * The run stopped on its time budget with candidates left.
+   *
+   * Reported rather than inferred from `drafted < limit`, which is also
+   * true when the campaign simply matched fewer people - two different
+   * facts, and only one of them means "press it again".
+   */
+  ranOutOfTime?: boolean;
 }
 
 export const salesCampaignService = {
@@ -210,8 +220,10 @@ export const salesCampaignService = {
     id: string,
     limit: number,
     actor?: string,
+    budgetMs = 240_000,
   ): Promise<RunOutcome> {
     const outcome: RunOutcome = { considered: 0, drafted: 0, skipped: [] };
+    const started = Date.now();
     if (!isSupabaseEnabled()) return { ...outcome, error: 'No database' };
 
     const campaign = await salesCampaignService.getById(id);
@@ -232,8 +244,46 @@ export const salesCampaignService = {
 
     const supabase = getAdminScopedClient();
 
+    /*
+      The inventory, read once per niche list rather than once per draft.
+
+      Every prospect in a campaign aimed at a segment shares that segment's
+      niches, so they share an answer. `draft` reads it for itself when
+      nobody hands it one - which is right for the single draft on a
+      prospect's page and wrong twenty times in a row here.
+
+      A Map rather than one value because a campaign with no segment filter
+      can mix them, and then it is one read per distinct list, still not one
+      per prospect.
+    */
+    const inventories = new Map<string, MatchableListing[]>();
+    const inventoryFor = async (niches: string[]) => {
+      const key = niches.join('|');
+      const held = inventories.get(key);
+      if (held) return held;
+
+      const read = await websiteService.matchableListings(niches);
+      inventories.set(key, read);
+      return read;
+    };
+
     for (const prospect of candidates) {
       if (outcome.drafted >= limit) break;
+
+      /*
+        Stop before the request is killed rather than after.
+
+        Writing an email is a model call, so twenty of them is minutes, not
+        seconds - and a server action that overruns returns nothing at all:
+        the browser reports "Failed to fetch" and the drafts that did get
+        written are invisible until somebody reloads. Stopping early reports
+        them, and the button can simply be pressed again.
+      */
+      if (Date.now() - started > budgetMs) {
+        outcome.ranOutOfTime = true;
+        break;
+      }
+
       outcome.considered += 1;
 
       // A competitor, which the score already zeroes - but a campaign with no
@@ -269,6 +319,7 @@ export const salesCampaignService = {
         campaignId: id,
         stepNumber: 1,
         actor,
+        inventory: await inventoryFor(segmentDefinition(prospect.segment).niches),
       });
 
       if (draft.ok) {

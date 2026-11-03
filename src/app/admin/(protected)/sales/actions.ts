@@ -703,7 +703,13 @@ export async function runCampaignAction(
     return ok(
       `Looked at ${outcome.considered}, drafted ${outcome.drafted}.` +
         (skipped ? ` Skipped: ${skipped}.` : '') +
-        (outcome.drafted > 0 ? ' They are in the review queue.' : ''),
+        (outcome.drafted > 0 ? ' They are in the review queue.' : '') +
+        // Said plainly, because the alternative reading - "that is everybody"
+        // - is the one somebody acts on by not pressing it again.
+        (outcome.ranOutOfTime
+          ? ' There are more waiting: writing takes a model call each, so it stopped' +
+            ' before the request would have. Press it again for the next batch.'
+          : ''),
     );
   } catch (error) {
     return bad(reasonFor(error));

@@ -1,6 +1,29 @@
 import { segmentDefinition } from '@/lib/config/sales-segments';
-import type { WebsiteListItem } from '@/lib/types/website';
 import type { MatchedListing, SalesSegment } from '@/lib/types/sales';
+
+/**
+ * Everything matching reads off a listing, and nothing else.
+ *
+ * Narrower than a whole list item on purpose, and the narrowness is the
+ * point rather than tidiness. Taking the full type meant the only way to
+ * feed this was `websiteService.getAll()` - every column of twelve thousand
+ * rows with five joins hanging off it, re-read once per draft - which is
+ * what a Postgres statement timeout eventually said out loud.
+ *
+ * Six fields and a price. A full listing still satisfies it structurally,
+ * so the suite's fixtures and any caller holding one are unaffected; what
+ * changes is that a caller may now supply far less, and the repository can
+ * ask the database for far less.
+ */
+export interface MatchableListing {
+  id: string;
+  domain: string;
+  status: string;
+  /** Zero where nothing has been priced. `canCarry` drops those. */
+  headlinePriceMinor: number;
+  metrics: { domainRating: number; organicTraffic: number };
+  rules: { acceptedNiches?: string[] };
+}
 
 /**
  * Which of our listings to put in front of a prospect.
@@ -56,7 +79,7 @@ export interface MatchResult {
  * shows that there is a range - and the range is the actual product.
  */
 export function matchInventory(
-  inventory: WebsiteListItem[],
+  inventory: MatchableListing[],
   segment: SalesSegment,
   options: MatchOptions = {},
 ): MatchResult {
@@ -87,7 +110,7 @@ export function matchInventory(
     the middle and the best of the bottom - a spread, with the best of each
     band rather than the median of it.
   */
-  const picked: WebsiteListItem[] = [];
+  const picked: MatchableListing[] = [];
   const bandSize = Math.max(1, Math.floor(byStrength.length / limit));
 
   for (let band = 0; band < limit && picked.length < limit; band += 1) {
@@ -130,7 +153,7 @@ export function matchInventory(
  * `general` would then match on it and be quoted to a casino. That is the
  * exact bug `verify:sales` was written to catch, and it caught it.
  */
-function canCarry(website: WebsiteListItem, wanted: string[]): boolean {
+function canCarry(website: MatchableListing, wanted: string[]): boolean {
   if (website.status !== 'active') return false;
   // Nothing has been priced yet, and "from £0" is not a selling point.
   if (website.headlinePriceMinor <= 0) return false;
@@ -147,13 +170,54 @@ function canCarry(website: WebsiteListItem, wanted: string[]): boolean {
   return wanted.some((niche) => accepted.includes(niche));
 }
 
+/**
+ * The niche names a database read must ask for, to be sure of getting back
+ * everything `canCarry` would keep.
+ *
+ * `general` is in the list because `canCarry` accepts a `general` listing
+ * for any ordinary topic, so a read that asked only for the wanted niches
+ * would miss most of what it is allowed to cite.
+ */
+export function filterNiches(wanted: string[]): string[] {
+  return [...new Set([...wanted, 'general'])];
+}
+
+/**
+ * Could this listing's acceptance possibly pass `canCarry`?
+ *
+ * The predicate a database read may use to skip rows, and the only thing
+ * that makes narrowing the read safe. It is **deliberately looser** than
+ * `canCarry`: it answers "is this row worth fetching", not "may we cite
+ * it", and `canCarry` still decides the second question on the rows that
+ * come back.
+ *
+ * The direction of the looseness is the point. Too loose fetches a few rows
+ * that get dropped; too tight silently removes listings from an email's
+ * "41 sites that accept gambling, from £180" - a figure a prospect can
+ * check, where being wrong is being caught.
+ *
+ * Hence the empty case. A listing written before `accepted_niches` existed
+ * has an empty array and its acceptance read off the legacy booleans
+ * instead, so the array alone cannot rule it out and it is always fetched.
+ *
+ * `verify:sales` holds the implication this is claiming - every listing
+ * `canCarry` keeps is one this returns true for - over fixtures that
+ * include the sensitive, legacy and no-niche cases.
+ */
+export function couldCarry(acceptedNiches: string[], wanted: string[]): boolean {
+  if (wanted.length === 0) return true;
+  if (acceptedNiches.length === 0) return true;
+
+  return filterNiches(wanted).some((niche) => acceptedNiches.includes(niche));
+}
+
 /** The seven marked `sensitive` in `accepted-niches.ts` - narrower than
  * `regulated`, for the reason AGENTS.md gives. */
 function isSensitive(niche: string): boolean {
   return ['gambling', 'crypto', 'cbd', 'adult', 'forex', 'dating', 'loan'].includes(niche);
 }
 
-function toMatched(website: WebsiteListItem): MatchedListing {
+function toMatched(website: MatchableListing): MatchedListing {
   return {
     websiteId: website.id,
     domain: website.domain,
@@ -174,7 +238,7 @@ function toMatched(website: WebsiteListItem): MatchedListing {
  * invented figures come from.
  */
 export function inventorySummary(
-  inventory: WebsiteListItem[],
+  inventory: MatchableListing[],
   segment: SalesSegment,
   options: { niches?: string[] } = {},
 ): { count: number; minDr: number; maxDr: number; fromPriceMinor: number } | null {

@@ -9,7 +9,11 @@ import { salesRunService } from './sales-run-service';
 import { salesSettingsService } from './sales-settings-service';
 import { websiteService } from './website-service';
 import { segmentDefinition } from '@/lib/config/sales-segments';
-import { inventorySummary, matchInventory } from '@/lib/sales/inventory-match';
+import {
+  inventorySummary,
+  matchInventory,
+  type MatchableListing,
+} from '@/lib/sales/inventory-match';
 import {
   EMAIL_PROMPT_VERSION,
   EMAIL_RULES,
@@ -116,7 +120,21 @@ export const salesEmailService = {
    */
   async draft(
     prospectId: string,
-    options: { campaignId?: string; stepNumber?: number; actor?: string; senderFirstName?: string } = {},
+    options: {
+      campaignId?: string;
+      stepNumber?: number;
+      actor?: string;
+      senderFirstName?: string;
+      /**
+       * Listings already read for these niches, where a caller holds them.
+       *
+       * A campaign run drafts for a batch of prospects that almost always
+       * share a segment, and therefore share a niche list and an answer. One
+       * read is right; twenty identical ones is the same mistake as reading
+       * the marketplace was, one level up.
+       */
+      inventory?: MatchableListing[];
+    } = {},
   ): Promise<DraftOutcome> {
     if (!isSupabaseEnabled()) return { ok: false, error: 'No database' };
     if (!isExtractionConfigured()) {
@@ -169,10 +187,23 @@ export const salesEmailService = {
 
     const stepNumber = options.stepNumber ?? 1;
 
-    // The inventory, read once. `getAll` pages internally, so the whole
-    // marketplace arrives rather than its first thousand rows.
-    const inventory = await websiteService.getAll();
+    /*
+      Only the listings that could be cited to this prospect.
+
+      This used to be `websiteService.getAll()` - the whole marketplace,
+      every column, five joins, twenty-five paged requests, once per draft -
+      and Draft 20 therefore asked for all of it twenty times. Postgres
+      cancelled one of those pages on a statement timeout, which is the same
+      wall /guest-posts hit before 0093 moved its counting into the
+      database.
+      
+      The niches are worked out first and the read is given them, so the
+      database returns what `canCarry` might keep rather than everything it
+      will not. `canCarry` still decides: the filter is a superset of it, for
+      the reason `matchableListings` sets out.
+    */
     const niches = segmentDefinition(prospect.segment).niches;
+    const inventory = options.inventory ?? (await websiteService.matchableListings(niches));
     const matched = matchInventory(inventory, prospect.segment, { limit: 3, niches });
     const summary = inventorySummary(inventory, prospect.segment, { niches });
 
