@@ -1824,5 +1824,81 @@ console.log('\n--- importing contacts spends nothing ---');
   isTrue('    saying so rather than silently: true', /console\.warn/.test(readBody));
 }
 
+{
+  console.log('\n--- drafting a batch without losing the batch ---');
+
+  const readSource = (path: string) =>
+    readFileSync(new URL(`../${path}`, import.meta.url), 'utf8');
+  const strip = (source: string) =>
+    source.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/\/\/[^\n]*/g, ' ');
+
+  const campaign = strip(readSource('src/lib/services/sales-campaign-service.ts'));
+  // `run` is the last method in the object, so the slice runs to the end of
+  // the file. Anchoring it on a later method name would silently produce an
+  // empty string, and every assertion over it would then pass on nothing.
+  const runBody = campaign.slice(campaign.indexOf('async run('));
+
+  /*
+    One read per niche list, not one per prospect.
+
+    Narrowing the inventory read stopped it timing out; it did not stop it
+    happening twenty times. Every prospect a segment-aimed campaign matches
+    shares that segment's niches and therefore the answer, and the live logs
+    showed the cost of not noticing: one full read logged per draft, about
+    thirty seconds apart, for as long as the request survived.
+  */
+  isTrue('a campaign reads the inventory once, not once per draft: true',
+    runBody.length > 0 &&
+      /inventories\s*=\s*new Map/.test(runBody) &&
+      /inventory: await inventoryFor\(/.test(runBody));
+  isTrue('  keyed by the niche list, so a mixed campaign still shares reads: true',
+    /niches\.join\(/.test(runBody));
+
+  /*
+    And it stops on its own clock.
+
+    A server action that overruns returns nothing: the browser says "Failed
+    to fetch" and the drafts that were written are invisible until somebody
+    reloads the page. Stopping early returns them and says there are more.
+  */
+  isTrue('a run stops on a time budget rather than on the request dying: true',
+    /budgetMs/.test(runBody) && /ranOutOfTime/.test(runBody));
+  isTrue('  checked before writing, not after: true',
+    runBody.indexOf('ranOutOfTime') < runBody.indexOf('salesEmailService.draft('));
+
+  /*
+    "drafted fewer than asked" has two causes and only one of them means
+    press it again, so the flag is reported rather than inferred.
+  */
+  const action = strip(readSource('src/app/admin/(protected)/sales/actions.ts'));
+  isTrue('  and the screen says so rather than leaving it to be guessed: true',
+    /outcome\.ranOutOfTime/.test(action));
+
+  /*
+    The route is allowed the time the run takes. Every other admin screen
+    that spends time on a model or a crawl sets this; the Sales Centre was
+    missed, so its actions ran on the platform default.
+  */
+  const layout = strip(readSource('src/app/admin/(protected)/sales/layout.tsx'));
+  isTrue('the Sales Centre routes are given time to finish: true',
+    /export const maxDuration = 300/.test(layout));
+
+  // The backstop has to be longer than the budget, or the run never gets to
+  // stop itself and the thing it exists to prevent happens anyway.
+  const budget = /budgetMs = (\d+)_?(\d*)/.exec(campaign);
+  const budgetSeconds = budget ? Number(`${budget[1]}${budget[2]}`) / 1000 : Number.NaN;
+  isTrue(`  with the run stopping first (${budgetSeconds}s inside 300s): true`,
+    Number.isFinite(budgetSeconds) && budgetSeconds > 0 && budgetSeconds < 300);
+
+  /*
+    A single draft from a prospect's own page still reads for itself. The
+    batch optimisation must not become a requirement to pass one in, or that
+    button quietly writes emails citing nothing.
+  */
+  const drafter = strip(readSource('src/lib/services/sales-email-service.ts'));
+  isTrue('a lone draft still reads its own inventory: true',
+    /options\.inventory \?\? \(await websiteService\.matchableListings\(niches\)\)/.test(drafter));
+}
+
 console.log(failed === 0 ? '\nAll sales checks passed.\n' : `\n${failed} sales check(s) failed.\n`);
 process.exit(failed === 0 ? 0 : 1);

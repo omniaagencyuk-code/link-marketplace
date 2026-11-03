@@ -9,7 +9,11 @@ import { salesRunService } from './sales-run-service';
 import { salesSettingsService } from './sales-settings-service';
 import { websiteService } from './website-service';
 import { segmentDefinition } from '@/lib/config/sales-segments';
-import { inventorySummary, matchInventory } from '@/lib/sales/inventory-match';
+import {
+  inventorySummary,
+  matchInventory,
+  type MatchableListing,
+} from '@/lib/sales/inventory-match';
 import {
   EMAIL_PROMPT_VERSION,
   EMAIL_RULES,
@@ -116,7 +120,21 @@ export const salesEmailService = {
    */
   async draft(
     prospectId: string,
-    options: { campaignId?: string; stepNumber?: number; actor?: string; senderFirstName?: string } = {},
+    options: {
+      campaignId?: string;
+      stepNumber?: number;
+      actor?: string;
+      senderFirstName?: string;
+      /**
+       * Listings already read for these niches, where a caller holds them.
+       *
+       * A campaign run drafts for a batch of prospects that almost always
+       * share a segment, and therefore share a niche list and an answer. One
+       * read is right; twenty identical ones is the same mistake as reading
+       * the marketplace was, one level up.
+       */
+      inventory?: MatchableListing[];
+    } = {},
   ): Promise<DraftOutcome> {
     if (!isSupabaseEnabled()) return { ok: false, error: 'No database' };
     if (!isExtractionConfigured()) {
@@ -185,7 +203,7 @@ export const salesEmailService = {
       the reason `matchableListings` sets out.
     */
     const niches = segmentDefinition(prospect.segment).niches;
-    const inventory = await websiteService.matchableListings(niches);
+    const inventory = options.inventory ?? (await websiteService.matchableListings(niches));
     const matched = matchInventory(inventory, prospect.segment, { limit: 3, niches });
     const summary = inventorySummary(inventory, prospect.segment, { niches });
 
