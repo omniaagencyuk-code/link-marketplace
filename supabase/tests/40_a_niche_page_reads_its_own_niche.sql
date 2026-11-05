@@ -152,6 +152,41 @@ select 'and there was more than one niche to compare: ' ||
   (select count(*) >= 2 from public.niche_page_counts())::text;
 
 -- ---------------------------------------------------------------------------
+-- Ordered, because the caller pages it.
+--
+-- 0095 shipped without an order and the page went from 4,361 listings to
+-- 1,000 - PostgREST's cap, applied to a function's result exactly as it is
+-- to a table's. The caller pages it now, and paging by offset over an
+-- unordered result is the other half of the same bug: rows skipped and rows
+-- returned twice, with nothing saying so.
+--
+-- Asserted on the function rather than on the call, because a `.range()`
+-- with no `order` reads as working until the second page.
+-- ---------------------------------------------------------------------------
+select 'the listings come back in a stable order: ' ||
+  (select bool_and(ordered) from (
+     select l.id >= lag(l.id) over () as ordered
+       from public.niche_page_listings('business') l
+   ) t where ordered is not null)::text;
+
+-- And that there was more than one row to be out of order.
+select 'with more than one row to order: ' ||
+  (select count(*) >= 2 from public.niche_page_listings('business'))::text;
+
+-- Paging it returns each row once and all of them. Walked at a page size of
+-- one, which is the smallest thing that can expose a skip or a repeat.
+select 'paging it loses nothing and repeats nothing: ' ||
+  (select count(*) = (select count(*) from public.niche_page_listings('business'))
+     and count(distinct id) = count(*)
+     from (
+       (select id from public.niche_page_listings('business') order by id limit 1 offset 0)
+       union all
+       (select id from public.niche_page_listings('business') order by id limit 1 offset 1)
+       union all
+       (select id from public.niche_page_listings('business') order by id limit 1 offset 2)
+     ) walked)::text;
+
+-- ---------------------------------------------------------------------------
 -- The third rule on the page agrees as well.
 -- ---------------------------------------------------------------------------
 select 'the preview reads a missing category the same way: ' ||
