@@ -233,6 +233,10 @@ run -f "$ROOT/supabase/tests/38_publisher_submissions.sql" 2>&1 | grep -v '^$'
 echo
 echo "--- a buyer is not a scraper: clearing an inventory budget ---"
 run -f "$ROOT/supabase/tests/39_a_buyer_is_not_a_scraper.sql" 2>&1 | grep -v '^$'
+
+echo
+echo "--- a niche page reads its own niche ---"
+run -f "$ROOT/supabase/tests/40_a_niche_page_reads_its_own_niche.sql" 2>&1 | grep -v '^$'
 } | tee "$ASSERTIONS"
 
 # ------------------------------------------------------------- the verdict

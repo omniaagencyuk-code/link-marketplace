@@ -2,7 +2,7 @@ import { websiteService } from '@/lib/services';
 import { countryShortNameOrUnknown } from '@/lib/data/countries';
 import { currencySymbol } from '@/lib/utils/format';
 import { NICHE_COPY } from '@/lib/content/niche-guest-posts';
-import type { NicheSlug, WebsiteListItem } from '@/lib/types';
+import type { NicheSlug } from '@/lib/types';
 
 /**
  * What a public niche page is allowed to know.
@@ -97,8 +97,31 @@ export function spread<T>(items: readonly T[], count: number): T[] {
 }
 
 /** The rows a public page may show, with everything identifying removed. */
+/**
+ * What a niche page reads off a listing, and nothing else.
+ *
+ * Four figures. Narrower than `WebsiteListItem` for the reason
+ * `MatchableListing` is: taking the whole type meant the only way to feed
+ * these functions was a read of every column of every active listing, which
+ * is what made /guest-posts time out. A full listing still satisfies it, so
+ * nothing that already holds one has to change.
+ */
+export interface NicheListing {
+  metrics: { domainRating: number; organicTraffic: number };
+  /** The lowest price across the services that count. Zero where unpriced. */
+  lowestPriceMinor: number;
+  /**
+   * Absent where the listing has never had one established.
+   *
+   * `undefined` rather than `null`, matching `WebsiteListItem` so a full
+   * listing still satisfies this type - the database's null is converted
+   * where the row is mapped, not carried through to here.
+   */
+  country?: string;
+}
+
 export function toSampleRows(
-  websites: readonly WebsiteListItem[],
+  websites: readonly NicheListing[],
   label: string,
   symbol = currencySymbol(),
 ): SampleRow[] {
@@ -118,7 +141,7 @@ export function toSampleRows(
   }));
 }
 
-export function toStats(websites: readonly WebsiteListItem[], symbol = currencySymbol()): NicheStats {
+export function toStats(websites: readonly NicheListing[], symbol = currencySymbol()): NicheStats {
   const ratings = websites.map((website) => website.metrics.domainRating).filter((dr) => dr > 0);
   const prices = websites.map((website) => website.lowestPriceMinor).filter((price) => price > 0);
   const countries = new Set(

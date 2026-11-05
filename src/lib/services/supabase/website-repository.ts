@@ -1,6 +1,5 @@
 import { cache } from 'react';
 import { getServerClient, getAdminClient, getAdminScopedClient } from '@/lib/supabase/server';
-import { inNiche } from '@/lib/marketplace/topic';
 import { readAllPages } from './paged';
 import {
   COST_CURRENCY_MESSAGE,
@@ -18,6 +17,7 @@ import {
 import { acceptedNichesFromFlags } from '@/lib/config/accepted-niches';
 import { filterNiches } from '@/lib/sales/inventory-match';
 import type { MatchableListing } from '@/lib/sales/inventory-match';
+import type { NicheListing } from '../niche-landing';
 import { pricedServices, toListItem } from '../query-engine';
 import { toPreviewRows, type MarketplacePreview } from '../marketplace-preview';
 import { normaliseDomain } from '@/lib/import/normalise';
@@ -103,11 +103,6 @@ function warnIfOutgrown(what: string, rows: number) {
  */
 
 type Client = ReturnType<typeof getAdminScopedClient>;
-
-/** Primary or secondary - the same test the marketplace filter applies. */
-/** Primary or secondary. Shared with the niche pages, which must agree. */
-const matchesNiche = (website: WebsiteListItem, niche: NicheSlug): boolean =>
-  inNiche(website, niche);
 
 /** Category ids for a set of slugs, in one query. */
 async function categoryIds(supabase: Client, slugs: string[]): Promise<Map<string, string>> {
@@ -483,6 +478,47 @@ function inventoryClient() {
     );
   }
   return admin;
+}
+
+/** The row `niche_page_listings` returns. */
+interface NicheListingRow {
+  id: string;
+  domain_rating: number | null;
+  organic_traffic: number | null;
+  country: string | null;
+  services: { type: Service['type']; price_minor: number; available: boolean }[] | null;
+}
+
+/**
+ * The row, as a niche page wants it.
+ *
+ * `lowestPriceMinor` through `pricedServices`, the one definition of which
+ * services a listing is priced from - the same rule `toListItem` uses, so
+ * the figure on /guest-posts and the figure on a listing page cannot
+ * disagree. A `min()` in the SQL would have been shorter and would have been
+ * a second copy of it.
+ */
+function toNicheListing(row: NicheListingRow): NicheListing {
+  const priced = pricedServices(
+    (row.services ?? []).map((service) => ({
+      type: service.type,
+      available: service.available ?? true,
+      priceMinor: Number(service.price_minor ?? 0),
+    })),
+  );
+
+  return {
+    metrics: {
+      domainRating: Number(row.domain_rating ?? 0),
+      organicTraffic: Number(row.organic_traffic ?? 0),
+    },
+    // Zero where nothing is priced, which `toStats` and `toSampleRows` both
+    // already read as "no price" rather than as free.
+    lowestPriceMinor: priced.length
+      ? Math.min(...priced.map((service) => service.priceMinor))
+      : 0,
+    country: row.country ?? undefined,
+  };
 }
 
 export const supabaseWebsiteRepository = {
@@ -1103,25 +1139,37 @@ export const supabaseWebsiteRepository = {
    * JavaScript because a listing's niche is in a join table and its secondary
    * niches in another, which is what `countByNiche` does too.
    */
-  async listForNiche(niche: NicheSlug): Promise<WebsiteListItem[]> {
+  /**
+   * The listings in one niche, for its public page.
+   *
+   * This read every active listing - `*` with services, niche prices,
+   * categories and topics joined on, paged in five hundreds - and then
+   * filtered by niche in JavaScript. Thirty-five sequential round trips to
+   * London to render one page, and on 3 November nine of those pages
+   * answered `canceling statement due to statement timeout` to real
+   * visitors. 0093 had already moved the *count* on the same page into the
+   * database for the same reason; this half was left behind.
+   *
+   * `niche_page_listings` applies the niche test in SQL, against
+   * `marketplace_listings` so it follows 0077 rather than
+   * `marketplace_niche_preview`, which still reads a missing category as
+   * technology.
+   *
+   * The services come back attached and `pricedServices` turns them into a
+   * price here, rather than a `min()` in the function: which services count
+   * toward the lowest price is a rule with one copy, and a second one in SQL
+   * would be the copy quoting a figure on a public page.
+   */
+  async listForNiche(niche: NicheSlug): Promise<NicheListing[]> {
     /* Was `admin ?? the customer's client`. The fallback half of that reads
        nothing since 0090, and these are the public niche pages - so it is the
        service role or an error, not the service role or an empty page. */
     const supabase = inventoryClient();
 
-    const data = await readAllPages<WebsiteRow>('the listings in a niche', (from, to) =>
-      supabase
-        .from('websites')
-        .select(WEBSITE_SELECT)
-        .eq('status', 'active')
-        .order('domain_rating', { ascending: false })
-        .order('id', { ascending: true })
-        .range(from, to),
-    );
+    const { data, error } = await supabase.rpc('niche_page_listings', { p_niche: niche });
+    if (error) throw new Error(`Failed to load the listings in a niche: ${error.message}`);
 
-    return data
-      .map((row) => toListItem(mapWebsite(row)))
-      .filter((website) => matchesNiche(website, niche));
+    return ((data ?? []) as NicheListingRow[]).map(toNicheListing);
   },
 
   async getPublicPreview(limit = 6, niche?: NicheSlug): Promise<MarketplacePreview> {
