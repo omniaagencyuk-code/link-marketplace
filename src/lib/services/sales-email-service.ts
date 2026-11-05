@@ -12,8 +12,10 @@ import { segmentDefinition } from '@/lib/config/sales-segments';
 import {
   inventorySummary,
   matchInventory,
+  publicPageFor,
   type MatchableListing,
 } from '@/lib/sales/inventory-match';
+import { NICHE_COPY } from '@/lib/content/niche-guest-posts';
 import {
   EMAIL_PROMPT_VERSION,
   EMAIL_RULES,
@@ -204,6 +206,13 @@ export const salesEmailService = {
     */
     const niches = segmentDefinition(prospect.segment).niches;
     const inventory = options.inventory ?? (await websiteService.matchableListings(niches));
+
+    /*
+      The one page the email may link to, resolved here rather than described
+      to the model. `NICHE_COPY` is the set of niches with a public page, so
+      the URL this produces is one that exists.
+    */
+    const linkUrl = publicPageFor(niches, siteUrl, Object.keys(NICHE_COPY));
     const matched = matchInventory(inventory, prospect.segment, { limit: 3, niches });
     const summary = inventorySummary(inventory, prospect.segment, { niches });
 
@@ -227,6 +236,7 @@ export const salesEmailService = {
       contactRole: recipient.role,
       senderFirstName: options.senderFirstName ?? firstNameOf(settings.sendFrom) ?? 'Sam',
       angle: campaign?.angle || segmentDefinition(prospect.segment).angle,
+      linkUrl,
       stepNumber,
       previousSubject: previous?.subject,
       previousBody: previous?.bodyText,

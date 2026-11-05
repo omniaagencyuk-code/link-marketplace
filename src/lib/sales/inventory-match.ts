@@ -171,6 +171,35 @@ function canCarry(website: MatchableListing, wanted: string[]): boolean {
 }
 
 /**
+ * The public page to send a prospect to, or nothing.
+ *
+ * Resolved from the niches we are matching them on, against the pages that
+ * actually exist. Three things make this a function rather than a sentence
+ * in the prompt.
+ *
+ * **`/marketplace` is not the answer**, though it is the obvious one. It is
+ * an inventory path: a signed-out visitor is redirected to /signup before
+ * the page renders, so the first click from a cold email would be a signup
+ * wall. The public page that describes the inventory is /guest-posts and its
+ * niche pages, which is what that file's own comment says took the job over.
+ *
+ * **Not every niche has a page.** `NICHE_COPY` is the set that does, and
+ * `seo_agency` wants `general` and `marketing` among others, neither of
+ * which is in it. Picking the first that exists is how an agency gets
+ * /guest-posts/business rather than a 404.
+ *
+ * **Nothing is better than something wrong.** Where no niche matches, this
+ * returns the index rather than inventing a path, and where even that is not
+ * wanted the caller passes nothing and the email links nowhere.
+ */
+export function publicPageFor(wanted: string[], siteUrl: string, withPage: string[]): string {
+  const base = siteUrl.replace(/\/+$/, '');
+  const hit = wanted.find((niche) => withPage.includes(niche));
+
+  return hit ? `${base}/guest-posts/${hit}` : `${base}/guest-posts`;
+}
+
+/**
  * The niche names a database read must ask for, to be sure of getting back
  * everything `canCarry` would keep.
  *

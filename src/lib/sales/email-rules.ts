@@ -29,7 +29,7 @@ import { brand } from '@/lib/config/brand';
  *   single fastest way to make a company tell their filter about us.
  */
 
-export const EMAIL_PROMPT_VERSION = 'sales-email-2';
+export const EMAIL_PROMPT_VERSION = 'sales-email-3';
 
 export const EMAIL_RULES = `
 You write one short outbound email from ${brand.name}, a marketplace that sells
@@ -98,7 +98,22 @@ One question, answerable in a sentence. "Worth a look?" or "want the list for
 your niche?" or "which niches are you buying in at the moment?".
 
 Never ask for a call, a demo, a meeting or fifteen minutes. Never give two
-options. Never ask them to click anything.
+options. **The ask is always a reply, never a click.**
+
+# The link
+
+You may be given one URL. If you are, put it in the email exactly as given,
+once, written out in full - not shortened, not relabelled, not turned into
+"click here", and never any other address.
+
+It is there as a reference, not as the thing you are asking them to do: a
+reader who wants to see the inventory before replying should not have to ask
+for it, and a reader who does not care should be able to ignore it. A sentence
+like "the sites we hold in your niche are at <url>" does that; "click here to
+browse" does not, and contradicts the rule above.
+
+If you were given no URL, the email contains no link at all. Do not write one
+from memory and do not guess a path.
 
 # Tone
 
@@ -135,6 +150,15 @@ export interface EmailBrief {
   senderFirstName: string;
   /** Guidance from the campaign, where there is one. */
   angle?: string;
+  /**
+   * The one page the email may link to, already resolved to a real URL.
+   *
+   * Resolved by the caller rather than described to the model, because a
+   * model asked to "link the relevant niche page" writes a plausible path and
+   * a plausible path is a 404 in a cold email. Absent where no public page
+   * fits, and then the email links nothing.
+   */
+  linkUrl?: string;
   stepNumber: number;
   /** What the previous email said, so a follow-up does not repeat it. */
   previousSubject?: string;
@@ -214,6 +238,16 @@ export function buildEmailBrief(brief: EmailBrief): string {
     lines.push('');
   }
 
+  lines.push('# The link');
+  lines.push('');
+  if (brief.linkUrl) {
+    lines.push(`Use this URL, exactly as written, once: ${brief.linkUrl}`);
+    lines.push('No other address, and no other page of ours.');
+  } else {
+    lines.push('There is no page to link for them. Write no link at all.');
+  }
+  lines.push('');
+
   if (brief.stepNumber > 1) {
     lines.push(`# This is follow-up number ${brief.stepNumber - 1}`);
     lines.push('');
@@ -256,7 +290,8 @@ export interface DraftProblem {
     | 'no-question'
     | 'banned-phrase'
     | 'no-greeting'
-    | 'signed-off';
+    | 'signed-off'
+    | 'invented-link';
   detail: string;
 }
 
@@ -348,6 +383,54 @@ export function checkDraft(
   for (const phrase of banned) {
     if (text.toLowerCase().includes(phrase)) {
       problems.push({ kind: 'banned-phrase', detail: `"${phrase}"` });
+    }
+  }
+
+  /*
+    Every link, like every price, has to be one we supplied.
+
+    The same rule as the figures above and for a sharper reason: a wrong
+    number is a quote we have to retract, and a wrong URL is a 404 arriving
+    in the one email a stranger was ever going to open. A model asked for
+    "the business niche page" writes `/guest-posts/business-seo` as readily
+    as the real path, and both read fine.
+
+    Bare hostnames are matched too, not just `https://` ones - "have a look
+    at pressparrot.com/marketplace" is a link to a reader and to a mail
+    client, whatever it is to a regex.
+  */
+  const allowedLinks = new Set<string>();
+  if (brief.linkUrl) {
+    allowedLinks.add(brief.linkUrl.replace(/\/+$/, '').toLowerCase());
+  }
+
+  const linkPattern = /\b(?:https?:\/\/|www\.)[^\s<>()\[\]"']+|\b[a-z0-9-]+\.(?:com|co\.uk|net|org|io)\b[^\s<>()\[\]"',.;:]*/gi;
+
+  for (const match of draft.body.matchAll(linkPattern)) {
+    const found = match[0].replace(/[.,;:]+$/, '');
+    const normalised = found
+      .replace(/^https?:\/\//i, '')
+      .replace(/^www\./i, '')
+      .replace(/\/+$/, '')
+      .toLowerCase();
+
+    const permitted = [...allowedLinks].some(
+      (allowed) => allowed.replace(/^https?:\/\//i, '').replace(/^www\./i, '') === normalised,
+    );
+
+    /*
+      Their own domain is not a link we wrote - the email is about them and
+      naming the company's site is ordinary prose, not a destination.
+    */
+    const isTheirs = normalised === brief.domain.toLowerCase().replace(/^www\./, '');
+
+    if (!permitted && !isTheirs) {
+      problems.push({
+        kind: 'invented-link',
+        detail: brief.linkUrl
+          ? `The draft links ${found}, which is not the address it was given.`
+          : `The draft links ${found}, and it was given no address to use.`,
+      });
     }
   }
 
