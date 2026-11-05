@@ -29,6 +29,7 @@ import {
   filterNiches,
   inventorySummary,
   matchInventory,
+  publicPageFor,
 } from '../src/lib/sales/inventory-match';
 import { pricedServices } from '../src/lib/services/query-engine';
 import { ACCOUNT_PROBLEMS, isAccountProblem } from '../src/lib/sourcing/client';
@@ -2110,8 +2111,154 @@ console.log('\n--- importing contacts spends nothing ---');
   // The rules say both things, and the version moved when they changed.
   has('the rules ask for a greeting', EMAIL_RULES, 'Open with a greeting on its own line');
   has('and forbid writing a name at the end', EMAIL_RULES, 'Do not sign off and do not write your name');
-  isTrue('and the prompt version moved with them: true',
-    EMAIL_PROMPT_VERSION === 'sales-email-2');
+  /*
+    Not pinned to an exact version, which would have to be edited on every
+    rule change and would therefore stop meaning anything. Pinned to the one
+    value that must never come back: `sales-email-1` is the wording that
+    produced an email with no greeting and two signatures, so a revert to it
+    is the regression worth failing on.
+  */
+  isTrue('and the prompt version is past the wording that caused them: true',
+    EMAIL_PROMPT_VERSION.startsWith('sales-email-') &&
+      EMAIL_PROMPT_VERSION !== 'sales-email-1');
+}
+
+{
+  console.log('\n--- the one link an email may carry ---');
+
+  const SITE = 'https://pressparrot.com';
+  // The niches that actually have a public page, as `NICHE_COPY` holds them.
+  const withPage = ['technology', 'business', 'finance', 'health', 'travel', 'igaming'];
+
+  /*
+    `/marketplace` is the obvious destination and the wrong one: it is an
+    inventory path, so a signed-out reader is redirected to /signup before
+    the page renders. The first click out of a cold email would be a signup
+    wall. The public page describing the inventory is /guest-posts.
+  */
+  isTrue('the link never points at the signed-in marketplace: true',
+    !publicPageFor(['business'], SITE, withPage).includes('/marketplace'));
+
+  // Niche-matched where a page exists for one of the niches we matched on.
+  isTrue('an agency gets the page for a niche it buys in: true',
+    publicPageFor(['general', 'business', 'marketing', 'technology'], SITE, withPage) ===
+      `${SITE}/guest-posts/business`);
+
+  /*
+    And the index where none exists, rather than a guessed path. `seo_agency`
+    wants `general` and `marketing`; neither has a page, and
+    /guest-posts/general is a 404 that reads perfectly in a draft.
+  */
+  isTrue('  and the index where no niche page exists: true',
+    publicPageFor(['general', 'marketing'], SITE, withPage) === `${SITE}/guest-posts`);
+  isTrue('  never inventing a path for a niche without one: true',
+    !publicPageFor(['general', 'marketing'], SITE, withPage).includes('general') &&
+      !publicPageFor(['general', 'marketing'], SITE, withPage).includes('marketing'));
+
+  isTrue('  and a trailing slash on the site url is not doubled: true',
+    publicPageFor(['business'], 'https://pressparrot.com/', withPage) ===
+      `${SITE}/guest-posts/business`);
+
+  /*
+    Then the same rule the prices get: a link in the draft has to be one we
+    supplied. A wrong number is a quote to retract; a wrong URL is a 404
+    arriving in the one email a stranger was ever going to open, and a model
+    asked for "the business page" writes `/guest-posts/business-seo` as
+    readily as the real path.
+  */
+  const linked: EmailBrief = { ...brief, linkUrl: `${SITE}/guest-posts/business` };
+
+  const good = checkDraft(
+    {
+      subject: 'a few sites',
+      body: `Hi Maria,\n\nYou mention link building.\n\nThe sites we hold in business are at ${SITE}/guest-posts/business.\n\nWhich niches are you buying in?`,
+    },
+    linked,
+  );
+  isTrue('the link we gave is accepted: true',
+    !good.some((problem) => problem.kind === 'invented-link'));
+
+  const wrongPath = checkDraft(
+    {
+      subject: 'a few sites',
+      body: `Hi Maria,\n\nYou mention link building.\n\nHave a look at ${SITE}/guest-posts/business-seo.\n\nWhich niches?`,
+    },
+    linked,
+  );
+  isTrue('  a plausible path we did not give is caught: true',
+    wrongPath.some((problem) => problem.kind === 'invented-link'));
+
+  const bareHost = checkDraft(
+    { subject: 'a few sites', body: 'Hi Maria,\n\nSee pressparrot.com/marketplace.\n\nWhich niches?' },
+    linked,
+  );
+  isTrue('  and a bare hostname is still a link: true',
+    bareHost.some((problem) => problem.kind === 'invented-link'));
+
+  /*
+    Naming the prospect's own domain is prose, not a destination - the email
+    is about their company. Flagging it would make every well-aimed email
+    look broken in the review queue.
+  */
+  /*
+    A real TLD on the fixture, deliberately. The shared brief's domain ends
+    in `.example`, which the link pattern does not match at all - so this
+    assertion passed whatever the code did until the domain was changed to
+    one a reader would actually see.
+  */
+  const realDomain: EmailBrief = { ...linked, domain: 'northfieldseo.com' };
+  const theirs = checkDraft(
+    { subject: 'a few sites', body: 'Hi Maria,\n\nThe case studies on northfieldseo.com show the volume.\n\nWhich niches?' },
+    realDomain,
+  );
+  isTrue('  while naming their own domain is not: true',
+    !theirs.some((problem) => problem.kind === 'invented-link'));
+  // And a different company's domain still is.
+  isTrue('  though another company\'s domain still is: true',
+    checkDraft(
+      { subject: 'a few sites', body: 'Hi Maria,\n\nSee competitor.com/sites.\n\nWhich niches?' },
+      realDomain,
+    ).some((problem) => problem.kind === 'invented-link'));
+
+  // Given no URL, any link at all is wrong.
+  const unlinked: EmailBrief = { ...brief, linkUrl: undefined };
+  isTrue('with no url given, any link is caught: true',
+    checkDraft(
+      { subject: 'a few sites', body: `Hi Maria,\n\nSee ${SITE}/guest-posts.\n\nWhich niches?` },
+      unlinked,
+    ).some((problem) => problem.kind === 'invented-link'));
+  isTrue('  and an email with no link is fine: true',
+    !checkDraft(
+      { subject: 'a few sites', body: 'Hi Maria,\n\nYou mention link building.\n\nWhich niches?' },
+      unlinked,
+    ).some((problem) => problem.kind === 'invented-link'));
+
+  // The brief carries it, and says it may not be swapped for another.
+  const briefWithLink = buildEmailBrief(linked);
+  has('the brief hands the model the exact url', briefWithLink, `${SITE}/guest-posts/business`);
+  has('and tells it to use no other', briefWithLink, 'No other address');
+  has('while a brief without one says to write none',
+    buildEmailBrief(unlinked), 'Write no link at all');
+
+  /*
+    And that the drafter actually resolves one and puts it in the brief.
+    Everything above tests the parts; this is the wiring between them, and
+    without it the whole feature can be absent while every other assertion
+    passes.
+  */
+  const drafter = readFileSync(
+    new URL('../src/lib/services/sales-email-service.ts', import.meta.url),
+    'utf8',
+  ).replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/\/\/[^\n]*/g, ' ');
+
+  isTrue('the drafter resolves a link and hands it to the brief: true',
+    /publicPageFor\(niches, siteUrl, Object\.keys\(NICHE_COPY\)\)/.test(drafter) &&
+      /\blinkUrl,/.test(drafter));
+
+  // The ask stays a reply. A link that becomes the call to action is the
+  // thing the old rule was protecting against.
+  has('the ask is still a reply, not a click', EMAIL_RULES, 'The ask is always a reply, never a click');
+  has('and the link is reference rather than a button', EMAIL_RULES, 'not as the thing you are asking them to do');
 }
 
 console.log(failed === 0 ? '\nAll sales checks passed.\n' : `\n${failed} sales check(s) failed.\n`);
