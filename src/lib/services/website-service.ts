@@ -7,6 +7,7 @@ import { newWebsiteDefaults, toWebsitePatch } from '@/lib/import/to-website';
 import { toPreviewRows, type MarketplacePreview } from './marketplace-preview';
 import { isSupabaseEnabled } from '@/lib/supabase/config';
 import type { MatchableListing } from '@/lib/sales/inventory-match';
+import type { NicheListing } from './niche-landing';
 import { publishBlocker, publishBlockerMessage } from '@/lib/websites/publishing';
 import { rankRelated, relatedTarget } from '@/lib/websites/related';
 import { pricingService } from './pricing-service';
@@ -399,11 +400,16 @@ export const websiteService = {
   /**
    * Every active listing in one niche, for the public niche pages.
    *
-   * Server-only by use, not by type: what reaches the browser from these pages
-   * is `SampleRow`, which has no field that could carry a domain. The full
-   * listings stop at `niche-landing.ts`.
+   * Four figures per listing rather than the whole record, which is what
+   * `NicheListing` says and what stopped these pages timing out: they only
+   * ever needed a domain rating, a traffic figure, a price and a country.
+   * Nothing a domain could travel on reaches the browser from here anyway -
+   * what renders is `SampleRow`.
+   *
+   * The in-memory half still filters full listings with `inNiche`, which
+   * satisfies the narrower type; a clone has no database to be slow.
    */
-  async listForNiche(niche: NicheSlug): Promise<WebsiteListItem[]> {
+  async listForNiche(niche: NicheSlug): Promise<NicheListing[]> {
     if (isSupabaseEnabled()) return supabaseWebsiteRepository.listForNiche(niche);
 
     return publicItems(listItems()).filter((website) => inNiche(website, niche));
