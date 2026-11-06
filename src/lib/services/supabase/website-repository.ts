@@ -1166,10 +1166,22 @@ export const supabaseWebsiteRepository = {
        service role or an error, not the service role or an empty page. */
     const supabase = inventoryClient();
 
-    const { data, error } = await supabase.rpc('niche_page_listings', { p_niche: niche });
-    if (error) throw new Error(`Failed to load the listings in a niche: ${error.message}`);
+    /*
+      Paged, because a function returning a table is still a PostgREST
+      response and PostgREST stops at a thousand rows without saying so.
 
-    return ((data ?? []) as NicheListingRow[]).map(toNicheListing);
+      It said so loudly enough: the first deploy of this took
+      /guest-posts/business from "4,361 live listings" to "1,000", with the
+      starting price and the domain rating range computed over whichever
+      thousand came back. A round number is the tell, and this file exists
+      because of that cap - reintroducing it one layer up was the same bug
+      with a function in front of it.
+    */
+    const rows = await readAllPages<NicheListingRow>('the listings in a niche', (from, to) =>
+      supabase.rpc('niche_page_listings', { p_niche: niche }).range(from, to),
+    );
+
+    return rows.map(toNicheListing);
   },
 
   async getPublicPreview(limit = 6, niche?: NicheSlug): Promise<MarketplacePreview> {
