@@ -33,11 +33,21 @@ set role postgres;
   is how the first run of this file reported the function broken when the
   fixture was.
 */
+/*
+  A niche of this fixture's own.
+
+  The first version counted `business`, which the seed and the other tests
+  also populate - so every absolute number here was a number about the whole
+  database, and the assertions failed on data they were never about.
+*/
+insert into public.categories (slug, name) values ('np-niche', 'NP Niche')
+on conflict (slug) do nothing;
+
 insert into public.websites (id, slug, domain, title, status, primary_category_id, domain_rating, organic_traffic, country_code, country_source)
 select * from (values
   -- Primary business. Counted and listed under business.
   ('d0000000-0000-4000-8000-000000000001'::uuid, 'np-one', 'np-one.example', 'NP One', 'active'::public.website_status,
-   (select id from public.categories where slug = 'business'), 61, 48000, 'GB', 'measured'),
+   (select id from public.categories where slug = 'np-niche'), 61, 48000, 'GB', 'measured'),
   -- Primary finance, secondary business. Must appear under BOTH - the bug
   -- 0093 records is a listing counted only under its primary.
   ('d0000000-0000-4000-8000-000000000002'::uuid, 'np-two', 'np-two.example', 'NP Two', 'active'::public.website_status,
@@ -51,7 +61,7 @@ select * from (values
    null, 33, 12000, null, null),
   -- Paused, and in business. Neither rule may see it.
   ('d0000000-0000-4000-8000-000000000004'::uuid, 'np-four', 'np-four.example', 'NP Four', 'paused'::public.website_status,
-   (select id from public.categories where slug = 'business'), 70, 90000, 'GB', 'measured'),
+   (select id from public.categories where slug = 'np-niche'), 70, 90000, 'GB', 'measured'),
   /*
     In business, with a country nobody established and no services. Two
     things in one row because both need a listing that is actually IN the
@@ -60,13 +70,13 @@ select * from (values
     neither way - so it vanishes from the tally instead of failing.
   */
   ('d0000000-0000-4000-8000-000000000005'::uuid, 'np-five', 'np-five.example', 'NP Five', 'active'::public.website_status,
-   (select id from public.categories where slug = 'business'), 20, 3000, 'FR', 'default')
+   (select id from public.categories where slug = 'np-niche'), 20, 3000, 'FR', 'default')
 ) as v(id, slug, domain, title, status, primary_category_id, domain_rating, organic_traffic, country_code, country_source)
 on conflict (id) do nothing;
 
 insert into public.website_categories (website_id, category_id)
 select 'd0000000-0000-4000-8000-000000000002'::uuid, id
-  from public.categories where slug = 'business'
+  from public.categories where slug = 'np-niche'
 on conflict do nothing;
 
 insert into public.services (id, website_id, type, price_minor, turnaround_min_days, turnaround_max_days, available)
@@ -83,66 +93,52 @@ on conflict (id) do nothing;
 
 -- ---------------------------------------------------------------------------
 
-select 'a listing in the niche is returned: ' ||
-  (select count(*) = 1 from public.niche_page_listings('business') l
-    where l.id = 'd0000000-0000-4000-8000-000000000001')::text;
+/*
+  Three active listings: np-one (primary), np-two (secondary) and np-five.
+  np-four is paused and np-three has no category at all, so a count of four
+  would mean a paused listing counted, and a different rule for secondaries
+  would give two.
+*/
+select 'the niche counts its primaries, its secondaries and nothing else: ' ||
+  (select listings = 3 from public.niche_page_stats('np-niche'))::text;
 
--- The rule `niche_page_counts` exists to get right, asserted on this side too.
-select 'a secondary niche counts as being in it: ' ||
-  (select count(*) = 1 from public.niche_page_listings('business') l
-    where l.id = 'd0000000-0000-4000-8000-000000000002')::text;
+select 'and a listing in two niches is in both: ' ||
+  ((select listings = 3 from public.niche_page_stats('np-niche'))
+   and (select count(*) = 1 from public.niche_page_samples('np-niche', 10, 0) s
+          where s.domain_rating = 44))::text;
 
-select 'and it is still in its primary: ' ||
-  (select count(*) = 1 from public.niche_page_listings('finance') l
-    where l.id = 'd0000000-0000-4000-8000-000000000002')::text;
-
--- 0077. A listing nobody categorised is in no niche, not in technology.
-select 'an uncategorised listing is in no niche: ' ||
-  (select count(*) = 0 from public.niche_page_listings('technology') l
-    where l.id = 'd0000000-0000-4000-8000-000000000003')::text;
-
-select 'a paused listing is in none either: ' ||
-  (select count(*) = 0 from public.niche_page_listings('business') l
-    where l.id = 'd0000000-0000-4000-8000-000000000004')::text;
-
--- The services travel with the row, because the price rule is applied to
--- them in TypeScript rather than reimplemented as a min() here.
-select 'the services come back with the listing: ' ||
-  (select jsonb_array_length(l.services) = 2 from public.niche_page_listings('business') l
-    where l.id = 'd0000000-0000-4000-8000-000000000001')::text;
-
-select 'including whether each one is available: ' ||
-  (select bool_and(entry ? 'available' and entry ? 'price_minor' and entry ? 'type')
-     from public.niche_page_listings('business') l,
-          jsonb_array_elements(l.services) entry
-    where l.id = 'd0000000-0000-4000-8000-000000000001')::text;
-
--- `jsonb_agg` over no rows is null, not '[]', so the coalesce is the only
--- thing standing between the caller and two shapes to handle.
-select 'a listing with no services gets an empty array, never null: ' ||
-  (select l.services = '[]'::jsonb from public.niche_page_listings('business') l
-    where l.id = 'd0000000-0000-4000-8000-000000000005')::text;
+/*
+  The price rule, which `verify:niche-pages` checks against the TypeScript
+  and which is checked here for the one case a reader would doubt: np-one
+  has an available service at 22,000 and a paused one at 9,900, so its own
+  lowest price is 22,000 - a paused service is not a price anybody can buy.
+*/
+select 'a paused service is not the lowest price: ' ||
+  (select starting_price_minor = 14000 from public.niche_page_stats('np-niche'))::text;
 
 /*
   A country whose source is 'default' is not a country - the view's rule,
   and the reason the page reads from the view rather than from `websites`.
-  np-five carries 'FR' with source 'default', so the column is set and the
-  answer is still null.
+  np-five carries 'FR' with source 'default'.
 */
-select 'a defaulted country is not reported as one: ' ||
-  (select l.country is null from public.niche_page_listings('business') l
-    where l.id = 'd0000000-0000-4000-8000-000000000005')::text;
+select 'a defaulted country is not counted as a market: ' ||
+  (select countries = 2 from public.niche_page_stats('np-niche'))::text;
 
-select 'while a measured one is: ' ||
-  (select l.country = 'GB' from public.niche_page_listings('business') l
-    where l.id = 'd0000000-0000-4000-8000-000000000001')::text;
+-- The sample takes only listings loud enough and priced. np-five has no
+-- services, so it is counted in the band and never shown as an example.
+select 'an unpriced listing is counted but never sampled: ' ||
+  ((select listings from public.niche_page_stats('np-niche')) = 3
+   and (select count(*) from public.niche_page_samples('np-niche', 10, 0)) = 2)::text;
+
+select 'and the traffic floor keeps the quiet ones out: ' ||
+  (select count(*) = 0 from public.niche_page_samples('np-niche', 10, 100000))::text;
 
 -- ---------------------------------------------------------------------------
 -- The one that matters: the rule that publishes a page and the rule that
 -- fills it must return the same number, for every niche, always.
 -- ---------------------------------------------------------------------------
 select 'every niche counts the same both ways: ' ||
-  (select bool_and(c.listings = (select count(*) from public.niche_page_listings(c.niche)))
+  (select bool_and(c.listings = (select listings from public.niche_page_stats(c.niche)))
      from public.niche_page_counts() c)::text;
 
 -- And that the fixture actually exercised that - a comparison over no rows
@@ -152,76 +148,46 @@ select 'and there was more than one niche to compare: ' ||
   (select count(*) >= 2 from public.niche_page_counts())::text;
 
 -- ---------------------------------------------------------------------------
--- Ordered, because the caller pages it.
---
--- 0095 shipped without an order and the page went from 4,361 listings to
--- 1,000 - PostgREST's cap, applied to a function's result exactly as it is
--- to a table's. The caller pages it now, and paging by offset over an
--- unordered result is the other half of the same bug: rows skipped and rows
--- returned twice, with nothing saying so.
---
--- Asserted on the function rather than on the call, because a `.range()`
--- with no `order` reads as working until the second page.
--- ---------------------------------------------------------------------------
-select 'the listings come back in a stable order: ' ||
-  (select bool_and(ordered) from (
-     select l.id >= lag(l.id) over () as ordered
-       from public.niche_page_listings('business') l
-   ) t where ordered is not null)::text;
-
--- And that there was more than one row to be out of order.
-select 'with more than one row to order: ' ||
-  (select count(*) >= 2 from public.niche_page_listings('business'))::text;
-
--- Paging it returns each row once and all of them. Walked at a page size of
--- one, which is the smallest thing that can expose a skip or a repeat.
-select 'paging it loses nothing and repeats nothing: ' ||
-  (select count(*) = (select count(*) from public.niche_page_listings('business'))
-     and count(distinct id) = count(*)
-     from (
-       (select id from public.niche_page_listings('business') order by id limit 1 offset 0)
-       union all
-       (select id from public.niche_page_listings('business') order by id limit 1 offset 1)
-       union all
-       (select id from public.niche_page_listings('business') order by id limit 1 offset 2)
-     ) walked)::text;
-
--- ---------------------------------------------------------------------------
 -- The third rule on the page agrees as well.
 -- ---------------------------------------------------------------------------
 select 'the preview reads a missing category the same way: ' ||
   (select count(*) = 0 from public.marketplace_niche_preview('technology', 6) p
     where p.id = 'd0000000-0000-4000-8000-000000000003')::text;
 
-select 'and so does the niche page: ' ||
-  (select count(*) = 0 from public.niche_page_listings('technology') l
-    where l.id = 'd0000000-0000-4000-8000-000000000003')::text;
-
--- Both of those are true of a listing in no niche whatever the rule, so one
--- that IS in a niche proves the comparison can fail.
-select 'while both find a listing that is in one: ' ||
-  ((select count(*) = 1 from public.marketplace_niche_preview('business', 6) p
-     where p.id = 'd0000000-0000-4000-8000-000000000001')
-   and (select count(*) = 1 from public.niche_page_listings('business') l
-     where l.id = 'd0000000-0000-4000-8000-000000000001'))::text;
+-- Said about this fixture's own niche, where the number is known.
+select 'and the band counts the same three: ' ||
+  ((select count(*) from public.marketplace_niche_preview('np-niche', 50)) = 3
+   and (select listings = 3 from public.niche_page_stats('np-niche')))::text;
 
 -- ---------------------------------------------------------------------------
--- Who may call it. 0090's lock-down, which 0093 repeated and this follows.
+-- Who may call them. 0090's lock-down, which 0093 repeated and this follows.
 -- ---------------------------------------------------------------------------
-select 'anon may not call it: ' ||
-  (not has_function_privilege('anon', 'public.niche_page_listings(text)', 'execute'))::text;
+select 'anon may not call the band: ' ||
+  (not has_function_privilege('anon', 'public.niche_page_stats(text)', 'execute'))::text;
 
-select 'nor may a signed-in customer: ' ||
-  (not has_function_privilege('authenticated', 'public.niche_page_listings(text)', 'execute'))::text;
+select 'nor the sample: ' ||
+  (not has_function_privilege('anon', 'public.niche_page_samples(text,integer,integer)', 'execute'))::text;
 
-select 'our server may: ' ||
-  has_function_privilege('service_role', 'public.niche_page_listings(text)', 'execute')::text;
+select 'nor may a signed-in customer call either: ' ||
+  (not has_function_privilege('authenticated', 'public.niche_page_stats(text)', 'execute')
+   and not has_function_privilege('authenticated', 'public.niche_page_samples(text,integer,integer)', 'execute'))::text;
+
+select 'our server may call both: ' ||
+  (has_function_privilege('service_role', 'public.niche_page_stats(text)', 'execute')
+   and has_function_privilege('service_role', 'public.niche_page_samples(text,integer,integer)', 'execute'))::text;
+
+-- The row-returning function 0097 replaced is gone, not left beside them.
+select 'the read it replaced no longer exists: ' ||
+  (select count(*) = 0 from pg_proc p
+     join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'niche_page_listings')::text;
 
 delete from public.services where website_id in (
   'd0000000-0000-4000-8000-000000000001',
   'd0000000-0000-4000-8000-000000000002'
 );
 delete from public.website_categories where website_id = 'd0000000-0000-4000-8000-000000000002';
+delete from public.categories where slug = 'np-niche';
 delete from public.websites where id in (
   'd0000000-0000-4000-8000-000000000001',
   'd0000000-0000-4000-8000-000000000002',

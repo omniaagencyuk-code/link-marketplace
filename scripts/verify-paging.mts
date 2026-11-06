@@ -141,11 +141,29 @@ console.log('\n--- no full read in the repositories uses a bare limit ---');
 
   // Reads that genuinely still carry the whole table back.
   const repo = readFileSync('src/lib/services/supabase/website-repository.ts', 'utf8');
-  for (const read of ['getAll', 'getAllForAdmin', 'getDomainIndex']) {
+  for (const read of ['getAllForAdmin', 'getDomainIndex']) {
     const start = repo.indexOf(`async ${read}(`);
     const body = repo.slice(start, start + 1_400);
     is(`${read} pages rather than capping`, start > 0 && body.includes('readAllPages'), true);
   }
+
+  /*
+    And a third time, the way the comment above predicted - except `getAll`
+    did not get better, it went.
+
+    It returned every active listing with five joins hanging off it, and
+    three callers reached for it because it was the obvious name: the niche
+    counts, the sales drafter, the niche pages. All three timed out in
+    production, each after the one before had been fixed, because the
+    function stayed there reading like the right answer.
+
+    So the assertion is that it is still gone. A read nobody can call is
+    worth more here than a read that pages.
+  */
+  is('the whole-marketplace read is gone, not merely paged',
+    !repo.includes('async getAll(') &&
+      !readFileSync('src/lib/services/website-service.ts', 'utf8').includes('async getAll('),
+    true);
 
   /*
     And the ones that stopped, each counting in the database instead.

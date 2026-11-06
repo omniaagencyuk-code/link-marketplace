@@ -17,7 +17,7 @@ import {
 import { acceptedNichesFromFlags } from '@/lib/config/accepted-niches';
 import { filterNiches } from '@/lib/sales/inventory-match';
 import type { MatchableListing } from '@/lib/sales/inventory-match';
-import type { NicheListing } from '../niche-landing';
+import type { NicheSampleRaw, NicheStatsRaw } from '../niche-landing';
 import { pricedServices, toListItem } from '../query-engine';
 import { toPreviewRows, type MarketplacePreview } from '../marketplace-preview';
 import { normaliseDomain } from '@/lib/import/normalise';
@@ -480,69 +480,24 @@ function inventoryClient() {
   return admin;
 }
 
-/** The row `niche_page_listings` returns. */
-interface NicheListingRow {
-  id: string;
+/** The single row `niche_page_stats` returns. */
+interface NicheStatsRow {
+  listings: number | string | null;
+  dr_min: number | null;
+  dr_max: number | null;
+  countries: number | string | null;
+  starting_price_minor: number | null;
+}
+
+/** One row of `niche_page_samples`. */
+interface NicheSampleRow {
   domain_rating: number | null;
   organic_traffic: number | null;
   country: string | null;
-  services: { type: Service['type']; price_minor: number; available: boolean }[] | null;
-}
-
-/**
- * The row, as a niche page wants it.
- *
- * `lowestPriceMinor` through `pricedServices`, the one definition of which
- * services a listing is priced from - the same rule `toListItem` uses, so
- * the figure on /guest-posts and the figure on a listing page cannot
- * disagree. A `min()` in the SQL would have been shorter and would have been
- * a second copy of it.
- */
-function toNicheListing(row: NicheListingRow): NicheListing {
-  const priced = pricedServices(
-    (row.services ?? []).map((service) => ({
-      type: service.type,
-      available: service.available ?? true,
-      priceMinor: Number(service.price_minor ?? 0),
-    })),
-  );
-
-  return {
-    metrics: {
-      domainRating: Number(row.domain_rating ?? 0),
-      organicTraffic: Number(row.organic_traffic ?? 0),
-    },
-    // Zero where nothing is priced, which `toStats` and `toSampleRows` both
-    // already read as "no price" rather than as free.
-    lowestPriceMinor: priced.length
-      ? Math.min(...priced.map((service) => service.priceMinor))
-      : 0,
-    country: row.country ?? undefined,
-  };
+  lowest_price_minor: number | null;
 }
 
 export const supabaseWebsiteRepository = {
-  async getAll(): Promise<WebsiteListItem[]> {
-    const supabase = inventoryClient();
-
-    // Ordered by `id` as well as by rank. Domain ratings tie constantly - a
-    // hundred listings share a DR of 40 - and paging by offset over an order
-    // the database is free to break ties in differently on each request
-    // skips some rows and returns others twice.
-    const rows = await readAllPages<WebsiteRow>('the marketplace', (from, to) =>
-      supabase
-        .from('websites')
-        .select(WEBSITE_SELECT)
-        .eq('status', 'active')
-        .order('domain_rating', { ascending: false })
-        .order('id', { ascending: true })
-        .range(from, to),
-    );
-
-    warnIfOutgrown('the marketplace', rows.length);
-    return rows.map((row) => toListItem(mapWebsite(row)));
-  },
-
   /**
    * The listings a sales draft could cite, and no more.
    *
@@ -1140,48 +1095,66 @@ export const supabaseWebsiteRepository = {
    * niches in another, which is what `countByNiche` does too.
    */
   /**
-   * The listings in one niche, for its public page.
+   * The figures in the band at the top of a niche page.
    *
-   * This read every active listing - `*` with services, niche prices,
-   * categories and topics joined on, paged in five hundreds - and then
-   * filtered by niche in JavaScript. Thirty-five sequential round trips to
-   * London to render one page, and on 3 November nine of those pages
-   * answered `canceling statement due to statement timeout` to real
-   * visitors. 0093 had already moved the *count* on the same page into the
-   * database for the same reason; this half was left behind.
+   * Counted in Postgres. This page has timed out twice from reads whose size
+   * followed the inventory - every listing in the niche, then every listing
+   * with its services - and both times the answer wanted was five numbers.
+   * A count is not a reason to send four thousand rows across the Atlantic,
+   * which is what 0093 established for the niche counts and what this
+   * finally applies to the rest of the band.
    *
-   * `niche_page_listings` applies the niche test in SQL, against
-   * `marketplace_listings` so it follows 0077 rather than
-   * `marketplace_niche_preview`, which still reads a missing category as
-   * technology.
-   *
-   * The services come back attached and `pricedServices` turns them into a
-   * price here, rather than a `min()` in the function: which services count
-   * toward the lowest price is a rule with one copy, and a second one in SQL
-   * would be the copy quoting a figure on a public page.
+   * No paging and nothing to cap: one row comes back.
    */
-  async listForNiche(niche: NicheSlug): Promise<NicheListing[]> {
-    /* Was `admin ?? the customer's client`. The fallback half of that reads
-       nothing since 0090, and these are the public niche pages - so it is the
-       service role or an error, not the service role or an empty page. */
+  async nichePageStats(niche: NicheSlug): Promise<NicheStatsRaw> {
     const supabase = inventoryClient();
 
-    /*
-      Paged, because a function returning a table is still a PostgREST
-      response and PostgREST stops at a thousand rows without saying so.
+    const { data, error } = await supabase.rpc('niche_page_stats', { p_niche: niche });
+    if (error) throw new Error(`Failed to count the listings in a niche: ${error.message}`);
 
-      It said so loudly enough: the first deploy of this took
-      /guest-posts/business from "4,361 live listings" to "1,000", with the
-      starting price and the domain rating range computed over whichever
-      thousand came back. A round number is the tell, and this file exists
-      because of that cap - reintroducing it one layer up was the same bug
-      with a function in front of it.
-    */
-    const rows = await readAllPages<NicheListingRow>('the listings in a niche', (from, to) =>
-      supabase.rpc('niche_page_listings', { p_niche: niche }).range(from, to),
-    );
+    const row = ((data ?? []) as NicheStatsRow[])[0];
+    if (!row) return { listings: 0, drMin: 0, drMax: 0, countries: 0, startingPriceMinor: null };
 
-    return rows.map(toNicheListing);
+    return {
+      // `count(*)` arrives as a string over PostgREST on some versions, and a
+      // count compared with `>=` as a string is a comparison nobody meant.
+      listings: Number(row.listings ?? 0),
+      drMin: Number(row.dr_min ?? 0),
+      drMax: Number(row.dr_max ?? 0),
+      countries: Number(row.countries ?? 0),
+      startingPriceMinor: row.starting_price_minor === null ? null : Number(row.starting_price_minor),
+    };
+  },
+
+  /**
+   * The sample table under it.
+   *
+   * `count` and `minTraffic` are passed in rather than written into the
+   * function, because `SAMPLE_COUNT` and `MIN_TRAFFIC_FOR_A_SAMPLE` already
+   * exist in `niche-landing.ts`.
+   *
+   * At most `count` rows come back, so there is nothing to page here either.
+   */
+  async nichePageSamples(
+    niche: NicheSlug,
+    count: number,
+    minTraffic: number,
+  ): Promise<NicheSampleRaw[]> {
+    const supabase = inventoryClient();
+
+    const { data, error } = await supabase.rpc('niche_page_samples', {
+      p_niche: niche,
+      p_count: count,
+      p_min_traffic: minTraffic,
+    });
+    if (error) throw new Error(`Failed to sample the listings in a niche: ${error.message}`);
+
+    return ((data ?? []) as NicheSampleRow[]).map((row) => ({
+      domainRating: Number(row.domain_rating ?? 0),
+      organicTraffic: Number(row.organic_traffic ?? 0),
+      country: row.country ?? undefined,
+      lowestPriceMinor: Number(row.lowest_price_minor ?? 0),
+    }));
   },
 
   async getPublicPreview(limit = 6, niche?: NicheSlug): Promise<MarketplacePreview> {
