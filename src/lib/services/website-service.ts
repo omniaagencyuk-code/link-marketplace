@@ -7,7 +7,12 @@ import { newWebsiteDefaults, toWebsitePatch } from '@/lib/import/to-website';
 import { toPreviewRows, type MarketplacePreview } from './marketplace-preview';
 import { isSupabaseEnabled } from '@/lib/supabase/config';
 import type { MatchableListing } from '@/lib/sales/inventory-match';
-import type { NicheListing } from './niche-landing';
+import {
+  pickSamples,
+  rawStats,
+  type NicheSampleRaw,
+  type NicheStatsRaw,
+} from './niche-landing';
 import { publishBlocker, publishBlockerMessage } from '@/lib/websites/publishing';
 import { rankRelated, relatedTarget } from '@/lib/websites/related';
 import { pricingService } from './pricing-service';
@@ -152,14 +157,20 @@ export function countNiches(websites: WebsiteListItem[]): Record<string, number>
   return counts;
 }
 
+/*
+  There is no `getAll` here any more, and that is the point.
+
+  It returned every active listing with five joins hanging off it, and three
+  callers reached for it because it was the obvious name: the niche counts
+  (0093), the sales drafter (#100) and the niche pages (#104). All three
+  timed out in production, each after the one before had been fixed, because
+  the function stayed available and reading like the right answer.
+
+  What replaced them asks a question instead: `nicheCounts`,
+  `matchableListings`, `nichePageStats`. If a new caller wants the whole
+  marketplace, the thing to add is the question it is really asking.
+*/
 export const websiteService = {
-  /** Every active listing, as list items. */
-  async getAll(): Promise<WebsiteListItem[]> {
-    if (isSupabaseEnabled()) return publicItems(await supabaseWebsiteRepository.getAll());
-
-    return publicItems(listItems());
-  },
-
   /**
    * The listings a sales draft could cite, for the niches it needs.
    *
@@ -398,21 +409,37 @@ export const websiteService = {
   },
 
   /**
-   * Every active listing in one niche, for the public niche pages.
+   * The figures at the top of a niche page, and the sample under it.
    *
-   * Four figures per listing rather than the whole record, which is what
-   * `NicheListing` says and what stopped these pages timing out: they only
-   * ever needed a domain rating, a traffic figure, a price and a country.
-   * Nothing a domain could travel on reaches the browser from here anyway -
-   * what renders is `SampleRow`.
+   * Two questions rather than a list. This page has timed out twice from
+   * reads whose size followed the inventory - every listing in the niche,
+   * then every listing with its services - and both times what it wanted
+   * was five numbers and ten rows.
    *
-   * The in-memory half still filters full listings with `inNiche`, which
-   * satisfies the narrower type; a clone has no database to be slow.
+   * The in-memory half answers the same questions with the same TypeScript
+   * the database's version is checked against, so a clone behaves like the
+   * site rather than like a different product.
    */
-  async listForNiche(niche: NicheSlug): Promise<NicheListing[]> {
-    if (isSupabaseEnabled()) return supabaseWebsiteRepository.listForNiche(niche);
+  async nichePageStats(niche: NicheSlug): Promise<NicheStatsRaw> {
+    if (isSupabaseEnabled()) return supabaseWebsiteRepository.nichePageStats(niche);
 
-    return publicItems(listItems()).filter((website) => inNiche(website, niche));
+    return rawStats(publicItems(listItems()).filter((website) => inNiche(website, niche)));
+  },
+
+  async nichePageSamples(
+    niche: NicheSlug,
+    count: number,
+    minTraffic: number,
+  ): Promise<NicheSampleRaw[]> {
+    if (isSupabaseEnabled()) {
+      return supabaseWebsiteRepository.nichePageSamples(niche, count, minTraffic);
+    }
+
+    return pickSamples(
+      publicItems(listItems()).filter((website) => inNiche(website, niche)),
+      count,
+      minTraffic,
+    );
   },
 
   async countByNiche(): Promise<Record<NicheSlug, number>> {

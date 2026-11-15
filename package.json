@@ -39,6 +39,7 @@
     "verify:sales": "tsx scripts/verify-sales.mts",
     "verify:gap": "tsx scripts/verify-gap.mts",
     "verify:search": "tsx scripts/verify-marketplace-search.mts",
+    "verify:niche-pages": "tsx scripts/verify-niche-pages.mts",
     "verify:selection": "tsx scripts/verify-admin-selection.mts",
     "verify:costs": "tsx scripts/verify-cost-currency.mts",
     "verify:terms": "tsx scripts/verify-commercial-terms.mts",

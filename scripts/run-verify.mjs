@@ -28,7 +28,12 @@ import { readFileSync } from 'node:fs';
  * migrations into a second database to check the row mappers against the
  * real column list.
  */
-const DATABASE_SUITES = new Set(['verify:schema', 'verify:rls', 'verify:search']);
+const DATABASE_SUITES = new Set([
+  'verify:schema',
+  'verify:rls',
+  'verify:search',
+  'verify:niche-pages',
+]);
 
 const { scripts } = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
 

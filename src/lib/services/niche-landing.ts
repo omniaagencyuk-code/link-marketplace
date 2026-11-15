@@ -120,28 +120,43 @@ export interface NicheListing {
   country?: string;
 }
 
-export function toSampleRows(
-  websites: readonly NicheListing[],
-  label: string,
-  symbol = currencySymbol(),
-): SampleRow[] {
-  const worthShowing = websites
-    .filter((website) => website.metrics.organicTraffic >= MIN_TRAFFIC_FOR_A_SAMPLE)
-    .filter((website) => website.lowestPriceMinor > 0)
-    .slice()
-    .sort((a, b) => b.metrics.domainRating - a.metrics.domainRating);
-
-  return spread(worthShowing, SAMPLE_COUNT).map((website, index) => ({
-    key: `sample-${index}`,
-    label,
-    domainRating: website.metrics.domainRating,
-    traffic: bandTraffic(website.metrics.organicTraffic),
-    country: countryShortNameOrUnknown(website.country),
-    price: `from ${symbol}${Math.round(website.lowestPriceMinor / 100)}`,
-  }));
+/**
+ * The figures, before anybody formats them.
+ *
+ * Split out because there are now two ways to arrive at them - counted in
+ * Postgres for the live site, counted here for a clone with no database -
+ * and only the arithmetic differs between those. Formatting a figure is not
+ * somewhere a second copy can hide, so it stays in one place below.
+ *
+ * `startingPriceMinor` is null, not zero, where nothing in the niche is
+ * priced: the page prints no starting price at all, and "from £0" is not a
+ * price.
+ */
+export interface NicheStatsRaw {
+  listings: number;
+  drMin: number;
+  drMax: number;
+  countries: number;
+  startingPriceMinor: number | null;
 }
 
-export function toStats(websites: readonly NicheListing[], symbol = currencySymbol()): NicheStats {
+/** One sample listing, before formatting. */
+export interface NicheSampleRaw {
+  domainRating: number;
+  organicTraffic: number;
+  country?: string;
+  lowestPriceMinor: number;
+}
+
+/**
+ * The reference implementation of the stats, over listings in memory.
+ *
+ * `niche_page_stats` is the one the site runs; this is what it is checked
+ * against. `verify:niche-pages` puts the same fixtures through both, because
+ * a port like this fails quietly - the page shows slightly different numbers
+ * and nothing anywhere says so.
+ */
+export function rawStats(websites: readonly NicheListing[]): NicheStatsRaw {
   const ratings = websites.map((website) => website.metrics.domainRating).filter((dr) => dr > 0);
   const prices = websites.map((website) => website.lowestPriceMinor).filter((price) => price > 0);
   const countries = new Set(
@@ -153,8 +168,67 @@ export function toStats(websites: readonly NicheListing[], symbol = currencySymb
     drMin: ratings.length ? Math.min(...ratings) : 0,
     drMax: ratings.length ? Math.max(...ratings) : 0,
     countries: countries.size,
-    startingPrice: prices.length ? `${symbol}${Math.round(Math.min(...prices) / 100)}` : '',
+    startingPriceMinor: prices.length ? Math.min(...prices) : null,
   };
+}
+
+/** The same, for the sample rows. `niche_page_samples` is checked against it. */
+export function pickSamples(
+  websites: readonly NicheListing[],
+  count = SAMPLE_COUNT,
+  minTraffic = MIN_TRAFFIC_FOR_A_SAMPLE,
+): NicheSampleRaw[] {
+  const worthShowing = websites
+    .filter((website) => website.metrics.organicTraffic >= minTraffic)
+    .filter((website) => website.lowestPriceMinor > 0)
+    .slice()
+    .sort((a, b) => b.metrics.domainRating - a.metrics.domainRating);
+
+  return spread(worthShowing, count).map((website) => ({
+    domainRating: website.metrics.domainRating,
+    organicTraffic: website.metrics.organicTraffic,
+    country: website.country,
+    lowestPriceMinor: website.lowestPriceMinor,
+  }));
+}
+
+/** One copy of how a figure is written down, whoever counted it. */
+export function formatStats(raw: NicheStatsRaw, symbol = currencySymbol()): NicheStats {
+  return {
+    listings: raw.listings,
+    drMin: raw.drMin,
+    drMax: raw.drMax,
+    countries: raw.countries,
+    startingPrice:
+      raw.startingPriceMinor === null ? '' : `${symbol}${Math.round(raw.startingPriceMinor / 100)}`,
+  };
+}
+
+export function formatSamples(
+  rows: readonly NicheSampleRaw[],
+  label: string,
+  symbol = currencySymbol(),
+): SampleRow[] {
+  return rows.map((row, index) => ({
+    key: `sample-${index}`,
+    label,
+    domainRating: row.domainRating,
+    traffic: bandTraffic(row.organicTraffic),
+    country: countryShortNameOrUnknown(row.country),
+    price: `from ${symbol}${Math.round(row.lowestPriceMinor / 100)}`,
+  }));
+}
+
+export function toSampleRows(
+  websites: readonly NicheListing[],
+  label: string,
+  symbol = currencySymbol(),
+): SampleRow[] {
+  return formatSamples(pickSamples(websites), label, symbol);
+}
+
+export function toStats(websites: readonly NicheListing[], symbol = currencySymbol()): NicheStats {
+  return formatStats(rawStats(websites), symbol);
 }
 
 /**
@@ -190,13 +264,27 @@ export async function publishedNiches(): Promise<NicheSlug[]> {
 export async function nicheLanding(slug: NicheSlug): Promise<NicheLanding | null> {
   if (!NICHE_COPY[slug]) return null;
 
-  const listings = await websiteService.listForNiche(slug);
-  if (listings.length < MIN_LISTINGS_FOR_A_PAGE) return null;
+  /*
+    The band first, because it carries the count that decides whether there
+    is a page at all - and a niche below the floor is not worth sampling.
+
+    Sequentially rather than in parallel for that reason: a thin niche costs
+    one round trip, and the common case costs two of them against a figure
+    that was thirty-five not long ago.
+  */
+  const raw = await websiteService.nichePageStats(slug);
+  if (raw.listings < MIN_LISTINGS_FOR_A_PAGE) return null;
+
+  const samples = await websiteService.nichePageSamples(
+    slug,
+    SAMPLE_COUNT,
+    MIN_TRAFFIC_FOR_A_SAMPLE,
+  );
 
   const copy = NICHE_COPY[slug]!;
   return {
     slug,
-    stats: toStats(listings),
-    samples: toSampleRows(listings, `${copy.heading.replace(/ guest posts$/i, '')} publisher`),
+    stats: formatStats(raw),
+    samples: formatSamples(samples, `${copy.heading.replace(/ guest posts$/i, '')} publisher`),
   };
 }
