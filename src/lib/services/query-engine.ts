@@ -7,8 +7,15 @@ import type {
   WebsiteQuery,
 } from '@/lib/types';
 
-/** Order services are presented in across list views. */
-const servicePriority: LinkTypeSlug[] = ['guest-post', 'niche-edit', 'digital-pr'];
+/**
+ * Order services are presented in across list views.
+ *
+ * Exported because a package has to break the same tie: where two available
+ * services cost the same, the one a package puts in the basket must be the
+ * one a list view would have shown, and a second ordering kept elsewhere
+ * would eventually disagree with this one.
+ */
+export const servicePriority: LinkTypeSlug[] = ['guest-post', 'niche-edit', 'digital-pr'];
 
 /**
  * The services a listing is priced from, in the order it presents them.
