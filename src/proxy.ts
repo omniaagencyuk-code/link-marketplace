@@ -129,13 +129,24 @@ function signedOutRedirect(request: NextRequest, pathname: string) {
   return gated(NextResponse.redirect(target, 307));
 }
 
-/** The publisher inventory: the listings themselves, and the search over them. */
+/**
+ * The publisher inventory: the listings themselves, and the search over them.
+ *
+ * A package's contents belong here too, though they sit under /dashboard.
+ * The route is reached from /link-building-packages, which is public and
+ * indexed, so whoever follows that button is the visitor this distinction
+ * was drawn for - they came from a page rather than from an account, and a
+ * login form would be asking them for a password they never set. What they
+ * find on the other side is a list of publishers, which is inventory by any
+ * other name.
+ */
 function isInventoryPath(pathname: string): boolean {
   return (
     pathname === '/marketplace' ||
     pathname.startsWith('/marketplace/') ||
     pathname === '/websites' ||
-    pathname.startsWith('/websites/')
+    pathname.startsWith('/websites/') ||
+    pathname.startsWith('/dashboard/orders/packages/')
   );
 }
 
