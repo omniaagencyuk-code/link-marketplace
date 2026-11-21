@@ -70,7 +70,15 @@ const MIN_TRAFFIC_FOR_A_SAMPLE = 500;
 
 const SAMPLE_COUNT = 10;
 
-function bandTraffic(value: number): string {
+/**
+ * Traffic as a band rather than a figure.
+ *
+ * Shared with the packages page, which shows the same kind of anonymised
+ * row. The banding is not only tidiness: an exact monthly visit count is a
+ * good deal more identifying than "69K", and these rows are published to
+ * people with no account.
+ */
+export function bandTraffic(value: number): string {
   if (value >= 1_000_000) return `${(Math.round(value / 100_000) / 10).toFixed(1)}M`;
   if (value >= 10_000) return `${Math.round(value / 1_000)}K`;
   if (value >= 1_000) return `${(Math.round(value / 100) / 10).toFixed(1)}K`;

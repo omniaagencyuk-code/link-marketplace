@@ -90,6 +90,11 @@ export const mainNav: NavGroup[] = [
         description: 'Choose the publisher and pay per placement.',
       },
       {
+        label: 'Link Packages',
+        href: '/link-building-packages',
+        description: 'Five or ten placements in one go.',
+      },
+      {
         label: 'Guest Posts',
         href: '/guest-posts',
         description: 'Contextual links in new articles.',
