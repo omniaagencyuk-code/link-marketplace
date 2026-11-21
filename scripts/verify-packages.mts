@@ -300,6 +300,46 @@ isTrue(
 isTrue('and every package buys at least one placement', linkPackages.every((entry) => entry.count >= 1));
 
 /*
+  Every package requires readers.
+
+  Starter shipped without this and the first production render showed what
+  that costs: five DR 45 listings at `0` organic traffic, under a sentence
+  promising "real readers". A strong rating with nobody reading is the thing
+  buyers in this industry are most often sold, and a package is us doing the
+  choosing, so the floor is ours to set rather than the buyer's to notice.
+*/
+isTrue(
+  'no package sells a placement with no readers',
+  linkPackages.every((entry) => (entry.filters.trafficMin ?? 0) > 0),
+);
+
+/*
+  A package must not sort by a measure its own filter caps.
+
+  `dr-desc` inside `drMax: 45` hands back every match sitting exactly at 45,
+  because with twelve thousand listings there are more than enough of them to
+  fill the package - so the card advertised "DR 45-45" and read as broken.
+  The sort decides both the contents and the price, so this is not only a
+  presentation fault: it buys the narrowest slice of the band every time.
+
+  Stated as the general rule rather than as "do not use dr-desc", because the
+  same trap is waiting on traffic and on referring domains the day somebody
+  caps one of those.
+*/
+const CAPPED_BY: Record<string, keyof typeof emptyFilters> = {
+  'dr-desc': 'drMax',
+  'traffic-desc': 'trafficMax',
+  'rd-desc': 'rdMax',
+};
+isTrue(
+  'no package sorts down a measure it has capped',
+  linkPackages.every((entry) => {
+    const capped = CAPPED_BY[entry.sort];
+    return capped === undefined || entry.filters[capped] === undefined;
+  }),
+);
+
+/*
   "Browse all of them" has to land on the set the figures describe, so the
   href must carry the filters the price was computed from.
 */

@@ -31,20 +31,35 @@ import type { LinkPackage } from '@/lib/packages/rules';
  * sell placements on publishers; we do not sell rankings, and a package
  * named for a result would be promising one.
  */
+/**
+ * The fewest readers a placement we sell may have.
+ *
+ * The first production render of this page is why there is a number here at
+ * all. Starter shipped with no traffic floor, and against the real inventory
+ * it filled with DR 45 listings reading `0` organic traffic - under a
+ * sentence promising "real readers". `niche-landing.ts` already says what
+ * that is: "a publisher with a strong domain rating and no readers is the
+ * thing buyers in this industry are most often sold". Its floor keeps such a
+ * listing out of a sample table; this one keeps it out of something somebody
+ * pays for, which is the stronger claim and so the higher number.
+ */
+const MIN_READERS = 1_000;
+
 export const linkPackages: LinkPackage[] = [
   {
     slug: 'starter',
     name: 'Starter',
     blurb:
       'Five placements on established sites with real readers. A first push for a new page, or a steady month.',
-    filters: { ...emptyFilters, drMin: 20, drMax: 45, linkTypes: ['guest-post'] },
+    filters: {
+      ...emptyFilters,
+      drMin: 20,
+      drMax: 45,
+      trafficMin: MIN_READERS,
+      linkTypes: ['guest-post'],
+    },
     count: 5,
-    /*
-      Strongest first inside the band, which is also what decides the price.
-      Cheapest-first would make "from" literally true and hand the buyer the
-      five weakest sites that qualify - a package nobody would buy twice.
-    */
-    sort: 'dr-desc',
+    sort: 'traffic-desc',
   },
   {
     slug: 'growth',
@@ -55,11 +70,11 @@ export const linkPackages: LinkPackage[] = [
       ...emptyFilters,
       drMin: 40,
       drMax: 65,
-      trafficMin: 1000,
+      trafficMin: MIN_READERS,
       linkTypes: ['guest-post', 'niche-edit'],
     },
     count: 10,
-    sort: 'dr-desc',
+    sort: 'traffic-desc',
   },
   {
     slug: 'authority',
@@ -73,7 +88,7 @@ export const linkPackages: LinkPackage[] = [
       linkTypes: ['guest-post', 'niche-edit'],
     },
     count: 10,
-    sort: 'dr-desc',
+    sort: 'traffic-desc',
   },
 ];
 
