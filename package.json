@@ -59,7 +59,7 @@
     "verify:content-writing": "tsx scripts/verify-content-writing.mts",
     "verify:resources": "tsx scripts/verify-resources.mts",
     "verify:agencies": "tsx scripts/verify-agencies.mts",
-    "verify:packages": "tsx scripts/verify-packages.mts"
+    "verify:tiers": "tsx scripts/verify-tiers.mts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.128.0",

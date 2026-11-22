@@ -67,19 +67,6 @@ console.log('\n--- the gate ---');
   yes('and /websites', /pathname === '\/websites'/.test(proxy));
   yes('and everything under that', /pathname\.startsWith\('\/websites\/'\)/.test(proxy));
 
-  /*
-    A package's contents are inventory too, though they sit under /dashboard.
-    That route is reached from /link-building-packages, which is public and
-    indexed, so the visitor following the button has no account yet - the
-    exact case the signup-rather-than-login split exists for. Asserted here
-    because nothing else would notice it being dropped: the page would still
-    work, and it would simply ask every new buyer for a password they never
-    set.
-  */
-  yes(
-    'a package\'s contents are inventory as well',
-    /pathname\.startsWith\('\/dashboard\/orders\/packages\/'\)/.test(proxy),
-  );
 
   /*
     /marketplace used to be let through as a public gateway. It is not any more
