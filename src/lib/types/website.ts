@@ -352,3 +352,22 @@ export interface WebsiteListItem extends Website {
   fastestTurnaroundDays: number;
   availableLinkTypes: LinkTypeSlug[];
 }
+
+/**
+ * One row of the package inventory view: a niche at a domain rating tier.
+ *
+ * `costCurrency` null means the function refused to mix currencies for that
+ * niche, not that nothing was recorded - `withCost` still counts the
+ * listings it could not price together.
+ */
+export interface PackageDepthRow {
+  niche: string;
+  drMin: number;
+  listings: number;
+  withCost: number;
+  costCurrency: string | null;
+  costLowMinor: number | null;
+  costMedianMinor: number | null;
+  costHighMinor: number | null;
+  sellMedianMinor: number | null;
+}

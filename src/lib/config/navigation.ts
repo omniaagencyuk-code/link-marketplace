@@ -22,6 +22,7 @@ import {
   Store,
   ShoppingCart,
   Target,
+  Layers,
   TicketPercent,
   UserCircle,
   Users,
@@ -266,6 +267,7 @@ export const adminNav: NavItem[] = [
   */
   { label: 'Publisher offers', href: '/admin/publisher-offers', icon: Store },
   { label: 'Sales Centre', href: '/admin/sales', icon: Target },
+  { label: 'Package inventory', href: '/admin/packages', icon: Layers },
   /*
     Beside the Sales Centre, which is the outbound half of the same job.
     These are people who wrote to us first, which is why they are not in
