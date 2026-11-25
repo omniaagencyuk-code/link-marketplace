@@ -24,6 +24,26 @@
  * thing `niche-rules.ts` calls replacing an invented figure with a
  * differently invented one.
  */
+/**
+ * The fewest readers a placement we quote a price on may have.
+ *
+ * The table shipped without one and said so immediately: all six tiers read
+ * "$8 / placement", because a single cheap listing with no audience
+ * qualifies for DR10+ and DR60+ alike and the price shown is the cheapest
+ * that qualifies. Six rows carrying one number tell a buyer nothing.
+ *
+ * It is the same fault the packages had before this - a DR 45 listing at
+ * zero organic traffic under a promise of real readers - and the same rule
+ * fixes it. `niche-landing.ts` puts it best: "a publisher with a strong
+ * domain rating and no readers is the thing buyers in this industry are
+ * most often sold". Its own floor of 500 keeps such a listing out of a
+ * sample table; this is a price somebody budgets against, so it is higher.
+ *
+ * It also makes the counts honest. A tier's "sites available" should be
+ * sites worth selling, not every row that clears the rating.
+ */
+export const MIN_READERS = 1_000;
+
 export interface LinkTier {
   /** URL-safe, e.g. `dr30`. */
   slug: string;
