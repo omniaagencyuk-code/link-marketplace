@@ -7,6 +7,7 @@
  */
 import { chunk } from '../src/lib/utils/chunk';
 import { csvCell, csvFilename, toCsv } from '../src/lib/admin/export-csv';
+import { websiteExportColumns } from '../src/lib/admin/website-export';
 import { pageWindow, paginate } from '../src/lib/admin/paging';
 import { BADGE_CAP, badgeLabel } from '../src/lib/admin/badge';
 import {
@@ -374,6 +375,80 @@ is('and neither does a number that is not one', badgeLabel(Number.NaN), null);
 // Counts arrive from a database as integers, but a fractional one should not
 // render as "1.5" in a 20px circle.
 is('a fraction is floored', badgeLabel(1.9), '1');
+
+// ---------------------------------------------------------------------------
+console.log('\n--- what the websites CSV carries ---');
+{
+  /*
+    The file is what somebody reconciles costs from, so the risk is the same
+    one the table has: a topic's cost landing beside another topic's price,
+    or an assumed rate reading like a quoted one. Nothing covered these
+    columns before.
+  */
+  const base = { websiteId: 'w1', turnaroundMinDays: 1, turnaroundMaxDays: 5, available: true };
+  const website = {
+    id: 'w1',
+    domain: 'example.test',
+    title: 'Example',
+    status: 'active',
+    niche: 'business',
+    secondaryNiches: [],
+    language: 'en',
+    verified: true,
+    metrics: { domainRating: 40, organicTraffic: 1000, referringDomains: 10, audienceSplit: [] },
+    rules: { linkAttribute: 'dofollow', acceptedNiches: [] },
+    services: [
+      { ...base, id: 'a', type: 'guest-post', priceMinor: 15500, costPriceMinor: 10900, costCurrency: 'USD' },
+      { ...base, id: 'b', type: 'niche-edit', priceMinor: 9500, costPriceMinor: 5000, costCurrency: 'USD' },
+    ],
+    nichePrices: [
+      { niche: 'gambling', linkType: 'guest-post', priceMinor: 40000, agencyPriceMinor: null },
+    ],
+    headlineService: null,
+  } as unknown as Parameters<ReturnType<typeof websiteExportColumns>[number]['value']>[0];
+
+  const trueCosts = {
+    w1: { '': { 'guest-post': 9313, 'niche-edit': 4300 }, gambling: { 'guest-post': 22000 } },
+  };
+
+  const headersOf = (topic?: string) =>
+    websiteExportColumns(trueCosts, topic).map((column) => column.header);
+  const cell = (topic: string | undefined, header: string) => {
+    const column = websiteExportColumns(trueCosts, topic).find((c) => c.header === header);
+    return column ? String(column.value(website)) : '(no such column)';
+  };
+
+  // No topic chosen: the file is exactly what it always was.
+  is('no topic adds no columns', headersOf().join('|'), headersOf('general').join('|'));
+  is(
+    'and a topic only ever adds to them',
+    headersOf('gambling').slice(0, 0).length === 0 &&
+      headersOf().every((header) => headersOf('gambling').includes(header)),
+    true,
+  );
+
+  is('a topic names its own price column', headersOf('gambling').includes('Gambling and iGaming guest post price'), true);
+  is('and its own cost column', headersOf('gambling').includes('Gambling and iGaming guest post cost'), true);
+
+  // The pairing, in the place it would be hardest to spot.
+  is('the topic price is the topic\u2019s', cell('gambling', 'Gambling and iGaming guest post price'), '400.00');
+  is('and the cost beside it is too', cell('gambling', 'Gambling and iGaming guest post cost'), '220.00');
+
+  // The general columns are untouched by the choice, so a file somebody
+  // already builds a process around does not change under them.
+  is('the general price column is unchanged', cell('gambling', 'Guest post price'), '155.00');
+
+  /*
+    The niche edit was never quoted for gambling, so the publisher's ordinary
+    rate applies - shown, but not counted as quoted.
+  */
+  is('an unquoted placement still carries a figure', cell('gambling', 'Gambling and iGaming niche edit cost'), '43.00');
+  is(
+    'and the file says which were actually quoted',
+    cell('gambling', 'Gambling and iGaming quoted for'),
+    'Guest Post',
+  );
+}
 
 console.log(failed ? `\n  ${failed} FAILED\n` : '\n  all passed\n');
 process.exit(failed ? 1 : 0);

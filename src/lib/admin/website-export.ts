@@ -1,8 +1,8 @@
-import { acceptedNicheLabel } from '@/lib/config/accepted-niches';
+import { GENERAL_NICHE, acceptedNicheLabel } from '@/lib/config/accepted-niches';
 import { nicheName } from '@/lib/data/categories';
 import { countryShortName } from '@/lib/data/countries';
 import { linkTypeLabels } from '@/lib/utils/labels';
-import { placementMargins, worstPlacement, type TrueCostIndex } from '@/lib/utils/margin';
+import { marginFor, placementMargins, worstPlacement, type TrueCostIndex } from '@/lib/utils/margin';
 import type { CsvColumn } from './export-csv';
 import type { LinkTypeSlug, WebsiteListItem } from '@/lib/types';
 
@@ -51,11 +51,85 @@ function topicRates(website: WebsiteListItem): string {
     .join('; ');
 }
 
+/**
+ * The three placements, in the order the rest of the file lists them, with
+ * the wording its existing headers use.
+ *
+ * Spelled out rather than lower-cased from `linkTypeLabels`, which turns
+ * "Digital PR" into "digital pr". The general columns above read "Digital PR
+ * cost", and two spellings of one placement in one file is a column somebody
+ * misses when they search it.
+ */
+const EXPORTED_TYPES: { type: LinkTypeSlug; label: string }[] = [
+  { type: 'guest-post', label: 'guest post' },
+  { type: 'niche-edit', label: 'niche edit' },
+  { type: 'digital-pr', label: 'Digital PR' },
+];
+
+/**
+ * The columns a chosen topic adds.
+ *
+ * The general price and cost columns above stay exactly as they were, so a
+ * file somebody already builds a process around does not change shape when
+ * a topic is picked. These are added beside them.
+ *
+ * Price and cost come from one `marginFor` entry rather than being read from
+ * two places. Pairing a topic's cost with the general price is the mistake
+ * the table's own comment warns about, and a spreadsheet is where it would
+ * be hardest to notice.
+ *
+ * `quoted for` is the honest half. A topic with no rate of its own takes the
+ * publisher's ordinary one - which is the right assumption and is what the
+ * pricing engine does - but it is an assumption, and a column of costs
+ * somebody sets a sell price from should say which figures were actually
+ * quoted.
+ */
+function topicColumns(
+  topic: string,
+  trueCosts: Record<string, TrueCostIndex>,
+): CsvColumn<WebsiteListItem>[] {
+  const label = acceptedNicheLabel(topic);
+
+  const viewed = (website: WebsiteListItem, type: LinkTypeSlug) =>
+    marginFor(placementMargins(website, trueCosts[website.id]), type, topic);
+
+  const columns: CsvColumn<WebsiteListItem>[] = [];
+
+  for (const placement of EXPORTED_TYPES) {
+    columns.push({
+      header: `${label} ${placement.label} price`,
+      value: (w) => major(viewed(w, placement.type)?.margin.priceMinor),
+    });
+    columns.push({
+      header: `${label} ${placement.label} cost`,
+      value: (w) => major(viewed(w, placement.type)?.margin.costMinor),
+    });
+  }
+
+  columns.push({
+    header: `${label} quoted for`,
+    value: (w) =>
+      EXPORTED_TYPES.filter((placement) => viewed(w, placement.type)?.ownRate)
+        .map((placement) => linkTypeLabels[placement.type])
+        .join('; '),
+  });
+
+  return columns;
+}
+
+/**
+ * @param topic A slug from `BUYABLE_TOPICS`, or undefined for the general
+ *   rate alone. Anything else adds that topic's price and cost columns.
+ */
 export function websiteExportColumns(
   trueCosts: Record<string, TrueCostIndex> = {},
+  topic?: string,
 ): CsvColumn<WebsiteListItem>[] {
   const worstFor = (website: WebsiteListItem) =>
     worstPlacement(placementMargins(website, trueCosts[website.id]));
+
+  const forTopic =
+    topic && topic !== GENERAL_NICHE ? topicColumns(topic, trueCosts) : [];
 
   return [
     { header: 'Domain', value: (w) => w.domain },
@@ -81,6 +155,8 @@ export function websiteExportColumns(
     // The publisher's own currency, once. Gluing it to each figure would stop
     // the price columns adding up, which is most of what a spreadsheet is for.
     { header: 'Cost currency', value: (w) => w.costCurrency ?? '' },
+
+    ...forTopic,
 
     // The thinnest margin across everything sellable, topic rates included -
     // the same figure the Margin column shows, so the file and the screen

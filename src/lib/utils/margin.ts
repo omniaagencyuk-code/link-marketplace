@@ -237,6 +237,53 @@ export function placementLabel(margin: PlacementMargin): string {
  * price next to a hundred pounds of profit, which is not a rounding error but
  * two different placements read as one.
  */
+/**
+ * A margin as a particular topic sees it, and whether that topic has a rate
+ * of its own.
+ */
+export interface ViewedMargin {
+  margin: PlacementMargin;
+  /**
+   * The topic is quoted separately, rather than taking the general rate.
+   *
+   * False means the publisher never named a price for this topic, so their
+   * ordinary one applies - the same assumption `placementMargins` makes when
+   * it falls back from a niche cost to the general one. Worth saying out
+   * loud on a screen somebody prices from: a rate we assumed and a rate they
+   * quoted are not the same evidence, even when they are the same number.
+   */
+  ownRate: boolean;
+}
+
+/**
+ * What one placement costs and earns, for one topic.
+ *
+ * `generalMargin` is this with `niche` null, and is kept because most
+ * callers only ever want that. A topic with no line of its own takes the
+ * general one, because `placementMargins` emits a topic line only where the
+ * topic differs - so its absence means the general rate genuinely applies,
+ * not that the answer is unknown.
+ *
+ * Price and cost come back from the same entry, which is the point. Reading
+ * the price off the service and the cost off a topic is how a gambling cost
+ * came to print beside a general price.
+ */
+export function marginFor(
+  margins: PlacementMargin[],
+  type: Service['type'],
+  niche: string | null,
+): ViewedMargin | undefined {
+  if (niche !== null) {
+    const own = margins.find((margin) => margin.type === type && margin.niche === niche);
+    if (own) return { margin: own, ownRate: true };
+  }
+
+  const general = generalMargin(margins, type);
+  if (!general) return undefined;
+
+  return { margin: general, ownRate: niche === null };
+}
+
 export function generalMargin(
   margins: PlacementMargin[],
   type: Service['type'],

@@ -28,6 +28,7 @@ import type { ImportBatchResult, ImportPayloadRow, DuplicateMode } from '@/lib/i
 import type {
   NichePrice,
   NicheSlug,
+  PackageDepthRow,
   Service,
   Website,
   WebsiteListItem,
@@ -495,6 +496,18 @@ interface NicheSampleRow {
   organic_traffic: number | null;
   country: string | null;
   lowest_price_minor: number | null;
+}
+
+interface PackageDepthRaw {
+  niche: string;
+  dr_min: number | string | null;
+  listings: number | string | null;
+  with_cost: number | string | null;
+  cost_currency: string | null;
+  cost_low_minor: number | string | null;
+  cost_median_minor: number | string | null;
+  cost_high_minor: number | string | null;
+  sell_median_minor: number | string | null;
 }
 
 export const supabaseWebsiteRepository = {
@@ -1106,6 +1119,40 @@ export const supabaseWebsiteRepository = {
    *
    * No paging and nothing to cap: one row comes back.
    */
+  /**
+   * Per niche and domain rating tier: how deep the inventory is and what it
+   * costs us. 0098.
+   *
+   * The whole result at once rather than a page of it, which is safe here
+   * and is not a licence to do it elsewhere: the function returns one row
+   * per niche and tier, so a few hundred at most, well inside the thousand
+   * PostgREST silently caps a response at. The reads that had to learn that
+   * the hard way were per listing.
+   */
+  async packageInventoryDepth(trafficMin: number): Promise<PackageDepthRow[]> {
+    const supabase = inventoryClient();
+
+    const { data, error } = await supabase.rpc('package_inventory_depth', {
+      p_traffic_min: trafficMin,
+    });
+    if (error) throw new Error(`Failed to measure the inventory: ${error.message}`);
+
+    return ((data ?? []) as PackageDepthRaw[]).map((row) => ({
+      niche: row.niche,
+      drMin: Number(row.dr_min ?? 0),
+      // Counts arrive as strings over PostgREST on some versions, and a count
+      // compared with `>=` as a string is a comparison nobody meant.
+      listings: Number(row.listings ?? 0),
+      withCost: Number(row.with_cost ?? 0),
+      // Null is the function refusing to mix currencies, not a missing value.
+      costCurrency: row.cost_currency ?? null,
+      costLowMinor: row.cost_low_minor === null ? null : Number(row.cost_low_minor),
+      costMedianMinor: row.cost_median_minor === null ? null : Number(row.cost_median_minor),
+      costHighMinor: row.cost_high_minor === null ? null : Number(row.cost_high_minor),
+      sellMedianMinor: row.sell_median_minor === null ? null : Number(row.sell_median_minor),
+    }));
+  },
+
   async nichePageStats(niche: NicheSlug): Promise<NicheStatsRaw> {
     const supabase = inventoryClient();
 

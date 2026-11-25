@@ -22,6 +22,7 @@ import type { ImportPayloadRow, ImportBatchResult, DuplicateMode } from '@/lib/i
 import type { AcceptedNicheSlug } from '@/lib/types';
 import type { MarketplaceFacets } from '@/lib/types/query';
 import type {
+  PackageDepthRow,
   NicheSlug,
   PaginatedResult,
   Website,
@@ -212,6 +213,28 @@ export const websiteService = {
     if (isSupabaseEnabled()) return supabaseWebsiteRepository.nicheCounts();
 
     return countNiches(publicItems(listItems()));
+  },
+
+  /**
+   * Per niche and rating tier: how deep the inventory is, and what it costs
+   * us. Admin only - it reads `service_costs`.
+   *
+   * ## There is no in-memory half, on purpose
+   *
+   * Every other read here has one, and a clone can demonstrate it. This one
+   * returns an empty list instead, and that is the safer answer rather than
+   * a missing feature. The figures are what a managed package would be
+   * priced against, and a second copy of a costing rule - percentiles, which
+   * services count, when currencies may not be mixed - is the copy that
+   * drifts, and the drifted one would be the one somebody set a fee from.
+   * `planner/summary.ts` records the same decision for the same reason.
+   *
+   * So the rule lives once, in 0098, where the Postgres suite exercises it.
+   */
+  async packageInventoryDepth(trafficMin: number): Promise<PackageDepthRow[]> {
+    if (!isSupabaseEnabled()) return [];
+
+    return supabaseWebsiteRepository.packageInventoryDepth(trafficMin);
   },
 
   /** Every listing including drafts, paused and archived. Admin only. */
