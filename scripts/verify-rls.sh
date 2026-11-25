@@ -241,6 +241,10 @@ run -f "$ROOT/supabase/tests/40_a_niche_page_reads_its_own_niche.sql" 2>&1 | gre
 echo
 echo "--- what a package would cost us ---"
 run -f "$ROOT/supabase/tests/41_what_a_package_would_cost_us.sql" 2>&1 | grep -v '^$'
+
+echo
+echo "--- a tier needs a typical price ---"
+run -f "$ROOT/supabase/tests/42_a_tier_needs_a_typical_price.sql" 2>&1 | grep -v '^$'
 } | tee "$ASSERTIONS"
 
 # ------------------------------------------------------------- the verdict

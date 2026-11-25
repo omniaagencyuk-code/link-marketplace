@@ -29,6 +29,7 @@ import type {
   NichePrice,
   NicheSlug,
   PackageDepthRow,
+  TierBandRow,
   Service,
   Website,
   WebsiteListItem,
@@ -508,6 +509,13 @@ interface PackageDepthRaw {
   cost_median_minor: number | string | null;
   cost_high_minor: number | string | null;
   sell_median_minor: number | string | null;
+}
+
+interface TierBandRaw {
+  dr_min: number | string | null;
+  listings: number | string | null;
+  from_minor: number | string | null;
+  median_minor: number | string | null;
 }
 
 export const supabaseWebsiteRepository = {
@@ -1129,6 +1137,31 @@ export const supabaseWebsiteRepository = {
    * PostgREST silently caps a response at. The reads that had to learn that
    * the hard way were per listing.
    */
+  /**
+   * Per rating tier: how many listings are sellable, the cheapest, and the
+   * median. 0099.
+   *
+   * Six rows, so no paging question. One call replaces the six searches the
+   * page used to make - and the median could not be had from those at all,
+   * because a middle needs every qualifying row and there are thousands.
+   */
+  async tierPriceBands(trafficMin: number): Promise<TierBandRow[]> {
+    const supabase = inventoryClient();
+
+    const { data, error } = await supabase.rpc('tier_price_bands', {
+      p_traffic_min: trafficMin,
+    });
+    if (error) throw new Error(`Failed to price the tiers: ${error.message}`);
+
+    return ((data ?? []) as TierBandRaw[]).map((row) => ({
+      drMin: Number(row.dr_min ?? 0),
+      // Counts arrive as strings over PostgREST on some versions.
+      listings: Number(row.listings ?? 0),
+      fromMinor: row.from_minor === null ? null : Number(row.from_minor),
+      medianMinor: row.median_minor === null ? null : Number(row.median_minor),
+    }));
+  },
+
   async packageInventoryDepth(trafficMin: number): Promise<PackageDepthRow[]> {
     const supabase = inventoryClient();
 

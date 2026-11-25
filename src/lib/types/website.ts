@@ -371,3 +371,19 @@ export interface PackageDepthRow {
   costHighMinor: number | null;
   sellMedianMinor: number | null;
 }
+
+/**
+ * One rating tier's figures, read in a single call.
+ *
+ * `fromMinor` is the cheapest sellable listing at the rating and
+ * `medianMinor` the middle of them. Both are needed: the cheapest is what
+ * "from" honestly means and is the row the marketplace link lands on, but
+ * one cheap listing qualifies for every tier it clears, so a table showing
+ * only that prints the same number six times.
+ */
+export interface TierBandRow {
+  drMin: number;
+  listings: number;
+  fromMinor: number | null;
+  medianMinor: number | null;
+}

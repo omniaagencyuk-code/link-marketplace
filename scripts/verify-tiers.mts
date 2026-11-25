@@ -179,8 +179,25 @@ isTrue(
 
   const service = readFileSync('src/lib/services/tier-offers.ts', 'utf8');
   isTrue(
-    'and the table prints that same figure',
-    service.includes('Math.round(cheapest.headlinePriceMinor / 100)'),
+    'and the per-tier read prints that same figure',
+    service.includes('money(cheapest.headlinePriceMinor)'),
+  );
+
+  /*
+    The other path to the same number. Where there is a database the page
+    takes one read instead of six, and its "from" is `min(headline_price)`
+    over `marketplace_placements` - the function `marketplace_search` itself
+    sorts by. Asserted against the migration because the two paths have to
+    mean the same thing, and only one of them runs from a clone.
+  */
+  const bands = readFileSync('supabase/migrations/0099_a_tier_needs_a_typical_price.sql', 'utf8');
+  isTrue(
+    'and the single read prices from the same rule the search sorts by',
+    bands.includes('marketplace_placements(m.id') && bands.includes('min(s.headline_price)'),
+  );
+  isTrue(
+    'with the middle taken over the same figure',
+    bands.includes('percentile_cont(0.5) within group (order by s.headline_price)'),
   );
 }
 

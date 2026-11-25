@@ -1,5 +1,6 @@
 import { linkTiers } from '@/lib/config/link-tiers';
 import type { LinkTier } from '@/lib/config/link-tiers';
+import { MIN_READERS } from '@/lib/config/link-tiers';
 import { isOffered, tierHref, tierLabel, tierQuery } from '@/lib/tiers/rules';
 import { websiteService } from '@/lib/services/website-service';
 import { currencySymbol, formatNumber } from '@/lib/utils/format';
@@ -19,6 +20,15 @@ export interface TierOffer {
   popular: boolean;
   /** e.g. "$96" - the cheapest listing at this rating right now. */
   fromPrice: string;
+  /**
+   * e.g. "$240" - the middle of them, or null where it cannot be had.
+   *
+   * The reason this exists. "From" is true and is the row the link lands
+   * on, but one cheap listing qualifies for every tier it clears, so a
+   * table showing only the cheapest printed the same figure on all six
+   * rows - twice, before this was added.
+   */
+  typicalPrice: string | null;
   /** e.g. "2,431" - how many listings qualify. */
   sites: string;
   /** The marketplace, filtered and sorted exactly as this row was priced. */
@@ -61,7 +71,10 @@ export async function tierOffer(tier: LinkTier): Promise<TierOffer | null> {
       floor rather than a quotation and cents imply a precision the
       marketplace reprices out from under it.
     */
-    fromPrice: `${currencySymbol()}${formatNumber(Math.round(cheapest.headlinePriceMinor / 100))}`,
+    fromPrice: money(cheapest.headlinePriceMinor),
+    // A clone has no median to offer, and the column is dropped rather than
+    // filled with the figure beside it.
+    typicalPrice: null,
     sites: formatNumber(total),
     browseHref: tierHref(tier),
   };
@@ -75,7 +88,50 @@ export async function tierOffer(tier: LinkTier): Promise<TierOffer | null> {
  * /guest-posts spent a month timing out reading the whole inventory to
  * describe part of it.
  */
+/** Minor units as the page prints them: whole, with the brand's symbol. */
+function money(minor: number): string {
+  return `${currencySymbol()}${formatNumber(Math.round(minor / 100))}`;
+}
+
+/**
+ * Every tier worth quoting, weakest rating first.
+ *
+ * One read where there is a database: `tier_price_bands` answers for all
+ * six at once, and it is the only way to get a median at all - a middle
+ * needs every qualifying row, and there are thousands. It also takes the
+ * page from six round trips to one, which on this infrastructure is the
+ * difference the region pinning in `vercel.json` was done for.
+ *
+ * The per-tier read below is what a clone falls back to. It can produce the
+ * count and the cheapest but not the middle, so those offers carry no
+ * typical price and the column is left out rather than filled with the
+ * number next to it.
+ */
 export async function tierOffers(): Promise<TierOffer[]> {
+  const bands = await websiteService.tierPriceBands(MIN_READERS);
+
+  if (bands.length > 0) {
+    const byRating = new Map(bands.map((band) => [band.drMin, band]));
+
+    return linkTiers.flatMap((tier) => {
+      const band = byRating.get(tier.drMin);
+      if (!band || !isOffered(band.listings) || band.fromMinor === null) return [];
+
+      return [
+        {
+          slug: tier.slug,
+          label: tierLabel(tier),
+          drMin: tier.drMin,
+          popular: tier.popular === true,
+          fromPrice: money(band.fromMinor),
+          typicalPrice: band.medianMinor === null ? null : money(band.medianMinor),
+          sites: formatNumber(band.listings),
+          browseHref: tierHref(tier),
+        },
+      ];
+    });
+  }
+
   const offers = await Promise.all(linkTiers.map((tier) => tierOffer(tier)));
 
   return offers.filter((offer): offer is TierOffer => offer !== null);
