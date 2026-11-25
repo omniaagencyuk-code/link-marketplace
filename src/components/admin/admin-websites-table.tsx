@@ -50,12 +50,12 @@ import {
   groupSkipped,
   type BulkProgress,
 } from '@/lib/admin/bulk';
-import { acceptedNicheLabel } from '@/lib/config/accepted-niches';
+import { BUYABLE_TOPICS, GENERAL_NICHE, acceptedNicheLabel } from '@/lib/config/accepted-niches';
 import { nicheName } from '@/lib/data/categories';
 import { countryShortNameOrUnknown, countrySourceLabel } from '@/lib/data/countries';
 import { formatCompactNumber, formatPrice, formatTurnaround } from '@/lib/utils/format';
 import {
-  generalMargin,
+  marginFor,
   losingPlacements,
   placementLabel,
   placementMargins,
@@ -127,6 +127,18 @@ export function AdminWebsitesTable({ initialSearch = '' }: { initialSearch?: str
   const [pending, startTransition] = useTransition();
   /** Live counts while a bulk action is running, so the bar means something. */
   const [progress, setProgress] = useState<BulkProgress | null>(null);
+  /**
+   * Which topic's rates the money columns show.
+   *
+   * Only `BUYABLE_TOPICS` - general and the seven sensitive ones - because
+   * those are the topics a publisher quotes apart. Offering Finance or
+   * Pharma here would invite reading a rate for a topic nobody was ever
+   * quoted for, which is the invention `accepted-niches` keeps them out of
+   * `BUYABLE_TOPICS` to prevent.
+   */
+  const [costTopic, setCostTopic] = useState<string>(GENERAL_NICHE);
+  /** Null is how `marginFor` spells the general rate. */
+  const viewedTopic = costTopic === GENERAL_NICHE ? null : costTopic;
   const [onlyLosing, setOnlyLosing] = useState(false);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState<PageSize>(DEFAULT_PAGE_SIZE);
@@ -487,14 +499,52 @@ export function AdminWebsitesTable({ initialSearch = '' }: { initialSearch?: str
     const service = website.services.find((candidate) => candidate.type === type);
     if (!service) return <span className="text-muted">&mdash;</span>;
 
-    // By topic as well as placement: this column is the general rate, and a
-    // listing with no general cost but a gambling one would otherwise print
-    // the gambling cost beside the general price.
-    const margin = generalMargin(marginsFor(website), service.type);
+    /*
+      By topic as well as placement. A listing with no general cost but a
+      gambling one would otherwise print the gambling cost beside the
+      general price, which is why the price below comes from the same entry
+      as the cost rather than straight off the service.
+    */
+    const viewed = marginFor(marginsFor(website), service.type, viewedTopic);
+    const margin = viewed?.margin;
+
+    /*
+      A topic can be priced apart without being costed apart, and then there
+      is no margin entry to read the price from - `placementMargins` emits
+      one only where it can work out a cost. The override still belongs on
+      screen, so it is looked up directly for that case.
+    */
+    const override = viewedTopic
+      ? website.nichePrices.find(
+          (price) =>
+            price.niche === viewedTopic &&
+            price.linkType === service.type &&
+            price.priceMinor > 0,
+        )
+      : undefined;
+
+    const priceMinor = margin?.priceMinor ?? override?.priceMinor ?? service.priceMinor;
 
     return (
       <>
-        <span className="block text-ink-soft">{formatPrice(service.priceMinor)}</span>
+        <span className="block text-ink-soft">
+          {formatPrice(priceMinor)}
+          {/*
+            The publisher never quoted this topic, so their ordinary rate is
+            what applies. That is the right assumption and the one the
+            pricing engine makes - but a rate we assumed and a rate they
+            gave us are different evidence, and this is a screen people set
+            sell prices from.
+          */}
+          {viewed && viewedTopic && !viewed.ownRate ? (
+            <span
+              className="ml-1 text-[11px] font-normal text-muted"
+              title={`${acceptedNicheLabel(viewedTopic)} has no rate of its own here, so the general rate is shown.`}
+            >
+              general
+            </span>
+          ) : null}
+        </span>
         {!margin ? (
           /*
             Two different states, and they used to read the same.
@@ -666,7 +716,7 @@ export function AdminWebsitesTable({ initialSearch = '' }: { initialSearch?: str
 
       downloadTextFile(
         csvFilename('press-parrot-websites'),
-        toCsv(chosen, websiteExportColumns(costs)),
+        toCsv(chosen, websiteExportColumns(costs, costTopic)),
       );
       setResult({
         changed: chosen.length,
@@ -833,6 +883,31 @@ export function AdminWebsitesTable({ initialSearch = '' }: { initialSearch?: str
           >
             <option value="any">Any category</option>
             <option value="none">Not categorised</option>
+          </Select>
+        </div>
+        <div className="w-44">
+          <label htmlFor="admin-cost-topic" className="sr-only">
+            Show rates for topic
+          </label>
+          {/*
+            Not a filter: it changes which rates the money columns show, and
+            narrows nothing. It does not go through `filterTo` for that
+            reason - there is no new query to run, and resetting the page
+            would lose somebody's place for a change of units.
+          */}
+          <Select
+            id="admin-cost-topic"
+            size="sm"
+            value={costTopic}
+            onChange={(event) => setCostTopic(event.target.value)}
+          >
+            {BUYABLE_TOPICS.map((topic) => (
+              <option key={topic} value={topic}>
+                {topic === GENERAL_NICHE
+                  ? 'General rates'
+                  : `${acceptedNicheLabel(topic)} rates`}
+              </option>
+            ))}
           </Select>
         </div>
         <p className="tabular text-[13px] text-muted">

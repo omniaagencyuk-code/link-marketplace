@@ -22,6 +22,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import {
   generalMargin,
+  marginFor,
   losingPlacements,
   marginBlock,
   placementLabel,
@@ -595,6 +596,71 @@ console.log('\n--- the admin table, per placement and in our own money ---');
   is('and the other falls back to the raw cost', halfPriced[1]?.costMinor, 5000);
   is('which is marked as not the engine\u2019s', halfPriced[1]?.converted, false);
   is('a site the engine has never seen still shows both', placementMargins(site, undefined).length, 2);
+
+  // -------------------------------------------------------------------------
+  // Which topic's rates a screen is showing.
+  //
+  // The admin table and the CSV both let somebody pick a topic. The risk is
+  // not arithmetic - it is pairing one topic's cost with another's price, and
+  // showing a rate nobody quoted as though they had.
+  // -------------------------------------------------------------------------
+  {
+    const priced = {
+      services: site.services,
+      nichePrices: [
+        { niche: 'gambling', linkType: 'guest-post' as const, priceMinor: 40000, agencyPriceMinor: null },
+      ],
+    };
+    // Gambling costs more to place and sells for more; the niche edit has no
+    // gambling rate at all, which is the ordinary case.
+    const withGambling = placementMargins(priced, {
+      '': { 'guest-post': 9313, 'niche-edit': 4300 },
+      gambling: { 'guest-post': 22000 },
+    });
+
+    const general = marginFor(withGambling, 'guest-post', null);
+    is('the general view is the general rate', general?.margin.costMinor, 9313);
+    is('and says so', general?.ownRate, true);
+
+    const gambling = marginFor(withGambling, 'guest-post', 'gambling');
+    is('a topic with its own rate reports that cost', gambling?.margin.costMinor, 22000);
+    is('and the price that goes with it', gambling?.margin.priceMinor, 40000);
+    is('marked as the publisher\u2019s own rate', gambling?.ownRate, true);
+
+    /*
+      The pairing that matters. Reading the price off the service and the
+      cost off the topic would show 155.00 against a 220.00 cost - a listing
+      that looks like it loses money on every gambling placement, when in
+      fact it sells them at 400.00.
+    */
+    is(
+      'price and cost come from the same entry',
+      gambling?.margin.priceMinor !== general?.margin.priceMinor &&
+        gambling?.margin.costMinor !== general?.margin.costMinor,
+      true,
+    );
+
+    /*
+      The honest half. A publisher who never quoted CBD charges their
+      ordinary rate for it - the same assumption the engine makes - so the
+      general figures are shown, and `ownRate` says they were not quoted.
+    */
+    const cbd = marginFor(withGambling, 'guest-post', 'cbd');
+    is('a topic with no rate of its own falls back', cbd?.margin.costMinor, 9313);
+    is('and is not passed off as quoted', cbd?.ownRate, false);
+
+    // Same listing, the placement gambling was never quoted for.
+    const gamblingEdit = marginFor(withGambling, 'niche-edit', 'gambling');
+    is('a placement the topic never touched falls back too', gamblingEdit?.margin.costMinor, 4300);
+    is('and is marked as such', gamblingEdit?.ownRate, false);
+
+    // Nothing to show is undefined, not a zero-cost placement.
+    is(
+      'a placement with no usable cost has no margin at all',
+      marginFor(placementMargins({ services: [], nichePrices: [] }), 'guest-post', 'gambling'),
+      undefined,
+    );
+  }
 
   // A cost in a currency we do not sell in is left out entirely rather than
   // subtracted anyway. Subtracting 109 pounds from 155 dollars produces a
