@@ -23,6 +23,7 @@ import type { AcceptedNicheSlug } from '@/lib/types';
 import type { MarketplaceFacets } from '@/lib/types/query';
 import type {
   PackageDepthRow,
+  TierBandRow,
   NicheSlug,
   PaginatedResult,
   Website,
@@ -231,6 +232,17 @@ export const websiteService = {
    *
    * So the rule lives once, in 0098, where the Postgres suite exercises it.
    */
+  /**
+   * Per rating tier: how many listings are sellable, the cheapest and the
+   * median. Empty from a clone, where the page falls back to asking per
+   * tier and shows no median.
+   */
+  async tierPriceBands(trafficMin: number): Promise<TierBandRow[]> {
+    if (!isSupabaseEnabled()) return [];
+
+    return supabaseWebsiteRepository.tierPriceBands(trafficMin);
+  },
+
   async packageInventoryDepth(trafficMin: number): Promise<PackageDepthRow[]> {
     if (!isSupabaseEnabled()) return [];
 

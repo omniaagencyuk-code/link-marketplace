@@ -51,6 +51,12 @@ export const metadata: Metadata = {
 
 export default async function LinkBuildingPackagesPage() {
   const tiers = await tierOffers();
+  /*
+    The column is dropped rather than left blank where no median can be had
+    - a clone has none. An empty column under a heading reads as missing
+    data about the listings; no column reads as the page not offering that.
+  */
+  const showTypical = tiers.some((tier) => tier.typicalPrice !== null);
 
   return (
     <>
@@ -65,7 +71,9 @@ export default async function LinkBuildingPackagesPage() {
           </p>
           <p className="mt-3 max-w-2xl text-[14px] leading-relaxed text-muted">
             Prices are per placement and read from live listings, so they move as publishers
-            change their rates. Each is the lowest at that rating, not an average.
+            change their rates. <strong>From</strong> is the cheapest site at that rating and
+            <strong> Typical</strong> is the middle one — worth reading together, because the
+            cheapest site in the marketplace clears most of these ratings.
           </p>
         </Container>
       </section>
@@ -99,7 +107,13 @@ export default async function LinkBuildingPackagesPage() {
                 </caption>
                 <thead className="bg-surface">
                   <tr>
-                    {['Domain rating', 'Sites available', 'From', ''].map((head) => (
+                    {[
+                      'Domain rating',
+                      'Sites available',
+                      'From',
+                      ...(showTypical ? ['Typical'] : []),
+                      '',
+                    ].map((head) => (
                       <th
                         key={head}
                         scope="col"
@@ -127,11 +141,16 @@ export default async function LinkBuildingPackagesPage() {
                         {tier.sites}
                       </td>
                       <td className="tabular px-4 py-4">
-                        <span className="text-[16px] font-semibold text-ink">
-                          {tier.fromPrice}
-                        </span>
-                        <span className="ml-1 text-[13px] text-muted">/ placement</span>
+                        <span className="text-[16px] text-ink-soft">{tier.fromPrice}</span>
                       </td>
+                      {showTypical ? (
+                        <td className="tabular px-4 py-4">
+                          <span className="text-[16px] font-semibold text-ink">
+                            {tier.typicalPrice ?? '\u2014'}
+                          </span>
+                          <span className="ml-1 text-[13px] text-muted">/ placement</span>
+                        </td>
+                      ) : null}
                       <td className="px-4 py-4">
                         <Button asChild size="sm" variant="outline">
                           <Link href={tier.browseHref}>
