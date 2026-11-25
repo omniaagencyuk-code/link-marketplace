@@ -1,7 +1,7 @@
 import { serialise, toWebsiteQuery } from '@/lib/marketplace/filters';
 import type { MarketplaceFilters } from '@/lib/marketplace/filters';
 import { emptyFilters } from '@/lib/marketplace/filters';
-import type { LinkTier } from '@/lib/config/link-tiers';
+import { MIN_READERS, type LinkTier } from '@/lib/config/link-tiers';
 import type { WebsiteQuery } from '@/lib/types';
 
 /**
@@ -24,7 +24,7 @@ export const MIN_SITES_FOR_A_TIER = 10;
 
 /** The filters a tier stands for - also what its link carries. */
 export function tierFilters(tier: LinkTier): MarketplaceFilters {
-  return { ...emptyFilters, drMin: tier.drMin };
+  return { ...emptyFilters, drMin: tier.drMin, trafficMin: MIN_READERS };
 }
 
 /**

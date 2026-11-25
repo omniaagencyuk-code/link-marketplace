@@ -16,7 +16,7 @@ import {
   tierLabel,
   tierQuery,
 } from '../src/lib/tiers/rules';
-import { linkTiers } from '../src/lib/config/link-tiers';
+import { MIN_READERS, linkTiers } from '../src/lib/config/link-tiers';
 import type { LinkTier } from '../src/lib/config/link-tiers';
 import { parseFilters } from '../src/lib/marketplace/filters';
 import { runQuery, toListItem } from '../src/lib/services/query-engine';
@@ -114,6 +114,16 @@ is('from the first page', query.page, 1);
 is('cheapest first', query.sort, 'price-asc');
 is('and unbuyable listings are excluded by a floor of one minor unit', query.price?.min, 1);
 
+/*
+  A readers floor, and the table said loudly what happens without one: all
+  six tiers printed "$8 / placement", because one cheap listing with no
+  audience qualifies for DR10+ and DR60+ alike and the price shown is the
+  cheapest that qualifies. Six rows carrying one number are six rows saying
+  nothing.
+*/
+is('a tier only counts listings with readers', query.organicTraffic?.min, MIN_READERS);
+isTrue('and the floor is a real number', MIN_READERS > 0);
+
 // ---------------------------------------------------------------------------
 console.log('\n--- the price and the link cannot disagree ---');
 
@@ -136,6 +146,20 @@ isTrue(
   linkTiers.every((shipped) => {
     const restored = parseFilters(new URLSearchParams(tierHref(shipped).split('?')[1] ?? ''));
     return restored.drMin === shipped.drMin && restored.drMax === undefined;
+  }),
+);
+
+/*
+  And the readers floor goes with it. The count and the price describe
+  listings above the floor; a link that dropped it would land the buyer on a
+  longer, cheaper list than the row they clicked - the page and its own
+  destination disagreeing, which is what this whole section exists to stop.
+*/
+isTrue(
+  'and carries the readers floor the count was taken at',
+  linkTiers.every((shipped) => {
+    const restored = parseFilters(new URLSearchParams(tierHref(shipped).split('?')[1] ?? ''));
+    return restored.trafficMin === MIN_READERS;
   }),
 );
 
@@ -175,6 +199,16 @@ const shelf = [
 const taken = runQuery(shelf, { ...tierQuery(tier), pageSize: 50 });
 
 is('a listing below the rating is left out', taken.items.some((i) => i.metrics.domainRating === 29), false);
+is(
+  'a listing with no readers is left out however strong it is',
+  runQuery(
+    [...shelf, site(95, [{ type: 'guest-post', price: 800, available: true }])].map((item) =>
+      item.metrics.domainRating === 95 ? { ...item, metrics: { ...item.metrics, organicTraffic: 0 } } : item,
+    ),
+    { ...tierQuery(tier), pageSize: 50 },
+  ).items.some((i) => i.metrics.domainRating === 95),
+  false,
+);
 is('one at the rating or above is taken', taken.total, 3);
 is('a listing whose every service is paused is not for sale', taken.items.some((i) => i.metrics.domainRating === 60), false);
 is('nor is one with no services at all', taken.items.some((i) => i.metrics.domainRating === 55), false);
