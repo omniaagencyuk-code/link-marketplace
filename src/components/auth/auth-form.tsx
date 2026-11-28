@@ -1,18 +1,12 @@
 'use client';
 
 import Link from 'next/link';
-import { useActionState } from 'react';
-import { useFormStatus } from 'react-dom';
+import { useRouter } from 'next/navigation';
+import { useState, type FormEvent } from 'react';
 import { AlertCircle, ArrowRight, CheckCircle2, Info } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import {
-  signInAction,
-  signInWithGoogleAction,
-  signUpAction,
-  type AuthActionState,
-} from '@/app/(auth)/actions';
 import { isSupabaseEnabled } from '@/lib/supabase/config';
 import { isGoogleAuthEnabled } from '@/lib/auth/google';
 import { brand } from '@/lib/config/brand';
@@ -21,21 +15,103 @@ import { leadsToInventory } from '@/lib/marketplace/entry';
 /**
  * Login and signup UI.
  *
- * Restyled, not rewired. It still posts to the same two server actions, which
- * still issue the same signed session cookie and still carry `next` through
- * so signing in returns somebody to the page they were trying to reach. The
- * rate limits, the deliberately vague credential errors and the
- * confirm-your-email path are untouched - this component never knew how any
- * of that worked and still does not.
+ * ## Why this is a form and not a server action
+ *
+ * It was `useActionState` over two server actions, and that is what broke it.
+ * A server action is addressed by an id Next.js bakes into the client bundle
+ * at build time, so a deploy invalidates every page already open in
+ * somebody's browser: the next submit posts an id the new deployment has
+ * never heard of, Next refuses it with "Failed to find Server Action", and
+ * the person sees a form that does nothing at all. On /signup that happened
+ * twelve times between 28 October and 27 November, and it would have
+ * happened on every deploy after that - the one page where a shrug costs an
+ * account.
+ *
+ * So this posts to `/api/auth/sign-in` and `/api/auth/sign-up`, which are
+ * URLs. A URL survives a deploy. The rule behind them did not move far:
+ * `src/lib/auth/credentials.ts` holds the one copy of it, still issues the
+ * same signed session cookie, still throttles before checking a password,
+ * still keeps the deliberately vague credential errors and the
+ * confirm-your-email path.
+ *
+ * ## It is a real form first
+ *
+ * `method="post"` and an `action` a browser understands, enhanced by
+ * `onSubmit` rather than replaced by it - the arrangement `ResourceFilters`
+ * uses for the resources filter, for the same reason. Submitted without
+ * JavaScript the browser posts it and follows a redirect back here with the
+ * reason in the query string, which is strictly more than it managed before:
+ * `useActionState` could run the action but had nowhere to render what came
+ * back, so a failure with JavaScript off was a silent one.
+ *
+ * With JavaScript the fetch keeps the typed password in the fields while the
+ * message appears beside it, which a redirect cannot do.
  */
-export function AuthForm({ mode, next }: { mode: 'login' | 'signup'; next?: string }) {
+
+/** A message to show before anybody has submitted anything - see the pages. */
+export interface AuthFormMessage {
+  error?: string;
+  notice?: string;
+}
+
+const ENDPOINT = {
+  login: '/api/auth/sign-in',
+  signup: '/api/auth/sign-up',
+} as const;
+
+export function AuthForm({
+  mode,
+  next,
+  initial,
+}: {
+  mode: 'login' | 'signup';
+  next?: string;
+  /** Resolved by the page from `?failed=` or `?notice=`, for the no-JavaScript path. */
+  initial?: AuthFormMessage;
+}) {
   const isSignup = mode === 'signup';
-  const [state, formAction] = useActionState<AuthActionState, FormData>(
-    isSignup ? signUpAction : signInAction,
-    {},
-  );
+  const router = useRouter();
+  const [message, setMessage] = useState<AuthFormMessage>(initial ?? {});
+  const [pending, setPending] = useState(false);
 
   const withNext = (path: string) => (next ? `${path}?next=${encodeURIComponent(next)}` : path);
+
+  async function onSubmit(event: FormEvent<HTMLFormElement>) {
+    const form = event.currentTarget;
+    event.preventDefault();
+    setPending(true);
+    setMessage({});
+
+    try {
+      const response = await fetch(form.action, {
+        method: 'POST',
+        headers: { Accept: 'application/json' },
+        body: new FormData(form),
+        credentials: 'same-origin',
+      });
+      const body = (await response.json()) as AuthFormMessage & { next?: string };
+
+      if (body.next) {
+        /*
+          A soft navigation, which is what the server action's `redirect()`
+          produced. `AuthProvider` re-asks /api/me when the path changes
+          while nobody is signed in, so this is what makes the header catch
+          up; the refresh is for the layout the route handler revalidated.
+        */
+        router.push(body.next);
+        router.refresh();
+        return;
+      }
+
+      setMessage({ error: body.error, notice: body.notice });
+    } catch {
+      // A failed request is not a wrong password, and saying so would send
+      // somebody looking for a typo that is not there.
+      setMessage({ error: 'Could not reach the server. Check your connection and try again.' });
+    }
+
+    setPending(false);
+  }
 
   return (
     <div>
@@ -57,7 +133,12 @@ export function AuthForm({ mode, next }: { mode: 'login' | 'signup'; next?: stri
         </p>
       ) : null}
 
-      <form action={formAction} className="mt-7 space-y-4">
+      <form
+        method="post"
+        action={ENDPOINT[mode]}
+        onSubmit={onSubmit}
+        className="mt-7 space-y-4"
+      >
         {next ? <input type="hidden" name="next" value={next} /> : null}
 
         {isSignup ? (
@@ -115,27 +196,36 @@ export function AuthForm({ mode, next }: { mode: 'login' | 'signup'; next?: stri
           ) : null}
         </div>
 
-        {state.notice ? (
+        {message.notice ? (
           <p
             role="status"
             className="flex gap-2 rounded-lg border border-accent-500/30 bg-accent-50 px-3.5 py-2.5 text-[13px] text-accent-800"
           >
             <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-            {state.notice}
+            {message.notice}
           </p>
         ) : null}
 
-        {state.error ? (
+        {message.error ? (
           <p
             role="alert"
             className="flex gap-2 rounded-lg border border-negative/30 bg-negative/5 px-3.5 py-2.5 text-[13px] text-negative"
           >
             <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-            {state.error}
+            {message.error}
           </p>
         ) : null}
 
-        <SubmitButton label={isSignup ? 'Create free account' : 'Log in'} />
+        <Button
+          type="submit"
+          variant="accent"
+          size="lg"
+          className="w-full"
+          disabled={pending}
+        >
+          {pending ? 'Please wait...' : isSignup ? 'Create free account' : 'Log in'}
+          {pending ? null : <ArrowRight className="h-4 w-4" aria-hidden="true" />}
+        </Button>
       </form>
 
       <GoogleButton next={next} />
@@ -171,6 +261,10 @@ export function AuthForm({ mode, next }: { mode: 'login' | 'signup'; next?: stri
  * configured gets neither a button nor an orphaned "or" dividing a form from
  * nothing. Today that is every deployment: see `src/lib/auth/google.ts` for
  * what has to be true before it appears.
+ *
+ * Not enhanced with `fetch`, unlike the form above: the whole point of it is
+ * to navigate away to Google, so a plain POST and a redirect is the right
+ * shape and there is no message to render in place.
  */
 function GoogleButton({ next }: { next?: string }) {
   if (!isGoogleAuthEnabled()) return null;
@@ -184,7 +278,7 @@ function GoogleButton({ next }: { next?: string }) {
       </div>
 
       {/* Its own form: a second submit button cannot live inside the credentials one. */}
-      <form action={signInWithGoogleAction}>
+      <form method="post" action="/api/auth/google">
         {next ? <input type="hidden" name="next" value={next} /> : null}
         <Button type="submit" variant="outline" size="lg" className="w-full gap-2.5">
           <GoogleMark />
@@ -216,15 +310,5 @@ function GoogleMark() {
         d="M24 9.5c3.23 0 6.13 1.11 8.41 3.29l6.31-6.31C34.91 2.92 29.93 1 24 1 15.4 1 7.96 5.94 4.34 13.11l7.35 5.7C13.42 13.62 18.27 9.5 24 9.5Z"
       />
     </svg>
-  );
-}
-
-function SubmitButton({ label }: { label: string }) {
-  const { pending } = useFormStatus();
-  return (
-    <Button type="submit" variant="accent" size="lg" className="w-full" disabled={pending}>
-      {pending ? 'Please wait...' : label}
-      {pending ? null : <ArrowRight className="h-4 w-4" aria-hidden="true" />}
-    </Button>
   );
 }

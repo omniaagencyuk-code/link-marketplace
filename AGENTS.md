@@ -530,6 +530,49 @@ only bite once.
   shows a signing secret once - so the last verified delivery is reported
   beside it as the only proof there is.
 
+## Getting into the product
+
+Sign-in and sign-up post to `/api/auth/sign-in` and `/api/auth/sign-up`. They
+were server actions and the move is not a preference: a server action is
+addressed by an id Next.js bakes into the client bundle at build time, so a
+deploy invalidates every page a browser already has open. The next submit
+posts an id the new deployment has never heard of, Next refuses it with
+"Failed to find Server Action", and the person sees a form that does nothing
+at all. Twelve of those on /signup between 28 October and 27 November - the
+one page in the application where a shrug costs an account.
+
+- **A URL survives a deploy.** Nothing on the way in may be reached by an
+  action id. `signOutAction` and the two password forms are still actions,
+  which is a known debt rather than a distinction: neither has shown a
+  refusal, and moving them is a change to make on its own.
+- **One copy of the rule.** `src/lib/auth/credentials.ts`. Sign-in and
+  sign-up differ in four lines and agree about everything that matters - the
+  throttle counted *before* the password is checked, the refusal on a live
+  demo deployment, where a `next` may point - and two copies of that is one
+  copy that stops being true. `src/lib/auth/messages.ts` is the copy, kept
+  apart from it so a page can turn a code back into a sentence without
+  importing cookies and the user service.
+- **The origin check was free and now is not.** A server action verified the
+  posting origin; a route handler does not. Every route under
+  `src/app/api/auth/` opens with `sameOrigin`, and `verify:access` counts
+  that against the directory rather than a list, so a fourth route has to
+  have it too. What it refuses is login CSRF - somebody else's page posting
+  the attacker's credentials here, signing a visitor into an account the
+  attacker reads - which needs none of the victim's secrets.
+- **Codes travel, sentences do not.** A submit with JavaScript off comes back
+  as a redirect, and anything in that URL was chosen by whoever wrote the
+  link. React escapes it, so this is not about scripting: it is that
+  `?failed=Your%20account%20is%20suspended,%20email...` on our own login page
+  is a phishing kit we would be hosting. `AUTH_MESSAGES` is closed and an
+  unknown code prints nothing.
+- **It is a real form, enhanced.** `method="post"` and an `action` a browser
+  understands, with `onSubmit` on top - the arrangement `ResourceFilters`
+  uses. Without JavaScript the browser posts it and follows the redirect,
+  which is more than it managed before: `useActionState` could run the action
+  but had nowhere to render what came back, so a failure was silent. With
+  JavaScript the fetch keeps the typed password in the field while the
+  message appears beside it, which a redirect cannot do.
+
 ## Where it runs
 
 The functions run in `lhr1` and the database is in London. They have to match,

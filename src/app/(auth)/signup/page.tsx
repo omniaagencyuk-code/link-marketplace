@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation';
 import { AuthForm } from '@/components/auth/auth-form';
 import { getCurrentUser } from '@/lib/auth/customer-access';
 import { safeReturnPath } from '@/lib/auth/return-to';
+import { authMessage } from '@/lib/auth/messages';
 
 export const metadata: Metadata = {
   title: 'Create a free account',
@@ -17,8 +18,20 @@ export default async function SignupPage({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  const next = safeReturnPath((await searchParams).next);
+  const params = await searchParams;
+  const next = safeReturnPath(params.next);
   if (await getCurrentUser()) redirect(next ?? '/dashboard');
 
-  return <AuthForm mode="signup" next={next} />;
+  /*
+    `?failed=` and `?notice=` are how /api/auth/sign-up answers a browser
+    that cannot render the message itself - a submit with JavaScript off.
+    Codes, never sentences: see `src/lib/auth/messages.ts`.
+  */
+  return (
+    <AuthForm
+      mode="signup"
+      next={next}
+      initial={{ error: authMessage(params.failed), notice: authMessage(params.notice) }}
+    />
+  );
 }

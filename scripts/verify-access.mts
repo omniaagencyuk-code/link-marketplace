@@ -7,7 +7,7 @@
  * shows them the same thing more politely. Neither announces itself, and both
  * are found by a competitor rather than by us.
  */
-import { readFileSync, readdirSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { safeReturnPath, returnPathFor } from '../src/lib/auth/return-to';
 import { leadsToInventory, signupFor } from '../src/lib/marketplace/entry';
 import {
@@ -1011,17 +1011,71 @@ console.log('\n--- the live site cannot serve demo data quietly ---');
   is('a preview on the mock store does not', deployment.isServingDemoDataLive(), false);
 
   /*
-    `signInAction` is the one that matters, and it cannot be imported here -
-    it is a server action behind 'use server'. So the assertion is that the
-    refusal is wired to the same question, in both branches that can issue a
-    mock session.
+    And the refusal itself, asked rather than read.
+
+    This was a count of two string matches in `actions.ts`, because
+    `signInAction` was a server action and could not be imported. Sign-in and
+    sign-up now share one path to a mock session - `mockCredentials` - and
+    the live-site question is the first thing in it, before cookies and
+    before the user service, so the refusal can be called for real.
   */
-  const actions = read('src/app/(auth)/actions.ts');
-  is(
-    'both mock-session branches refuse on the live site',
-    (actions.match(/isServingDemoDataLive\(\)\) return \{ error: demoAuthRefused \}/g) ?? []).length,
-    2,
+  const { mockCredentials } = await import('../src/lib/auth/credentials');
+  const wasSecret = process.env.AUTH_SESSION_SECRET;
+  const wasAdminSecret = process.env.ADMIN_SESSION_SECRET;
+  const wasNodeEnv = process.env.NODE_ENV;
+  /*
+    Both secrets gone and a production build, for the whole block.
+
+    Not tidiness: it is what keeps a broken guard an assertion rather than a
+    stack trace. With a secret available, dropping the demo check lets
+    `mockCredentials` run on to the user service and `cookies()`, which
+    throws outside a request - the run fails, but it fails with a crash and
+    nothing saying which rule went. Fail closed at the second check instead
+    and the first one's assertion prints false, which is the whole point of
+    phrasing them so that passing prints true.
+  */
+  delete process.env.AUTH_SESSION_SECRET;
+  delete process.env.ADMIN_SESSION_SECRET;
+  process.env.NODE_ENV = 'production';
+
+  process.env.VERCEL_ENV = 'production';
+  delete process.env.NEXT_PUBLIC_DATA_SOURCE;
+  const onLive = await mockCredentials('stranger@example.com');
+  yes('the live site refuses a mock session', onLive?.kind === 'error');
+  yes(
+    'and names what to set rather than just saying no',
+    (onLive?.kind === 'error' ? onLive.message : '').includes(deployment.DEMO_DATA_MESSAGE),
   );
+
+  /*
+    The second refusal, which is a different sentence naming a different fix.
+
+    `customerSessionSecret` falls back to a fixed development value outside
+    production, which is what lets the app run from a clone - so the case
+    worth asserting is the one that fallback deliberately does not cover: a
+    production build with neither variable set. It must refuse and it must
+    say which variable to add, because the alternative is a sign-in button
+    that fails with nothing to act on.
+  */
+  process.env.VERCEL_ENV = 'preview';
+
+  const unconfigured = await mockCredentials('stranger@example.com');
+  yes('a build with no session secret refuses too', unconfigured?.kind === 'error');
+  yes(
+    'and names the variable rather than the demo data',
+    (unconfigured?.kind === 'error' ? unconfigured.message : '').includes('AUTH_SESSION_SECRET'),
+  );
+  yes(
+    'which is not the demo refusal wearing a different hat',
+    unconfigured?.kind === 'error' && !unconfigured.message.includes(deployment.DEMO_DATA_MESSAGE),
+  );
+
+  if (wasSecret === undefined) delete process.env.AUTH_SESSION_SECRET;
+  else process.env.AUTH_SESSION_SECRET = wasSecret;
+  if (wasAdminSecret === undefined) delete process.env.ADMIN_SESSION_SECRET;
+  else process.env.ADMIN_SESSION_SECRET = wasAdminSecret;
+  if (wasNodeEnv === undefined) delete process.env.NODE_ENV;
+  else process.env.NODE_ENV = wasNodeEnv;
 
   if (was.vercel === undefined) delete process.env.VERCEL_ENV;
   else process.env.VERCEL_ENV = was.vercel;
@@ -1030,6 +1084,270 @@ console.log('\n--- the live site cannot serve demo data quietly ---');
   if (was.source === undefined) delete process.env.NEXT_PUBLIC_DATA_SOURCE;
   else process.env.NEXT_PUBLIC_DATA_SOURCE = was.source;
 }
+
+// ---------------------------------------------------------------------------
+console.log('\n--- the door into the product is a URL, not an action id ---');
+
+/*
+  The failure this exists for, and it was measured rather than imagined.
+
+  Sign-in and sign-up were server actions reached through `useActionState`. A
+  server action is addressed by an id Next.js bakes into the client bundle at
+  build time, so a deploy invalidates every page a browser already has open:
+  the next submit posts an id the new deployment has never heard of and Next
+  refuses it with "Failed to find Server Action". The person sees a form that
+  does nothing. Twelve of those on /signup between 28 October and 27 November,
+  and one on every deploy after that for as long as the door was an action id.
+
+  So the form posts to a URL. What can go wrong now is different and all of it
+  is silent: a form that quietly goes back to an action, a route that forgets
+  the origin check a server action was doing for free, a redirect that carries
+  a sentence somebody else wrote, or a login response a cache is allowed to
+  keep.
+*/
+{
+  const { DEFAULT_LANDING, landingFor, readableAuthError } = await import(
+    '../src/lib/auth/credentials'
+  );
+  const { AUTH_MESSAGES, authMessage } = await import('../src/lib/auth/messages');
+  const { respondTo, sameOrigin, wantsJson } = await import('../src/lib/auth/form-response');
+
+  console.log('\n  where a successful attempt lands');
+  {
+    is('a path is kept', landingFor('/marketplace?niche=igaming'), '/marketplace?niche=igaming');
+    is('nothing asked for is the dashboard', landingFor(null), DEFAULT_LANDING);
+    is('an empty value too', landingFor(''), DEFAULT_LANDING);
+    /*
+      The same rule `safeReturnPath` has, reached through it rather than
+      restated - this is its fourth reader, not a fifth rule. Asserted here
+      anyway, because the thing being protected is somebody signing in on a
+      real Press Parrot URL and landing somewhere else.
+    */
+    is('another origin lands on the dashboard', landingFor('https://evil.example/'), DEFAULT_LANDING);
+    is('and a protocol-relative one', landingFor('//evil.example/'), DEFAULT_LANDING);
+  }
+
+  console.log('\n  what the form is allowed to say');
+  {
+    is('a known code is its sentence', authMessage('invalid'), AUTH_MESSAGES.invalid);
+    is('an unknown one says nothing', authMessage('your-account-is-suspended'), undefined);
+    is('nothing at all says nothing', authMessage(undefined), undefined);
+    is('and an array takes its first entry', authMessage(['invalid', 'exists']), AUTH_MESSAGES.invalid);
+
+    yes(
+      'every code has a sentence behind it',
+      Object.values(AUTH_MESSAGES).every((text) => text.trim().length > 0 && text.endsWith('.')),
+    );
+
+    /*
+      Supabase is deliberately vague on sign-in, which is correct - telling an
+      attacker whether an address exists is a gift - and these are the few
+      cases worth rephrasing.
+    */
+    is('invalid credentials', readableAuthError('Invalid login credentials').code, 'invalid');
+    is('an unconfirmed address', readableAuthError('Email not confirmed').code, 'unconfirmed');
+    is('an address already taken', readableAuthError('User already registered').code, 'exists');
+    is('their own throttle', readableAuthError('email rate limit exceeded').code, 'rate-limit');
+
+    // The one message passed through, because it names the rule that broke.
+    const weak = readableAuthError('Password should be at least 6 characters');
+    is('a password rule keeps its wording', weak.message, 'Password should be at least 6 characters');
+    is('under a code that can survive a redirect', weak.code, 'password');
+
+    /*
+      And the default, which matters more than it looks: anything
+      unrecognised must not reach the page verbatim. A Supabase internal
+      describing our own schema is not something to show a stranger.
+    */
+    const odd = readableAuthError('relation "profiles" does not exist');
+    is('an unrecognised error is generic', odd.code, 'unknown');
+    is('and is not shown as it arrived', odd.message, AUTH_MESSAGES.unknown);
+  }
+
+  console.log('\n  which caller is asking');
+  {
+    const post = (headers: Record<string, string>) =>
+      new Request('https://pressparrot.com/api/auth/sign-in', { method: 'POST', headers });
+
+    yes('the enhanced form asks for JSON', wantsJson(post({ accept: 'application/json' })));
+    is('a browser form does not', wantsJson(post({ accept: 'text/html' })), false);
+    is('and neither does one that says nothing', wantsJson(post({})), false);
+
+    /*
+      A server action checked the origin for us and a route handler does not,
+      so losing this on the way out of `useActionState` would have been a
+      quiet regression. The attack it refuses is login CSRF: a form on
+      somebody else's site posting the attacker's credentials here, which
+      signs the visitor into an account the attacker controls and then
+      collects whatever they do in it. Nothing about that needs the victim's
+      password.
+    */
+    yes(
+      'our own page may post',
+      sameOrigin(post({ origin: 'https://pressparrot.com', host: 'pressparrot.com' })),
+    );
+    is(
+      'somebody else’s page may not',
+      sameOrigin(post({ origin: 'https://evil.example', host: 'pressparrot.com' })),
+      false,
+    );
+    is(
+      'a sibling host may not either',
+      sameOrigin(post({ origin: 'https://pressparrot.com.evil.example', host: 'pressparrot.com' })),
+      false,
+    );
+    // A browser always sends Origin on a POST, so its absence is not a form.
+    is('and nor may a request with no origin', sameOrigin(post({ host: 'pressparrot.com' })), false);
+    is('or no host', sameOrigin(post({ origin: 'https://pressparrot.com' })), false);
+    is('a malformed origin is refused, not thrown on', sameOrigin(post({ origin: '://', host: 'pressparrot.com' })), false);
+  }
+
+  console.log('\n  what the browser gets back');
+  {
+    const post = (accept?: string) =>
+      new Request('https://pressparrot.com/api/auth/sign-in', {
+        method: 'POST',
+        headers: accept ? { accept } : {},
+      });
+    const json = () => post('application/json');
+    const browser = () => post('text/html');
+
+    /*
+      Relative, so the base is only here to read the parts off. That the
+      header is relative is itself asserted below: an absolute one would mean
+      the route had reconstructed our own address from `request.url`.
+    */
+    const header = (response: Response) => response.headers.get('location') ?? '';
+    const location = (response: Response) => new URL(header(response), 'https://pressparrot.com');
+
+    // The enhanced path: a destination, and the form navigates to it.
+    const okJson = respondTo(json(), { kind: 'signed-in', next: '/marketplace' }, '/login', null);
+    is('a signed-in fetch answers 200', okJson.status, 200);
+    is('carrying where to go', (await okJson.json()).next, '/marketplace');
+
+    // The plain path: the browser is sent there itself.
+    const okForm = respondTo(browser(), { kind: 'signed-in', next: '/marketplace' }, '/login', null);
+    is('a signed-in form post redirects', okForm.status, 303);
+    is('to the same place', location(okForm).pathname, '/marketplace');
+
+    /*
+      A refused credential answers 200 with a body rather than 4xx: the
+      request was well formed and was handled, and a status that makes fetch
+      wrappers throw would hide the message this exists to deliver.
+    */
+    const refused = {
+      kind: 'error' as const,
+      code: 'rate-limit' as const,
+      message: 'Too many attempts. Try again in 41 seconds.',
+    };
+    const errJson = respondTo(json(), refused, '/login', null);
+    is('a refusal answers 200 as well', errJson.status, 200);
+    is('with the precise sentence', (await errJson.json()).error, refused.message);
+
+    /*
+      And the same refusal to a browser, as a code. The sentence must not
+      travel: `?failed=` on our own login page is a phishing kit we would be
+      hosting if it printed whatever the link said.
+    */
+    const errForm = respondTo(browser(), refused, '/login', null);
+    is('a refusal sends a browser back to the form', location(errForm).pathname, '/login');
+    is('with the code', location(errForm).searchParams.get('failed'), 'rate-limit');
+    /*
+      Decoded, because a query string writes the space as `+` and
+      `search.includes('41 seconds')` was therefore false whatever the
+      redirect carried - an assertion that could not fail.
+    */
+    is(
+      'and not the sentence',
+      decodeURIComponent(location(errForm).search.replace(/\+/g, ' ')).includes('41 seconds'),
+      false,
+    );
+    is('nor under the name /auth/confirm uses', location(errForm).searchParams.get('error'), null);
+
+    const noticeForm = respondTo(
+      browser(),
+      { kind: 'notice', code: 'confirm-email', message: AUTH_MESSAGES['confirm-email'] },
+      '/signup',
+      null,
+    );
+    is('a notice goes back as a notice', location(noticeForm).searchParams.get('notice'), 'confirm-email');
+    is('to the form it came from', location(noticeForm).pathname, '/signup');
+
+    // Where they were going survives a wrong password.
+    const kept = respondTo(browser(), refused, '/login', '/marketplace?niche=igaming');
+    is(
+      'a refusal keeps where they were going',
+      location(kept).searchParams.get('next'),
+      '/marketplace?niche=igaming',
+    );
+    /*
+      Checked on the way out as well as in. A value that failed the check is
+      not something to reflect back into a link either - the row-can-predate-
+      a-rule argument `safeHref` makes about menus.
+    */
+    const hostile = respondTo(browser(), refused, '/login', '//evil.example/');
+    is('a hostile one is dropped rather than echoed', location(hostile).searchParams.get('next'), null);
+
+    /*
+      None of these may be cached by anything. The body depends on a
+      credential, so one kept for even a second is one person's answer served
+      to the next visitor - the rule /api/me is already written to.
+    */
+    /*
+      And every redirect is a relative reference. The absolute form is only
+      ever as right as the host the platform put in `request.url`, and a
+      correct password that lands on the wrong origin is a hard failure to
+      explain.
+    */
+    yes(
+      'every redirect is relative to the request',
+      [okForm, errForm, noticeForm, kept, hostile].every((response) =>
+        header(response).startsWith('/'),
+      ),
+    );
+
+    const every = [okJson, okForm, errJson, errForm, noticeForm, kept, hostile];
+    yes(
+      'no response may be cached',
+      every.every((response) => (response.headers.get('cache-control') ?? '').includes('no-store')),
+    );
+  }
+
+  console.log('\n  and the ways this can go quietly inert');
+  {
+    /*
+      A form that went back to a server action would render perfectly and
+      fail on the next deploy, which is the failure that started all this and
+      is invisible in a type system - the same shape as a header importing
+      `mainNav` instead of taking it as a prop.
+    */
+    const form = read('src/components/auth/auth-form.tsx');
+    is("the form imports no server action", /from '@\/app\/\(auth\)\/actions'/.test(form), false);
+    yes('it is a real form a browser can post', /method="post"/.test(form));
+    yes('to the sign-in route', form.includes("login: '/api/auth/sign-in'"));
+    yes('and the sign-up route', form.includes("signup: '/api/auth/sign-up'"));
+
+    // Each endpoint it names has to exist, the way verify:agencies checks a
+    // capability's route exists on disk.
+    for (const route of ['sign-in', 'sign-up', 'google']) {
+      yes(`/api/auth/${route} exists`, existsSync(new URL(`../src/app/api/auth/${route}/route.ts`, import.meta.url)));
+    }
+
+    /*
+      And every one of them refuses a cross-site post. Read off the source
+      because a route handler cannot be invoked here, and counted against the
+      directory rather than listed, so a fourth route added later has to have
+      it too.
+    */
+    const routes = readdirSync(new URL('../src/app/api/auth/', import.meta.url));
+    const guarded = routes.filter((name) =>
+      read(`src/app/api/auth/${name}/route.ts`).includes('if (!sameOrigin(request)) return refuseCrossSite();'),
+    );
+    is('every auth route checks the origin first', guarded.length, routes.length);
+    yes('and there are some', routes.length >= 3);
+  }
+}
+
 
 console.log(failed ? `\n  ${failed} FAILED\n` : '\n  all passed\n');
 process.exit(failed ? 1 : 0);

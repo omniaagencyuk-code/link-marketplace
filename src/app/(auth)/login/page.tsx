@@ -4,6 +4,7 @@ import { redirect } from 'next/navigation';
 import { AuthForm } from '@/components/auth/auth-form';
 import { getCurrentUser } from '@/lib/auth/customer-access';
 import { safeReturnPath } from '@/lib/auth/return-to';
+import { authMessage } from '@/lib/auth/messages';
 
 export const metadata: Metadata = {
   title: 'Log in',
@@ -11,6 +12,23 @@ export const metadata: Metadata = {
   alternates: { canonical: '/login' },
   robots: { index: false, follow: true },
 };
+
+/**
+ * What `?error=` may say, as opposed to `?failed=`.
+ *
+ * Two senders, and neither is a refused credential. `/auth/confirm` sends
+ * `link-expired` when a one-time link has been used or has expired, and
+ * `/api/auth/google` sends `google-unavailable` when it was asked for a
+ * provider this deployment has not configured - which should be unreachable,
+ * because the button is behind the same check, and is handled anyway because
+ * a form can be posted by hand.
+ *
+ * Drawn above the form as a warning about a link. A wrong password arrives
+ * as `?failed=` instead and is drawn inside the form beside the fields,
+ * which is why there are two params rather than one the page has to tell
+ * apart by reading the code.
+ */
+const LINK_PROBLEMS = new Set(['link-expired', 'google-unavailable']);
 
 export default async function LoginPage({
   searchParams,
@@ -22,19 +40,8 @@ export default async function LoginPage({
   // Already signed in: no reason to show the form again.
   if (await getCurrentUser()) redirect(next ?? '/dashboard');
 
-  /*
-    Two senders. `/auth/confirm` when a one-time link has expired or been
-    used, and `signInWithGoogleAction` when it was asked for a provider this
-    deployment has not configured - which should be unreachable, because the
-    button is behind the same check, and is handled anyway because a form can
-    be posted by hand.
-  */
-  const problem =
-    params.error === 'link-expired'
-      ? 'That link has expired or has already been used. Log in, or request a new one.'
-      : params.error === 'google-unavailable'
-        ? 'Google sign-in is not available on this deployment. Use your email and password.'
-        : null;
+  const code = typeof params.error === 'string' ? params.error : undefined;
+  const problem = code && LINK_PROBLEMS.has(code) ? authMessage(code) : undefined;
 
   return (
     <>
@@ -47,7 +54,11 @@ export default async function LoginPage({
           {problem}
         </p>
       ) : null}
-      <AuthForm mode="login" next={next} />
+      <AuthForm
+        mode="login"
+        next={next}
+        initial={{ error: authMessage(params.failed), notice: authMessage(params.notice) }}
+      />
     </>
   );
 }

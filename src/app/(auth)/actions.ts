@@ -3,222 +3,39 @@
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { revalidatePath } from 'next/cache';
-import { userService } from '@/lib/services';
 import { isSupabaseEnabled } from '@/lib/supabase/config';
 import { getServerClient } from '@/lib/supabase/server';
 import { siteUrl } from '@/lib/config/brand';
-import {
-  CUSTOMER_SESSION_COOKIE,
-  CUSTOMER_SESSION_TTL_SECONDS,
-  createCustomerSessionToken,
-  isCustomerAuthConfigured,
-} from '@/lib/auth/customer-session';
+import { CUSTOMER_SESSION_COOKIE } from '@/lib/auth/customer-session';
 import { RATE_LIMITS, consumeRateLimit, rateLimitMessage } from '@/lib/auth/rate-limit';
-import { isGoogleAuthEnabled } from '@/lib/auth/google';
-import { DEMO_DATA_MESSAGE, isServingDemoDataLive } from '@/lib/config/deployment';
+import { readableAuthError } from '@/lib/auth/credentials';
 
 /**
- * Customer sign-in, sign-up, sign-out and password reset.
+ * Signing out, and the two password forms.
  *
- * Two implementations behind one set of actions. With Supabase connected these
- * are real credentials: a password Supabase hashes and checks, email
- * confirmation, and a session the auth server can revoke. Without it, the
- * original mock stands in - any email signs in - so the app still runs from a
- * clone with no configuration.
+ * Sign-in and sign-up used to be here too and are not any more. A server
+ * action is addressed by an id Next.js bakes into the client bundle, so a
+ * deploy invalidates every page a browser already has open and the next
+ * submit is refused with "Failed to find Server Action" - which on /signup
+ * is somebody who wanted an account and did not get one. They post to
+ * `src/app/api/auth/` now, where the address is a URL and a URL survives a
+ * deploy.
  *
- * The form components do not know which is active. That is deliberate: it is
- * the same contract either way, and it is what let the marketplace be gated
- * before the database existed.
+ * What is left is here on purpose rather than by omission. Signing out is
+ * reached from a button that is re-rendered on every navigation, and the
+ * password forms are retried by anybody who means it; neither has shown a
+ * single refusal. They are the same class of fragility all the same, and
+ * moving them is a change to make on its own rather than inside this one.
+ *
+ * Two implementations still stand behind these: with Supabase connected
+ * these are real credentials, and without it the original mock stands in so
+ * the app runs from a clone with no configuration.
  */
 
 export interface AuthActionState {
   error?: string;
   /** Shown instead of a redirect, e.g. "check your email". */
   notice?: string;
-}
-
-/** Only same-origin paths, so a crafted `next` cannot bounce a user offsite. */
-function safeRedirect(value: FormDataEntryValue | null): string {
-  const path = typeof value === 'string' ? value : '';
-  if (!path.startsWith('/') || path.startsWith('//')) return '/dashboard';
-  return path;
-}
-
-/**
- * Supabase returns deliberately vague errors on sign-in, which is correct -
- * telling an attacker whether an address exists is a gift. These map the few
- * cases worth rephrasing and pass everything else through.
- */
-function readableAuthError(message: string): string {
-  const text = message.toLowerCase();
-  if (text.includes('invalid login credentials')) {
-    return 'That email and password do not match an account.';
-  }
-  if (text.includes('email not confirmed')) {
-    return 'Check your email and confirm your address before signing in.';
-  }
-  if (text.includes('already registered') || text.includes('already been registered')) {
-    return 'An account already exists for that email. Try logging in instead.';
-  }
-  if (text.includes('rate limit') || text.includes('too many')) {
-    return 'Too many attempts. Wait a minute and try again.';
-  }
-  if (text.includes('password')) return message;
-  return 'Something went wrong. Try again.';
-}
-
-// ---------------------------------------------------------------- mock mode
-
-const notConfigured =
-  'Sign-in is not available: this deployment is missing AUTH_SESSION_SECRET. Add it and redeploy.';
-
-/**
- * The mock branch refused on the live domain.
- *
- * Mock mode signs in any address typed into the form and creates an account
- * for it. On a clone and on a preview deploy that is the feature - it is what
- * let the marketplace be reviewed before a database existed. On
- * pressparrot.com it is a stranger signing in as somebody else's work
- * address, which is not a degraded experience, it is an open door.
- *
- * So the live domain fails closed here rather than falling through. The band
- * in the root layout says the same thing to anybody looking at the site; this
- * says it to the one person who tried to act on it, and names what to set.
- */
-const demoAuthRefused = `Sign-in is unavailable: ${DEMO_DATA_MESSAGE}`;
-
-async function issueMockSession(userId: string, email: string): Promise<boolean> {
-  const token = await createCustomerSessionToken(userId, email);
-  if (!token) return false;
-
-  const store = await cookies();
-  store.set(CUSTOMER_SESSION_COOKIE, token, {
-    httpOnly: true,
-    sameSite: 'lax',
-    secure: process.env.NODE_ENV === 'production',
-    path: '/',
-    maxAge: CUSTOMER_SESSION_TTL_SECONDS,
-  });
-  return true;
-}
-
-// -------------------------------------------------------------------- actions
-
-export async function signInAction(
-  _state: AuthActionState,
-  formData: FormData,
-): Promise<AuthActionState> {
-  const email = String(formData.get('email') ?? '').trim();
-  const password = String(formData.get('password') ?? '');
-  if (!email) return { error: 'Enter the email address on your account.' };
-
-  // Counted before the credentials are checked, so a wrong password costs an
-  // attempt. Checking afterwards would leave brute force unthrottled.
-  const throttle = await consumeRateLimit(RATE_LIMITS.signIn);
-  if (!throttle.allowed) return { error: rateLimitMessage(throttle) };
-
-  if (isSupabaseEnabled()) {
-    const supabase = await getServerClient();
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) return { error: readableAuthError(error.message) };
-  } else {
-    if (isServingDemoDataLive()) return { error: demoAuthRefused };
-    if (!isCustomerAuthConfigured()) return { error: notConfigured };
-    const user = await userService.findOrCreateByEmail(email);
-    if (!(await issueMockSession(user.id, user.email))) return { error: notConfigured };
-  }
-
-  revalidatePath('/', 'layout');
-  redirect(safeRedirect(formData.get('next')));
-}
-
-export async function signUpAction(
-  _state: AuthActionState,
-  formData: FormData,
-): Promise<AuthActionState> {
-  const email = String(formData.get('email') ?? '').trim();
-  const password = String(formData.get('password') ?? '');
-  const fullName = String(formData.get('name') ?? '').trim();
-  const company = String(formData.get('company') ?? '').trim();
-  if (!email) return { error: 'Enter your email address.' };
-
-  const throttle = await consumeRateLimit(RATE_LIMITS.signUp);
-  if (!throttle.allowed) return { error: rateLimitMessage(throttle) };
-
-  if (isSupabaseEnabled()) {
-    if (password.length < 8) return { error: 'Use a password of at least 8 characters.' };
-
-    const next = safeRedirect(formData.get('next'));
-    const supabase = await getServerClient();
-    const { data, error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: {
-        // Carried into the profiles row by the handle_new_user trigger.
-        data: { full_name: fullName, company: company || null },
-        emailRedirectTo: `${siteUrl}/auth/confirm?next=${encodeURIComponent(next)}`,
-      },
-    });
-    if (error) return { error: readableAuthError(error.message) };
-
-    // With email confirmation on, sign-up returns a user but no session. Say
-    // so plainly rather than redirecting to a dashboard that will bounce them
-    // straight back to the login form.
-    if (!data.session) {
-      return {
-        notice:
-          'Check your email to confirm your address. The link will bring you straight back here.',
-      };
-    }
-  } else {
-    // Sign-up too: an account created here is a mock account, and one made on
-    // the live domain is a customer who believes they have registered.
-    if (isServingDemoDataLive()) return { error: demoAuthRefused };
-    if (!isCustomerAuthConfigured()) return { error: notConfigured };
-    const user = await userService.findOrCreateByEmail(email, {
-      fullName: fullName || undefined,
-      company: company || undefined,
-    });
-    if (!(await issueMockSession(user.id, user.email))) return { error: notConfigured };
-  }
-
-  revalidatePath('/', 'layout');
-  redirect(safeRedirect(formData.get('next')));
-}
-
-/**
- * Start the Google sign-in flow.
- *
- * Supabase builds the consent URL and we send the browser to it; Google
- * returns to `/auth/confirm`, which already exchanges a `?code=` for a
- * session and honours `next`. So this adds no new callback, no new session
- * handling and no second source of truth about who is signed in - it is the
- * existing door with a second key.
- *
- * It refuses unless `NEXT_PUBLIC_GOOGLE_AUTH` says the provider is actually
- * configured. The button is gated on the same answer, so this is the second
- * of two locks rather than the only one: a hand-posted form cannot send
- * somebody to a provider that is not set up.
- *
- * Not rate limited, deliberately. Nothing here checks a credential, so there
- * is nothing to brute force, and counting it against the sign-in budget would
- * let a redirect lock somebody out of their own password form.
- */
-export async function signInWithGoogleAction(formData: FormData): Promise<void> {
-  const next = safeRedirect(formData.get('next'));
-  const failed = `/login?error=google-unavailable&next=${encodeURIComponent(next)}`;
-
-  if (!isGoogleAuthEnabled()) redirect(failed);
-
-  const supabase = await getServerClient();
-  const { data, error } = await supabase.auth.signInWithOAuth({
-    provider: 'google',
-    options: { redirectTo: `${siteUrl}/auth/confirm?next=${encodeURIComponent(next)}` },
-  });
-
-  // `redirect` throws, so it cannot sit inside the branch that reads `data`.
-  if (error || !data?.url) redirect(failed);
-  redirect(data.url);
 }
 
 export async function signOutAction() {
@@ -280,7 +97,7 @@ export async function updatePasswordAction(
 
   const supabase = await getServerClient();
   const { error } = await supabase.auth.updateUser({ password });
-  if (error) return { error: readableAuthError(error.message) };
+  if (error) return { error: readableAuthError(error.message).message };
 
   return { notice: 'Password updated.' };
 }
