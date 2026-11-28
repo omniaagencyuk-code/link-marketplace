@@ -656,14 +656,32 @@ export const sourcingService = {
    * a price on the other end of a link. Handled and dismissed rows are gone:
    * that is what those two words mean.
    */
-  async noDraftEmails(limit = 200): Promise<NoDraftEmail[]> {
-    if (!isSupabaseEnabled()) return [];
+  /**
+   * @returns the slice to show, and how many are waiting in total.
+   *
+   * `total` is every reply still to follow up, not the length of the slice.
+   * They were the same number before this - the sourcing page read
+   * `noDrafts.length` off a query capped at two hundred, so the "to follow
+   * up" button could not count past 200 however many were really there, and
+   * the one number somebody uses to judge the size of the job was the one
+   * number that could not grow.
+   *
+   * `pendingDrafts` was fixed for exactly this and says so in its own
+   * comment; the fix never reached here.
+   *
+   * `count: 'exact'` on the same query rather than a second head request:
+   * PostgREST returns the full count beside a limited page, so this costs
+   * nothing extra.
+   */
+  async noDraftEmails(limit = 200): Promise<{ rows: NoDraftEmail[]; total: number }> {
+    if (!isSupabaseEnabled()) return { rows: [], total: 0 };
     const supabase = getAdminScopedClient();
 
-    const { data } = await supabase
+    const { data, count } = await supabase
       .from('inbound_emails')
       .select(
         'id, message_id, from_address, from_name, to_address, subject, sent_at, body_text, status_reason, asked_about_domain, source, mailbox, gmail_thread_id, attachments, has_rate_card',
+        { count: 'exact' },
       )
       .eq('status', 'ignored')
       .is('no_draft_dismissed_at', null)
@@ -699,7 +717,15 @@ export const sourcingService = {
     });
 
     // A rate card is a price behind a link. Everything else needs reading.
-    return emails.sort((a, b) => Number(b.hasRateCard) - Number(a.hasRateCard));
+    const ordered = emails.sort((a, b) => Number(b.hasRateCard) - Number(a.hasRateCard));
+
+    /*
+      `count` is null when PostgREST did not return one. Falling back to the
+      slice length is the old behaviour, which is wrong but is not worse than
+      showing nothing - and it only happens where the count was unavailable,
+      not where it was large.
+    */
+    return { rows: ordered, total: count ?? ordered.length };
   },
 
   /**

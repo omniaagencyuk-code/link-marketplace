@@ -22,8 +22,12 @@ export default async function NoDraftsPage() {
     return <PageTitle title="Replies with no draft" description="The database is not connected." />;
   }
 
-  const emails = await sourcingService.noDraftEmails(200).catch(() => []);
+  const { rows: emails, total } = await sourcingService
+    .noDraftEmails(200)
+    .catch(() => ({ rows: [], total: 0 }));
   const withRateCard = emails.filter((email) => email.hasRateCard).length;
+  // Say so when the page is a slice, rather than letting it read as all of them.
+  const truncated = total > emails.length;
 
   return (
     <div className="space-y-5">
@@ -36,6 +40,13 @@ export default async function NoDraftsPage() {
           </Button>
         }
       />
+
+      {truncated ? (
+        <p className="text-[13px] text-muted">
+          Showing the {emails.length.toLocaleString('en-GB')} most recent of{' '}
+          {total.toLocaleString('en-GB')} waiting. Tick or remove some and the rest appear.
+        </p>
+      ) : null}
 
       {emails.length === 0 ? (
         <Card>

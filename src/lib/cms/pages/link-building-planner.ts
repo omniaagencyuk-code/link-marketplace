@@ -256,7 +256,12 @@ That is not decoration. A plan holds which suppliers an agency uses and what it 
   },
 
   seo: {
-    metaTitle: 'Free Link Building Planner | Press Parrot',
+    /*
+      No brand name. `metadataForPage` returns the title plain and the root
+      layout's template is `%s | Press Parrot`, so carrying it here rendered
+      "Free Link Building Planner | Press Parrot | Press Parrot".
+    */
+    metaTitle: 'Free Link Building Planner',
     metaDescription:
       'Plan every link you buy — anywhere — in one place. Months, prices, anchors and statuses, with reports on paid and committed spend. Free, with no paid lookups behind it.',
   },
