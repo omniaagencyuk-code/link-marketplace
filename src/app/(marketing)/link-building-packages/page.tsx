@@ -34,7 +34,17 @@ import { brand, siteUrl } from '@/lib/config/brand';
  */
 export const dynamic = 'force-dynamic';
 
-const TITLE = 'Link Building Prices by Domain Rating | Press Parrot';
+/*
+  No brand name here. The root layout's metadata template is
+  `%s | Press Parrot`, so a title carrying it already comes out as
+  "... | Press Parrot | Press Parrot" - which is what this page shipped
+  with. The homepage sets `absolute` to opt out of the template instead;
+  either works, and leaving the brand off is the simpler of the two.
+
+  `openGraph.title` below keeps it, because og:title has no template to
+  append one.
+*/
+const TITLE = 'Link Building Prices by Domain Rating';
 const DESCRIPTION =
   'What a backlink costs at each domain rating, from DR10 to DR60 and above. Live prices from our marketplace of vetted publishers with real organic traffic.';
 

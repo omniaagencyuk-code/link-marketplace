@@ -68,7 +68,7 @@ async function load() {
     sourcingService.getSettings(),
     sourcingService.pendingCount().catch(() => 0),
     sourcingService.spentThisMonthUsd().catch(() => 0),
-    sourcingService.noDraftEmails(200).catch(() => []),
+    sourcingService.noDraftEmails(200).catch(() => ({ rows: [], total: 0 })),
     sourcingService.duplicateGroups().catch(() => []),
     // Paged and filtered inside the service. Asking for a page and dropping
     // the contested rows afterwards is what made this queue appear to refill
@@ -138,7 +138,8 @@ async function load() {
     settings,
     pending,
     spent,
-    noDraftCount: noDrafts.length,
+    // The number waiting, not the number fetched - see `noDraftEmails`.
+    noDraftCount: noDrafts.total,
     duplicateDomains: duplicates.length,
     duplicateDrafts: duplicates.reduce((total, group) => total + group.pending, 0),
     counts,
